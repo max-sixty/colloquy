@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "colloquy",
+  "owner": {
+    "name": "max-sixty",
+    "url": "https://github.com/max-sixty"
+  },
+  "description": "colloquy, installable as a Claude Code plugin: review Claude's plans and findings as a commentable web page instead of terminal text.",
+  "plugins": [
+    {
+      "name": "colloquy",
+      "source": "./",
+      "description": "Review Claude's plans and findings like a document: Claude serves a commentable HTML page on localhost, you mark it up in the browser, and revised versions ship with changelogs.",
+      "license": "MIT",
+      "keywords": ["plan-review", "review", "html", "annotation", "collaboration", "plan-mode"]
+    }
+  ]
+}

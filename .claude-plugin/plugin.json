@@ -1,0 +1,12 @@
+{
+  "name": "colloquy",
+  "version": "0.1.0",
+  "description": "Review Claude's plans and findings like a document: Claude serves a commentable HTML page on localhost, you mark it up in the browser, and revised versions ship with changelogs.",
+  "author": {
+    "name": "Maximilian Roos"
+  },
+  "homepage": "https://github.com/max-sixty/colloquy",
+  "repository": "https://github.com/max-sixty/colloquy",
+  "license": "MIT",
+  "keywords": ["plan-review", "review", "html", "annotation", "collaboration", "plan-mode"]
+}
