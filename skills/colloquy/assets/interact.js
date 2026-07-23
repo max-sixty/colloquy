@@ -1,6 +1,12 @@
 /* Comment/status layer for colloquy pages, loaded via <script src="/interact.js" defer>.
  * Talks to interact.py's server: polls GET /api/state, posts events to POST /api/event.
- * Everything it injects is namespaced .ih-* and marked .ih-ui so anchoring skips it. */
+ * Everything it injects is namespaced .ih-* and marked .ih-ui so anchoring skips it.
+ *
+ * Central tenet: never lose user text. Every draft the user has typed but not sent — the
+ * general box, each per-thread reply, and the selection composer (text + its anchor) —
+ * persists to localStorage on input, so navigation, reload, version switches, and server
+ * death all recover it. Only a successful send clears a draft. localStorage is partitioned
+ * by origin and each page directory gets its own port, so the keys are implicitly per-page. */
 (() => {
   "use strict";
 
@@ -60,6 +66,7 @@
     .ih-fab { position: fixed; z-index: 9100; display: none; }
     .ih-composer { position: fixed; z-index: 9100; display: none; width: 320px; background: #fff;
       border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 10px; }
+    .ih-composer-quote { margin: 0 0 8px; padding: 2px 8px; border-left: 3px solid #f59e0b; color: #6b7280; font-style: italic; overflow-wrap: anywhere; max-height: 4.2em; overflow-y: auto; display: none; }
     .ih-composer textarea { width: 100%; font: inherit; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; min-height: 56px; resize: vertical; }
     .ih-composer-row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
     .ih-mark { background: #fde68a80; border-bottom: 2px solid #f59e0b; cursor: pointer; }
@@ -113,13 +120,14 @@
 
   const fab = el("button", "ih-ui ih-btn primary ih-fab", "💬 Comment");
   const composer = el("div", "ih-ui ih-composer");
+  const composerQuote = el("blockquote", "ih-composer-quote");
   const composerInput = document.createElement("textarea");
   composerInput.placeholder = "Your comment…";
   const composerRow = el("div", "ih-composer-row");
   const composerCancel = el("button", "ih-btn", "Cancel");
   const composerSend = el("button", "ih-btn primary", "Comment");
   composerRow.append(composerCancel, composerSend);
-  composer.append(composerInput, composerRow);
+  composer.append(composerQuote, composerInput, composerRow);
   const toast = el("div", "ih-ui ih-toast");
 
   document.body.append(banner, panel, fab, composer, toast);
@@ -134,6 +142,34 @@
   let panelOpen = false;
   let pendingAnchor = null;
   const rid = () => crypto.randomUUID().replaceAll("-", "").slice(0, 8);
+
+  // ---------- draft persistence ----------
+  // Text the user typed but hasn't sent must survive navigation, reload, version switches,
+  // and server death; only a successful send clears it. Storage failures never break typing.
+  const DRAFT = "ih-draft:";
+  const saveDraft = (ctx, val) => {
+    try {
+      if (val) localStorage.setItem(DRAFT + ctx, val);
+      else localStorage.removeItem(DRAFT + ctx);
+    } catch {}
+  };
+  const loadDraft = (ctx) => {
+    try {
+      return localStorage.getItem(DRAFT + ctx) || "";
+    } catch {
+      return "";
+    }
+  };
+  const pruneReplyDrafts = (liveIds) => {
+    const rp = DRAFT + "reply:";
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(rp) && !liveIds.has(k.slice(rp.length)))
+          localStorage.removeItem(k);
+      }
+    } catch {}
+  };
 
   function setPanel(open) {
     panelOpen = open;
@@ -228,7 +264,9 @@
       const form = document.createElement("form");
       const input = document.createElement("textarea");
       input.placeholder = "Reply…";
-      input.dataset.draftFor = t.root.id;
+      const draftCtx = "reply:" + t.root.id;
+      input.value = loadDraft(draftCtx);
+      input.addEventListener("input", () => saveDraft(draftCtx, input.value));
       const send = el("button", "ih-btn", "Reply");
       form.append(input, send);
       form.onsubmit = (ev) => {
@@ -241,7 +279,12 @@
             parent: t.root.id,
             version: VNUM,
             text,
-          }).then((ok) => ok && (input.value = ""));
+          }).then((ok) => {
+            if (ok) {
+              input.value = "";
+              saveDraft(draftCtx, "");
+            }
+          });
       };
       const actions = el("div", "ih-thread-actions");
       const resolve = el("button", "ih-resolve", "✓ Resolve");
@@ -253,10 +296,6 @@
   }
 
   function renderThreads() {
-    const drafts = {};
-    threadsBox
-      .querySelectorAll("[data-draft-for]")
-      .forEach((t) => t.value && (drafts[t.dataset.draftFor] = t.value));
     threadsBox.textContent = "";
     const threads = buildThreads();
     const open = threads.filter((t) => !t.resolved);
@@ -279,11 +318,6 @@
       resolved.forEach((t) => details.append(threadNode(t)));
       threadsBox.append(details);
     }
-    threadsBox
-      .querySelectorAll("[data-draft-for]")
-      .forEach(
-        (t) => drafts[t.dataset.draftFor] && (t.value = drafts[t.dataset.draftFor]),
-      );
     const openCount = open.length;
     toggleBtn.textContent = "";
     toggleBtn.append(document.createTextNode(`Comments (${openCount})`));
@@ -403,9 +437,30 @@
   document.addEventListener("mousedown", (ev) => {
     if (!ev.target.closest?.(".ih-fab, .ih-composer")) {
       fab.style.display = "none";
-      composer.style.display = "none";
+      // Keep a composer that holds unsent text open so a stray click can't drop it;
+      // Cancel discards explicitly, and the draft is persisted regardless.
+      if (!composerInput.value) composer.style.display = "none";
     }
   });
+
+  function openComposer(anchor, text, left, top) {
+    pendingAnchor = anchor || null;
+    composerInput.value = text || "";
+    if (anchor?.quote) {
+      composerQuote.textContent = `“${anchor.quote}”`;
+      composerQuote.style.display = "";
+    } else composerQuote.style.display = "none";
+    composer.style.left = left;
+    composer.style.top = top;
+    composer.style.display = "block";
+    composerInput.focus();
+  }
+  function closeComposer() {
+    composer.style.display = "none";
+    composerInput.value = "";
+    pendingAnchor = null;
+    saveDraft("composer", "");
+  }
 
   fab.onclick = () => {
     const sel = getSelection();
@@ -414,15 +469,24 @@
     let node = range.commonAncestorContainer;
     if (node.nodeType !== Node.ELEMENT_NODE) node = node.parentElement;
     const section = node.closest("[id]:not(.ih-ui)")?.id || null;
-    pendingAnchor = { section, quote: sel.toString().trim().slice(0, 400) };
-    composer.style.left = fab.style.left;
-    composer.style.top = fab.style.top;
-    composer.style.display = "block";
+    openComposer(
+      { section, quote: sel.toString().trim().slice(0, 400) },
+      "",
+      fab.style.left,
+      fab.style.top,
+    );
     fab.style.display = "none";
-    composerInput.value = "";
-    composerInput.focus();
   };
-  composerCancel.onclick = () => (composer.style.display = "none");
+  composerInput.addEventListener("input", () =>
+    saveDraft(
+      "composer",
+      composerInput.value
+        ? JSON.stringify({ text: composerInput.value, anchor: pendingAnchor })
+        : "",
+    ),
+  );
+  // Cancel discards. Escape and outside clicks only hide, keeping the draft either way.
+  composerCancel.onclick = closeComposer;
   composerSend.onclick = async () => {
     const text = composerInput.value.trim();
     if (!text || !pendingAnchor) return;
@@ -435,7 +499,7 @@
         text,
       })
     ) {
-      composer.style.display = "none";
+      closeComposer();
       setPanel(true);
     }
   };
@@ -444,13 +508,19 @@
     if (ev.key === "Escape") composer.style.display = "none";
   });
 
+  generalInput.addEventListener("input", () =>
+    saveDraft("general", generalInput.value),
+  );
   generalForm.onsubmit = (ev) => {
     ev.preventDefault();
     const text = generalInput.value.trim();
     if (text)
-      post({ kind: "comment", id: rid(), version: VNUM, text }).then(
-        (ok) => ok && (generalInput.value = ""),
-      );
+      post({ kind: "comment", id: rid(), version: VNUM, text }).then((ok) => {
+        if (ok) {
+          generalInput.value = "";
+          saveDraft("general", "");
+        }
+      });
   };
 
   approveBtn.onclick = async () => {
@@ -530,6 +600,15 @@
     const key = JSON.stringify(events);
     if (key !== lastEventsKey) {
       lastEventsKey = key;
+      // prune only here, where events is the server's truth — never from renderThreads,
+      // which also runs with an empty events array (pre-first-poll, server offline)
+      pruneReplyDrafts(
+        new Set(
+          buildThreads()
+            .filter((t) => !t.resolved)
+            .map((t) => t.root.id),
+        ),
+      );
       renderThreads();
       applyAnchors();
       const claudeMsgs = events.filter(
@@ -540,6 +619,17 @@
       claudeMsgCount = claudeMsgs;
     }
   }
+  // ---------- restore drafts ----------
+  // The general box and reply textareas repopulate as they render; a saved composer draft
+  // resurfaces visibly near the top so it isn't stranded in storage after a reload.
+  generalInput.value = loadDraft("general");
+  const savedComposer = loadDraft("composer");
+  if (savedComposer)
+    try {
+      const { text, anchor } = JSON.parse(savedComposer);
+      if (text) openComposer(anchor, text, "calc(50% - 160px)", "64px");
+    } catch {}
+
   poll();
   setInterval(poll, POLL_MS);
 })();

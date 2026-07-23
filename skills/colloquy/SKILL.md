@@ -55,6 +55,9 @@ $IX stop <dir>                          # shut the server down
   ids stable across versions so anchored comments don't detach.
 - The layer injects the status banner, comment sidebar, and version picker; don't build
   page UI for any of those.
+- **Never lose user text.** A central tenet of the comment layer: drafts (the general
+  box, each reply, the selection composer) survive navigation, reload, version switches,
+  and server death; only a successful send clears them.
 - **Use light mode.** Ship a light `:root` palette — dark ink on near-white, one or two
   accents.
 - **Diagrams are graphical, never ASCII.** Author any architecture/flow/sequence diagram

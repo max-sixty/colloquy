@@ -8,7 +8,8 @@ A page directory holds:
     versions/v001.html…  immutable page versions (Claude writes them; the server lists them)
     interact.js          comment/status layer, served at /interact.js (copied by `init`)
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
-    status.json          Claude's declared state: {"state": working|waiting|idle, "detail", "ts"}
+    status.json          Claude's declared state: {"state": working|waiting|idle, "detail", "ts"};
+                         `wait` flips it to working when it delivers events, covering the handoff gap
     heartbeat.json       watcher liveness, bumped by `wait` while it runs
     cursor.json          seq of the last event delivered to Claude, written by `wait` on exit
     server.json          {"port", "pid", "url"} for the running server
@@ -243,6 +244,10 @@ def cmd_wait(page_dir: Path) -> int:
                     print(json.dumps(event, ensure_ascii=False), flush=True)
                 # cursor after print: a kill mid-wait redelivers rather than drops
                 write_json(page_dir / "cursor.json", {"seq": events[-1]["seq"]})
+                # flip status here, not in Claude's next turn: the handoff gap
+                # between this exit and Claude's pickup must not show "waiting"
+                n = len(new_user)
+                cmd_status(page_dir, "working", f"picking up {n} comment{'s' if n != 1 else ''}")
                 return 0
             if time.time() > server_check_at:
                 server_check_at = time.time() + 5
