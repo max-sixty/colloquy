@@ -86,6 +86,19 @@ sideways). It's near-free, so it runs on every version.
 `scripts/record-demo.sh` prints a shot list and the setup for capturing the README GIF
 against a real colloquy page. Drop the result at `docs/demo.gif`.
 
+## Related
+
+[Workbench](https://workbench.md/) meets the same moment (reviewing an agent's work in a
+browser) from the opposite direction: a hosted, multiplayer markdown workspace where
+teams of agents and humans coordinate through one shared doc, with anchored comments,
+suggestion mode, task claiming, and an event feed. Colloquy is the inverse on each axis:
+local files and a loopback port instead of a hosted service; one session presenting to
+one reviewer instead of a fleet co-editing; an authored HTML page with diagrams instead
+of a markdown doc. The trade shows up in the plumbing: a hosted doc cannot invoke your
+agent, so Workbench ships a daemon layer (watchers, heartbeats, supervisors) to keep
+agents responsive, while colloquy runs inside Claude Code, where the harness re-invokes
+the session the moment a comment lands.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
