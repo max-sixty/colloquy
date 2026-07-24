@@ -6,12 +6,17 @@
  * general box, each per-thread reply, and the selection composer (text + its anchor) —
  * persists to localStorage on input, so navigation, reload, version switches, and server
  * death all recover it. Only a successful send clears a draft. localStorage is partitioned
- * by origin and each page directory gets its own port, so the keys are implicitly per-page. */
+ * by origin and each page directory gets its own port, so the keys are implicitly per-page.
+ *
+ * Versions: an unpinned page follows the newest version, navigating to each revision as
+ * Claude ships it. Picking an older version pins the view (?pin in the URL); a pinned
+ * page stays put and offers the newest version as a chip instead. */
 (() => {
   "use strict";
 
   const VERSION_MATCH = location.pathname.match(/\/versions\/v(\d+)\.html$/);
   const VNUM = VERSION_MATCH ? parseInt(VERSION_MATCH[1], 10) : null;
+  const PINNED = new URLSearchParams(location.search).has("pin");
   const POLL_MS = 2000;
 
   // ---------- styles ----------
@@ -138,6 +143,7 @@
   let events = [];
   let lastEventsKey = "";
   let lastVersionsKey = "";
+  let latestName = "";
   let claudeMsgCount = -1;
   let panelOpen = false;
   let pendingAnchor = null;
@@ -574,14 +580,28 @@
       }
       versionSelect.value = `v${String(VNUM).padStart(3, "0")}.html`;
     }
-    const latest = state.versions.at(-1);
+    latestName = state.versions.at(-1) || "";
     const behind =
-      latest && VNUM !== null && latest !== `v${String(VNUM).padStart(3, "0")}.html`;
+      latestName && VNUM !== null && latestName !== `v${String(VNUM).padStart(3, "0")}.html`;
+    // Follow the newest version unless pinned or the user is mid-composition:
+    // drafts survive navigation, but an open composer or a live selection
+    // doesn't. While deferred, the chip shows instead.
+    if (behind && !PINNED && !midComposition()) {
+      location.replace(`/versions/${latestName}`);
+      return;
+    }
     latestChip.style.display = behind ? "" : "none";
     if (behind)
-      latestChip.textContent = `New version available → open ${latest.replace(".html", "")}`;
+      latestChip.textContent = `New version available → open ${latestName.replace(".html", "")}`;
   }
-  versionSelect.onchange = () => (location.href = `/versions/${versionSelect.value}`);
+  const midComposition = () =>
+    composer.style.display === "block" ||
+    fab.style.display === "block" ||
+    (document.activeElement?.tagName === "TEXTAREA" && document.activeElement.value !== "");
+  versionSelect.onchange = () => {
+    const name = versionSelect.value;
+    location.href = name === latestName ? `/versions/${name}` : `/versions/${name}?pin`;
+  };
   latestChip.onclick = () => (location.href = "/");
 
   // ---------- polling ----------

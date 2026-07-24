@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Pages follow the newest version automatically. Picking an older version in the picker
+  pins the view (`?pin`); previously every page stayed put and only showed a "new
+  version available" chip.
+
 ## 0.1.0
 
 Initial release.
