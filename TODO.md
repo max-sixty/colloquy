@@ -17,13 +17,6 @@ items are recommendations that stood unchallenged. Each item stands alone.
       `UserPromptSubmit` hook that injects pending comments at the next turn, and a
       `SessionEnd` hook that idles pages and stops their servers. `hooks/hooks.json`
       currently carries only the plan-mode redirect.
-- [ ] Make the banner tell the durable truth: comments land in the append-only log
-      even with no watcher, so the no-watcher state should read "Saved — Claude will
-      see this next turn" instead of "Claude isn't watching — nudge it in the
-      terminal". Reserve the nudge wording for a session that is actually gone (status
-      timestamp stale by many minutes). See `renderStatus` in
-      `skills/colloquy/assets/interact.js`.
-
 ## Roadmap
 
 - [ ] Dark mode: pages and the injected layer honor `prefers-color-scheme` (the skill

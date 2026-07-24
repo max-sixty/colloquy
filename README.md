@@ -52,9 +52,9 @@ built), so try it deliberately. `/colloquy-plans off` restores normal plan mode.
 
 ## How it works
 
-No daemon, no database, no build step. A ~400-line standard-library Python script serves
-the page on a loopback port and mediates an append-only event log; a ~550-line vanilla-JS
-layer the page loads provides the comments, threads, banner, and picker.
+No daemon, no database, no build step. A standard-library Python script serves the page
+on a loopback port and mediates an append-only event log; a vanilla-JS layer the page
+loads provides the comments, threads, banner, and picker. Two files, no dependencies.
 
 The load-bearing trick is that Claude's turn ends on a background `wait` that exits the
 moment you comment, which re-invokes Claude. So there is nothing running between rounds
