@@ -5,18 +5,13 @@ items are recommendations that stood unchallenged. Each item stands alone.
 
 ## Decided
 
-- [ ] Align the runtime with the decision: keep the `uv` script runtime (PEP 723
-      header, `click`) rather than the stdlib rewrite that shipped; `uv` is the one
-      declared prerequisite. Update `skills/colloquy/scripts/interact.py`, the README
-      install section, and the CHANGELOG to match. The longer-term portability path is
-      a compiled Rust executable (single static binary, absorbs Windows), not a stdlib
-      Python fallback.
 - [ ] Enforce the review loop with hooks rather than trusting the model to remember:
       a `Stop` hook that blocks ending a turn while a page has undelivered user events
       or a non-idle page with no live watcher ("start `wait` or set status idle"), a
       `UserPromptSubmit` hook that injects pending comments at the next turn, and a
       `SessionEnd` hook that idles pages and stops their servers. `hooks/hooks.json`
       currently carries only the plan-mode redirect.
+
 ## Roadmap
 
 - [ ] Dark mode: pages and the injected layer honor `prefers-color-scheme` (the skill

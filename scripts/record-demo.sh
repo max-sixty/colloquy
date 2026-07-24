@@ -6,7 +6,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IX="python3 $HERE/skills/colloquy/scripts/interact.py"
+IX="uv run $HERE/skills/colloquy/scripts/interact.py"
 DIR="${TMPDIR:-/tmp}/colloquy-demo"
 
 rm -rf "$DIR"

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `interact.py` runs as a `uv` script: a PEP 723 inline-metadata header declares its one
+  dependency, `click`, and the CLI is built on `click` instead of `argparse`. `uv` is now
+  the one declared prerequisite for the plugin, replacing the plain-`python3`,
+  standard-library-only invocation the previous release shipped. Behavior and subcommands
+  (`init serve status wait reply note events stop check`) are unchanged.
 - Pages follow the newest version automatically. Picking an older version in the picker
   pins the view (`?pin`); previously every page stayed put and only showed a "new
   version available" chip.

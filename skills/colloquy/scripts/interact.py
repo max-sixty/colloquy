@@ -1,8 +1,13 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.8"
+# dependencies = ["click>=8"]
+# ///
 """Serve and mediate an interactive colloquy page.
 
-Pure standard-library Python 3 (>=3.8) — no third-party dependencies, no
-build step. Run it with `python3 interact.py <command> …`.
+A `uv` script: the PEP 723 header above declares the one dependency
+(`click`), and `uv` is the one prerequisite for the whole plugin — no venv to
+create, no build step. Run it with `uv run interact.py <command> …`.
 
 A page directory holds:
     versions/v001.html…  immutable page versions (Claude writes them; the server lists them)
@@ -28,7 +33,6 @@ anchor id from the previous version survives, and no fixed-pixel-width element
 is wider than the readable column.
 """
 
-import argparse
 import errno
 import json
 import os
@@ -42,6 +46,8 @@ from datetime import datetime
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+import click
 
 HEARTBEAT_FRESH_SECS = 8
 BROWSER_EVENT_KINDS = {"comment", "reply", "resolve", "done"}
@@ -521,71 +527,81 @@ def resolve_dir(dir_arg: str, must_exist: bool = True) -> Path:
     return page_dir
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="interact.py", description="Serve and mediate an interactive colloquy page."
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    p = sub.add_parser("init", help="create the page directory layout and copy interact.js")
-    p.add_argument("dir")
-
-    p = sub.add_parser("serve", help="serve the page on localhost (reuses a live server); prints the URL")
-    p.add_argument("dir")
-
-    p = sub.add_parser("status", help="declare Claude's state for the banner")
-    p.add_argument("dir")
-    p.add_argument("state", choices=["working", "waiting", "idle"])
-    p.add_argument("detail", nargs="?", default="")
-
-    p = sub.add_parser("wait", help="block until new user events arrive, print them as JSON lines, exit")
-    p.add_argument("dir")
-
-    p = sub.add_parser("reply", help="post a threaded reply as Claude (--text or stdin)")
-    p.add_argument("dir")
-    p.add_argument("--to", required=True, help="id of the comment or reply being answered")
-    p.add_argument("--text")
-
-    p = sub.add_parser("note", help="post a one-line changelog for a version (--text or stdin)")
-    p.add_argument("dir")
-    p.add_argument("--version", type=int, required=True)
-    p.add_argument("--text")
-
-    p = sub.add_parser("events", help="print the event log as JSON lines")
-    p.add_argument("dir")
-    p.add_argument("--after", type=int, default=0, help="only events with seq greater than this")
-
-    p = sub.add_parser("stop", help="stop the server")
-    p.add_argument("dir")
-
-    p = sub.add_parser("check", help="deterministic pre-handover lint of a version")
-    p.add_argument("dir")
-    p.add_argument("--version", type=int, help="version to check (default: latest)")
-
-    return parser
+@click.group()
+def cli() -> None:
+    """Serve and mediate an interactive colloquy page."""
 
 
-def main(argv=None) -> None:
-    args = build_parser().parse_args(argv)
-    if args.command == "init":
-        cmd_init(resolve_dir(args.dir, must_exist=False))
-    elif args.command == "serve":
-        cmd_serve(resolve_dir(args.dir))
-    elif args.command == "status":
-        cmd_status(resolve_dir(args.dir), args.state, args.detail)
-    elif args.command == "wait":
-        sys.exit(cmd_wait(resolve_dir(args.dir)))
-    elif args.command == "reply":
-        cmd_reply(resolve_dir(args.dir), args.to, args.text)
-    elif args.command == "note":
-        cmd_note(resolve_dir(args.dir), args.version, args.text)
-    elif args.command == "events":
-        cmd_events(resolve_dir(args.dir), args.after)
-    elif args.command == "stop":
-        cmd_stop(resolve_dir(args.dir))
-    elif args.command == "check":
-        sys.exit(cmd_check(resolve_dir(args.dir), args.version))
+@cli.command()
+@click.argument("dir")
+def init(dir: str) -> None:
+    """Create the page directory layout and copy in interact.js."""
+    cmd_init(resolve_dir(dir, must_exist=False))
+
+
+@cli.command()
+@click.argument("dir")
+def serve(dir: str) -> None:
+    """Serve the page on localhost (reuses a live server); prints the URL."""
+    cmd_serve(resolve_dir(dir))
+
+
+@cli.command()
+@click.argument("dir")
+@click.argument("state", type=click.Choice(["working", "waiting", "idle"]))
+@click.argument("detail", required=False, default="")
+def status(dir: str, state: str, detail: str) -> None:
+    """Declare Claude's state for the banner."""
+    cmd_status(resolve_dir(dir), state, detail)
+
+
+@cli.command()
+@click.argument("dir")
+def wait(dir: str) -> None:
+    """Block until new user events arrive, print them as JSON lines, exit."""
+    sys.exit(cmd_wait(resolve_dir(dir)))
+
+
+@cli.command()
+@click.argument("dir")
+@click.option("--to", required=True, help="id of the comment or reply being answered")
+@click.option("--text")
+def reply(dir: str, to: str, text: str) -> None:
+    """Post a threaded reply as Claude (--text or stdin)."""
+    cmd_reply(resolve_dir(dir), to, text)
+
+
+@cli.command()
+@click.argument("dir")
+@click.option("--version", type=int, required=True)
+@click.option("--text")
+def note(dir: str, version: int, text: str) -> None:
+    """Post a one-line changelog for a version (--text or stdin)."""
+    cmd_note(resolve_dir(dir), version, text)
+
+
+@cli.command()
+@click.argument("dir")
+@click.option("--after", type=int, default=0, help="only events with seq greater than this")
+def events(dir: str, after: int) -> None:
+    """Print the event log as JSON lines."""
+    cmd_events(resolve_dir(dir), after)
+
+
+@cli.command()
+@click.argument("dir")
+def stop(dir: str) -> None:
+    """Stop the server."""
+    cmd_stop(resolve_dir(dir))
+
+
+@cli.command()
+@click.argument("dir")
+@click.option("--version", type=int, default=None, help="version to check (default: latest)")
+def check(dir: str, version: int) -> None:
+    """Deterministic pre-handover lint of a version."""
+    sys.exit(cmd_check(resolve_dir(dir), version))
 
 
 if __name__ == "__main__":
-    main()
+    cli()

@@ -18,9 +18,10 @@ the wedge; nothing in the tool is narrowed to it.
 /plugin install colloquy@colloquy
 ```
 
-That's it. No dependencies to install, no config, no accounts. The one requirement is a
-`python3` on your PATH (macOS ships one with the Command Line Tools; nearly every Linux
-has one), and a browser on the same machine as the session.
+That's it. No config, no accounts. The one prerequisite is
+[`uv`](https://docs.astral.sh/uv/) on your PATH — `interact.py` is a `uv` script (a PEP
+723 inline-metadata header declares its one dependency, `click`), so `uv run` handles the
+rest, and a browser on the same machine as the session.
 
 ## Using it
 
@@ -52,9 +53,10 @@ built), so try it deliberately. `/colloquy-plans off` restores normal plan mode.
 
 ## How it works
 
-No daemon, no database, no build step. A standard-library Python script serves the page
-on a loopback port and mediates an append-only event log; a vanilla-JS layer the page
-loads provides the comments, threads, banner, and picker. Two files, no dependencies.
+No daemon, no database, no build step. A ~400-line `uv` script (stdlib plus `click`)
+serves the page on a loopback port and mediates an append-only event log; a vanilla-JS
+layer the page loads provides the comments, threads, banner, and picker. Two files, one
+dependency.
 
 The load-bearing trick is that Claude's turn ends on a background `wait` that exits the
 moment you comment, which re-invokes Claude. So there is nothing running between rounds
@@ -100,6 +102,11 @@ of a markdown doc. The trade shows up in the plumbing: a hosted doc cannot invok
 agent, so Workbench ships a daemon layer (watchers, heartbeats, supervisors) to keep
 agents responsive, while colloquy runs inside Claude Code, where the harness re-invokes
 the session the moment a comment lands.
+
+[html-effectiveness](https://github.com/anthropics/html-effectiveness) is a gallery of
+standalone HTML examples (code review, status reports, diagrams, small editing UIs)
+demonstrating HTML as a flexible, dependency-free output format, the same idea behind
+colloquy's handover page.
 
 ## License
 

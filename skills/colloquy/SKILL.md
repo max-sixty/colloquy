@@ -25,10 +25,11 @@ is a short kebab-case name for the topic (`migration-options`, `auth-diagnosis`)
 directory survives the session and is where every version and the event log live.
 `interact.py` mediates everything; its module docstring documents the layout.
 
-Invoke it with plain `python3` (no `uv`, no dependencies):
+Invoke it with `uv run` — it's a `uv` script (a PEP 723 header declares its one
+dependency, `click`), and `uv` is the one prerequisite for the whole plugin:
 
 ```bash
-IX="python3 ${CLAUDE_SKILL_DIR}/scripts/interact.py"
+IX="uv run ${CLAUDE_SKILL_DIR}/scripts/interact.py"
 $IX init <dir>                          # create layout, copy in the comment layer
 $IX serve <dir>                         # background task; prints the URL
 $IX status <dir> working "<detail>"     # or: waiting, idle
@@ -120,7 +121,7 @@ the path stays stable.
 Before handing over the URL, and before each `note`d version, run `check`:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/interact.py" check <dir>
+uv run "${CLAUDE_SKILL_DIR}/scripts/interact.py" check <dir>
 ```
 
 It's a deterministic static lint (no browser, near-zero cost): the HTML parses with

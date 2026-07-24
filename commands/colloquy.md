@@ -2,7 +2,7 @@
 description: Present a plan, design, decision, or findings as a commentable HTML page in the browser instead of a terminal wall-of-text.
 argument-hint: "[what to present — a plan, design, decision, or findings]"
 allowed-tools:
-  - Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/colloquy/scripts/interact.py:*)
+  - Bash(uv run ${CLAUDE_PLUGIN_ROOT}/skills/colloquy/scripts/interact.py:*)
 ---
 
 Present the following as a colloquy page the user reviews in the browser, following the
