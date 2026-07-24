@@ -509,6 +509,68 @@
     return segments;
   }
 
+  // ---------- view continuity ----------
+  // Following a new version is a navigation, so without help the reader lands at the top
+  // of a fresh document mid-review. The passage they were reading rides across in
+  // sessionStorage — per-tab, unlike the drafts, because a reading position belongs to a
+  // tab and shouldn't outlive it. It travels as a landmark rather than a pixel offset,
+  // since content moves between versions: re-find the passage by its text within its
+  // section, then the section alone, and only fall back to the raw offset when neither
+  // survived the revision. The panel's own open state is restored separately (PANEL_KEY);
+  // because that runs first, the column is already reflowed by the time we scroll.
+  const VIEW_KEY = "ih-view";
+  const TEXT_BLOCK = "p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dd,dt,figcaption,summary";
+
+  // The first text block still on screen below the banner: what the reader is reading. A
+  // block's landmark is the top of its first line (a range), not its border box; restore
+  // measures the matched text the same way, so the line box's leading cancels out.
+  function captureView() {
+    const view = { v: VNUM, y: scrollY };
+    for (const block of document.querySelectorAll(TEXT_BLOCK)) {
+      if (block.closest(".ih-ui")) continue;
+      const range = document.createRange();
+      range.selectNodeContents(block);
+      const rect = range.getBoundingClientRect();
+      if (!rect.height || rect.bottom <= 42) continue; // 42 = banner height
+      if (!view.section) {
+        const section = block.closest("[id]:not(.ih-ui)");
+        if (section) {
+          view.section = section.id;
+          view.sectionTop = section.getBoundingClientRect().top;
+        }
+      }
+      const text = block.textContent.replace(/\s+/g, " ").trim();
+      // A short line ("Risks") would match anywhere; keep scanning for a quotable block.
+      if (text.length >= 24) {
+        view.quote = text.slice(0, 160);
+        view.quoteTop = rect.top;
+        break;
+      }
+    }
+    return view;
+  }
+
+  // "instant" because a page is free to set scroll-behavior: smooth, and a restore that
+  // animates from the top of the document is worse than the jump it replaces.
+  const jumpBy = (dy) => scrollBy({ top: dy, behavior: "instant" });
+  function restoreView(view) {
+    if (view.quote) {
+      const root =
+        (view.section && document.getElementById(view.section)) || document.body;
+      const segments = findQuote(root, view.quote);
+      if (segments?.length) {
+        const range = document.createRange();
+        range.setStart(segments[0].node, segments[0].start);
+        range.setEnd(segments.at(-1).node, segments.at(-1).end);
+        jumpBy(range.getBoundingClientRect().top - view.quoteTop);
+        return;
+      }
+    }
+    const section = view.section && document.getElementById(view.section);
+    if (section) jumpBy(section.getBoundingClientRect().top - view.sectionTop);
+    else scrollTo({ top: view.y, behavior: "instant" });
+  }
+
   // Highlights each open thread's quote in the page, then tells the panel which quotes
   // it couldn't place — a passage rewritten in a later version has no home to jump to,
   // and a dead-looking link is worse than one that says so.
@@ -793,6 +855,25 @@
   try {
     if (localStorage.getItem(PANEL_KEY) === "1") setPanel(true);
   } catch {}
+  // Carry the reading position across a version switch (the panel is restored just above,
+  // so the column is already reflowed). Only when the loaded version differs from the
+  // saved one — a plain reload keeps the browser's own, more faithful, scroll restoration.
+  const savedView = (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(VIEW_KEY) || "null");
+    } catch {
+      return null;
+    }
+  })();
+  if (savedView && savedView.v !== VNUM) {
+    restoreView(savedView);
+    if (savedView.v < VNUM) showToast(`Updated to v${VNUM}`);
+  }
+  addEventListener("pagehide", () => {
+    try {
+      sessionStorage.setItem(VIEW_KEY, JSON.stringify(captureView()));
+    } catch {}
+  });
   const savedComposer = loadDraft("composer");
   if (savedComposer)
     try {

@@ -39,9 +39,10 @@ Once a page is up, Claude prints a `http://127.0.0.1:…` URL. Open it, then:
 - **Reply in the thread** when Claude answers. The banner shows whether Claude is working
   on your comments or listening for new ones.
 - **New versions arrive on their own.** The page follows Claude's newest revision as it
-  ships. Pick an older version to pin the view; a chip offers the way back to the
-  latest. Each revision is immutable and carries a one-line changelog, so the picker is
-  the history.
+  ships and picks up where you were: the same passage at the top of the screen, the
+  comments panel as you left it. Pick an older version to pin the view; a chip offers the
+  way back to the latest. Each revision is immutable and carries a one-line changelog, so
+  the picker is the history.
 - **"✓ Looks good"** signs off and closes the review.
 
 ### Experimental: plan-mode integration

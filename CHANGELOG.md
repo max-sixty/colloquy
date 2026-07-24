@@ -23,6 +23,10 @@
   inviting a second approval.
 - The panel remembers whether it was open across version switches, Escape closes it,
   and the "Claude replied" toast opens it.
+- A version switch also keeps the reader's place on the page: it re-finds the passage
+  that was at the top of the screen instead of jumping to the top of the document.
+  Position travels as a landmark (the passage's text within its section, then the
+  section) so it survives content moving between versions.
 - With no watcher, the banner says comments are saved and delivered next turn; the
   nudge-the-terminal wording is now reserved for a status stale by ten minutes.
 - Keyboard selections raise the comment button, and the panel fits windows too narrow

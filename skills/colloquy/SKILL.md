@@ -52,8 +52,9 @@ $IX stop <dir>                          # shut the server down
 - Self-contained — inline CSS/JS/SVG — plus exactly one external tag, before `</body>`:
   `<script src="/interact.js" defer></script>`.
 - Give every section and major block a stable, meaningful `id`: comments anchor to the
-  nearest `id`, and an anchor survives into a new version only where its id does. Keep
-  ids stable across versions so anchored comments don't detach.
+  nearest `id`, and an anchor survives into a new version only where its id does. The
+  reader's place on the page falls back to those same ids when the text around it was
+  rewritten. Keep ids stable across versions so neither detaches.
 - The layer injects the status banner, comment sidebar, and version picker; don't build
   page UI for any of those.
 - **Never lose user text.** A central tenet of the comment layer: drafts (the general
