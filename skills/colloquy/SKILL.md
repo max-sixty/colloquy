@@ -135,6 +135,17 @@ $IX stop <dir>                          # stop the server; its background task e
   read as a live proposal.
 - **Show the destination, not the journey.** Explain the concept as it stands — total
   cut-over. Don't spend content on what was considered before or how you got here.
+- **Retire a decision once it's settled**, which is the same rule applied across
+  versions: a choice that's been made and acted on has turned into the journey, and a
+  page that keeps rendering four options at full height after one of them shipped is
+  spending its best space on a question nobody is still asking. Mark the group
+  `settled` and it collapses to one line naming the pick, with every card still there
+  behind a disclosure — no id is dropped, so the anchors riding them and `check` both
+  hold, and the reader can open it, disagree, and pick again. Settling is a
+  later moment than honoring: a decision stays live while you're applying it, and
+  settles once nothing is revisiting it, which is usually a version or two on. The
+  same instinct applies without the widget — a section that has served its purpose
+  belongs behind a `<details>`, not left at full height.
 
 ## The review loop
 
@@ -170,7 +181,8 @@ On wake:
      options pick with `"action": "choose"` and `"detail": {"option": "st-s3"}` —
      and they have already seen the change on screen. The version is the reply
      either way: honor the edit by carrying it into the next version's markup
-     exactly (move that element, keep its id; mark the option `chosen`), or decline
+     exactly (move that element, keep its id; mark the option `chosen` — and
+     `settled` too, once the decision has stopped being live), or decline
      by shipping without that edit — everything else may still change — and saying
      why in the note; tabs roll back to the authored state as they pick up that
      version.
@@ -241,7 +253,8 @@ Then read the page once against this checklist:
   not asserted bare.
 - **Excess pruned.** No paragraph restates another; nothing explains what the reader
   already knows. If a version has been patched several times, rewrite the section clean
-  rather than layering another note.
+  rather than layering another note. A decision already made and acted on is excess at
+  full height: mark its `cq-options` group `settled`.
 - **Diagrams read.** Each diagram earns its place and says something the prose doesn't.
 - **References clickable.** Tickets, PRs, and URLs are real links.
 

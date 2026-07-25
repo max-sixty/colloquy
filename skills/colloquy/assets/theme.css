@@ -160,6 +160,46 @@ cq-option .cq-pick:hover { background: var(--chip); }
 cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* A keyboard pick moves focus to the option itself once its button hides. */
 cq-option:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+/* `settled`: the decision is made and acted on, so the group reads as one line
+ * — the disclosure the upgrade builds — with the cards behind it. Collapsed it
+ * lays out as a block, so hidden cards contribute no grid rows and no gaps;
+ * open, the grid is back. Unupgraded (and in print) every card shows. */
+cq-options[settled].cq-rendered:not([open]) { display: block; }
+/* Scoped, not a bare .cq-settled: the row wears cq-ui so anchoring skips it, and
+ * the runtime's own .cq-ui font and color rules are later in the cascade. This
+ * is the page's disclosure, so it reads at the theme's summary size. */
+cq-options[settled] > .cq-settled {
+              grid-column: 1 / -1; display: flex; width: 100%; align-items: baseline;
+              gap: var(--sp-2); margin: 0 0 var(--sp-2); padding: 7px 12px;
+              font: inherit; font-size: 14.5px; font-weight: 600; text-align: left;
+              background: var(--field); color: var(--ink); cursor: pointer;
+              border: 1px solid var(--rule); border-radius: var(--r); }
+cq-options[settled]:not([open]) > .cq-settled { margin-bottom: 0; }
+cq-options[settled] > .cq-settled:hover { border-color: var(--border-2); }
+cq-options[settled] > .cq-settled:focus-visible { outline: 2px solid var(--accent);
+              outline-offset: 1px; }
+.cq-settled::before { content: "▸"; color: var(--muted); font-weight: 400; }
+cq-options[open] > .cq-settled::before { content: "▾"; }
+.cq-settled-count { margin-left: auto; font-weight: 400; font-size: var(--t-6);
+                    color: var(--muted); white-space: nowrap; }
+.cq-settled-diff { font-weight: 400; font-size: var(--t-6); padding: 0 6px;
+                   border-radius: 999px; background: var(--add-tint); color: var(--ok-ink); }
+/* The collapse is a screen affordance, and scoping it says so — print gets the
+ * cards back by simply not hiding them, rather than by undoing a hide. */
+@media screen {
+  /* until-found keeps the card's own box in flow, and a card is bordered and
+   * padded — zero it, or the collapse leaves a stack of empty boxes behind. */
+  cq-options[settled] > cq-option[hidden] { padding: 0; border: 0; box-shadow: none; }
+  /* The boolean-hidden fallback (no until-found support) hides here, because the
+   * display:block above outranks the UA's [hidden] rule. */
+  cq-options[settled] > cq-option[hidden]:not([hidden="until-found"]) { display: none; }
+}
+/* Print shows every card: the row hides with the rest of the UI, and the grid
+ * comes back (content-visibility is the only part of the hide left to undo). */
+@media print {
+  cq-options[settled].cq-rendered:not([open]) { display: grid; }
+  cq-options[settled] > cq-option { content-visibility: visible !important; }
+}
 
 /* cq-plan: the chrome plan pages hand-build — title, facts row, numbered
  * sections — as one element-widget. Numbering is CSS counters. */

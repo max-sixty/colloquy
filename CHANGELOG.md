@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- A decided question stops spending the page's height. `cq-options` takes
+  `settled`: the group collapses to one line naming the pick, with every card
+  behind a disclosure the reader can open — so a four-option block whose answer
+  shipped two versions ago reads as "Settled: drop the date" instead of five
+  hundred pixels of alternatives nobody is still weighing. Previously an
+  author's only choices were to leave it at full size or to hollow it out,
+  because `check` forbids dropping an id and deleting the block would break
+  every anchor on it. This keeps the ids, so nothing about anchoring or the lint
+  changes; what it reclaims is the space. The alternatives stay reachable
+  through the collapse — find-in-page opens the group, so does clicking a
+  thread's quote, and while the version diff is on the row wears a Δ count so a
+  change can't hide behind it — and the group still takes a pick if the reader
+  reopens it and disagrees. Settling is a later moment than honoring the pick: a
+  decision stays live while it's being applied, so it is the author's
+  declaration in some subsequent version, never a side effect of choosing. Open
+  or closed is then the reader's own view state, remembered per browser tab like
+  a `cq-tabs` tab and carried by no version.
 - The review loop is enforced rather than remembered. `wait` exits as soon as it
   delivers, and the watch resumed only if Claude noticed and restarted it — so a
   delivery whose notification landed behind the user's next message left the page

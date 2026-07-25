@@ -40,3 +40,8 @@ stands alone.
       previous version to survive, which forbids ever deleting a card the reviewer
       dragged to "Done". When users ask for deletion, widen the frame (e.g., an id
       retires once no unresolved thread anchors it) rather than exempting boards.
+      Settled options took the other route — keep every id, collapse the height —
+      which is right where the alternatives are the record of why the pick won, and
+      leaves this open for the case where the content itself is spent: a "Done" card
+      is not a record anyone rereads. Whichever way that lands, retirement is the
+      author's declaration, never a side effect of the reviewer's action.

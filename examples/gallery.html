@@ -40,6 +40,26 @@ to decide; your pick reaches Claude directly.</p>
 </ul>
 </section>
 
+<section id="settled-transport">
+<h2>Settled last week</h2>
+<p id="transport-note">How the session id travels was decided before this page and the
+client change is merged, so it reads as one line — open it if you want the alternatives.</p>
+<cq-options id="cookie-transport" choose settled>
+  <cq-option id="opt-lax-cookie" effort="low" risk="low" recommended chosen>
+    <strong>Host-only cookie, SameSite=Lax</strong> Set by the auth origin, sent on
+    top-level navigations; nothing to store client-side and nothing for a script to read.
+  </cq-option>
+  <cq-option id="opt-strict-cookie" effort="low" risk="med">
+    <strong>SameSite=Strict</strong> Tighter, but a session started by following a link
+    from email arrives logged out — support saw this on the last trial.
+  </cq-option>
+  <cq-option id="opt-bearer" effort="high" risk="med">
+    <strong>Bearer header from local storage</strong> Works for the mobile client without
+    a cookie jar; puts the id somewhere every script on the page can read.
+  </cq-option>
+</cq-options>
+</section>
+
 <section id="options">
 <h2>Options</h2>
 <cq-options id="session-options" choose>

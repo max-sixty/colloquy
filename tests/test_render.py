@@ -51,6 +51,32 @@ LONG_PAGE = """<!doctype html>
 </html>
 """.format(paras="\n".join(f"<p id='p{i}'>Paragraph {i}. " + "Filler. " * 20 + "</p>" for i in range(60)))
 
+# A decision already made and acted on, with the alternatives kept for the record.
+SETTLED_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>settled</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Session transport</h1>
+<p id="lede">Decided last week; open the row for the alternatives.</p>
+<cq-options id="transport" choose settled>
+  <cq-option id="opt-lax" chosen><strong>Lax cookie</strong> Host-only, set by the auth
+  origin, nothing for a script to read.</cq-option>
+  <cq-option id="opt-strict"><strong>Strict cookie</strong> Tighter, but a session
+  started from an emailed link arrives logged out.</cq-option>
+  <cq-option id="opt-bearer"><strong>Bearer header</strong> Suits the mobile client;
+  puts the id where every script can read it.</cq-option>
+</cq-options>
+</main>
+</body>
+</html>
+"""
+
 
 @pytest.fixture(scope="module")
 def browser():
@@ -65,7 +91,7 @@ def serve(tmp_path, monkeypatch):
     """Publish HTML as v001 of a fresh page directory and serve it, as the real
     server does — vendoring included, so the assets under test are this repo's."""
 
-    def go(html, comments=0):
+    def go(html, comments=0, anchored=()):
         monkeypatch.chdir(tmp_path)  # keep the project layer out of the overlay
         d = tmp_path / "page"
         assert CliRunner().invoke(interact.cli, ["init", str(d)]).exit_code == 0
@@ -74,6 +100,10 @@ def serve(tmp_path, monkeypatch):
         for i in range(comments):
             interact.append_event(d, {"kind": "comment", "author": "user", "version": 1,
                                       "text": f"Comment {i}. " + "Long enough to wrap. " * 4})
+        for section, quote in anchored:
+            interact.append_event(d, {"kind": "comment", "author": "user", "version": 1,
+                                      "text": "About this bit.",
+                                      "anchor": {"section": section, "quote": quote}})
         # A subclass per server: page_dir is a class attribute, so two servers sharing
         # interact.Handler would both end up serving whichever directory was set last.
         handler = type("Handler", (interact.Handler,), {"page_dir": d})
@@ -158,6 +188,43 @@ def test_page_and_panel_scroll_in_separate_regions(browser, serve):
     assert geom["bodyRight"] <= geom["threadsLeft"], (
         f"scroll regions overlap: the page ends at {geom['bodyRight']}px, "
         f"the thread list starts at {geom['threadsLeft']}px"
+    )
+    page.close()
+
+
+def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
+    """A settled decision reads as one line and the cards behind it stop spending
+    the page's height — but they are hidden, not gone, so everything that used to
+    reach them still does: the disclosure opens them, and a comment anchored in
+    one opens the group on its way to the passage. A collapse a comment can't see
+    through is worse than no collapse at all, because the thread still lists the
+    quote and clicking it lands nowhere."""
+    page, errors = open_page(
+        browser, serve(SETTLED_PAGE, anchored=[("opt-strict", "arrives logged out")])
+    )
+    group = page.locator("#transport")
+    height = "el => Math.round(el.getBoundingClientRect().height)"
+
+    assert errors == []
+    collapsed = group.evaluate(height)
+    assert page.locator("#transport cq-option:visible").count() == 0
+    row = page.locator("#transport .cq-settled")
+    assert row.inner_text().startswith("Settled: Lax cookie")
+    assert row.get_attribute("aria-expanded") == "false"
+
+    row.click()
+    opened = group.evaluate(height)
+    assert page.locator("#transport cq-option:visible").count() == 3
+    assert opened > collapsed * 3, (
+        f"collapsing saved {opened - collapsed}px of {opened}px — a settled group "
+        f"that still costs most of its open height isn't a sweep"
+    )
+
+    row.click()  # closed again, so the reveal below has something to open
+    page.get_by_role("button", name="Comments", exact=False).click()
+    page.locator(".cq-panel .cq-quote").first.click()
+    assert page.locator("#opt-strict").is_visible(), (
+        "clicking a thread's quote must open the group holding it"
     )
     page.close()
 

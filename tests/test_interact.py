@@ -526,6 +526,33 @@ def test_choose_requires_an_id(page_dir):
     assert errs and "'id' is a dependency of 'choose'" in " ".join(errs)
 
 
+def test_settling_a_decision_drops_no_ids(page_dir):
+    """Retiring a settled decision is a collapse, not a deletion — which is the
+    whole reason it's expressible: `check` forbids dropping an id, and the
+    alternatives behind the disclosure keep both their ids and the anchors on
+    them. A group can't be settled without an id either; the reader's open/closed
+    state is remembered against it."""
+    registry = interact.load_registry(page_dir)
+    assert "'id' is a dependency of 'settled'" in " ".join(
+        interact.fragment_errors(
+            '<cq-options settled><cq-option id="o1"><strong>A</strong></cq-option></cq-options>',
+            registry,
+        )
+    )
+
+    group = '<cq-options id="pick" choose{}><cq-option id="opt-a"{}><strong>A</strong></cq-option>'
+    group += '<cq-option id="opt-b"><strong>B</strong></cq-option></cq-options>'
+    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("</main>", group.format("", "") + "</main>"))
+    (page_dir / "versions" / "v002.html").write_text(
+        PAGE.replace("</main>", group.format(" settled", " chosen") + "</main>")
+    )
+    assert interact.cmd_check(page_dir, 2) == 0
+
+    # Deleting the alternatives instead is what check is there to stop.
+    (page_dir / "versions" / "v002.html").write_text(PAGE)
+    assert interact.cmd_check(page_dir, 2) == 1
+
+
 def test_registry_examples_validate(page_dir):
     reg = json.loads((page_dir / "registry.json").read_text())
     registry = interact.load_registry(page_dir)
