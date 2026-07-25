@@ -1287,33 +1287,50 @@ diffBtn.onclick = async () => {
 };
 
 // ---------- banner ----------
-const STALE_MS = 10 * 60 * 1000;
+// "Claude is working" is a claim in status.json, and nothing revises a claim once
+// the session behind it walks away — so a page nobody is watching reads exactly
+// like a page whose reviewer has said nothing yet. The banner therefore takes the
+// claim only as far as the directory can vouch for it: `listening` is a heartbeat
+// a live `wait` bumps, `session_alive` is the owning process, and a working status
+// that goes unrefreshed past its grace is reported as what it is. The rope is short
+// for a handoff status (`wait` wrote it as it delivered, and Claude's first act on
+// waking is its own `status`, so minutes mean the pickup was dropped) and long for
+// Claude's own, where a quiet stretch is just a long turn.
+const HANDOFF_GRACE_MS = 2 * 60 * 1000;
+const WORKING_GRACE_MS = 15 * 60 * 1000;
 function renderStatus(state) {
-  const { status, listening } = state;
-  let cls = "",
-    text = "";
-  if (status.state === "working") {
-    cls = "working";
-    text = `Claude is working${status.detail ? " — " + status.detail : ""}`;
+  const { status, listening, pending, session_alive } = state;
+  // Comments land in the append-only log either way; what changes is when they're read.
+  const saved = pending
+    ? ` ${pending} comment${pending === 1 ? "" : "s"} waiting.`
+    : " Your comments are saved.";
+  let cls = "away",
+    text = "",
+    showAge = false;
+  if (session_alive === false && status.state !== "idle") {
+    text = `The Claude session reviewing this page has ended.${saved} Start one in the terminal to pick it up.`;
+  } else if (status.state === "working") {
+    const grace = status.handoff ? HANDOFF_GRACE_MS : WORKING_GRACE_MS;
+    if (status.ts && Date.now() - new Date(status.ts).getTime() > grace) {
+      text = `Claude last checked in ${ago(status.ts)}.${saved} Nudge it in the terminal.`;
+    } else {
+      cls = "working";
+      showAge = Boolean(status.ts);
+      text = `Claude is working${status.detail ? " — " + status.detail : ""}`;
+    }
   } else if (status.state === "waiting" && listening) {
     cls = "listening";
     text = "Claude is listening — select text to comment";
   } else if (status.state === "waiting") {
-    // No watcher, but comments still land in the append-only log and are delivered
-    // the next time Claude waits — so say that. Only a status this stale suggests
-    // the session itself is gone, which is the one case worth a nudge.
-    cls = "away";
-    const stale = status.ts && Date.now() - new Date(status.ts).getTime() > STALE_MS;
-    text = stale
-      ? "Claude has been quiet a while — comments are saved; nudge it in the terminal"
-      : "Claude isn't watching right now — your comments and edits are saved for next turn";
+    text = `Claude isn't watching right now.${saved} It picks them up next turn.`;
   } else {
+    cls = "";
     text = "Review closed";
   }
   dot.className = "cq-dot " + cls;
   statusText.textContent = "";
   statusText.append(document.createTextNode(text));
-  if (status.ts && status.state === "working")
+  if (showAge)
     statusText.append(
       " ",
       Object.assign(el("span", "cq-age"), { textContent: `(${ago(status.ts)})` }),

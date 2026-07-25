@@ -151,7 +151,8 @@ there is no CLI that posts as the user.
 On wake:
 
 1. `status <dir> working "<what you're doing>"` — refresh the detail at each milestone;
-   the banner shows it live.
+   the banner shows it live, and reads a status left unrefreshed long enough as Claude
+   having gone quiet.
 2. Address every event `wait` printed (each is JSON carrying the server-minted `id`
    that `reply --to` takes):
    - **A comment**: `reply` in-thread, and change the page where the comment warrants
@@ -189,8 +190,15 @@ conventions): `status <dir> idle`, don't restart `wait`, and carry the approval 
 into the main task — `export` prints the whole review as Markdown when a PR
 description wants it. A comments-only page has no terminal event; when the discussion
 has served its purpose, set `status idle` yourself. Either way, `stop` the server once
-the page won't be revisited. If `wait` exits reporting the server died, re-run `serve`
-and re-enter the loop.
+the page won't be revisited.
+
+Between turns a page is either watched or idle, and a `Stop` hook holds you to it:
+ending a turn with a page still `waiting` under no live `wait`, or holding events you
+never picked up, is blocked and names the page. The invariant is what the reviewer is
+owed — from the browser, a page nobody is listening to looks exactly like a page whose
+reviewer simply hasn't commented yet, so without it they find out by asking. `wait`
+also restarts a server that died under it and reports the restart on stderr; exit 2
+means it couldn't, and the page stays down until `serve`.
 
 ## Customizing the widget layer
 

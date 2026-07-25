@@ -1,26 +1,14 @@
 # TODO
 
-Backlog for improving colloquy. Decided items are design calls already made; roadmap
-items are recommendations that stood unchallenged. Each item stands alone.
+Backlog for improving colloquy: recommendations that stood unchallenged. Each item
+stands alone.
 
-## Decided
-
-- [ ] Enforce the review loop with hooks rather than trusting the model to remember:
-      a `Stop` hook that blocks ending a turn while a page has undelivered user events
-      or a non-idle page with no live watcher ("start `wait` or set status idle"), a
-      `UserPromptSubmit` hook that injects pending comments at the next turn, and a
-      `SessionEnd` hook that idles pages and stops their servers. `hooks/hooks.json`
-      currently carries only the plan-mode redirect. **Decided 2026-07-24: blocked
-      until Claude Code exports a session id to tool subprocesses.** Hooks must act
-      only on the invoking session's pages, and CLI commands can't tag pages with a
-      session today (`CLAUDE_SESSION_ID` isn't in the Bash environment — verified).
-      The only workaround is process-ancestry matching, and interact.py runs under
-      claude → shell → uv → python, so it means walking `ps` ancestry on both sides —
-      a heuristic, and a misattributed `Stop` hook blocks every session. Revisit the
-      moment the session id reaches subprocesses; the hook designs above stand.
-
-## Roadmap
-
+- [ ] A server outlives a session killed hard enough to skip its `SessionEnd` hook,
+      so a page's port stays held by a process nothing will revisit. The banner
+      already reports the page as orphaned (the owning pid is gone), so this costs a
+      stray process rather than a misled reviewer. Closing it properly means deciding
+      whether a server may outlive the session that started it at all — a fresh
+      session `serve`-ing an old page is the case that says yes.
 - [ ] Opt-in tunnel for remote sessions (`cloudflared`/`tailscale` when present),
       gated behind an auth token added to the server first.
 - [ ] Plan-mode integration hardening: remove the auto-approve workaround in

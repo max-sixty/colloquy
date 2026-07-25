@@ -10,7 +10,10 @@ Run from the repo root:
 import importlib.util
 import json
 import os
+import subprocess
+import sys
 import threading
+import time
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -383,11 +386,121 @@ def test_wait_delivers_new_user_events_and_flips_status(page_dir, capsys):
     delivered = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
     assert [e["kind"] for e in delivered] == ["comment", "action"]
     assert delivered[1]["detail"]["to"] == "y"
+    # Delivered means delivered: the cursor has moved past them, so nothing is pending.
     assert interact.read_json(page_dir / "cursor.json")["seq"] == 2
-    assert interact.read_json(page_dir / "status.json")["state"] == "working"
-    # Already-delivered events don't re-deliver; a dead server ends the wait.
-    (page_dir / "server.json").unlink()
+    assert interact.full_state(page_dir)["pending"] == 0
+    # The delivery status is marked a handoff, which dates the claim: Claude's own
+    # `status` clears the mark, so the mark surviving is a pickup that never landed.
+    status = interact.read_json(page_dir / "status.json")
+    assert (status["state"], status["handoff"]) == ("working", True)
+    interact.cmd_status(page_dir, "working", "revising the plan")
+    assert "handoff" not in interact.read_json(page_dir / "status.json")
+
+
+def test_wait_restarts_a_server_that_died_under_it(page_dir, capsys):
+    """A page whose server died is offline in the reviewer's browser and nowhere
+    else — so `wait`, the one thing positioned to notice, brings it back rather
+    than exiting and leaving the discovery to the reviewer."""
+
+    def comment_once_served():
+        for _ in range(100):
+            time.sleep(0.1)
+            if interact.running_server(page_dir):
+                interact.append_event(page_dir, {"kind": "comment", "author": "user", "text": "hi"})
+                return
+
+    threading.Thread(target=comment_once_served, daemon=True).start()
+    try:
+        assert interact.cmd_wait(page_dir) == 0  # no server.json at all when it starts
+        info = interact.running_server(page_dir)
+        assert info and urllib.request.urlopen(info["url"] + "api/state").status == 200
+        assert "server had died; restarted" in capsys.readouterr().err
+    finally:
+        interact.cmd_stop(page_dir)
+
+
+def test_wait_leaves_a_closed_review_down(page_dir):
+    """SessionEnd idles the page and stops its server, so a watcher still winding
+    down must not put it straight back up."""
+    interact.cmd_status(page_dir, "idle", "the session that opened this page has ended")
     assert interact.cmd_wait(page_dir) == 2
+    assert interact.running_server(page_dir) is None
+
+
+@pytest.fixture
+def claimed(page_dir, monkeypatch):
+    """A page claimed by session s1, the way Claude Code's environment claims one:
+    it puts the session id and its pid into every Bash tool call."""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "s1")
+    monkeypatch.setenv("CLAUDE_PID", str(os.getpid()))
+    interact.claim_page(page_dir)
+    return page_dir
+
+
+def test_stop_hook_blocks_a_turn_that_leaves_a_page_unwatched(claimed, capsys):
+    """Between turns a page is either watched or idle. The failure this prevents:
+    a `wait` exits, its notification is buried behind the next thing the user
+    types, and the page keeps saying "Claude is working" over nobody."""
+    interact.cmd_status(claimed, "waiting", "")
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
+    answer = json.loads(capsys.readouterr().out)
+    assert answer["decision"] == "block"
+    assert "no watcher" in answer["reason"] and str(claimed) in answer["reason"]
+
+    # Blocking twice in a row is how a Stop hook loops, so a block already in
+    # flight stands down.
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1", "stop_hook_active": True})
+    assert capsys.readouterr().out == ""
+
+    # A live watcher, and a closed review, each end the turn cleanly.
+    interact.write_json(claimed / "heartbeat.json", {"t": time.time()})
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
+    assert capsys.readouterr().out == ""
+    (claimed / "heartbeat.json").unlink()
+    interact.cmd_status(claimed, "idle", "")
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
+    assert capsys.readouterr().out == ""
+
+    # A page a second session has since picked up is that session's to watch, so
+    # s1 is no longer held to it.
+    interact.cmd_status(claimed, "waiting", "")
+    interact.write_json(claimed / "session.json", {"id": "s2", "pid": os.getpid(), "ts": "t"})
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
+    assert capsys.readouterr().out == ""
+
+
+def test_prompt_hook_surfaces_comments_claude_never_picked_up(claimed, capsys):
+    interact.cmd_status(claimed, "working", "revising")
+    interact.append_event(claimed, {"kind": "comment", "author": "user", "text": "hi"})
+    assert interact.full_state(claimed)["pending"] == 1
+    interact.cmd_hook({"hook_event_name": "UserPromptSubmit", "session_id": "s1"})
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "1 user event you haven't picked up" in context
+
+    # Not while a watcher is live: it delivers them itself, and sending Claude to
+    # start a second `wait` would race the cursor and deliver everything twice.
+    interact.write_json(claimed / "heartbeat.json", {"t": time.time()})
+    interact.cmd_hook({"hook_event_name": "UserPromptSubmit", "session_id": "s1"})
+    assert capsys.readouterr().out == ""
+
+
+def test_session_end_idles_the_page_and_stops_its_server(claimed):
+    assert interact.revive_server(claimed)  # a real detached server to clean up
+    interact.cmd_status(claimed, "waiting", "")
+    interact.cmd_hook({"hook_event_name": "SessionEnd", "session_id": "s1"})
+    assert interact.read_json(claimed / "status.json")["state"] == "idle"
+    assert interact.running_server(claimed) is None
+    assert interact.session_pages("s1") == []
+
+
+def test_state_reports_whether_the_owning_session_still_exists(claimed):
+    """The banner's one hard fact: a status.json claim outlives its session, the
+    owning pid doesn't."""
+    assert interact.full_state(claimed)["session_alive"] is True
+    dead = subprocess.Popen([sys.executable, "-c", ""])
+    dead.wait()
+    interact.write_json(claimed / "session.json", {"id": "s1", "pid": dead.pid, "ts": "t"})
+    assert interact.full_state(claimed)["session_alive"] is False
 
 
 def test_versions_publish_only_once_noted(page_dir):

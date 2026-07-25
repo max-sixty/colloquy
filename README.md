@@ -38,7 +38,8 @@ Once a page is up, Claude prints a `http://127.0.0.1:…` URL. Open it, then:
   stays anchored across new versions. Diagrams and images take comments too — click
   one and the same button appears.
 - **Reply in the thread** when Claude answers. The banner shows whether Claude is working
-  on your comments or listening for new ones.
+  on your comments or listening for new ones — and, when the session behind it has gone
+  quiet or ended, says so rather than leaving you to ask.
 - **New versions arrive on their own.** The page follows Claude's newest revision as it
   ships and picks up where you were: the same passage at the top of the screen, the
   comments panel as you left it. Pick an older version to pin the view; a chip offers the

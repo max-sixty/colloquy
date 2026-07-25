@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- The review loop is enforced rather than remembered. `wait` exits as soon as it
+  delivers, and the watch resumed only if Claude noticed and restarted it — so a
+  delivery whose notification landed behind the user's next message left the page
+  watched by nobody, and a comment sat unread until the user thought to ask. Three
+  hooks close it: `Stop` refuses to end a turn that leaves one of the session's pages
+  `waiting` under no live watcher, or holding events Claude never picked up;
+  `UserPromptSubmit` surfaces those events at the next prompt; `SessionEnd` idles the
+  session's pages and stops their servers. Every command tags its page with
+  `CLAUDE_CODE_SESSION_ID`, so a hook only ever acts on its own session's pages, and a
+  page nothing has claimed (interact.py run outside Claude Code) is left alone.
+- The banner no longer takes `status.json` at face value. A claim never expires on its
+  own, so "Claude is working" outlives the session that wrote it and reads exactly like
+  a busy agent. `/api/state` now carries what the directory can prove beside the
+  claim — how many comments sit past the delivery cursor, and whether the owning
+  session's process is still alive — and the banner says "Claude last checked in 20m
+  ago. 1 comment waiting." or "The Claude session reviewing this page has ended."
+  `wait` marks the status it writes on delivery as a handoff, which dates the claim:
+  Claude's own `status` clears the mark, so the mark surviving means the pickup was
+  dropped, and that gets minutes of rope where a long turn gets a quarter hour.
+- `wait` restarts a server that died under it, on the same port, so the open browser
+  recovers on its own — previously it exited, and getting back up was four manual steps
+  that started with the user noticing the page had gone dead. One restart per wait, and
+  none for a page whose review is closed.
 - Text boxes are sized by the stylesheet, not by script. One rule now describes
   every colloquy textarea (the general box, each reply, the selection composer,
   and a widget's own box, which opts in by wearing `cq-ui`): `field-sizing:

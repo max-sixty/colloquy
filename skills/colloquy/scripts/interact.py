@@ -22,10 +22,31 @@ A page directory holds:
     vendor/              vendored third-party assets (mermaid.min.js, sortable.esm.js)
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
     status.json          Claude's declared state: {"state": working|waiting|idle, "detail", "ts"};
-                         `wait` flips it to working when it delivers events, covering the handoff gap
+                         `wait` writes it working with "handoff": true when it delivers events,
+                         covering the gap until Claude's own `status` lands
     heartbeat.json       watcher liveness, bumped by `wait` while it runs
     cursor.json          seq of the last event delivered to Claude, written by `wait` on exit
     server.json          {"port", "pid", "url"} for the running server
+    session.json         {"id", "pid"} of the Claude Code session last working on the page
+
+status.json is a claim, and a claim never expires on its own: an agent that
+stopped watching renders exactly like one that is watching and has nothing to
+say, so a comment can sit unread with the page still reading "Claude is
+working". The directory therefore also carries what it can prove — a heartbeat
+only a live `wait` bumps, the delivery cursor, and the owning session's pid —
+and `/api/state` ships those beside the claim, so the banner can say when the
+claim has outlived them. `wait` marks the status it writes on delivery
+"handoff", which dates it: Claude's first act on waking is its own `status`, so
+the mark surviving is a dropped pickup rather than a long turn, and the banner
+gives it a much shorter rope.
+
+The `hook` command closes the same gap from the agent's side. Registered on
+Stop, UserPromptSubmit and SessionEnd, it refuses to let a turn end with one of
+this session's pages unwatched, surfaces undelivered comments at the next
+prompt, and idles the pages and stops their servers when the session exits. It
+finds them through ~/.claude/colloquy/.sessions/<session id>.json, which every
+command writes from CLAUDE_CODE_SESSION_ID — absent that (interact.py run
+outside Claude Code), nothing is claimed and the hooks stand down.
 
 `init` vendors the runtime, theme, registry, widgets, and vendor assets into the
 page directory, overlaying per file by precedence: colloquy's shipped defaults,
@@ -78,6 +99,7 @@ import os
 import re
 import secrets
 import signal
+import subprocess
 import sys
 import time
 import zlib
@@ -191,6 +213,10 @@ def published_versions(page_dir: Path) -> list:
 
 
 def pid_alive(pid: int) -> bool:
+    # A missing pid reads as -1 from callers, and os.kill takes that as "every
+    # process I may signal" — which would answer True for a page nobody owns.
+    if pid < 1:
+        return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -207,19 +233,71 @@ def running_server(page_dir: Path):
     return None
 
 
+def colloquy_home() -> Path:
+    """~/.claude/colloquy/ — page directories by convention, the user's overlay
+    layer, and .sessions/. A leading dot keeps that last one clear of the
+    kebab-case slugs a page can take."""
+    return Path.home() / ".claude" / "colloquy"
+
+
+def claim_page(page_dir: Path) -> None:
+    """Record that this Claude Code session is the one working on the page, in
+    both directions: the page names its session (so the server can see when that
+    session is gone), the session lists its pages (so the hooks can find them
+    wherever they live). Claude Code puts the id and its pid in the environment
+    of every Bash tool call, so this needs no cooperation from the agent."""
+    sid, pid = os.environ.get("CLAUDE_CODE_SESSION_ID"), os.environ.get("CLAUDE_PID")
+    if not sid or not pid:
+        return
+    write_json(page_dir / "session.json", {"id": sid, "pid": int(pid), "ts": now_iso()})
+    sessions = colloquy_home() / ".sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    # Sessions that died without a SessionEnd hook leave their file behind; drop
+    # them here rather than on a timer, the way init drops a killed writer's .tmp.
+    for stale in sessions.glob("*.json"):
+        entry = read_json(stale)
+        if entry and not pid_alive(entry.get("pid", -1)):
+            stale.unlink(missing_ok=True)
+    entry = read_json(sessions / f"{sid}.json") or {"pages": []}
+    pages = sorted({*entry["pages"], str(page_dir)})
+    write_json(sessions / f"{sid}.json", {"pid": int(pid), "pages": pages, "ts": now_iso()})
+
+
+def session_pages(session_id: str) -> list:
+    """The page directories a session has worked on, those still on disk."""
+    entry = read_json(colloquy_home() / ".sessions" / f"{session_id}.json") or {"pages": []}
+    return [d for d in (Path(p) for p in entry["pages"]) if d.is_dir()]
+
+
+def owned_pages(session_id: str) -> list:
+    """The pages a session is answerable for: those it worked on most recently.
+    A page another session has since picked up belongs to that one — its watcher,
+    its server, its turn to be held to the loop."""
+    return [
+        d for d in session_pages(session_id)
+        if (read_json(d / "session.json") or {}).get("id") == session_id
+    ]
+
+
 def full_state(page_dir: Path) -> dict:
     status = read_json(page_dir / "status.json") or {"state": "idle", "detail": "", "ts": None}
     heartbeat = read_json(page_dir / "heartbeat.json") or {}
-    listening = time.time() - heartbeat.get("t", 0) < HEARTBEAT_FRESH_SECS
+    session = read_json(page_dir / "session.json") or {}
+    events = read_events(page_dir)
+    # What `wait` has delivered to Claude: an action past this seq can't have
+    # been seen (so not declined), which is what lets the runtime carry it
+    # forward onto versions written without it.
+    cursor = (read_json(page_dir / "cursor.json") or {}).get("seq", 0)
     return {
         "versions": published_versions(page_dir),
         "status": status,
-        "listening": listening,
-        # What `wait` has delivered to Claude: an action past this seq can't have
-        # been seen (so not declined), which is what lets the runtime carry it
-        # forward onto versions written without it.
-        "cursor": (read_json(page_dir / "cursor.json") or {}).get("seq", 0),
-        "events": read_events(page_dir),
+        "listening": time.time() - heartbeat.get("t", 0) < HEARTBEAT_FRESH_SECS,
+        "cursor": cursor,
+        # Posted since the last handoff: Claude has not seen these yet.
+        "pending": sum(1 for e in events if e["seq"] > cursor and e.get("author") == "user"),
+        # None when nothing claimed the page — interact.py run outside Claude Code.
+        "session_alive": pid_alive(session["pid"]) if session.get("pid") else None,
+        "events": events,
     }
 
 
@@ -322,11 +400,7 @@ def layer_dirs() -> list:
     top, modules in widgets/, third-party files in vendor/. The user layer shares
     ~/.claude/colloquy/ with page directories, which reserves `widgets` and
     `vendor` as page slugs."""
-    return [
-        ASSETS,
-        Path.home() / ".claude" / "colloquy",
-        Path.cwd() / ".claude" / "colloquy",
-    ]
+    return [ASSETS, colloquy_home(), Path.cwd() / ".claude" / "colloquy"]
 
 
 def cmd_init(page_dir: Path) -> None:
@@ -349,7 +423,8 @@ def cmd_init(page_dir: Path) -> None:
                 if src.is_file():
                     (page_dir / sub / src.name).write_bytes(src.read_bytes())
     if not (page_dir / "status.json").exists():
-        write_json(page_dir / "status.json", {"state": "working", "detail": "Writing the page", "ts": now_iso()})
+        cmd_status(page_dir, "working", "Writing the page")
+    claim_page(page_dir)  # resolve_dir couldn't: the directory didn't exist yet
     print(f"initialized {page_dir}")
 
 
@@ -378,13 +453,41 @@ def cmd_serve(page_dir: Path) -> None:
         (page_dir / "server.json").unlink(missing_ok=True)
 
 
-def cmd_status(page_dir: Path, state: str, detail: str) -> None:
-    write_json(page_dir / "status.json", {"state": state, "detail": detail, "ts": now_iso()})
+def cmd_status(page_dir: Path, state: str, detail: str, handoff: bool = False) -> None:
+    status = {"state": state, "detail": detail, "ts": now_iso()}
+    if handoff:
+        status["handoff"] = True
+    write_json(page_dir / "status.json", status)
+
+
+def revive_server(page_dir: Path) -> bool:
+    """Bring a page back up after its server died. The reviewer's browser has
+    been showing "Server offline" since it happened, and `wait` is the only thing
+    positioned to notice — so it restarts the server rather than handing the
+    diagnosis to Claude and the discovery to the reviewer.
+
+    Detached, because the restarted server has to outlive both this `wait` and
+    the background task that started it, exactly as the original `serve` does.
+    sys.executable is the resolved uv environment, so this skips uv entirely."""
+    (page_dir / "server.json").unlink(missing_ok=True)
+    subprocess.Popen(
+        [sys.executable, str(Path(__file__).resolve()), "serve", str(page_dir)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        time.sleep(0.1)
+        if running_server(page_dir):
+            return True
+    return False
 
 
 def cmd_wait(page_dir: Path) -> int:
     cursor = (read_json(page_dir / "cursor.json") or {}).get("seq", 0)
     server_check_at = 0.0
+    revived = False
     try:
         while True:
             write_json(page_dir / "heartbeat.json", {"t": time.time()})
@@ -396,16 +499,36 @@ def cmd_wait(page_dir: Path) -> int:
                 # cursor after print: a kill mid-wait redelivers rather than drops
                 write_json(page_dir / "cursor.json", {"seq": events[-1]["seq"]})
                 # flip status here, not in Claude's next turn: the handoff gap
-                # between this exit and Claude's pickup must not show "waiting"
+                # between this exit and Claude's pickup must not show "waiting".
+                # handoff=True dates the claim — Claude's own `status` clears it,
+                # so this detail still standing minutes later means the pickup
+                # never happened, and the banner says so.
                 # "update", not "comment": the batch may mix comments and widget actions
                 n = len(new_user)
-                cmd_status(page_dir, "working", f"picking up {n} update{'s' if n != 1 else ''}")
+                cmd_status(
+                    page_dir, "working", f"picking up {n} update{'s' if n != 1 else ''}", handoff=True
+                )
                 return 0
             if time.time() > server_check_at:
                 server_check_at = time.time() + 5
                 if not running_server(page_dir):
-                    print("server is not running; restart it with `serve`", file=sys.stderr)
-                    return 2
+                    # An idle page has no reviewer to keep online, and the
+                    # SessionEnd hook idles then stops: without this the watcher
+                    # it raced would put the server straight back up.
+                    if (read_json(page_dir / "status.json") or {}).get("state") == "idle":
+                        print("the review is closed; not restarting the server", file=sys.stderr)
+                        return 2
+                    # One revival per wait: a server that dies the moment it comes
+                    # up would otherwise respawn every five seconds forever.
+                    if revived or not revive_server(page_dir):
+                        print("server is not running; restart it with `serve`", file=sys.stderr)
+                        return 2
+                    revived = True
+                    print(
+                        f"server had died; restarted at {running_server(page_dir)['url']}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
             time.sleep(1)
     finally:
         (page_dir / "heartbeat.json").unlink(missing_ok=True)
@@ -589,14 +712,78 @@ def cmd_catalog(page_dir: Path) -> None:
         print(json.dumps(idioms, indent=2, ensure_ascii=False))
 
 
-def cmd_stop(page_dir: Path) -> None:
+def cmd_stop(page_dir: Path) -> str:
     info = running_server(page_dir)
     if info:
         os.kill(info["pid"], signal.SIGTERM)
-        print(f"stopped server pid {info['pid']}")
+        outcome = f"stopped server pid {info['pid']}"
     else:
-        print("no server running")
+        outcome = "no server running"
     (page_dir / "server.json").unlink(missing_ok=True)
+    return outcome
+
+
+# ---------- hook: the review loop, enforced rather than remembered ----------
+
+
+def unattended_pages(session_id: str) -> list:
+    """This session's pages the reviewer is looking at with nobody on the other
+    end, each with what to do about it. The invariant is that a page is either
+    watched or idle: between turns there is no third state, so anything else is
+    a review that has quietly stopped."""
+    reasons = []
+    for page_dir in owned_pages(session_id):
+        state = full_state(page_dir)
+        if state["listening"]:
+            # A live `wait` is the watch, and it delivers what's pending on its own.
+            # Reporting the page here would have Claude start a second one, and two
+            # waiters race the cursor and deliver the same events twice.
+            continue
+        n = state["pending"]
+        if n:
+            reasons.append(
+                f"{page_dir}: {n} user event{'s' if n != 1 else ''} you haven't picked up."
+                " `wait` prints them; address every one."
+            )
+        elif state["status"]["state"] != "idle":
+            reasons.append(
+                f"{page_dir}: no watcher. Start `wait` on it as a background task,"
+                " or `status <dir> idle` if the review is over."
+            )
+    return reasons
+
+
+def cmd_hook(payload: dict) -> None:
+    event, sid = payload.get("hook_event_name"), payload.get("session_id") or ""
+    if event == "SessionEnd":
+        for page_dir in owned_pages(sid):
+            cmd_status(page_dir, "idle", "the session that opened this page has ended")
+            cmd_stop(page_dir)
+        (colloquy_home() / ".sessions" / f"{sid}.json").unlink(missing_ok=True)
+        return
+    # stop_hook_active means this hook already blocked once and Claude is running
+    # again on the strength of it; blocking a second time is how a hook loops.
+    if event == "Stop" and payload.get("stop_hook_active"):
+        return
+    reasons = unattended_pages(sid)
+    if not reasons:
+        return
+    message = "colloquy — a review page of this session's is unattended:\n" + "\n".join(
+        f"- {r}" for r in reasons
+    )
+    if event == "Stop":
+        print(json.dumps({"decision": "block", "reason": message}))
+    else:
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": message,
+                    }
+                }
+            )
+        )
 
 
 # ---------- check: deterministic pre-handover lint ----------
@@ -1002,6 +1189,10 @@ def resolve_dir(dir_arg: str, must_exist: bool = True) -> Path:
     page_dir = Path(dir_arg).expanduser().resolve()
     if must_exist and not page_dir.is_dir():
         sys.exit(f"{page_dir} does not exist; run `init` first")
+    if page_dir.is_dir():
+        # Every command naming a page is this session working on it — the one
+        # place that's true, so the claim goes here rather than in each command.
+        claim_page(page_dir)
     return page_dir
 
 
@@ -1073,7 +1264,16 @@ def events(dir: str, after: int) -> None:
 @click.argument("dir")
 def stop(dir: str) -> None:
     """Stop the server."""
-    cmd_stop(resolve_dir(dir))
+    print(cmd_stop(resolve_dir(dir)))
+
+
+@cli.command()
+def hook() -> None:
+    """Answer a Claude Code hook: event JSON on stdin, hook response on stdout.
+
+    Registered in hooks/hooks.json for Stop, UserPromptSubmit and SessionEnd,
+    which it tells apart by the payload's hook_event_name."""
+    cmd_hook(json.load(sys.stdin))
 
 
 @cli.command()
