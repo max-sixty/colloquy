@@ -23,9 +23,10 @@ REDIRECT = (
     "just finalized as a colloquy review page: follow the colloquy skill — init a "
     "directory under ~/.claude/colloquy/<slug>/, write the plan as "
     "versions/v001.html (sections with stable ids; widgets and idioms per the "
-    "vendored catalog), serve it, run check, note the version, and hand over the "
-    "URL. Then enter the comment/reply/revise loop. Treat the user approving in "
-    'the browser ("✓ Looks good") as the go-ahead to implement.'
+    'vendored catalog; <meta name="cq-review" content="sign-off"> in the head — '
+    "approval is the point of a plan page), serve it, run check, note the version, "
+    "and hand over the URL. Then enter the comment/reply/revise loop. Treat the "
+    'user approving in the browser ("✓ Looks good") as the go-ahead to implement.'
 )
 
 

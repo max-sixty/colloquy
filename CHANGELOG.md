@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Sign-off is now the page's ask, not standing chrome. The banner offers
+  "✓ Looks good" only when the version declares
+  `<meta name="cq-review" content="sign-off">` — a plan, design, or proposed
+  change whose review ends in assent. An informational page (a status report, an
+  incident chronicle, a product page) omits the meta and takes comments only.
+  The declaration rides the document, so it versions with the page and a pinned
+  older version keeps its own ask. `check` owns the head's `cq-*` meta
+  vocabulary the way the registry owns `cq-*` elements: an unknown name or a
+  `cq-review` value other than `sign-off` is rejected, since either would
+  silently declare nothing.
 - Keyboard bindings, in two scopes. Global single-key shortcuts, dispatched from one
   table that never fires from a typing context: `c` comments on the selection (or
   toggles the panel), `j`/`k` walk open threads with the page highlight in tow, `d`

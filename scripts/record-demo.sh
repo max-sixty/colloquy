@@ -16,6 +16,7 @@ cat > "$DIR/versions/v001.html" <<'HTML'
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Migration plan</title>
+<meta name="cq-review" content="sign-off">
 <link rel="stylesheet" href="/theme.css"></head>
 <body><main>
 <header id="top">

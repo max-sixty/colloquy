@@ -50,7 +50,8 @@ Schema has no vocabulary for rides in x- keywords:
     x-example   one authored example, printed by `catalog`
 
 Event kinds: comment (user; optional anchor {section, quote}), reply (parent=id),
-resolve (parent=id), done (user sign-off), action (user; a widget reporting the
+resolve (parent=id), done (user sign-off; the banner offers it only on a page
+declaring <meta name="cq-review" content="sign-off">), action (user; a widget reporting the
 user editing the document through it — widget=element id, action=verb, detail
 per widget, version the edit was made against), note (claude; per-version
 changelog). The server stamps every browser-posted event author=user;
@@ -65,7 +66,8 @@ Commands:
 HTML parses with balanced tags; the page carries exactly one external script
 (<script type="module" src="/colloquy.js">) and one stylesheet link
 (/theme.css); every cq-* element validates against the vendored registry
-(schema, nesting, no self-closing form); ids are unique and every anchor id
+(schema, nesting, no self-closing form); every cq-* meta is a known page
+declaration with an allowed value; ids are unique and every anchor id
 from the previous version survives; no fixed-pixel-width element is wider than
 the readable column.
 """
@@ -617,6 +619,11 @@ COLUMN_SELECTORS = ("main", "body", "article", ".container", ".wrap", ".content"
 COLUMN_FALLBACK = 780
 # Attribute widths only count as pixels on these elements.
 PIXEL_WIDTH_TAGS = {"img", "svg", "table", "canvas", "iframe", "video", "object"}
+# Page-level declarations the runtime reads from <meta name="cq-*"> in the head,
+# name → allowed content values (None = free-form). A misspelled name or value
+# would silently declare nothing in the browser, so `check` owns this vocabulary
+# the way the registry owns cq-* elements.
+CQ_META = {"cq-base": None, "cq-review": frozenset({"sign-off"})}
 
 
 class _StructParser(HTMLParser):
@@ -633,6 +640,7 @@ class _StructParser(HTMLParser):
         self.all_ids = []
         self.external_scripts = []  # (src, type)
         self.stylesheets = []  # hrefs of rel=stylesheet links
+        self.cq_metas = []  # {"name", "content", "line"} for <meta name="cq-*">
         self.cq_elements = []  # {"tag", "line", "attrs", "parent", "children", "text"}
         self._svg_depth = 0
 
@@ -683,6 +691,10 @@ class _StructParser(HTMLParser):
             self.external_scripts.append((attrs_d["src"], attrs_d.get("type")))
         if tag == "link" and "stylesheet" in (attrs_d.get("rel") or ""):
             self.stylesheets.append(attrs_d.get("href"))
+        if tag == "meta" and (attrs_d.get("name") or "").startswith("cq-"):
+            self.cq_metas.append(
+                {"name": attrs_d["name"], "content": attrs_d.get("content"), "line": self.getpos()[0]}
+            )
 
     def handle_starttag(self, tag, attrs):
         attrs_d = dict(attrs)
@@ -920,6 +932,17 @@ def cmd_check(page_dir: Path, version) -> int:
             'the page must link exactly one stylesheet, <link rel="stylesheet" '
             f'href="/theme.css">, found {parser.stylesheets}'
         )
+
+    for meta in parser.cq_metas:
+        where = f'<meta name="{meta["name"]}"> (line {meta["line"]})'
+        if meta["name"] not in CQ_META:
+            errors.append(f"{where}: unknown cq- meta — known: {sorted(CQ_META)}")
+            continue
+        allowed = CQ_META[meta["name"]]
+        if allowed is not None and meta["content"] not in allowed:
+            errors.append(
+                f"{where}: content must be one of {sorted(allowed)}, found {meta['content']!r}"
+            )
 
     if parser.duplicate_ids:
         errors.append(f"duplicate ids (anchors need unique targets): {parser.duplicate_ids}")

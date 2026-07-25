@@ -48,7 +48,8 @@ Once a page is up, Claude prints a `http://127.0.0.1:…` URL. Open it, then:
 - **Some widgets take edits directly.** Drag a card between the columns of a triage
   board, or click an option card to pick it, and the edit itself reaches Claude — the
   next version ships with the board as you left it and your pick marked.
-- **"✓ Looks good"** signs off and closes the review.
+- **"✓ Looks good"** signs off and closes the review. Pages that seek approval (a
+  plan, a proposed change) carry the button; informational pages take comments only.
 
 ### Experimental: plan-mode integration
 

@@ -56,14 +56,14 @@ $IX stop <dir>                          # stop the server; its background task e
 4. `check`, then `note` the version — the server exposes a version only once its note
    lands, and `note` re-runs `check` and refuses a failing version, so a half-written or
    broken file is never live in the reviewer's browser. Then hand the user the URL with
-   a one-line orientation (select text to comment; "✓ Looks good" signs off) and enter
-   the review loop.
+   a one-line orientation (select text to comment; on a sign-off page, "✓ Looks good"
+   approves) and enter the review loop.
 
 ## Page conventions
 
 - Pages are complete HTML documents. `check` enforces the scaffold — exactly one
   stylesheet link (`/theme.css`) and one external script (the `/colloquy.js` module);
-  the rest of the head (title, charset, a `cq-base` meta) is yours:
+  the rest of the head (title, charset, the `cq-*` metas below) is yours:
 
   ```html
   <!doctype html>
@@ -100,6 +100,12 @@ $IX stop <dir>                          # stop the server; its background task e
 - The runtime injects the status banner, comment sidebar, version picker, and keyboard
   shortcuts (`?` in the browser shows the reference); don't build page UI for any of
   those.
+- **Sign-off is declared, not assumed.** A page whose review ends in the reader's
+  assent — a plan, a design, a proposed change, anything where approval unblocks
+  work — declares `<meta name="cq-review" content="sign-off">` in the head, and the
+  banner offers "✓ Looks good". A page that only informs (a status report, an
+  incident chronicle) omits it: its review is comments only, with nothing to approve.
+  `check` rejects unknown `cq-*` metas and any other `cq-review` value.
 - **Announce interactivity in prose.** A fresh reviewer won't guess from a grip glyph
   or a hover cursor that a board takes drags or an options group takes clicks — the
   sentence introducing the widget says it ("drag cards to reprioritize; your edits
@@ -178,10 +184,13 @@ On wake:
    which publishes it; the browser follows automatically.
 4. Back to `status waiting` + `wait`.
 
-A `done` event is sign-off: `status <dir> idle`, don't restart `wait`, and carry the
-approval back into the main task — `export` prints the whole review as Markdown when a
-PR description wants it. `stop` the server once the page won't be revisited. If `wait`
-exits reporting the server died, re-run `serve` and re-enter the loop.
+A `done` event is sign-off — it arrives only from a page declaring it (see the
+conventions): `status <dir> idle`, don't restart `wait`, and carry the approval back
+into the main task — `export` prints the whole review as Markdown when a PR
+description wants it. A comments-only page has no terminal event; when the discussion
+has served its purpose, set `status idle` yourself. Either way, `stop` the server once
+the page won't be revisited. If `wait` exits reporting the server died, re-run `serve`
+and re-enter the loop.
 
 ## Customizing the widget layer
 

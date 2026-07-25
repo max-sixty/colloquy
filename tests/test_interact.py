@@ -227,6 +227,27 @@ def test_check_rejects_wrong_scaffold(page_dir):
     assert "exactly one stylesheet" in result.output
 
 
+def test_check_owns_the_cq_meta_vocabulary(page_dir):
+    # The sign-off declaration: valid on its one value, rejected on a misspelled
+    # value or name — either would silently declare nothing in the browser.
+    signoff = PAGE.replace(
+        "<title>t</title>", '<title>t</title>\n<meta name="cq-review" content="sign-off">'
+    )
+    (page_dir / "versions" / "v001.html").write_text(signoff)
+    assert check(page_dir).exit_code == 0
+
+    (page_dir / "versions" / "v001.html").write_text(signoff.replace("sign-off", "approve"))
+    result = check(page_dir)
+    assert result.exit_code == 1
+    assert "content must be one of ['sign-off'], found 'approve'" in result.output
+
+    (page_dir / "versions" / "v001.html").write_text(signoff.replace("cq-review", "cq-signoff"))
+    result = check(page_dir)
+    assert result.exit_code == 1
+    assert "unknown cq- meta" in result.output
+    assert "cq-review" in result.output  # the error names the known vocabulary
+
+
 def test_check_rejects_duplicate_ids_and_dropped_ids(page_dir):
     result = check(page_dir)
     assert result.exit_code == 0, result.output

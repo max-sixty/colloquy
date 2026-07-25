@@ -167,6 +167,12 @@ async function upgradeWidgets() {
 const VERSION_MATCH = location.pathname.match(/\/versions\/v(\d+)\.html$/);
 const VNUM = VERSION_MATCH ? parseInt(VERSION_MATCH[1], 10) : null;
 const PINNED = new URLSearchParams(location.search).has("pin");
+// Sign-off is the page's ask, not standing chrome: the approve button exists only
+// when the version declares <meta name="cq-review" content="sign-off"> — a plan or
+// proposed change seeking assent. An informational page takes comments only. The
+// declaration rides the document, so a pinned older version keeps its own ask.
+const SIGNOFF =
+  document.querySelector('meta[name="cq-review"]')?.content === "sign-off";
 const POLL_MS = 2000;
 
 // ---------- styles ----------
@@ -292,8 +298,8 @@ banner.append(
   diffBtn,
   versionSelect,
   toggleBtn,
-  approveBtn,
 );
+if (SIGNOFF) banner.append(approveBtn);
 
 const panel = el("aside", "cq-ui cq-panel");
 const panelHead = el("div", "cq-panel-head");
