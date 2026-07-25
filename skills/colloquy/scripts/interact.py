@@ -256,6 +256,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/state":
             self._json(full_state(self.page_dir))
             return
+        # Browsers ask for this unprompted. Answering "no content" rather than
+        # letting it fall through to 404 keeps the console clean, which is what
+        # makes an empty console worth asserting on (tests/test_render.py).
+        if path == "/favicon.ico":
+            self._send(204, "image/x-icon", b"")
+            return
         if SERVED_PATH.fullmatch(path):
             if path.startswith("/versions/") and Path(path).name not in published_versions(
                 self.page_dir

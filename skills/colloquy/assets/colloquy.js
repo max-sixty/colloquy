@@ -35,10 +35,19 @@
  * Claude ships it. Picking an older version pins the view (?pin in the URL); a pinned
  * page stays put and offers the newest version as a chip instead.
  *
- * Composing: every textarea behaves identically — grows with its content, saves its
- * draft on each keystroke, sends on ⌘/Ctrl+Enter — because they are all wired through
- * wireInput. A poll that re-renders the thread list restores scroll offset, focus, and
- * the caret, so an arriving reply never interrupts one being typed.
+ * Composing: every textarea behaves identically — saves its draft on each keystroke,
+ * sends on ⌘/Ctrl+Enter — because they are all wired through wireInput. Growing with
+ * its content is the stylesheet's job: `field-sizing: content` on the one text-box rule,
+ * which a widget's own box opts into by wearing `cq-ui`. No script measures a textarea,
+ * so none can leave one momentarily too small for its own text — the shape of bug that
+ * flashes a scrollbar per keystroke. A poll that re-renders the thread list restores
+ * scroll offset, focus, and the caret, so an arriving reply never interrupts one being
+ * typed.
+ *
+ * Scrolling: the document scrolls body, not the viewport, and body's margin keeps its
+ * box clear of the open panel. Two scroll regions side by side, each scrollbar drawn
+ * inside its own region — a viewport-scrolled document would paint its scrollbar over
+ * the panel, stacked on the panel's own. Reading position goes through pageScroller.
  *
  * Keyboard: two scopes, matching the DOM's own. One dispatcher drives a table of
  * global single-key shortcuts (KEYS — also the source of the "?" overlay, so help
@@ -101,6 +110,15 @@ export function refUrl(path, line) {
 // this instead.
 export const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 export const SCROLL = REDUCED ? "instant" : "smooth";
+
+// The element the document scrolls: body, not the viewport (see the stylesheet below,
+// and Scrolling in the module header). Anything that reads a reading position, sets
+// one, or hands a scroll container to a library uses this — window.scrollY is always 0
+// here, and document.scrollingElement still names the html element, which no longer
+// scrolls. Vendored libraries that resolve the scroller themselves are the trap:
+// SortableJS walks up from the dragged card and, on reaching body, hands back
+// document.scrollingElement, so cq-board passes this in rather than letting it guess.
+export const pageScroller = document.body;
 
 // A widget's report of the user editing the document through it (a card dragged
 // between columns). The caller has already applied the edit to its own DOM; the
@@ -178,7 +196,14 @@ const POLL_MS = 2000;
 // ---------- styles ----------
 const style = document.createElement("style");
 style.textContent = `
-  html { scroll-padding-top: 54px; }
+  /* The document and the panel are two scroll regions side by side. If the document
+     scrolled the viewport, its scrollbar would paint at the viewport's right edge —
+     over the panel, in the same few pixels as the panel's own, so the two thumbs
+     stack. Body owns the document's scroll instead, and syncLayout keeps its box
+     clear of the panel, which puts each region's scrollbar inside that region. */
+  html { height: 100%; overflow: hidden; }
+  body { box-sizing: border-box; height: 100%; overflow-y: auto; scroll-padding-top: 54px; }
+  @media print { html, body { height: auto; overflow: visible; } }
   .cq-ui { font-family: system-ui, -apple-system, sans-serif; font-size: var(--t-5); line-height: 1.45; color: var(--ink); box-sizing: border-box; }
   .cq-ui *, .cq-ui *::before, .cq-ui *::after { box-sizing: inherit; }
   .cq-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 9000; height: 42px;
@@ -204,7 +229,9 @@ style.textContent = `
     background: var(--card); border-left: 1px solid var(--rule); display: none; flex-direction: column; }
   .cq-panel.open { display: flex; }
   .cq-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--rule); font-weight: 600; }
-  .cq-threads { flex: 1; overflow-y: auto; padding: 10px 14px; }
+  /* contain: reaching the end of the thread list must not start scrolling the page
+     behind it — one wheel gesture moves one region. */
+  .cq-threads { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px; }
   .cq-empty { color: var(--muted); padding: 18px 4px; }
   .cq-thread { border: 1px solid var(--rule); border-radius: var(--r); padding: 10px; margin-bottom: 12px; }
   .cq-thread.flash { animation: cq-flash 1.2s ease-out; }
@@ -220,8 +247,14 @@ style.textContent = `
   .cq-msg p { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   /* Send buttons sit at the bottom so a growing textarea doesn't stretch them. */
   .cq-compose, .cq-general { display: flex; gap: 6px; margin-top: 8px; align-items: flex-end; }
-  .cq-ui textarea { font: inherit; padding: 5px 8px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; resize: none; overflow-y: hidden; }
-  .cq-ui textarea:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 45%, var(--card)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+  /* The colloquy text box, in one rule. field-sizing does the growing, so no script
+     measures a textarea: the JS that did had to reset height to auto to re-measure,
+     which made the box briefly too small for its own text on every keystroke — and a
+     box that overflows, however briefly, flashes a scrollbar. Past max-height the
+     scrollbar is real and stays. Both selectors: the panel's boxes sit inside .cq-ui,
+     a widget's own box wears the class itself. */
+  .cq-ui textarea, textarea.cq-ui { font: inherit; padding: 5px 8px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; resize: none; field-sizing: content; max-height: 200px; overflow-y: auto; }
+  .cq-ui textarea:focus, textarea.cq-ui:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 45%, var(--card)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
   .cq-compose textarea, .cq-general textarea { flex: 1; min-width: 0; }
   .cq-thread-actions { display: flex; justify-content: space-between; margin-top: 8px; }
   .cq-resolve { border: none; background: none; color: var(--muted); cursor: pointer; font: inherit; }
@@ -384,9 +417,11 @@ const pruneReplyDrafts = (liveIds) => {
 // reopening the panel by hand after every revision gets old fast.
 const PANEL_KEY = "cq-panel-open";
 function syncLayout() {
+  // A margin, not padding: body is the document's scroll container, so this is what
+  // ends its box — and its scrollbar — at the panel's edge instead of under it.
   // Below the breakpoint the panel covers the page rather than squeezing it, so
   // there's nothing to reserve room for.
-  document.body.style.paddingRight =
+  document.body.style.marginRight =
     panelOpen && innerWidth > 720 ? panel.offsetWidth + "px" : "";
   // The toast lives in the same corner as the panel's Send button; step it aside so a
   // "couldn't send" message never covers the button it's talking about.
@@ -402,7 +437,7 @@ function setPanel(open) {
   } catch {}
   if (open) {
     renderPanel();
-    syncGeneral(); // textareas only measure once the panel is visible
+    syncGeneral(); // a restored draft has to reach the Send button's disabled state
   }
 }
 toggleBtn.onclick = () => setPanel(!panelOpen);
@@ -442,31 +477,21 @@ async function post(event) {
 
 // ---------- text inputs ----------
 // One helper wires every composer: the general box, each per-thread reply, and the
-// selection composer. They grow with their content, persist a draft on each keystroke,
-// send on ⌘/Ctrl+Enter, and can't be double-sent by an impatient second click.
-// Returns a sync() the caller runs after setting .value programmatically, and after
-// inserting the element (a detached textarea measures as zero-height).
-const GROW_MAX = 200;
+// selection composer. They persist a draft on each keystroke, send on ⌘/Ctrl+Enter, and
+// can't be double-sent by an impatient second click. Growing with their content is the
+// stylesheet's job (field-sizing), not this file's.
+// Returns a sync() the caller runs after setting .value programmatically, so the send
+// button agrees with what's in the box.
 const SEND_KEYS = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
   ? "⌘⏎"
   : "Ctrl+⏎";
-function grow(ta) {
-  if (!ta.offsetParent) return; // hidden — measuring now would collapse it to zero
-  ta.style.height = "auto";
-  const border = ta.offsetHeight - ta.clientHeight; // border-box: scrollHeight omits it
-  const wanted = ta.scrollHeight + border;
-  ta.style.height = Math.min(wanted, GROW_MAX) + "px";
-  ta.style.overflowY = wanted > GROW_MAX ? "auto" : "hidden";
-}
 function wireInput(ta, { hint, save, send, sendBtn }) {
   // The shortcut goes in the placeholder, where it's visible exactly while the box is
   // empty and can't be found any other way; the button's tooltip spells it out.
   ta.placeholder = `${hint} · ${SEND_KEYS}`;
-  ta.rows = 1; // grow() measures against this, and the default of 2 never shrinks back
   sendBtn.title = `Send (${SEND_KEYS})`;
   let sending = false;
   const sync = () => {
-    grow(ta);
     sendBtn.disabled = sending || !ta.value.trim();
   };
   const submit = async () => {
@@ -651,7 +676,7 @@ function renderThreads() {
     resolved.forEach((t) => details.append(threadNode(t, syncs)));
     threadsBox.append(details);
   }
-  syncs.forEach((sync) => sync()); // sizes only measure once the nodes are in the document
+  syncs.forEach((sync) => sync()); // a restored reply draft enables its Reply button
   toggleBtn.textContent = `Comments (${open.length})`;
 
   if (focusedId) {
@@ -756,7 +781,7 @@ const TEXT_BLOCK = "p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dd,dt,figcaption
 // block's landmark is the top of its first line (a range), not its border box; restore
 // measures the matched text the same way, so the line box's leading cancels out.
 function captureView() {
-  const view = { v: VNUM, y: scrollY };
+  const view = { v: VNUM, y: pageScroller.scrollTop };
   for (const block of document.querySelectorAll(TEXT_BLOCK)) {
     // [hidden] needs an explicit skip: hidden="until-found" resolves to
     // content-visibility, under which descendants still report real rects —
@@ -786,7 +811,7 @@ function captureView() {
 
 // "instant" because a page is free to set scroll-behavior: smooth, and a restore that
 // animates from the top of the document is worse than the jump it replaces.
-const jumpBy = (dy) => scrollBy({ top: dy, behavior: "instant" });
+const jumpBy = (dy) => pageScroller.scrollBy({ top: dy, behavior: "instant" });
 function restoreView(view) {
   if (view.quote) {
     const root =
@@ -805,7 +830,7 @@ function restoreView(view) {
   if (section) {
     reveal(section);
     jumpBy(section.getBoundingClientRect().top - view.sectionTop);
-  } else scrollTo({ top: view.y, behavior: "instant" });
+  } else pageScroller.scrollTo({ top: view.y, behavior: "instant" });
 }
 
 // Highlights each open thread's quote in the page, then tells the panel which quotes

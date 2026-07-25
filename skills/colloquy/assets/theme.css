@@ -276,14 +276,14 @@ cq-tab { display: block; }
 cq-tab::before { content: attr(label); display: block; font-size: var(--t-6);
                  text-transform: uppercase; letter-spacing: .05em;
                  color: var(--muted); margin: 18px 0 8px; }
-cq-tabs.cq-live > cq-tab { margin-top: 14px; }
-cq-tabs.cq-live > cq-tab::before { content: none; } /* the strip carries the label */
+cq-tabs.cq-rendered > cq-tab { margin-top: 14px; }
+cq-tabs.cq-rendered > cq-tab::before { content: none; } /* the strip carries the label */
 /* until-found keeps the element's own box in flow; zero it so inactive panels
  * leave no stray gap below the active one. */
-cq-tabs.cq-live > cq-tab[hidden] { margin: 0; }
+cq-tabs.cq-rendered > cq-tab[hidden] { margin: 0; }
 /* The boolean-hidden fallback (no until-found support) hides here, because the
  * display:block above outranks the UA's [hidden] rule. */
-cq-tabs.cq-live > cq-tab[hidden]:not([hidden="until-found"]) { display: none; }
+cq-tabs.cq-rendered > cq-tab[hidden]:not([hidden="until-found"]) { display: none; }
 .cq-tabstrip { display: flex; flex-wrap: wrap; gap: 2px;
                border-bottom: 1px solid var(--rule); }
 .cq-tabstrip button { font: inherit; font-size: var(--t-5); padding: 6px 12px;
@@ -299,10 +299,10 @@ cq-tabs.cq-live > cq-tab[hidden]:not([hidden="until-found"]) { display: none; }
 /* Print shows every panel: the strip hides with the rest of the UI, and the
  * stacked labels come back. */
 @media print {
-  cq-tabs.cq-live > cq-tab { display: block !important;
+  cq-tabs.cq-rendered > cq-tab { display: block !important;
                              content-visibility: visible !important;
                              margin-top: 14px; }
-  cq-tabs.cq-live > cq-tab::before { content: attr(label); }
+  cq-tabs.cq-rendered > cq-tab::before { content: attr(label); }
 }
 
 /* Upgraded widgets: pre-upgrade presentation, so a page degrades readably. */

@@ -78,7 +78,7 @@ customElements.define(
         order[to].click();
       });
       this.prepend(strip);
-      this.classList.add("cq-live");
+      this.classList.add("cq-rendered"); // the upgraded marker every widget uses
       // Restore this reader's tab; a remembered id always resolves in later
       // versions because check forbids dropping ids. Restoration happens here,
       // during upgrade, so the runtime's view restore measures final geometry.

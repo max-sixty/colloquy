@@ -57,14 +57,6 @@ graph LR
 """
 
 
-@pytest.fixture(autouse=True)
-def isolated_home(tmp_path_factory, monkeypatch):
-    """Keep the developer's real ~/.claude/colloquy overlay out of every fixture:
-    a personal theme.css would otherwise change what init vendors and check
-    measures."""
-    monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
-
-
 @pytest.fixture
 def page_dir(tmp_path, monkeypatch):
     """An initialized page directory with a valid v001 written."""

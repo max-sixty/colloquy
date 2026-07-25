@@ -13,7 +13,16 @@
  * tab, and no-ops on the sender. Presentation is theme CSS; authored content
  * is never replaced, so there is no failSoft. */
 import Sortable from "/vendor/sortable.esm.js";
-import { once, sendAction, toast, announce, keyHelp, REDUCED, SCROLL } from "/colloquy.js";
+import {
+  once,
+  sendAction,
+  toast,
+  announce,
+  keyHelp,
+  pageScroller,
+  REDUCED,
+  SCROLL,
+} from "/colloquy.js";
 
 // Registered on first upgrade, not at import: every x-upgrade module loads on
 // every page, but the "?" overlay should list grip keys only where a board is.
@@ -179,6 +188,10 @@ customElements.define(
         group: `board-${this.id}`, // per board: two boards on a page don't cross-drag
         draggable: "cq-card",
         handle: ".cq-grip",
+        // Named, not left to Sortable's search: its walk stops at body and hands back
+        // document.scrollingElement, which isn't what scrolls here. Left to guess, a
+        // drag toward a column below the fold would sit there and never scroll.
+        scroll: pageScroller,
         forceFallback: true, // pointer-driven: stylable follower, touch, no native ghost
         fallbackTolerance: 4, // a click on the grip stays a click
         delay: 120,

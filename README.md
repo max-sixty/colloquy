@@ -131,11 +131,16 @@ lands, with `note` itself re-running the lint and refusing a failing version.
 
 ## Developing
 
-Integration tests cover the lint, vendoring, publishing, catalog, export, and reply
-validation:
+Integration tests cover two layers. `test_interact.py` exercises the lint, vendoring,
+publishing, catalog, export, and reply validation. `test_render.py` loads the shipped
+examples in a real browser and asserts what a static lint can't reach: every widget
+upgrades into a box with usable size, the document and the comment panel scroll in
+separate regions, and the comment box grows without any script sizing it. Playwright
+attaches to the Chrome already installed (`channel="chrome"`), so there is no browser
+download and still no build step.
 
 ```
-uv run --with pytest --with click --with jsonschema python -m pytest tests
+uv run --with pytest --with click --with jsonschema --with playwright python -m pytest tests
 ```
 
 ## Recording the demo

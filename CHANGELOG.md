@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- Text boxes are sized by the stylesheet, not by script. One rule now describes
+  every colloquy textarea (the general box, each reply, the selection composer,
+  and a widget's own box, which opts in by wearing `cq-ui`): `field-sizing:
+  content` grows it, `max-height` stops it, and past that the scrollbar is real
+  and stays. The JS that measured heights is gone. Measuring meant shrinking the
+  box to `height: auto` to re-read `scrollHeight`, which left it briefly too
+  small for its own text on every keystroke, and a box that overflows even for
+  one frame flashes a scrollbar. Typing showed a scrollbar that vanished on every
+  pause.
+- The page and the comment panel scroll in separate regions. The document scrolls
+  `body`, whose margin clears the open panel, rather than scrolling the viewport,
+  whose scrollbar is painted at the window's right edge on top of the panel and
+  in the same few pixels as the thread list's own. Both thumbs used to sit in
+  that one strip. The thread list also takes `overscroll-behavior: contain`, so
+  reaching its end no longer starts scrolling the page behind it. `cq-board`
+  hands SortableJS the scroller by name, since its own search stops at `body` and
+  falls back to the element that no longer scrolls.
+- `cq-tabs` marks itself upgraded with `cq-rendered`, the marker the other
+  widgets already use. It used to add `cq-live`, which the runtime's chrome had
+  claimed for its visually-hidden ARIA live region, so every upgraded tab set was
+  clipped to one pixel and every tabbed page (the examples gallery included)
+  rendered blank below its lede.
+- Rendering tests. `tests/test_render.py` loads each shipped example in the
+  installed Chrome and asserts that widgets occupy real space, the console is
+  clean, the two scroll regions don't overlap, and nothing sizes a textarea from
+  script. The lint is static by design and none of the above is visible to it.
+  The server answers `/favicon.ico` with 204 rather than letting it fall through
+  to 404, which is what makes an empty console worth asserting on.
 - Sign-off is now the page's ask, not standing chrome. The banner offers
   "✓ Looks good" only when the version declares
   `<meta name="cq-review" content="sign-off">` — a plan, design, or proposed

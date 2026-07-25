@@ -26,7 +26,20 @@ items are recommendations that stood unchallenged. Each item stands alone.
 - [ ] Plan-mode integration hardening: remove the auto-approve workaround in
       `/colloquy-plans` and settle the default UX before promoting it from
       experimental.
+- [ ] Give class names an owner. Tags, attributes, nesting, and ids are all
+      registry-driven so the renderer, the linter, and the catalog can't drift
+      apart. CSS classes are the one part of the vocabulary with no owner, which
+      is how `cq-tabs` came to mark itself with a class the runtime's chrome had
+      already claimed, clipping every tabbed page to a pixel. Either the registry
+      grows a class list per widget that `check` can collide-detect, or the
+      chrome's rules get scoped so a widget's classes can't reach them.
 - [ ] Widgets deferred until a page wants them: risks, verdict.
+- [ ] Narrow viewports still stack the two scrollbars. Under 720px the panel
+      covers the page rather than squeezing it, so `body` keeps its full width
+      and its scrollbar shares the window's right edge with the thread list's.
+      The wide layout fixed this by giving each region its own column; the
+      covering layout needs its own answer (the page behind a sheet arguably
+      shouldn't scroll at all).
 - [ ] Un-choose: a pick can only be switched, not cleared, and there's no explicit
       "unchoose" action verb. Widen the action space when a page needs it.
 - [ ] Pending-state marker for board moves: after the toast fades, nothing shows
