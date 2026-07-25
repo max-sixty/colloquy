@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Board dragging rebuilt on vendored SortableJS 1.15.7 (single MIT file, pointer-driven
+  `forceFallback` mode — native HTML5 DnD is gone): a placeholder holds the source slot
+  instead of the card teleporting on first contact with a neighbor column, moves animate
+  (FLIP, 150ms), swap hysteresis stops boundary flip-flop, empty columns accept nearby
+  drops, auto-scroll works, and drags work on touch. Columns stretch to equal height, so
+  the dead zones beside short columns are gone. Replayed moves (reload, second tab, a
+  version landing) animate instead of teleporting.
+- Affordances: the grip is visible at rest with a ~34px hit target; every choose option
+  lifts on hover (the recommended card previously had none — the one option most likely
+  to be picked looked least clickable); choose cards reserve badge room up front so a
+  pick never shifts layout; the ✓ badge reads "your pick" only for this reader's pick,
+  "chosen" when the markup carried it. One global `prefers-reduced-motion` guard covers
+  theme, comment layer, and widget animation.
+
 - Widget actions: interactive widgets report the user editing the document through
   them as `action` events on the same log as comments — `wait` delivers them, the
   banner flips, and the next version's markup carries the change. Until it ships, the

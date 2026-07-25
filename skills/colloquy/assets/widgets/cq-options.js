@@ -13,9 +13,10 @@ customElements.define(
     connectedCallback() {
       if (!once(this)) return;
       // An authored `chosen` (the honoring version carrying an earlier pick) gets
-      // the same ✓ badge a live pick gets, so honoring doesn't change the look.
+      // the same ✓ badge a live pick gets, so honoring doesn't change the look —
+      // but worded as the document's state, not attributed to this reader.
       const honored = this.querySelector(":scope > cq-option[chosen]");
-      if (honored) this.#badge(honored);
+      if (honored) this.#badge(honored, "✓ chosen");
       if (!this.hasAttribute("choose")) return;
       this.addEventListener("click", (e) => {
         if (getSelection()?.toString()) return; // a selection, not a pick
@@ -43,14 +44,14 @@ customElements.define(
         o.toggleAttribute("chosen", o === option);
         o.querySelector(":scope > .cq-chosen-badge")?.remove();
       }
-      this.#badge(option);
+      this.#badge(option, "✓ your pick");
     }
 
-    #badge(option) {
+    #badge(option, text) {
       const badge = document.createElement("span");
       badge.className = "cq-chosen-badge cq-ui"; // UI, not content: anchoring skips it
       badge.dataset.cqGen = "1"; // and the version diff ignores it
-      badge.textContent = "✓ your pick";
+      badge.textContent = text;
       option.append(badge);
     }
 

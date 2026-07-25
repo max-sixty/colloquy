@@ -135,12 +135,18 @@ cq-option[risk="low"]::after  { background: var(--ok-tint); color: var(--ok-ink)
 /* With `choose`, the group takes the reader's pick by click: hover lifts a card,
  * and the pick wears the ok ring plus a ✓ badge (inserted by the upgrade).
  * `chosen` reads after `recommended`, so the reader's pick wins the border. */
-cq-options[choose] > cq-option { cursor: pointer; }
-/* :not([recommended]): the hover lift must not gray out a ring a card already wears. */
-cq-options[choose] > cq-option:not([recommended]):hover { box-shadow: 0 0 0 1px var(--border-2); }
+cq-options[choose] > cq-option { cursor: pointer;
+                         padding-bottom: 34px; /* constant room for the ✓ badge — a pick never reflows */
+                         transition: box-shadow .12s ease, transform .12s ease; }
+/* Every option lifts on hover; a ring a card already wears layers under the lift. */
+cq-options[choose] > cq-option:hover { transform: translateY(-1px);
+                         box-shadow: 0 3px 10px rgba(0, 0, 0, .14); }
+cq-options[choose] > cq-option[recommended]:hover {
+                         box-shadow: 0 0 0 1px var(--accent), 0 3px 10px rgba(0, 0, 0, .14); }
 cq-option[chosen], cq-options[choose] > cq-option[chosen]:hover {
                          border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok);
-                         padding-bottom: 34px; /* room for the ✓ badge */ }
+                         padding-bottom: 34px; /* authored chosen outside a choose group */
+                         transform: none; }
 .cq-chosen-badge { position: absolute; right: 10px; bottom: 8px; font-size: var(--t-6);
                    padding: 0 8px; border-radius: 999px; line-height: 1.6;
                    background: var(--ok-tint); color: var(--ok-ink); }
@@ -222,7 +228,7 @@ cq-metric[direction="up-bad"][delta^="+"]::after  { background: var(--danger-tin
  * dropzones) and reports each drop as a `move` action. Unupgraded it reads as a
  * static board. */
 cq-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(10rem, 1fr);
-           gap: var(--sp-2); margin: 14px 0; align-items: start; overflow-x: auto; }
+           gap: var(--sp-2); margin: 14px 0; align-items: stretch; overflow-x: auto; }
 cq-column { display: block; background: var(--field); border: 1px solid var(--rule);
             border-radius: var(--r); padding: 8px; min-height: 64px; }
 cq-column::before { content: attr(label); display: block; font-size: var(--t-6);
@@ -231,15 +237,21 @@ cq-column::before { content: attr(label); display: block; font-size: var(--t-6);
 cq-column.cq-dropping { border-color: var(--accent); }
 cq-card { display: block; position: relative; background: var(--card);
           border: 1px solid var(--rule); border-radius: var(--r);
-          padding: 8px 26px 8px 10px; margin: 0 0 var(--sp-2); font-size: 14px; }
+          padding: 8px 34px 8px 10px; margin: 0 0 var(--sp-2); font-size: 14px; }
 cq-card:last-child { margin-bottom: 0; }
 cq-card > strong { display: block; margin: 0 0 2px; }
-cq-card .cq-grip { position: absolute; top: 6px; right: 4px; color: var(--muted-2);
-          cursor: grab; padding: 2px 5px; border-radius: 4px; user-select: none;
-          -webkit-user-select: none; font-size: 13px; line-height: 1; }
-cq-card:hover > .cq-grip { color: var(--ink-2); } /* the whole card advertises its own grip */
+cq-card .cq-grip { position: absolute; top: 2px; right: 0; color: var(--muted);
+          cursor: grab; padding: 8px 10px; border-radius: 4px; user-select: none;
+          -webkit-user-select: none; font-size: 14px; line-height: 1;
+          touch-action: none; /* the handle owns the gesture; scroll stays on the card */ }
+cq-card:hover > .cq-grip { color: var(--ink-2); }
 cq-card .cq-grip:hover { background: var(--chip); }
-cq-card.cq-dragging { opacity: .45; }
+/* SortableJS drag states: the in-flow slot, the pressed card, the follower. */
+cq-card.cq-ghost { opacity: .4; border-style: dashed; border-color: var(--accent); }
+cq-card.cq-lift { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
+/* (No transform here: Sortable positions the follower with an inline matrix.) */
+cq-card.cq-inhand { opacity: 1; cursor: grabbing;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, .22); }
 
 /* Upgraded widgets: pre-upgrade presentation, so a page degrades readably. */
 cq-ref { font-family: var(--mono); font-size: 87%; }
@@ -295,3 +307,14 @@ cq-code cq-note { display: block; }
             font-size: var(--t-5); white-space: normal;
             font-family: system-ui, sans-serif; }
 .cq-error pre { margin: 8px 0 0; white-space: pre; }
+
+/* Reduced motion: one global guard covers every animation and transition in the
+ * theme and the injected layers (!important outranks inline styles, so
+ * JS-driven transitions stop too). Widget JS checks the media query itself for
+ * Web-Animations moves. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}

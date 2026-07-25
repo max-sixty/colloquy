@@ -19,7 +19,7 @@ A page directory holds:
     theme.css            tokens, element styles, class idioms, element-widget CSS
     registry.json        the widget vocabulary: JSON Schema per cq-* tag, plus $idioms
     widgets/             one ES module per upgraded widget (cq-ref.js, cq-diagram.js)
-    vendor/              vendored third-party assets (mermaid.min.js)
+    vendor/              vendored third-party assets (mermaid.min.js, sortable.esm.js)
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
     status.json          Claude's declared state: {"state": working|waiting|idle, "detail", "ts"};
                          `wait` flips it to working when it delivers events, covering the handoff gap
