@@ -16,6 +16,25 @@
   surface grows by `announce()` (a polite live region that toasts also route through,
   so moves and picks are announced to screen readers) and `keyHelp()` (rows for the
   `?` overlay).
+- `cq-tabs`/`cq-tab`: parallel workstreams on one page — each tab is a
+  self-contained sub-context and a generated strip switches between them. The open
+  tab is the reader's view state, remembered per browser tab like scroll position:
+  switching never sends an action and versions never carry it, so the widget stays
+  off the action channel entirely. Inactive panels hide as `until-found`, so browser
+  find-in-page reaches them and the owning tab opens itself; while Δ is on, each tab
+  wears a count of the changed passages its panel hides. Ships the full keyboard
+  tabs pattern (roving focus, arrow keys, real tablist/tab/tabpanel roles).
+  Unupgraded and in print, panels stack as labeled sections.
+- The runtime scrolls to comment anchors through a new reveal path: a closed
+  `<details>` around the target opens, and a container widget holding it is asked to
+  show it (`cq-reveal`, which cq-tabs answers by switching tabs). Previously a
+  thread quote pointing into a collapsed `<details>` scrolled nowhere.
+- Reading-position restore now runs on every arrival — reload and back, not only
+  version switches — with the browser's own scroll restoration turned off: upgrades
+  change the page's height after the browser restores (tabs collapse, diagrams
+  render, diff files fold), so its offsets went stale. The landmark also never
+  captures from inside a `[hidden]` subtree, whose descendants still measure under
+  `until-found`.
 
 - Board dragging rebuilt on vendored SortableJS 1.15.7 (single MIT file, pointer-driven
   `forceFallback` mode — native HTML5 DnD is gone): a placeholder holds the source slot

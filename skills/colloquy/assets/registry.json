@@ -254,6 +254,31 @@
     "x-content": "prose",
     "x-upgrade": false
   },
+  "cq-tabs": {
+    "description": "Parallel workstreams on one page: each cq-tab child is a self-contained sub-context (its own prose, boards, milestones) and a generated strip switches between them. The open tab is the reader's view state — remembered per browser tab like scroll position, never an action, never carried by a version — and the first panel is the default, so ordering carries emphasis. Find-in-page and comment-anchor jumps reach inactive tabs (the owning tab opens itself). Children are cq-tab elements only; unupgraded, panels stack as labeled sections.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-content": "items",
+    "x-upgrade": true,
+    "x-example": "<cq-tabs id=\"aviary-projects\">\n  <cq-tab id=\"tab-feeders\" label=\"Feeders\">\n    <p>Rebuild underway; two of four feeders mounted.</p>\n  </cq-tab>\n  <cq-tab id=\"tab-bath\" label=\"Bird bath\">\n    <p>Heater options under review.</p>\n  </cq-tab>\n</cq-tabs>"
+  },
+  "cq-tab": {
+    "description": "One workstream panel. `label` names its tab in the strip (and the stacked heading before upgrade); content is open — prose, sections, and other widgets nest freely. Ids inside share the page's one universe, so keep them distinct across tabs.",
+    "type": "object",
+    "properties": {
+      "id":    {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "label": {"type": "string"}
+    },
+    "required": ["id", "label"],
+    "additionalProperties": false,
+    "x-parent": "cq-tabs",
+    "x-content": "prose",
+    "x-upgrade": false
+  },
   "$idioms": {
     "description": "Recurring shapes the theme styles directly — no registry entry, no JS. Plain semantic HTML gets the theme's voice for free; these classes cover what HTML lacks an element for.",
     ".eyebrow": {

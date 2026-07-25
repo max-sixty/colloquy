@@ -80,9 +80,10 @@ under you when the defaults do.
 
 ### Examples
 
-[`examples/`](examples/) holds five complete pages showing the range — an incident
-report, a PR walkthrough, a status report, a design decision, and a draggable triage
-board. Serve one against the shipped layer to try it:
+[`examples/`](examples/) holds six complete pages showing the range — an incident
+report, a PR walkthrough, a status report, a design decision, a draggable triage
+board, and a tabbed set of parallel workstreams. Serve one against the shipped layer
+to try it:
 
 ```
 uv run skills/colloquy/scripts/interact.py init /tmp/demo

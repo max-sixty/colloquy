@@ -6,7 +6,8 @@
  * renders them. Upgrades flush before the first anchor pass, so comment quotes always
  * search the enhanced DOM. Widget modules import the helper surface exported here
  * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `toast`, `announce`,
- * `keyHelp`, `REDUCED`, `SCROLL`); it stays minimal until a real widget needs more.
+ * `keyHelp`, `reveal`, `REDUCED`, `SCROLL`); it stays minimal until a real widget
+ * needs more.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
  * through it as an `action` event — sendAction posts it, `wait` delivers it, and the
@@ -127,6 +128,17 @@ export function announce(msg) {
 const helpSections = [];
 export function keyHelp(title, rows) {
   helpSections.push({ title, rows });
+}
+
+// A scroll target can sit inside a collapsed container — a closed <details>, an
+// inactive tab. Opening what the platform owns (details) and letting a container
+// widget open what it owns (the cq-reveal event; cq-tabs listens) gives the
+// target geometry before the scroll. Called before every scroll-to-content.
+export function reveal(el) {
+  for (let a = el; a; a = a.parentElement) {
+    if (a.tagName === "DETAILS" && !a.open) a.open = true;
+    if (a.hidden) a.dispatchEvent(new CustomEvent("cq-reveal"));
+  }
 }
 
 async function upgradeWidgets() {
@@ -548,17 +560,21 @@ function threadNode(t, syncs) {
     const quote = el("blockquote", "cq-quote", `“${t.root.anchor.quote}”`);
     quote.onclick = () => {
       const mark = document.querySelector(`.cq-mark[data-cq="${t.root.id}"]`);
-      if (mark) mark.scrollIntoView({ behavior: SCROLL, block: "center" });
+      if (!mark) return;
+      reveal(mark);
+      mark.scrollIntoView({ behavior: SCROLL, block: "center" });
     };
     div.append(quote);
   } else if (t.root.anchor?.section) {
     // A quote-less anchor points at an element — a diagram or image commented
     // on by click rather than by selection.
     const chip = el("blockquote", "cq-quote", `§ ${t.root.anchor.section}`);
-    chip.onclick = () =>
-      document
-        .getElementById(t.root.anchor.section)
-        ?.scrollIntoView({ behavior: SCROLL, block: "center" });
+    chip.onclick = () => {
+      const target = document.getElementById(t.root.anchor.section);
+      if (!target) return;
+      reveal(target);
+      target.scrollIntoView({ behavior: SCROLL, block: "center" });
+    };
     div.append(chip);
   }
   t.msgs.forEach((m) => div.append(msgNode(m)));
@@ -736,7 +752,10 @@ const TEXT_BLOCK = "p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dd,dt,figcaption
 function captureView() {
   const view = { v: VNUM, y: scrollY };
   for (const block of document.querySelectorAll(TEXT_BLOCK)) {
-    if (block.closest(".cq-ui")) continue;
+    // [hidden] needs an explicit skip: hidden="until-found" resolves to
+    // content-visibility, under which descendants still report real rects —
+    // but what's behind an inactive tab isn't what the reader is reading.
+    if (block.closest(".cq-ui, [hidden]")) continue;
     const range = document.createRange();
     range.selectNodeContents(block);
     const rect = range.getBoundingClientRect();
@@ -768,6 +787,7 @@ function restoreView(view) {
       (view.section && document.getElementById(view.section)) || document.body;
     const segments = findQuote(root, view.quote);
     if (segments?.length) {
+      reveal(segments[0].node.parentElement); // the passage may sit behind a tab
       const range = document.createRange();
       range.setStart(segments[0].node, segments[0].start);
       range.setEnd(segments.at(-1).node, segments.at(-1).end);
@@ -776,8 +796,10 @@ function restoreView(view) {
     }
   }
   const section = view.section && document.getElementById(view.section);
-  if (section) jumpBy(section.getBoundingClientRect().top - view.sectionTop);
-  else scrollTo({ top: view.y, behavior: "instant" });
+  if (section) {
+    reveal(section);
+    jumpBy(section.getBoundingClientRect().top - view.sectionTop);
+  } else scrollTo({ top: view.y, behavior: "instant" });
 }
 
 // Highlights each open thread's quote in the page, then tells the panel which quotes
@@ -1104,9 +1126,13 @@ function stepThread(dir) {
     ];
   next.focus({ preventScroll: true });
   next.scrollIntoView({ behavior: SCROLL, block: "nearest" });
-  document
-    .querySelector(`.cq-mark[data-cq="${next.dataset.id}"], [data-cq-thread="${next.dataset.id}"]`)
-    ?.scrollIntoView({ behavior: SCROLL, block: "center" });
+  const pagemark = document.querySelector(
+    `.cq-mark[data-cq="${next.dataset.id}"], [data-cq-thread="${next.dataset.id}"]`,
+  );
+  if (pagemark) {
+    reveal(pagemark);
+    pagemark.scrollIntoView({ behavior: SCROLL, block: "center" });
+  }
 }
 threadsBox.addEventListener("keydown", (ev) => {
   if (ev.key !== "Enter" || !ev.target.classList?.contains("cq-thread")) return;
@@ -1205,6 +1231,8 @@ async function applyDiff(baseName) {
       diffMarked.push(b);
     }
   }
+  // Container widgets surface marks their panels hide (cq-tabs badges each tab).
+  document.dispatchEvent(new CustomEvent("cq-diff"));
   return diffMarked.length;
 }
 function clearDiff() {
@@ -1212,6 +1240,7 @@ function clearDiff() {
   diffMarked.length = 0;
   diffOn = false;
   diffBtn.classList.remove("on");
+  document.dispatchEvent(new CustomEvent("cq-diff"));
 }
 diffBtn.onclick = async () => {
   if (diffOn) return clearDiff();
@@ -1406,9 +1435,12 @@ generalInput.value = loadDraft("general");
 try {
   if (localStorage.getItem(PANEL_KEY) === "1") setPanel(true);
 } catch {}
-// Carry the reading position across a version switch (the panel is restored just above,
-// so the column is already reflowed). Only when the loaded version differs from the
-// saved one — a plain reload keeps the browser's own, more faithful, scroll restoration.
+// Carry the reading position across every arrival — version switch, reload, back
+// (the panel is restored just above, so the column is already reflowed). The
+// browser's own restoration is taken over entirely: upgrades change the page's
+// height after it runs (tabs collapse, diagrams render, diff files fold), so its
+// offsets go stale; the landmark is re-found once geometry has settled instead.
+history.scrollRestoration = "manual";
 const savedView = (() => {
   try {
     return JSON.parse(sessionStorage.getItem(VIEW_KEY) || "null");
@@ -1430,7 +1462,7 @@ const savedComposer = loadDraft("composer");
 // their import at top level would deadlock the cycle (their evaluation waits on this
 // module's async evaluation completing).
 upgradeWidgets().then(() => {
-  if (savedView && savedView.v !== VNUM) {
+  if (savedView) {
     restoreView(savedView);
     if (savedView.v < VNUM) showToast(`Updated to v${VNUM}`);
   }

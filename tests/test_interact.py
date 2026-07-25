@@ -186,6 +186,36 @@ def test_plan_and_milestones_compose(page_dir):
     assert "must be a direct child of <cq-milestones>" in result.output
 
 
+def test_tabs_validate_and_compose(page_dir):
+    tabs = """<cq-tabs id="ws">
+  <cq-tab id="ws-ingest" label="Ingest"><p>Pipeline notes.</p></cq-tab>
+  <cq-tab id="ws-search" label="Search">
+    <cq-metrics><cq-metric id="k-lat" value="118 ms"></cq-metric></cq-metrics>
+  </cq-tab>
+</cq-tabs>
+<cq-options>"""
+    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("<cq-options>", tabs))
+    result = check(page_dir)
+    assert result.exit_code == 0, result.output
+
+
+def test_tabs_reject_structural_violations(page_dir):
+    # A label-less panel, a stray panel outside cq-tabs, and loose text between
+    # panels are each refused.
+    bad = """<cq-tabs id="ws">
+  loose text
+  <cq-tab id="ws-a"><p>x</p></cq-tab>
+</cq-tabs>
+<cq-tab id="ws-stray" label="Stray"><p>y</p></cq-tab>
+<cq-options>"""
+    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("<cq-options>", bad))
+    result = check(page_dir)
+    assert result.exit_code == 1
+    assert "'label' is a required property" in result.output
+    assert "must be a direct child of <cq-tabs>" in result.output
+    assert "loose text" in result.output
+
+
 def test_check_rejects_wrong_scaffold(page_dir):
     html = PAGE.replace('<script type="module" src="/colloquy.js"></script>', "").replace(
         '<link rel="stylesheet" href="/theme.css">', ""
