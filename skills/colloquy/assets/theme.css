@@ -150,6 +150,16 @@ cq-option[chosen], cq-options[choose] > cq-option[chosen]:hover {
 .cq-chosen-badge { position: absolute; right: 10px; bottom: 8px; font-size: var(--t-6);
                    padding: 0 8px; border-radius: 999px; line-height: 1.6;
                    background: var(--ok-tint); color: var(--ok-ink); }
+/* The keyboard affordance for a pick, sharing the badge's reserved strip; the
+ * chosen option hides its button (the badge says it). */
+cq-option .cq-pick { position: absolute; left: 10px; bottom: 6px; font: inherit;
+                     font-size: var(--t-6); line-height: 1.6; padding: 0 10px;
+                     border: 1px solid var(--border-2); border-radius: 999px;
+                     background: var(--card); color: var(--ink-2); cursor: pointer; }
+cq-option .cq-pick:hover { background: var(--chip); }
+cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* A keyboard pick moves focus to the option itself once its button hides. */
+cq-option:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
 
 /* cq-plan: the chrome plan pages hand-build — title, facts row, numbered
  * sections — as one element-widget. Numbering is CSS counters. */
@@ -240,12 +250,16 @@ cq-card { display: block; position: relative; background: var(--card);
           padding: 8px 34px 8px 10px; margin: 0 0 var(--sp-2); font-size: 14px; }
 cq-card:last-child { margin-bottom: 0; }
 cq-card > strong { display: block; margin: 0 0 2px; }
+/* The grip is a <button>, so the keyboard reaches it: Enter grabs, arrows move. */
 cq-card .cq-grip { position: absolute; top: 2px; right: 0; color: var(--muted);
-          cursor: grab; padding: 8px 10px; border-radius: 4px; user-select: none;
+          background: none; border: none; cursor: grab; padding: 8px 10px;
+          border-radius: 4px; user-select: none;
           -webkit-user-select: none; font-size: 14px; line-height: 1;
           touch-action: none; /* the handle owns the gesture; scroll stays on the card */ }
 cq-card:hover > .cq-grip { color: var(--ink-2); }
 cq-card .cq-grip:hover { background: var(--chip); }
+cq-card .cq-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px;
+          color: var(--ink-2); }
 /* SortableJS drag states: the in-flow slot, the pressed card, the follower. */
 cq-card.cq-ghost { opacity: .4; border-style: dashed; border-color: var(--accent); }
 cq-card.cq-lift { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
@@ -310,8 +324,8 @@ cq-code cq-note { display: block; }
 
 /* Reduced motion: one global guard covers every animation and transition in the
  * theme and the injected layers (!important outranks inline styles, so
- * JS-driven transitions stop too). Widget JS checks the media query itself for
- * Web-Animations moves. */
+ * JS-driven transitions stop too). JS-driven motion — smooth scrolls,
+ * Web-Animations moves — honors the runtime's REDUCED/SCROLL exports. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .01ms !important;

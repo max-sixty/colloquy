@@ -5,8 +5,8 @@
  * module per tag marked x-upgrade — element-widgets need no JS at all; the theme's CSS
  * renders them. Upgrades flush before the first anchor pass, so comment quotes always
  * search the enhanced DOM. Widget modules import the helper surface exported here
- * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `toast`); it stays minimal
- * until a real widget needs more.
+ * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `toast`, `announce`,
+ * `keyHelp`, `REDUCED`, `SCROLL`); it stays minimal until a real widget needs more.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
  * through it as an `action` event — sendAction posts it, `wait` delivers it, and the
@@ -36,8 +36,18 @@
  *
  * Composing: every textarea behaves identically — grows with its content, saves its
  * draft on each keystroke, sends on ⌘/Ctrl+Enter — because they are all wired through
- * wireInput. A poll that re-renders the thread list restores scroll offset and the
- * caret, so an arriving reply never interrupts one being typed.
+ * wireInput. A poll that re-renders the thread list restores scroll offset, focus, and
+ * the caret, so an arriving reply never interrupts one being typed.
+ *
+ * Keyboard: two scopes, matching the DOM's own. One dispatcher drives a table of
+ * global single-key shortcuts (KEYS — also the source of the "?" overlay, so help
+ * can't drift from behavior); it skips typing contexts (editable target, ⌘/Ctrl/Alt,
+ * IME) and anything a focused control already consumed (defaultPrevented), which is
+ * how a widget's own keys shadow the table. Focus-scoped keys belong to the focused
+ * control itself — panel threads here, grips and pick buttons in widget modules —
+ * with no registration: the only keyboard exports widgets need are announce() (the
+ * live region) and keyHelp() (rows for the overlay). Escape alone crosses into typing
+ * context, backing out one layer per press without ever eating text.
  *
  * Claude's replies may carry widget markup (`reply` validates it against the vendored
  * registry at post time), rendered live in the thread; user comments stay plain text. */
@@ -85,6 +95,12 @@ export function refUrl(path, line) {
   return url;
 }
 
+// The theme's reduced-motion guard covers CSS animation and transitions; motion
+// driven from JS — smooth scrolls here, Web-Animations moves in widgets — checks
+// this instead.
+export const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+export const SCROLL = REDUCED ? "instant" : "smooth";
+
 // A widget's report of the user editing the document through it (a card dragged
 // between columns). The caller has already applied the edit to its own DOM; the
 // poll's replay re-applies it once (see applyActions), which is why applyAction
@@ -94,9 +110,23 @@ export function sendAction(el, action, detail) {
 }
 
 // Transient confirmation ("Moved to Doing — sent to Claude"), styled and placed by
-// the comment layer.
+// the comment layer. Announced too: toast routes through the live region.
 export function toast(msg) {
   showToast(msg);
+}
+
+// Announce to assistive tech without a visual: the runtime's polite live region.
+// Cleared first so repeating a message (two identical moves) re-announces.
+export function announce(msg) {
+  liveEl.textContent = "";
+  setTimeout(() => (liveEl.textContent = msg), 30);
+}
+
+// Rows for the "?" overlay. A widget with focus-scoped keys declares them beside
+// the code implementing them: keyHelp("On a card grip", [["Enter", "grab"], …]).
+const helpSections = [];
+export function keyHelp(title, rows) {
+  helpSections.push({ title, rows });
 }
 
 async function upgradeWidgets() {
@@ -200,6 +230,21 @@ style.textContent = `
     padding: 9px 14px; border-radius: var(--r); opacity: 0; transition: opacity .25s; pointer-events: none; }
   .cq-toast.show { opacity: .95; }
   .cq-toast.clickable { pointer-events: auto; cursor: pointer; }
+  .cq-live { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .cq-thread:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cq-help { position: fixed; z-index: 9300; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: min(420px, calc(100vw - 32px)); max-height: 80vh; overflow-y: auto; display: none;
+    background: var(--card); border: 1px solid var(--border-2); border-radius: var(--r);
+    box-shadow: 0 12px 32px rgba(0,0,0,.18); padding: 14px 18px; }
+  .cq-help.open { display: block; }
+  .cq-help-title { font-weight: 600; margin-bottom: 10px; }
+  .cq-help h3 { margin: 12px 0 4px; font-size: var(--t-6); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .cq-help table { width: 100%; border-collapse: collapse; }
+  .cq-help td { padding: 3px 0; vertical-align: baseline; }
+  .cq-help td:first-child { width: 84px; white-space: nowrap; }
+  .cq-help kbd { font-family: ui-monospace, monospace; font-size: 12px; background: var(--chip);
+    border: 1px solid var(--border-2); border-radius: 4px; padding: 1px 6px; }
   @media print { .cq-ui { display: none !important; } }
 `;
 document.head.appendChild(style);
@@ -223,7 +268,8 @@ const versionSelect = document.createElement("select");
 versionSelect.title = "Version";
 versionSelect.setAttribute("aria-label", "Version");
 const toggleBtn = el("button", "cq-btn", "Comments");
-toggleBtn.title = "Show or hide the comment panel (Esc closes)";
+toggleBtn.title = "Show or hide the comment panel (c toggles, Esc closes, ? lists all keys)";
+toggleBtn.setAttribute("aria-expanded", "false");
 const approveBtn = el("button", "cq-btn primary", "✓ Looks good");
 approveBtn.title = "Sign off — Claude stops watching this page";
 banner.append(
@@ -268,8 +314,14 @@ const composerSend = el("button", "cq-btn primary", "Comment");
 composerRow.append(composerCancel, composerSend);
 composer.append(composerQuote, suggestRow, composerInput, composerRow);
 const toastEl = el("div", "cq-ui cq-toast");
+const liveEl = el("div", "cq-ui cq-live");
+liveEl.setAttribute("aria-live", "polite");
+const helpEl = el("div", "cq-ui cq-help");
+helpEl.setAttribute("role", "dialog");
+helpEl.setAttribute("aria-label", "Keyboard reference");
+helpEl.tabIndex = -1; // focused on open, so the dialog isn't silent to a screen reader
 
-document.body.append(banner, panel, fab, composer, toastEl);
+document.body.append(banner, panel, fab, composer, toastEl, liveEl, helpEl);
 const basePaddingTop = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
 document.body.style.paddingTop = basePaddingTop + 42 + "px";
 
@@ -325,6 +377,7 @@ function syncLayout() {
 function setPanel(open) {
   panelOpen = open;
   panel.classList.toggle("open", open);
+  toggleBtn.setAttribute("aria-expanded", String(open));
   syncLayout();
   try {
     localStorage.setItem(PANEL_KEY, open ? "1" : "0");
@@ -339,6 +392,7 @@ addEventListener("resize", syncLayout);
 
 let toastTimer = 0;
 function showToast(msg, onClick) {
+  announce(msg);
   toastEl.textContent = msg;
   toastEl.onclick = onClick || null;
   toastEl.classList.add("show");
@@ -488,12 +542,13 @@ function msgNode(m) {
 
 function threadNode(t, syncs) {
   const div = el("div", "cq-thread");
+  div.tabIndex = -1; // j/k focus target; Enter (below) drops into its reply box
   div.dataset.id = t.root.id;
   if (t.root.anchor?.quote) {
     const quote = el("blockquote", "cq-quote", `“${t.root.anchor.quote}”`);
     quote.onclick = () => {
       const mark = document.querySelector(`.cq-mark[data-cq="${t.root.id}"]`);
-      if (mark) mark.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (mark) mark.scrollIntoView({ behavior: SCROLL, block: "center" });
     };
     div.append(quote);
   } else if (t.root.anchor?.section) {
@@ -503,7 +558,7 @@ function threadNode(t, syncs) {
     chip.onclick = () =>
       document
         .getElementById(t.root.anchor.section)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+        ?.scrollIntoView({ behavior: SCROLL, block: "center" });
     div.append(chip);
   }
   t.msgs.forEach((m) => div.append(msgNode(m)));
@@ -540,13 +595,16 @@ function threadNode(t, syncs) {
 
 function renderThreads() {
   // Every node is rebuilt, so remember where the reader was: the panel's scroll
-  // offset, and the reply they were mid-way through typing with its caret. Otherwise
-  // a reply arriving mid-sentence yanks the panel to the top and drops the cursor.
+  // offset, and the focused thread — with the caret, when they were mid-way through
+  // typing a reply in it. Otherwise a reply arriving mid-sentence yanks the panel to
+  // the top and drops the cursor, and a poll steals a j/k walk's place.
   const scrollTop = threadsBox.scrollTop;
   const active = document.activeElement;
-  const focusedId =
-    active?.tagName === "TEXTAREA" ? active.closest(".cq-thread")?.dataset.id : null;
-  const caret = focusedId ? [active.selectionStart, active.selectionEnd] : null;
+  const focusedId = active?.closest?.(".cq-thread")?.dataset.id ?? null;
+  const caret =
+    focusedId && active.tagName === "TEXTAREA"
+      ? [active.selectionStart, active.selectionEnd]
+      : null;
 
   threadsBox.textContent = "";
   const syncs = [];
@@ -575,11 +633,14 @@ function renderThreads() {
   toggleBtn.textContent = `Comments (${open.length})`;
 
   if (focusedId) {
-    const ta = threadsBox.querySelector(`.cq-thread[data-id="${focusedId}"] textarea`);
-    if (ta) {
-      ta.focus();
-      ta.setSelectionRange(caret[0], caret[1]);
-    }
+    const div = threadsBox.querySelector(`.cq-thread[data-id="${focusedId}"]`);
+    if (caret) {
+      const ta = div?.querySelector("textarea");
+      if (ta) {
+        ta.focus();
+        ta.setSelectionRange(caret[0], caret[1]);
+      }
+    } else div?.focus({ preventScroll: true });
   }
   threadsBox.scrollTop = scrollTop; // after focus(), which scrolls the panel itself
 }
@@ -773,7 +834,7 @@ document.addEventListener("click", (ev) => {
   setPanel(true);
   const thread = threadsBox.querySelector(`.cq-thread[data-id="${threadId}"]`);
   if (thread) {
-    thread.scrollIntoView({ behavior: "smooth", block: "center" });
+    thread.scrollIntoView({ behavior: SCROLL, block: "center" });
     thread.classList.add("flash");
     setTimeout(() => thread.classList.remove("flash"), 1300);
   }
@@ -789,18 +850,26 @@ function place(node, left, top) {
 }
 const inUi = (node) =>
   Boolean((node?.nodeType === 1 ? node : node?.parentElement)?.closest(".cq-ui"));
-function updateFab() {
+// The selection the comment affordances act on: real (≥3 chars) and in the page,
+// not the UI. One predicate for the fab observer and the c key.
+const liveSelection = () => {
   const sel = getSelection();
-  if (!sel || sel.isCollapsed || sel.toString().trim().length < 3 || inUi(sel.anchorNode)) {
+  return sel && !sel.isCollapsed && sel.toString().trim().length >= 3 && !inUi(sel.anchorNode)
+    ? sel
+    : null;
+};
+const beside = (rect) => [rect.right + 6, rect.top - 6];
+function updateFab() {
+  const sel = liveSelection();
+  if (!sel) {
     // A visual-element click may have just raised the button (its handler runs
     // before this queued update); an element anchor keeps it up.
     if (!pendingElement) fab.style.display = "none";
     return;
   }
   pendingElement = null; // a real selection outranks an element anchor
-  const rect = sel.getRangeAt(0).getBoundingClientRect();
   fab.style.display = "block";
-  place(fab, rect.right + 6, rect.top - 6);
+  place(fab, ...beside(sel.getRangeAt(0).getBoundingClientRect()));
 }
 document.addEventListener("mouseup", (ev) => {
   if (ev.target.closest?.(".cq-ui")) return;
@@ -808,7 +877,7 @@ document.addEventListener("mouseup", (ev) => {
 });
 // Selections made from the keyboard (shift-arrows, ⌘A) deserve the same button.
 document.addEventListener("keyup", (ev) => {
-  if (ev.target.closest?.(".cq-ui, input, textarea, [contenteditable]")) return;
+  if (inUi(ev.target) || editable(ev.target)) return;
   setTimeout(updateFab);
 });
 document.addEventListener("mousedown", (ev) => {
@@ -818,6 +887,7 @@ document.addEventListener("mousedown", (ev) => {
     // Cancel discards explicitly, and the draft is persisted regardless.
     if (!composerInput.value) composer.style.display = "none";
   }
+  if (!ev.target.closest?.(".cq-help")) helpEl.classList.remove("open");
 });
 
 // Diagrams and images have no text to select, so a click raises the same 💬
@@ -871,7 +941,7 @@ const syncComposer = wireInput(composerInput, {
 suggestCheck.onchange = () => {
   // Entering suggestion mode seeds the box with the passage to edit in place.
   if (suggestCheck.checked && !composerInput.value.trim() && pendingAnchor?.quote) {
-    composerInput.value = pendingAnchor.quote;
+    composerInput.value = seededQuote = pendingAnchor.quote;
     syncComposer();
   }
   composerSend.textContent = suggestCheck.checked ? "Suggest" : "Comment";
@@ -881,9 +951,15 @@ suggestCheck.onchange = () => {
   saveComposerDraft();
 };
 
+// The quote suggestion mode auto-seeded, so reopening on a new anchor can tell
+// machine seed from user text: the seed belongs to its old anchor and is dropped;
+// anything the user typed or edited rides forward — never lose user text.
+let seededQuote = "";
 function openComposer(anchor, text, left, top, suggest = false) {
   pendingAnchor = anchor || null;
-  composerInput.value = text || "";
+  if (composerInput.value === seededQuote) composerInput.value = "";
+  seededQuote = "";
+  composerInput.value = text || composerInput.value;
   suggestCheck.checked = suggest;
   suggestRow.style.display = anchor?.quote ? "flex" : "none";
   composerSend.textContent = suggest ? "Suggest" : "Comment";
@@ -899,12 +975,21 @@ function openComposer(anchor, text, left, top, suggest = false) {
 function closeComposer() {
   composer.style.display = "none";
   composerInput.value = "";
+  seededQuote = "";
   suggestCheck.checked = false;
   composerSend.textContent = "Comment";
   pendingAnchor = null;
   saveDraft("composer", "");
 }
 
+// Open the composer on the current selection — the fab's click and the c key.
+function composeSelection(sel, left, top) {
+  let node = sel.getRangeAt(0).commonAncestorContainer;
+  if (node.nodeType !== Node.ELEMENT_NODE) node = node.parentElement;
+  const section = node.closest("[id]:not(.cq-ui)")?.id || null;
+  openComposer({ section, quote: sel.toString().trim().slice(0, 400) }, "", left, top);
+  fab.style.display = "none";
+}
 fab.onclick = () => {
   const sel = getSelection();
   if (!sel || sel.isCollapsed) {
@@ -914,17 +999,7 @@ fab.onclick = () => {
     fab.style.display = "none";
     return;
   }
-  const range = sel.getRangeAt(0);
-  let node = range.commonAncestorContainer;
-  if (node.nodeType !== Node.ELEMENT_NODE) node = node.parentElement;
-  const section = node.closest("[id]:not(.cq-ui)")?.id || null;
-  openComposer(
-    { section, quote: sel.toString().trim().slice(0, 400) },
-    "",
-    parseFloat(fab.style.left),
-    parseFloat(fab.style.top),
-  );
-  fab.style.display = "none";
+  composeSelection(sel, parseFloat(fab.style.left), parseFloat(fab.style.top));
 };
 // Cancel discards. Escape and outside clicks only hide, keeping the draft either way.
 composerCancel.onclick = closeComposer;
@@ -944,18 +1019,135 @@ const syncGeneral = wireInput(generalInput, {
 approveBtn.onclick = () =>
   post({ kind: "done", version: VNUM, text: "Looks good" });
 
-// Escape backs out of whatever is in front: first the composer (its draft is kept),
-// then the panel — but never while a textarea has focus, where it would look like
-// the keystroke ate the text.
+// ---------- keyboard ----------
+// One table drives both the dispatcher and the "?" overlay, so help can't drift
+// from behavior. Rows without a key are display-only — focus-scoped (the thread's
+// Enter, ⌘⏎) or dispatched before the table (Esc, the one key that crosses typing
+// contexts); rows without `does` ride the previous row's label (k under "j / k").
+const KEYS = [
+  { key: "c", label: "c", does: "Comment on the selection — or toggle the panel", run: commentKey },
+  { key: "j", label: "j / k", does: "Next / previous open thread", run: () => stepThread(1) },
+  { key: "k", run: () => stepThread(-1) },
+  { label: "Enter", does: "On a focused thread: write a reply" },
+  { key: "d", label: "d", does: "Highlight changes since the previous version",
+    run: () => diffBtn.style.display !== "none" && diffBtn.onclick() },
+  { key: "[", label: "[ / ]", does: "Older / newer version", run: () => stepVersion(-1) },
+  { key: "]", run: () => stepVersion(1) },
+  { key: "?", label: "?", does: "This key reference", run: toggleHelp },
+  { label: "Esc", does: "Back out one layer: help, composer, reply, panel" },
+  { label: SEND_KEYS, does: "Send, in any composer" },
+];
+
+// Pages are authored documents where typing can start at any moment, so single
+// keys never fire from a typing context — and a focused control that consumed
+// the key (a grabbed grip's arrows) shadows the table via defaultPrevented.
+// Escape alone crosses into typing context: it backs out, never eats text.
+const editable = (node) =>
+  Boolean(node) &&
+  (node.tagName === "TEXTAREA" ||
+    node.tagName === "INPUT" ||
+    node.tagName === "SELECT" ||
+    node.isContentEditable);
 document.addEventListener("keydown", (ev) => {
-  if (ev.key !== "Escape") return;
-  if (composer.style.display === "block") {
+  if (ev.isComposing || ev.defaultPrevented) return;
+  if (ev.key === "Escape") return escapeKey();
+  if (ev.metaKey || ev.ctrlKey || ev.altKey || editable(ev.target)) return;
+  const bound = KEYS.find((b) => b.key === ev.key);
+  if (!bound) return;
+  ev.preventDefault();
+  bound.run();
+});
+
+// Escape's ladder, top layer first. Backing out of a reply returns focus to its
+// thread, so Esc then Enter round-trips; drafts are kept at every rung.
+function escapeKey() {
+  if (helpEl.classList.contains("open")) helpEl.classList.remove("open");
+  else if (composer.style.display === "block") {
     composer.style.display = "none";
     fab.style.display = "none";
-  } else if (panelOpen && document.activeElement?.tagName !== "TEXTAREA") {
-    setPanel(false);
+  } else if (editable(document.activeElement)) {
+    if (!panel.contains(document.activeElement)) return; // an authored input keeps its Escape
+    const thread = document.activeElement.closest(".cq-thread");
+    document.activeElement.blur();
+    thread?.focus();
+  } else if (panelOpen) setPanel(false);
+}
+
+// c goes where commenting happens: a live selection gets the composer (what the
+// floating button does), an element click's pending 💬 gets that, and otherwise
+// the panel toggles — focusing the general box on open.
+function commentKey() {
+  const sel = liveSelection();
+  if (sel) composeSelection(sel, ...beside(sel.getRangeAt(0).getBoundingClientRect()));
+  else if (pendingElement && fab.style.display === "block") fab.onclick();
+  else if (panelOpen) setPanel(false);
+  else {
+    setPanel(true);
+    generalInput.focus();
+  }
+}
+
+// j/k walk the open threads: panel focus and the page highlight move as a pair —
+// they are two views of the same thread. Clamped at the ends, not wrapped.
+function stepThread(dir) {
+  if (!panelOpen) setPanel(true);
+  const threads = [...threadsBox.querySelectorAll(":scope > .cq-thread")];
+  if (!threads.length) return;
+  const at = threads.indexOf(document.activeElement?.closest?.(".cq-thread"));
+  const next =
+    threads[
+      at === -1
+        ? dir > 0
+          ? 0
+          : threads.length - 1
+        : Math.max(0, Math.min(threads.length - 1, at + dir))
+    ];
+  next.focus({ preventScroll: true });
+  next.scrollIntoView({ behavior: SCROLL, block: "nearest" });
+  document
+    .querySelector(`.cq-mark[data-cq="${next.dataset.id}"], [data-cq-thread="${next.dataset.id}"]`)
+    ?.scrollIntoView({ behavior: SCROLL, block: "center" });
+}
+threadsBox.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter" || !ev.target.classList?.contains("cq-thread")) return;
+  const ta = ev.target.querySelector("textarea");
+  if (ta) {
+    ev.preventDefault();
+    ta.focus();
   }
 });
+
+// [ and ] step versions with the picker's own pin semantics.
+function stepVersion(dir) {
+  const names = [...versionSelect.options].map((o) => o.value);
+  const at = names.indexOf(vname(VNUM));
+  const next = at === -1 ? null : names[at + dir];
+  if (next) goVersion(next);
+}
+
+function toggleHelp() {
+  if (helpEl.classList.contains("open")) return helpEl.classList.remove("open");
+  helpEl.textContent = "";
+  helpEl.append(el("div", "cq-help-title", "Keyboard reference"));
+  const table = (rows) => {
+    const t = document.createElement("table");
+    for (const [key, does] of rows) {
+      const tr = document.createElement("tr");
+      const kbd = document.createElement("kbd");
+      kbd.textContent = key;
+      const keyCell = document.createElement("td");
+      keyCell.append(kbd);
+      tr.append(keyCell, el("td", "", does));
+      t.append(tr);
+    }
+    return t;
+  };
+  helpEl.append(table(KEYS.filter((b) => b.does).map((b) => [b.label, b.does])));
+  for (const section of helpSections)
+    helpEl.append(el("h3", "", section.title), table(section.rows));
+  helpEl.classList.add("open");
+  helpEl.focus({ preventScroll: true });
+}
 
 // ---------- version diff ----------
 // "Changes since vN": blocks (paragraphs, list items, widget items) whose text
@@ -1068,6 +1260,12 @@ function renderStatus(state) {
     );
 }
 
+const vname = (n) => `v${String(n).padStart(3, "0")}.html`;
+// Navigate to a version with the pin semantics every chooser shares: an older
+// version pins the view, the newest unpins it.
+const goVersion = (name) => {
+  location.href = name === latestName ? `/versions/${name}` : `/versions/${name}?pin`;
+};
 function renderVersions(state) {
   const notes = {};
   for (const e of events) if (e.kind === "note") notes[e.version] = e.text;
@@ -1083,11 +1281,10 @@ function renderVersions(state) {
       opt.textContent = `v${n}${isLatest ? " (latest)" : ""}${notes[n] ? " · " + notes[n] : ""}`;
       versionSelect.append(opt);
     }
-    versionSelect.value = `v${String(VNUM).padStart(3, "0")}.html`;
+    versionSelect.value = vname(VNUM);
   }
   latestName = state.versions.at(-1) || "";
-  const behind =
-    latestName && VNUM !== null && latestName !== `v${String(VNUM).padStart(3, "0")}.html`;
+  const behind = latestName && VNUM !== null && latestName !== vname(VNUM);
   // Follow the newest version unless pinned or the user is mid-composition:
   // drafts survive navigation, but an open composer or a live selection
   // doesn't. While deferred, the chip shows instead.
@@ -1098,7 +1295,7 @@ function renderVersions(state) {
   latestChip.style.display = behind ? "" : "none";
   if (behind)
     latestChip.textContent = `New version available → open ${latestName.replace(".html", "")}`;
-  const idx = state.versions.indexOf(`v${String(VNUM).padStart(3, "0")}.html`);
+  const idx = state.versions.indexOf(vname(VNUM));
   diffBase = idx > 0 ? state.versions[idx - 1] : "";
   diffBtn.style.display = diffBase ? "" : "none";
   if (diffBase) {
@@ -1114,10 +1311,7 @@ const midComposition = () =>
   fab.style.display === "block" ||
   Boolean(document.querySelector(".cq-dragging")) ||
   (document.activeElement?.tagName === "TEXTAREA" && document.activeElement.value !== "");
-versionSelect.onchange = () => {
-  const name = versionSelect.value;
-  location.href = name === latestName ? `/versions/${name}` : `/versions/${name}?pin`;
-};
+versionSelect.onchange = () => goVersion(versionSelect.value);
 latestChip.onclick = () => (location.href = "/");
 
 // ---------- polling ----------

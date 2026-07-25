@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Keyboard bindings, in two scopes. Global single-key shortcuts, dispatched from one
+  table that never fires from a typing context: `c` comments on the selection (or
+  toggles the panel), `j`/`k` walk open threads with the page highlight in tow, `d`
+  toggles the version diff, `[`/`]` step versions, `?` shows a reference rendered
+  from the same table, and `Escape` backs out one layer per press (help → composer →
+  reply → panel). Sign-off and resolve stay unbound on purpose. Focus-scoped keys
+  belong to the focused control: `Enter` on a focused thread drops into its reply
+  box; the board grip is now a real button — `Enter` grabs, arrows move the card
+  (each step announced), `Enter` drops as the same single `move` action a drag sends,
+  `Escape` or focus loss restores — and each choose option carries an injected
+  "Choose" button, so Tab+Enter picks. Widgets register no global keys; the helper
+  surface grows by `announce()` (a polite live region that toasts also route through,
+  so moves and picks are announced to screen readers) and `keyHelp()` (rows for the
+  `?` overlay).
+
 - Board dragging rebuilt on vendored SortableJS 1.15.7 (single MIT file, pointer-driven
   `forceFallback` mode — native HTML5 DnD is gone): a placeholder holds the source slot
   instead of the card teleporting on first contact with a neighbor column, moves animate
@@ -14,7 +29,8 @@
   to be picked looked least clickable); choose cards reserve badge room up front so a
   pick never shifts layout; the ✓ badge reads "your pick" only for this reader's pick,
   "chosen" when the markup carried it. One global `prefers-reduced-motion` guard covers
-  theme, comment layer, and widget animation.
+  theme, comment layer, and widget animation; JS-driven motion (smooth scrolls,
+  Web-Animations moves) honors the same preference through a runtime export.
 
 - Widget actions: interactive widgets report the user editing the document through
   them as `action` events on the same log as comments — `wait` delivers them, the

@@ -1,6 +1,6 @@
 {
   "cq-options": {
-    "description": "A decision's alternatives, rendered as a card grid, for places where the reader picks one. Children are cq-option elements only. With `choose` (which requires an id), the reader clicks a card to pick it: the pick reaches Claude as a `choose` action and wears a green ring until the next version marks it `chosen`.",
+    "description": "A decision's alternatives, rendered as a card grid, for places where the reader picks one. Children are cq-option elements only. With `choose` (which requires an id), the reader picks a card — by click, or by keyboard via each card's injected Choose button: the pick reaches Claude as a `choose` action and wears a green ring until the next version marks it `chosen`.",
     "type": "object",
     "properties": {
       "id":     {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
@@ -218,7 +218,7 @@
     "x-example": "<cq-diagram id=\"checkout-flow\">\ngraph LR\n  Cart --> Pay\n  Pay --> Receipt\n</cq-diagram>"
   },
   "cq-board": {
-    "description": "A kanban board the reviewer edits directly: cards drag between columns or reorder within one, and each drop reaches Claude as a `move` action naming the card, target column, and position. Children are cq-column elements only. The next version's markup carries the moved card — the document is the state.",
+    "description": "A kanban board the reviewer edits directly: cards move between columns or reorder within one — dragged by the grip, or by keyboard (the grip is a button: Enter grabs, arrows move, Enter drops) — and each completed move reaches Claude as a `move` action naming the card, target column, and position. Children are cq-column elements only. The next version's markup carries the moved card — the document is the state.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}

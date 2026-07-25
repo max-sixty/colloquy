@@ -97,8 +97,9 @@ $IX stop <dir>                          # stop the server; its background task e
   anchor to the nearest `id`, and an anchor survives into a new version only where its
   id does. The reader's place on the page falls back to those same ids when the text
   around it was rewritten. Keep ids stable across versions so neither detaches.
-- The runtime injects the status banner, comment sidebar, and version picker; don't
-  build page UI for any of those.
+- The runtime injects the status banner, comment sidebar, version picker, and keyboard
+  shortcuts (`?` in the browser shows the reference); don't build page UI for any of
+  those.
 - **Announce interactivity in prose.** A fresh reviewer won't guess from a grip glyph
   or a hover cursor that a board takes drags or an options group takes clicks — the
   sentence introducing the widget says it ("drag cards to reprioritize; your edits

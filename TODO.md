@@ -27,10 +27,6 @@ items are recommendations that stood unchallenged. Each item stands alone.
       `/colloquy-plans` and settle the default UX before promoting it from
       experimental.
 - [ ] Widgets deferred until a page wants them: risks, verdict.
-- [ ] Keyboard path for board drags and choose picks, plus screen-reader semantics
-      (roles, an aria-live region announcing moves). SortableJS provides neither;
-      the UX review (2026-07-25) filed both as MAJOR. A focusable grip moving its
-      card with arrow keys would cover keyboard-only review.
 - [ ] Un-choose: a pick can only be switched, not cleared, and there's no explicit
       "unchoose" action verb. Widen the action space when a page needs it.
 - [ ] Pending-state marker for board moves: after the toast fades, nothing shows

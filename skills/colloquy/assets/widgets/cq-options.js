@@ -1,10 +1,14 @@
 /* cq-options: upgraded only for `choose` — without the attribute the theme's CSS
  * is the whole widget and this module is a no-op. With it, clicking a card picks
- * that option: the pick is applied as an absolute placement (chosen on the target,
- * cleared from siblings, ✓ badge moved) and reported as a `choose` action, the
- * second rider on the channel cq-board opened. Clicks that are really text
- * selections or link follows don't choose. Authored content is never replaced, so
- * there is no failSoft. */
+ * that option, and each card carries an injected "Choose" button so the keyboard
+ * reaches the same path: Tab to the button, Enter picks — a native button, so no
+ * key handling of its own. The pick is applied as an absolute placement (chosen
+ * on the target, cleared from siblings, ✓ badge moved, chosen's button hidden)
+ * and reported as a `choose` action, the second rider on the channel cq-board
+ * opened. Clicks that are really text selections or link follows don't choose.
+ * An injected button rather than ARIA option/radio roles, whose presentational
+ * children would silence links inside an option's prose. Authored content is
+ * never replaced, so there is no failSoft. */
 import { once, sendAction, toast } from "/colloquy.js";
 
 customElements.define(
@@ -17,9 +21,14 @@ customElements.define(
       // but worded as the document's state, not attributed to this reader.
       const honored = this.querySelector(":scope > cq-option[chosen]");
       if (honored) this.#badge(honored, "✓ chosen");
+      this.#honored = honored;
       if (!this.hasAttribute("choose")) return;
+      for (const option of this.querySelectorAll(":scope > cq-option")) this.#pick(option);
       this.addEventListener("click", (e) => {
-        if (getSelection()?.toString()) return; // a selection, not a pick
+        // A pointer click amid a selection is the selection's, not a pick — but a
+        // keyboard activation (detail 0) can't be one, and a stale selection
+        // elsewhere on the page must not swallow it.
+        if (e.detail !== 0 && getSelection()?.toString()) return;
         if (e.target.closest("a")) return; // links keep their job
         const option = e.target.closest("cq-option");
         if (!option || option.parentElement !== this || option.hasAttribute("chosen")) return;
@@ -30,21 +39,49 @@ customElements.define(
           if (ok) toast(`Chose “${title}” — sent to Claude`);
           // Unsent means unrecorded: rewind rather than show a pick Claude
           // will never see. (post already toasted the failure.)
-          else if (prev) this.#choose(prev);
+          else if (prev) this.#choose(prev, prev === this.#honored ? "✓ chosen" : "✓ your pick");
           else {
             option.removeAttribute("chosen");
             option.querySelector(":scope > .cq-chosen-badge")?.remove();
+            const btn = option.querySelector(":scope > .cq-pick");
+            if (btn) btn.hidden = false;
           }
         });
       });
     }
 
-    #choose(option) {
+    // The keyboard affordance: a real button whose click bubbles into the group's
+    // pick handler. The chosen option hides its button — the ✓ badge says it.
+    #pick(option) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cq-pick cq-ui"; // UI, not content: anchoring skips it
+      btn.dataset.cqGen = "1"; // and the version diff ignores it
+      btn.textContent = "Choose";
+      const title = option.querySelector(":scope > strong")?.textContent || option.id;
+      btn.setAttribute("aria-label", `Choose: ${title}`);
+      btn.hidden = option.hasAttribute("chosen");
+      option.append(btn);
+    }
+
+    #honored = null; // the authored-chosen option, so a rollback rebadges it honestly
+
+    #choose(option, badge = "✓ your pick") {
+      // Hiding a focused button dumps focus to <body>; catch that before it
+      // happens and keep the keyboard reviewer's place on the chosen option.
+      const chosenBtn = option.querySelector(":scope > .cq-pick");
+      const hadFocus = chosenBtn && document.activeElement === chosenBtn;
       for (const o of this.querySelectorAll(":scope > cq-option")) {
         o.toggleAttribute("chosen", o === option);
         o.querySelector(":scope > .cq-chosen-badge")?.remove();
+        const btn = o.querySelector(":scope > .cq-pick");
+        if (btn) btn.hidden = o === option;
       }
-      this.#badge(option, "✓ your pick");
+      this.#badge(option, badge);
+      if (hadFocus) {
+        option.tabIndex = -1;
+        option.focus({ preventScroll: true });
+      }
     }
 
     #badge(option, text) {
