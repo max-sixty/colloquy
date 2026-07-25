@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Status: search relaunch, week 6</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<p class="eyebrow">weekly status</p>
+<h1>Search relaunch, week 6</h1>
+<p class="lede" id="lede">Indexing is done and dark-launched; relevance is the open
+question. The shadow comparison puts the new engine ahead on head queries and behind
+on long-tail, which is the expected trade at this stage.</p>
+
+<cq-metrics id="kpis">
+  <cq-metric id="k-p95" value="118 ms" delta="-64" direction="up-bad">p95 latency</cq-metric>
+  <cq-metric id="k-ndcg" value="0.71" delta="+0.05" direction="up-good">ndcg@10, head</cq-metric>
+  <cq-metric id="k-tail" value="0.58" delta="-0.03" direction="up-good">ndcg@10, tail</cq-metric>
+  <cq-metric id="k-coverage" value="99.4%">index coverage</cq-metric>
+</cq-metrics>
+
+<section id="milestones">
+<h2>Milestones</h2>
+<cq-milestones id="relaunch-milestones">
+  <cq-milestone id="ms-index" status="done" when="weeks 1-4">
+    <strong>Reindex on the new schema</strong> Full corpus, verified against the old
+    index by document count and spot checks.
+  </cq-milestone>
+  <cq-milestone id="ms-shadow" status="active" when="weeks 5-7" tags="relevance">
+    <strong>Shadow traffic comparison</strong> Every production query runs on both
+    engines; judgments collected on the diffs.
+  </cq-milestone>
+  <cq-milestone id="ms-tail" status="blocked" when="week 7" tags="relevance,data">
+    <strong>Long-tail recovery</strong> Blocked on the synonym table export from the
+    old engine — owner found, ETA Tuesday.
+  </cq-milestone>
+  <cq-milestone id="ms-cutover" status="planned" when="week 9">
+    <strong>Cutover behind a flag</strong> 5% of traffic, then doubling daily if
+    guardrails hold.
+  </cq-milestone>
+</cq-milestones>
+</section>
+
+<section id="detail">
+<h2>The long-tail gap</h2>
+<p id="p-tail">The old engine's synonym table carries fifteen years of manual
+curation; the new engine currently ships without it. On tail queries where a synonym
+was the match, we lose the document entirely, which is most of the −0.03.</p>
+<details id="ev-tail">
+  <summary>Evidence: 61% of tail regressions disappear with the table patched in</summary>
+  <p>A one-hour experiment loading the March export into the new engine's synonym
+  slot recovered 214 of 349 regressed queries. The remainder split between stemming
+  differences and genuine ranking changes.</p>
+</details>
+</section>
+
+<section id="next">
+<h2>Next week</h2>
+<ol class="steps" id="next-steps">
+  <li>Import the synonym table export when it lands Tuesday.</li>
+  <li>Re-run the shadow comparison on the tail set.</li>
+  <li>Draft the cutover guardrails (error rate, zero-result rate, p95).</li>
+</ol>
+</section>
+</main>
+</body>
+</html>

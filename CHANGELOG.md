@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+- Widget actions: interactive widgets report the user editing the document through
+  them as `action` events on the same log as comments — `wait` delivers them, the
+  banner flips, and the next version's markup carries the change. Until it ships, the
+  live view is the version plus its own actions: a reload replays them, a second tab
+  follows along live, and an edit made while Claude was already writing a version
+  carries forward onto it rather than visibly reverting. Declining an edit is a
+  version too — one shipped without the change, saying why in its changelog — and
+  the view rolls back to the authored state when it lands.
+- `cq-board`/`cq-column`/`cq-card`: a kanban board whose cards drag between columns —
+  each drop reaches Claude as a `move` action naming the card, target column, and
+  position. Dragging rides a grip so card text still takes selection comments;
+  presentation is pure theme CSS, so an unupgraded page reads as a static board.
+- `cq-options choose`: the second rider on the channel — clicking an option card
+  picks it, the pick arrives as a `choose` action, and the card wears a green ring
+  and ✓ badge until the next version marks it `chosen`. Text selections and link
+  clicks inside cards don't choose. Works inside a thread reply too: a choose group
+  there is an inline question, and the pick comes back as an action. Widget ids are
+  one universe across the page and replies — `reply` and `check` both refuse a
+  collision, since the runtime routes actions by id.
+- An examples gallery (`examples/`): an incident report, a PR walkthrough, a status
+  report, a design decision, and a draggable triage board — complete pages that lint
+  clean against the shipped layer in the tests and double as authoring references.
+
 ## 0.2.0 — 2026-07-24
 
 - Widget system: pages carry `cq-*` elements (semantic markup) rendered by a theme the

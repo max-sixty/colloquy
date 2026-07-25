@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release triage</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<p class="eyebrow">triage · v2.4 release</p>
+<h1>Release triage</h1>
+<p class="lede" id="lede">Everything open against the v2.4 release. Drag cards to
+re-triage: each move reaches Claude as an action, and the next version of this page
+ships with the board as you left it.</p>
+
+<cq-board id="release-board">
+  <cq-column id="col-blocking" label="Blocking release">
+    <cq-card id="card-migration"><strong>Migration reruns on every deploy</strong>
+    The version stamp never lands, so 0041 replays; idempotent today, not once 0042
+    ships.</cq-card>
+    <cq-card id="card-logout"><strong>Logout 500s with an expired session</strong>
+    Double-delete on the session key; needs a guard, one line.</cq-card>
+  </cq-column>
+  <cq-column id="col-next" label="Fix in 2.4.1">
+    <cq-card id="card-tz"><strong>Digest email uses server timezone</strong>
+    Cosmetic for most, wrong-day for UTC+13.</cq-card>
+    <cq-card id="card-search"><strong>Search ignores archived items toggle</strong>
+    Filter dropped in the query builder rewrite.</cq-card>
+    <cq-card id="card-export"><strong>CSV export quotes numerics</strong>
+    Breaks one customer's downstream import.</cq-card>
+  </cq-column>
+  <cq-column id="col-wont" label="Won't fix for 2.4">
+    <cq-card id="card-ie"><strong>Layout breaks on IE mode</strong>
+    Out of support matrix; documented instead.</cq-card>
+  </cq-column>
+</cq-board>
+
+<section id="notes">
+<h2>Triage notes</h2>
+<p id="p-notes">The migration stamp bug is the only one with data risk; it blocks the
+release even if the fix slips a day. The logout fix is trivial but touches the auth
+path, so it rides the same release train rather than a hotfix.</p>
+</section>
+</main>
+</body>
+</html>

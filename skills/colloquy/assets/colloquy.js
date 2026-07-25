@@ -5,7 +5,19 @@
  * module per tag marked x-upgrade — element-widgets need no JS at all; the theme's CSS
  * renders them. Upgrades flush before the first anchor pass, so comment quotes always
  * search the enhanced DOM. Widget modules import the helper surface exported here
- * (`once`, `failSoft`, `refUrl`); it stays minimal until a real widget needs more.
+ * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `toast`); it stays minimal
+ * until a real widget needs more.
+ *
+ * Actions: an interactive widget (cq-board) reports the user editing the document
+ * through it as an `action` event — sendAction posts it, `wait` delivers it, and the
+ * next version's markup carries the change. Until then the live view = the version
+ * plus its actions: each poll replays unapplied actions recorded against the version
+ * on screen, plus undelivered ones from older versions (a version Claude wrote
+ * before being handed the edit must not visibly revert it); a widget inside a
+ * thread reply replays its actions on every version, because its markup is frozen
+ * in the log and no version can carry its state. Widgets opt in via an
+ * applyAction(action, detail) method, so a reload keeps the reviewer's drag and a
+ * second tab follows along live.
  *
  * Comment layer: talks to interact.py's server — polls GET /api/state, posts events to
  * POST /api/event. Everything it injects is namespaced .cq-* and marked .cq-ui so
@@ -71,6 +83,20 @@ export function refUrl(path, line) {
   let url = template.replaceAll("{path}", path).replaceAll("{line}", line ?? "");
   if (!line) url = url.replace(/#[^#]*$/, ""); // the fragment is line-shaped; lineless refs drop it
   return url;
+}
+
+// A widget's report of the user editing the document through it (a card dragged
+// between columns). The caller has already applied the edit to its own DOM; the
+// poll's replay re-applies it once (see applyActions), which is why applyAction
+// implementations must state an absolute placement, never a relative mutation.
+export function sendAction(el, action, detail) {
+  return post({ kind: "action", version: VNUM, widget: el.id, action, detail });
+}
+
+// Transient confirmation ("Moved to Doing — sent to Claude"), styled and placed by
+// the comment layer.
+export function toast(msg) {
+  showToast(msg);
 }
 
 async function upgradeWidgets() {
@@ -241,9 +267,9 @@ const composerCancel = el("button", "cq-btn", "Cancel");
 const composerSend = el("button", "cq-btn primary", "Comment");
 composerRow.append(composerCancel, composerSend);
 composer.append(composerQuote, suggestRow, composerInput, composerRow);
-const toast = el("div", "cq-ui cq-toast");
+const toastEl = el("div", "cq-ui cq-toast");
 
-document.body.append(banner, panel, fab, composer, toast);
+document.body.append(banner, panel, fab, composer, toastEl);
 const basePaddingTop = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
 document.body.style.paddingTop = basePaddingTop + 42 + "px";
 
@@ -255,7 +281,6 @@ let latestName = "";
 let claudeMsgCount = -1;
 let panelOpen = false;
 let pendingAnchor = null;
-const rid = () => crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 
 // ---------- draft persistence ----------
 // Text the user typed but hasn't sent must survive navigation, reload, version switches,
@@ -295,7 +320,7 @@ function syncLayout() {
     panelOpen && innerWidth > 720 ? panel.offsetWidth + "px" : "";
   // The toast lives in the same corner as the panel's Send button; step it aside so a
   // "couldn't send" message never covers the button it's talking about.
-  toast.style.right = (panelOpen ? panel.offsetWidth + 18 : 18) + "px";
+  toastEl.style.right = (panelOpen ? panel.offsetWidth + 18 : 18) + "px";
 }
 function setPanel(open) {
   panelOpen = open;
@@ -314,16 +339,16 @@ addEventListener("resize", syncLayout);
 
 let toastTimer = 0;
 function showToast(msg, onClick) {
-  toast.textContent = msg;
-  toast.onclick = onClick || null;
-  toast.classList.add("show");
-  toast.classList.toggle("clickable", Boolean(onClick));
+  toastEl.textContent = msg;
+  toastEl.onclick = onClick || null;
+  toastEl.classList.add("show");
+  toastEl.classList.toggle("clickable", Boolean(onClick));
   clearTimeout(toastTimer);
   // Drop `clickable` on the way out too: a faded-but-clickable toast is an invisible
   // target sitting over the corner of the page.
   toastTimer = setTimeout(() => {
-    toast.classList.remove("show", "clickable");
-    toast.onclick = null;
+    toastEl.classList.remove("show", "clickable");
+    toastEl.onclick = null;
   }, 4000);
 }
 
@@ -495,7 +520,7 @@ function threadNode(t, syncs) {
         sendBtn: send,
         save: (v) => saveDraft(draftCtx, v),
         send: async (text) => {
-          if (await post({ kind: "reply", id: rid(), parent: t.root.id, version: VNUM, text })) {
+          if (await post({ kind: "reply", parent: t.root.id, version: VNUM, text })) {
             // post() polls, which has already rebuilt this thread — `input` is detached
             // and its replacement was seeded from the draft. Clear it and render again.
             saveDraft(draftCtx, "");
@@ -506,7 +531,7 @@ function threadNode(t, syncs) {
     );
     const actions = el("div", "cq-thread-actions");
     const resolve = el("button", "cq-resolve", "✓ Resolve");
-    resolve.onclick = () => post({ kind: "resolve", id: rid(), parent: t.root.id });
+    resolve.onclick = () => post({ kind: "resolve", parent: t.root.id });
     actions.append(el("span"), resolve);
     div.append(row, actions);
   }
@@ -835,7 +860,7 @@ const syncComposer = wireInput(composerInput, {
   sendBtn: composerSend,
   save: saveComposerDraft,
   send: async (text) => {
-    const event = { kind: "comment", id: rid(), version: VNUM, anchor: pendingAnchor, text };
+    const event = { kind: "comment", version: VNUM, anchor: pendingAnchor, text };
     if (suggestCheck.checked) event.suggestion = true;
     if (await post(event)) {
       closeComposer();
@@ -909,7 +934,7 @@ const syncGeneral = wireInput(generalInput, {
   sendBtn: generalSend,
   save: (v) => saveDraft("general", v),
   send: async (text) => {
-    if (await post({ kind: "comment", id: rid(), version: VNUM, text })) {
+    if (await post({ kind: "comment", version: VNUM, text })) {
       generalInput.value = "";
       saveDraft("general", "");
     }
@@ -917,7 +942,7 @@ const syncGeneral = wireInput(generalInput, {
 });
 
 approveBtn.onclick = () =>
-  post({ kind: "done", id: rid(), version: VNUM, text: "Looks good" });
+  post({ kind: "done", version: VNUM, text: "Looks good" });
 
 // Escape backs out of whatever is in front: first the composer (its draft is kept),
 // then the panel — but never while a textarea has focus, where it would look like
@@ -938,7 +963,8 @@ document.addEventListener("keydown", (ev) => {
 // revision is cheap. Block-level and additions-only — deleted text has no home
 // to mark — and data-widget bodies (diagram, diff, tree, code) are opaque to
 // it. The base is the previous published version.
-const DIFF_BLOCK = TEXT_BLOCK + ",aside,cq-option,cq-milestone,cq-event,cq-variant,cq-metric";
+const DIFF_BLOCK =
+  TEXT_BLOCK + ",aside,cq-option,cq-milestone,cq-event,cq-variant,cq-metric,cq-card";
 const DIFF_OPAQUE = "cq-diagram,cq-diff,cq-tree,cq-code,svg";
 let diffBase = ""; // previous version's file name, set by renderVersions
 let diffOn = false;
@@ -1028,7 +1054,7 @@ function renderStatus(state) {
     const stale = status.ts && Date.now() - new Date(status.ts).getTime() > STALE_MS;
     text = stale
       ? "Claude has been quiet a while — comments are saved; nudge it in the terminal"
-      : "Claude isn't watching right now — comments are saved and delivered next turn";
+      : "Claude isn't watching right now — your comments and edits are saved for next turn";
   } else {
     text = "Review closed";
   }
@@ -1081,9 +1107,12 @@ function renderVersions(state) {
     diffBtn.title = `Highlight what changed since v${n}`;
   }
 }
+// A live widget gesture (.cq-dragging) counts: navigating mid-drag would unload
+// the document from under the pointer and lose the move.
 const midComposition = () =>
   composer.style.display === "block" ||
   fab.style.display === "block" ||
+  Boolean(document.querySelector(".cq-dragging")) ||
   (document.activeElement?.tagName === "TEXTAREA" && document.activeElement.value !== "");
 versionSelect.onchange = () => {
   const name = versionSelect.value;
@@ -1092,6 +1121,50 @@ versionSelect.onchange = () => {
 latestChip.onclick = () => (location.href = "/");
 
 // ---------- polling ----------
+// Rendering version V shows V plus the actions recorded against it, replayed in
+// seq order: a reload keeps the reviewer's drag, a second tab follows along
+// live, and a pinned older version shows what the reviewer did while on it.
+// Widgets opt in by exposing applyAction(action, detail) — an absolute
+// placement, so replaying the sender's own action is a no-op. The first poll
+// runs after upgrades settle, so the methods exist.
+const appliedActions = new Set();
+const lastActionByWidget = new Map();
+let cursor = 0; // what `wait` has delivered to Claude, from /api/state
+function applyActions() {
+  // Never mutate the page under a live gesture — a replayed foreign action could
+  // move the nodes a drag preview is holding. Retry next poll.
+  if (document.querySelector(".cq-dragging")) return;
+  for (const e of events) {
+    if (e.kind !== "action" || appliedActions.has(e.seq)) continue;
+    const el = document.getElementById(e.widget);
+    // Marked applied only once a widget takes it: a widget that isn't on the page
+    // yet — one inside a thread reply renders after this pass — retries next poll,
+    // and per-widget seq order holds because its earlier actions are pending too.
+    if (!el?.applyAction) continue;
+    // Page widgets replay the on-screen version's own actions, plus undelivered
+    // ones from older versions (seq > cursor): Claude can't have declined or
+    // honored what it hasn't been handed, so the reviewer's edit carries forward
+    // instead of visibly reverting when a concurrently-written version publishes.
+    // A widget inside the comment layer (.cq-ui — a reply's inline question) is
+    // version-independent: its markup is frozen in the log and no version can
+    // ever carry its state, so its actions replay on every version.
+    if (
+      !el.closest(".cq-ui") &&
+      !(e.version === VNUM || (e.version < VNUM && e.seq > cursor))
+    ) {
+      appliedActions.add(e.seq);
+      continue;
+    }
+    appliedActions.add(e.seq);
+    // A foreign action older than one this tab already applied to the widget
+    // would yank it backwards — skip it. Two tabs editing one widget in the same
+    // poll window can diverge until a reload or the honoring version; the log
+    // stays canonical either way.
+    if (e.seq < (lastActionByWidget.get(e.widget) ?? 0)) continue;
+    lastActionByWidget.set(e.widget, e.seq);
+    el.applyAction(e.action, e.detail);
+  }
+}
 async function poll() {
   let state;
   try {
@@ -1102,6 +1175,8 @@ async function poll() {
     return;
   }
   events = state.events;
+  cursor = state.cursor ?? 0;
+  applyActions();
   renderStatus(state);
   renderVersions(state);
   const key = JSON.stringify(events);

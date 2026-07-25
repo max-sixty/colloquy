@@ -20,14 +20,18 @@ $ARGUMENTS
 
 ## Setup
 
-The page lives in its own directory under `~/.claude/colloquy/<slug>/`, where `<slug>`
-is a short kebab-case name for the topic (`migration-options`, `auth-diagnosis`). The
-directory survives the session and is where every version, the event log, and the
-vendored widget layer live. `interact.py` mediates everything; its module docstring
-documents the layout.
+The page lives in its own directory, conventionally `~/.claude/colloquy/<slug>/`,
+where `<slug>` is a short kebab-case name for the topic (`migration-options`,
+`auth-diagnosis`) — every command takes the directory explicitly, so any location
+works. The directory survives the session and is where every version, the event log,
+and the vendored widget layer live. The same `~/.claude/colloquy/` also carries the user's
+personal overlay layer (see Customizing), which reserves `widgets` and `vendor` as
+slugs. `interact.py` mediates everything; its module docstring documents the layout.
 
 Invoke it with `uv run` — it's a `uv` script (a PEP 723 header declares its
-dependencies), and `uv` is the one prerequisite for the whole plugin:
+dependencies), and `uv` is the one prerequisite for the whole plugin. If
+`CLAUDE_SKILL_DIR` isn't set in your shell, the script lives at
+`scripts/interact.py` beside this file:
 
 ```bash
 IX="uv run ${CLAUDE_SKILL_DIR}/scripts/interact.py"
@@ -38,7 +42,7 @@ $IX status <dir> working "<detail>"     # or: waiting, idle
 $IX wait <dir>                          # background task; exits on new user events
 $IX reply <dir> --to <id> --text "…"
 $IX check <dir>                         # pre-handover lint (see below)
-$IX note <dir> --version 2 --text "<one-line changelog>"   # re-runs check, then publishes
+$IX note <dir> --version 1 --text "<one-line changelog>"   # re-runs check, then publishes vNNN.html
 $IX events <dir>                        # reprint the full thread
 $IX export <dir>                        # the review thread as Markdown
 $IX stop <dir>                          # stop the server; its background task exits 143 (SIGTERM — normal)
@@ -95,6 +99,11 @@ $IX stop <dir>                          # stop the server; its background task e
   around it was rewritten. Keep ids stable across versions so neither detaches.
 - The runtime injects the status banner, comment sidebar, and version picker; don't
   build page UI for any of those.
+- **Announce interactivity in prose.** A fresh reviewer won't guess from a grip glyph
+  or a hover cursor that a board takes drags or an options group takes clicks — the
+  sentence introducing the widget says it ("drag cards to reprioritize; your edits
+  reach me directly", "click an option to decide"). The widgets stay chrome-free on
+  purpose; the page's own words carry the affordance.
 - **Never lose user text.** A central tenet of the comment layer: drafts (the general
   box, each reply, the selection composer) survive navigation, reload, version switches,
   and server death; only a successful send clears them.
@@ -125,24 +134,47 @@ $IX stop <dir>                          # stop the server; its background task e
 Whenever you hand over the URL or finish a round of work: `status <dir> waiting`, start
 `wait <dir>` as a background task, and end your turn. While `wait` runs, the banner
 shows "Claude is listening"; it exits — re-invoking you — when the user comments,
-replies, resolves, or approves, printing the new events as JSON. It also delivers events
-posted while you were working, so comments never get lost between rounds. User comments
-exist only through the browser — there is no CLI that posts as the user.
+replies, resolves, approves, or edits an interactive widget (a drag on a `cq-board`
+arrives as an `action` event), printing the new events as JSON. `wait` delivers
+everything no previous `wait` has delivered — including events posted while you were
+working, so comments never get lost between rounds; reading the log another way
+(`events`) doesn't count as delivery. User comments exist only through the browser —
+there is no CLI that posts as the user.
 
 On wake:
 
 1. `status <dir> working "<what you're doing>"` — refresh the detail at each milestone;
    the banner shows it live.
-2. Address every comment: `reply` in-thread, and change the page where the comment
-   warrants it — usually both. A reply is brief plain text, or may carry widget markup
-   (a small `cq-diagram` explaining a fix renders live in the thread); `reply` validates
-   widgets against the vendored registry and rejects what `check` would. A comment with
-   `"suggestion": true` proposes replacement text for its quoted passage: take it
-   verbatim into the next version, or reply with why not — never silently rewrite it.
+2. Address every event `wait` printed (each is JSON carrying the server-minted `id`
+   that `reply --to` takes):
+   - **A comment**: `reply` in-thread, and change the page where the comment warrants
+     it — usually both. A reply is brief plain text, or may carry widget markup (a
+     small `cq-diagram` explaining a fix renders live in the thread); `reply`
+     validates widgets against the vendored registry and rejects what `check` would,
+     and their ids must be fresh — `reply` refuses ids the page or an earlier reply
+     already uses, and `check` keeps later versions off a reply's.
+   - **A suggestion** (a comment with `"suggestion": true`) proposes replacement text
+     for its quoted passage: take it verbatim into the next version, or reply with
+     why not — never silently rewrite it.
+   - **A page-widget action** is the user editing the document through a widget — a
+     board drag arrives as `{"kind": "action", "widget": "feeder-board", "action":
+     "move", "detail": {"card": "card-baffle", "to": "col-doing", "index": 0}}`, an
+     options pick with `"action": "choose"` and `"detail": {"option": "st-s3"}` —
+     and they have already seen the change on screen. The version is the reply
+     either way: honor the edit by carrying it into the next version's markup
+     exactly (move that element, keep its id; mark the option `chosen`), or decline
+     by shipping without that edit — everything else may still change — and saying
+     why in the note; tabs roll back to the authored state as they pick up that
+     version.
+   - **A thread-widget action**: a `cq-options choose` group in one of your replies
+     is an inline question (announce it there too — "click an option to answer");
+     the user's pick is the answer, so acknowledge it with a reply in the same
+     thread. Reply markup is frozen in the log — versions neither carry nor revert
+     it, and the picked state stays put on its own.
 3. Page changes go in the next version: Write `versions/v002.html` (incrementing; never
    rewrite a version the user has seen — the picker is the history), `check` it, then
-   `note` its one-line changelog, which publishes it — the browser follows
-   automatically.
+   `note` its changelog — brief, though a decline's why can take a sentence or two —
+   which publishes it; the browser follows automatically.
 4. Back to `status waiting` + `wait`.
 
 A `done` event is sign-off: `status <dir> idle`, don't restart `wait`, and carry the

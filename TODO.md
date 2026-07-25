@@ -26,7 +26,14 @@ items are recommendations that stood unchallenged. Each item stands alone.
 - [ ] Plan-mode integration hardening: remove the auto-approve workaround in
       `/colloquy-plans` and settle the default UX before promoting it from
       experimental.
-- [ ] Widgets after v1, committed: `cq-plan` + `cq-milestones` (the composition test
-      case), then `cq-timeline`, `cq-compare`, `cq-metrics` (element-widgets) and
-      `cq-diff`, `cq-code`, `cq-tree` (upgraded body-parsers, prototyped standalone
-      first). Deferred until a page wants them: risks, verdict.
+- [ ] Widgets deferred until a page wants them: risks, verdict.
+- [ ] Keyboard path for board drags: the grip is HTML5-DnD only (pointer). A
+      focusable grip moving its card with arrow keys would cover keyboard-only
+      review; do it when a reviewer needs it rather than speculatively.
+- [ ] Widget-aware Δ: the version diff is additions-only by text key, so a card that
+      moved columns isn't marked. The changelog line carries it today; marking cards
+      whose column changed would need the diff to understand board structure.
+- [ ] Element deletion vs. anchor survival: `check` requires every id from the
+      previous version to survive, which forbids ever deleting a card the reviewer
+      dragged to "Done". When users ask for deletion, widen the frame (e.g., an id
+      retires once no unresolved thread anchors it) rather than exempting boards.

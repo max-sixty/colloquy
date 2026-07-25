@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR walkthrough: per-token rate limits</title>
+<meta name="cq-base" content="https://github.com/example/gateway/blob/main/{path}#L{line}">
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<p class="eyebrow">pr walkthrough</p>
+<h1>Per-token rate limits</h1>
+<p class="lede" id="lede">Moves rate limiting from per-IP to per-token, so one office
+NAT can't exhaust the budget for every client behind it. Three files, one new table,
+no behavior change for untokened requests.</p>
+
+<section id="shape">
+<h2>Shape of the change</h2>
+<cq-tree id="files">
+gateway/
+  limits.py  +38 -9
+  middleware.py  +6 -2
+  migrations/
+    0042_token_buckets.sql  +11
+</cq-tree>
+<p id="p-shape">The interesting part is <cq-ref src="gateway/limits.py:41"></cq-ref>:
+the bucket key changes from the remote address to the token id when one is present.
+Everything else is plumbing that key through.</p>
+</section>
+
+<section id="core">
+<h2>The core diff</h2>
+<cq-diff id="limits-diff">
+diff --git a/gateway/limits.py b/gateway/limits.py
+--- a/gateway/limits.py
++++ b/gateway/limits.py
+@@ -38,9 +38,11 @@ class Limiter:
+-    def bucket_key(self, request):
+-        return request.remote_addr
++    def bucket_key(self, request):
++        if request.token:
++            return f"tok:{request.token.id}"
++        return f"ip:{request.remote_addr}"
+
+     def allow(self, request):
+         key = self.bucket_key(request)
+         return self.buckets[key].take()
+</cq-diff>
+</section>
+
+<section id="walkthrough">
+<h2>Why the prefixes matter</h2>
+<cq-code id="key-walk" hi="3-4">
+def bucket_key(self, request):
+    if request.token:
+        return f"tok:{request.token.id}"
+    return f"ip:{request.remote_addr}"
+<cq-note at="3">Unprefixed, a token id that happens to look like an IP would share a
+bucket with that address. The prefixes make the two namespaces disjoint.</cq-note>
+</cq-code>
+<aside class="callout" id="migration-note">Existing buckets are keyed by bare address,
+so the migration renames them once at deploy; mixed keys never coexist.</aside>
+</section>
+
+<section id="testing">
+<h2>Testing</h2>
+<ul id="test-list">
+  <li>Unit: bucket key for tokened, untokened, and both-present requests.</li>
+  <li>Integration: two tokens behind one address each get a full budget; two
+  addresses on one token share one.</li>
+</ul>
+</section>
+</main>
+</body>
+</html>

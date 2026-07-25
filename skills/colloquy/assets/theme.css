@@ -132,6 +132,18 @@ cq-option[risk]::after { content: "risk " attr(risk); right: 12px; }
 cq-option[risk="high"]::after { background: var(--danger-tint); color: var(--danger-ink); }
 cq-option[risk="med"]::after  { background: var(--warn-tint); color: var(--warn-ink); }
 cq-option[risk="low"]::after  { background: var(--ok-tint); color: var(--ok-ink); }
+/* With `choose`, the group takes the reader's pick by click: hover lifts a card,
+ * and the pick wears the ok ring plus a ✓ badge (inserted by the upgrade).
+ * `chosen` reads after `recommended`, so the reader's pick wins the border. */
+cq-options[choose] > cq-option { cursor: pointer; }
+/* :not([recommended]): the hover lift must not gray out a ring a card already wears. */
+cq-options[choose] > cq-option:not([recommended]):hover { box-shadow: 0 0 0 1px var(--border-2); }
+cq-option[chosen], cq-options[choose] > cq-option[chosen]:hover {
+                         border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok);
+                         padding-bottom: 34px; /* room for the ✓ badge */ }
+.cq-chosen-badge { position: absolute; right: 10px; bottom: 8px; font-size: var(--t-6);
+                   padding: 0 8px; border-radius: 999px; line-height: 1.6;
+                   background: var(--ok-tint); color: var(--ok-ink); }
 
 /* cq-plan: the chrome plan pages hand-build — title, facts row, numbered
  * sections — as one element-widget. Numbering is CSS counters. */
@@ -204,6 +216,30 @@ cq-metric[direction="up-good"][delta^="+"]::after,
 cq-metric[direction="up-bad"][delta^="-"]::after  { background: var(--ok-tint); color: var(--ok-ink); }
 cq-metric[direction="up-good"][delta^="-"]::after,
 cq-metric[direction="up-bad"][delta^="+"]::after  { background: var(--danger-tint); color: var(--danger-ink); }
+
+/* cq-board / cq-column / cq-card: the one widget the reviewer edits directly.
+ * All presentation is CSS; the cq-board upgrade only wires dragging (grips,
+ * dropzones) and reports each drop as a `move` action. Unupgraded it reads as a
+ * static board. */
+cq-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(10rem, 1fr);
+           gap: var(--sp-2); margin: 14px 0; align-items: start; overflow-x: auto; }
+cq-column { display: block; background: var(--field); border: 1px solid var(--rule);
+            border-radius: var(--r); padding: 8px; min-height: 64px; }
+cq-column::before { content: attr(label); display: block; font-size: var(--t-6);
+            text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+            padding: 2px 4px 8px; }
+cq-column.cq-dropping { border-color: var(--accent); }
+cq-card { display: block; position: relative; background: var(--card);
+          border: 1px solid var(--rule); border-radius: var(--r);
+          padding: 8px 26px 8px 10px; margin: 0 0 var(--sp-2); font-size: 14px; }
+cq-card:last-child { margin-bottom: 0; }
+cq-card > strong { display: block; margin: 0 0 2px; }
+cq-card .cq-grip { position: absolute; top: 6px; right: 4px; color: var(--muted-2);
+          cursor: grab; padding: 2px 5px; border-radius: 4px; user-select: none;
+          -webkit-user-select: none; font-size: 13px; line-height: 1; }
+cq-card:hover > .cq-grip { color: var(--ink-2); } /* the whole card advertises its own grip */
+cq-card .cq-grip:hover { background: var(--chip); }
+cq-card.cq-dragging { opacity: .45; }
 
 /* Upgraded widgets: pre-upgrade presentation, so a page degrades readably. */
 cq-ref { font-family: var(--mono); font-size: 87%; }

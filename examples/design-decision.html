@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision: where sessions live</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<p class="eyebrow">design decision</p>
+<h1>Where sessions live</h1>
+<p class="lede" id="lede">The monolith split leaves session state homeless: today it
+rides the app server's memory and dies with it. Three candidates, one recommendation —
+Redis with a signed-cookie fallback. Click an option to decide; your pick reaches
+Claude directly.</p>
+
+<section id="constraints">
+<h2>Constraints</h2>
+<ul id="constraint-list">
+  <li>Logout must revoke immediately — support runs "log out all devices" during
+  account-takeover response.</li>
+  <li>Session writes happen on every request (rolling expiry), so the store sees
+  full request volume.</li>
+  <li>The team already operates Redis for rate limiting; nobody runs Dynamo-style
+  infrastructure today.</li>
+</ul>
+</section>
+
+<section id="options">
+<h2>Options</h2>
+<cq-options id="session-options" choose>
+  <cq-option id="opt-jwt" effort="low" risk="high">
+    <strong>Stateless JWT</strong> Sessions become signed tokens; no store at all.
+    Revocation requires a denylist, which quietly reintroduces the store — with the
+    hard parts (replication, expiry) still attached.
+  </cq-option>
+  <cq-option id="opt-redis" effort="med" risk="low" recommended>
+    <strong>Redis, cookie fallback</strong> Sessions in the Redis we already run,
+    keyed by an opaque id; a short-lived signed cookie covers Redis outages for reads
+    so a blip doesn't log everyone out. Revocation is a delete.
+  </cq-option>
+  <cq-option id="opt-db" effort="low" risk="med">
+    <strong>Postgres table</strong> One table, no new moving parts. Every request
+    writes a row; at our volume that's the primary's headroom spent on expiry
+    bookkeeping.
+  </cq-option>
+</cq-options>
+</section>
+
+<section id="tradeoffs">
+<h2>The trade in one view</h2>
+<cq-compare id="revocation-compare">
+  <cq-variant id="var-jwt"><strong>JWT</strong> Revoke: build and replicate a
+  denylist. Outage: unaffected. Ops: none until the denylist exists.</cq-variant>
+  <cq-variant id="var-redis"><strong>Redis</strong> Revoke: delete the key. Outage:
+  reads ride the fallback cookie for its 5-minute life. Ops: what we already do.</cq-variant>
+  <cq-variant id="var-db"><strong>Postgres</strong> Revoke: delete the row. Outage:
+  sessions share the database's fate. Ops: vacuum pressure from hot rows.</cq-variant>
+</cq-compare>
+</section>
+
+<section id="flow">
+<h2>Request path with the recommendation</h2>
+<cq-diagram id="session-flow">
+graph LR
+  R[request] --> C{cookie valid?}
+  C -->|yes| S[read session from Redis]
+  S -->|hit| H[handle]
+  S -->|miss/outage| F[verify signed fallback]
+  F --> H
+  C -->|no| L[login]
+</cq-diagram>
+<aside class="callout" id="fallback-note">The fallback cookie is read-only: it can
+keep a session alive through a Redis blip, but revocation, rolling expiry, and new
+logins all require the store. A revoked session survives at most the cookie's
+5-minute lifetime.</aside>
+</section>
+</main>
+</body>
+</html>

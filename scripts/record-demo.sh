@@ -37,6 +37,21 @@ graph LR
 </section>
 <section id="risk"><h2>Rollback</h2>
 <p id="r1">Each phase is independently reversible by toggling the flag.</p></section>
+<section id="work"><h2>Cutover weekend punch list</h2>
+<p id="w1">Drag to reprioritize — each move reaches Claude directly.</p>
+<cq-board id="punch-list">
+  <cq-column id="col-before" label="Before the window">
+    <cq-card id="card-dryrun"><strong>Dry-run the backfill</strong></cq-card>
+    <cq-card id="card-oncall"><strong>Staff the on-call rota</strong></cq-card>
+  </cq-column>
+  <cq-column id="col-during" label="During">
+    <cq-card id="card-flip"><strong>Flip reads</strong></cq-card>
+  </cq-column>
+  <cq-column id="col-after" label="After">
+    <cq-card id="card-retire"><strong>Retire the old store</strong></cq-card>
+  </cq-column>
+</cq-board>
+</section>
 </main><script type="module" src="/colloquy.js"></script></body></html>
 HTML
 
@@ -59,7 +74,9 @@ Shot list for docs/demo.gif (~30s, keep it tight):
        (write versions/v002.html changing phase 3, then:)
        $IX note "$DIR" --version 2 --text "Phase 3 is now an online swap, no downtime"
   4. Back in the browser: the banner flips to "working", the picker gains v2,
-     and the reply lands in the thread. End on the v2 page.
+     and the reply lands in the thread.
+  5. Drag "Staff the on-call rota" into the During column by its grip — the
+     toast confirms "sent to Claude". End on the moved card.
 
 Record with any screen recorder, export at <=1200px wide, save to docs/demo.gif.
 EOF

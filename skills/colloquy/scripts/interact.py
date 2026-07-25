@@ -50,9 +50,11 @@ Schema has no vocabulary for rides in x- keywords:
     x-example   one authored example, printed by `catalog`
 
 Event kinds: comment (user; optional anchor {section, quote}), reply (parent=id),
-resolve (parent=id), done (user sign-off), note (claude; per-version changelog).
-The server stamps every browser-posted event author=user; `reply`/`note` stamp
-author=claude. A Claude reply may carry widget markup — `reply` validates it
+resolve (parent=id), done (user sign-off), action (user; a widget reporting the
+user editing the document through it — widget=element id, action=verb, detail
+per widget, version the edit was made against), note (claude; per-version
+changelog). The server stamps every browser-posted event author=user;
+`reply`/`note` stamp author=claude. A Claude reply may carry widget markup — `reply` validates it
 against the vendored registry, the discussion-side analog of `check`; user
 comments stay plain text.
 
@@ -86,7 +88,7 @@ import click
 from jsonschema import Draft202012Validator
 
 HEARTBEAT_FRESH_SECS = 8
-BROWSER_EVENT_KINDS = {"comment", "reply", "resolve", "done"}
+BROWSER_EVENT_KINDS = {"comment", "reply", "resolve", "done", "action"}
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 VENDORED_FILES = ("colloquy.js", "theme.css", "registry.json")
@@ -127,7 +129,14 @@ def read_json(path: Path):
 
 
 def write_json(path: Path, obj) -> None:
-    path.write_text(json.dumps(obj, ensure_ascii=False) + "\n", encoding="utf-8")
+    # Atomic: the serve process reads these files (cursor.json every poll) while
+    # wait/status write them; a torn read of cursor.json would replay declined
+    # actions in the browser, stickily. The tmp name carries the pid so two
+    # writers (wait's status flip racing a `status` CLI call) can't replace each
+    # other's tmp out from under os.replace.
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(obj, ensure_ascii=False) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def append_event(page_dir: Path, event: dict) -> dict:
@@ -204,6 +213,10 @@ def full_state(page_dir: Path) -> dict:
         "versions": published_versions(page_dir),
         "status": status,
         "listening": listening,
+        # What `wait` has delivered to Claude: an action past this seq can't have
+        # been seen (so not declined), which is what lets the runtime carry it
+        # forward onto versions written without it.
+        "cursor": (read_json(page_dir / "cursor.json") or {}).get("seq", 0),
         "events": read_events(page_dir),
     }
 
@@ -265,9 +278,31 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             self._json({"error": "invalid JSON"}, 400)
             return
+        if not isinstance(event, dict):
+            self._json({"error": "event must be a JSON object"}, 400)
+            return
         if event.get("kind") not in BROWSER_EVENT_KINDS:
             self._json({"error": f"kind must be one of {sorted(BROWSER_EVENT_KINDS)}"}, 400)
             return
+        if event["kind"] == "action" and not (
+            isinstance(event.get("widget"), str)
+            and event["widget"]
+            and isinstance(event.get("action"), str)
+            and event["action"]
+            and isinstance(event.get("detail"), dict)
+            and isinstance(event.get("version"), int)
+        ):
+            self._json(
+                {
+                    "error": "action events need non-empty string `widget` and `action`,"
+                    " object `detail`, integer `version`"
+                },
+                400,
+            )
+            return
+        # The server owns identity: a client-supplied id could collide with an
+        # existing event's and silently re-root its thread.
+        event.pop("id", None)
         event["author"] = "user"
         self._json({"ok": True, "event": append_event(self.page_dir, event)})
 
@@ -288,6 +323,8 @@ def layer_dirs() -> list:
 
 def cmd_init(page_dir: Path) -> None:
     (page_dir / "versions").mkdir(parents=True, exist_ok=True)
+    for stray in page_dir.glob("*.tmp"):  # a killed writer's write_json leftovers
+        stray.unlink()
     for layer in layer_dirs():
         if not layer.is_dir() or layer.resolve() == page_dir.resolve():
             continue
@@ -342,7 +379,7 @@ def cmd_wait(page_dir: Path) -> int:
     server_check_at = 0.0
     try:
         while True:
-            (page_dir / "heartbeat.json").write_text(json.dumps({"t": time.time()}))
+            write_json(page_dir / "heartbeat.json", {"t": time.time()})
             events = read_events(page_dir)
             new_user = [e for e in events if e["seq"] > cursor and e.get("author") == "user"]
             if new_user:
@@ -352,8 +389,9 @@ def cmd_wait(page_dir: Path) -> int:
                 write_json(page_dir / "cursor.json", {"seq": events[-1]["seq"]})
                 # flip status here, not in Claude's next turn: the handoff gap
                 # between this exit and Claude's pickup must not show "waiting"
+                # "update", not "comment": the batch may mix comments and widget actions
                 n = len(new_user)
-                cmd_status(page_dir, "working", f"picking up {n} comment{'s' if n != 1 else ''}")
+                cmd_status(page_dir, "working", f"picking up {n} update{'s' if n != 1 else ''}")
                 return 0
             if time.time() > server_check_at:
                 server_check_at = time.time() + 5
@@ -372,6 +410,35 @@ def read_text_arg(text) -> str:
     return body.strip()
 
 
+def reply_widget_ids(page_dir: Path) -> set:
+    """Ids claimed by widget markup in logged replies. Reply markup is frozen in
+    the log and rendered into the thread panel, so its ids share one universe
+    with page ids — the runtime resolves actions document-wide by id, and a
+    collision would silently redirect a thread widget's replay to the page."""
+    ids = set()
+    for e in read_events(page_dir):
+        # author gate mirrors the renderer: only Claude's replies inject HTML — a
+        # user reply merely quoting markup renders as text and claims nothing.
+        if (
+            e.get("kind") == "reply"
+            and e.get("author") == "claude"
+            and "<cq-" in (e.get("text") or "")
+        ):
+            p = _StructParser()
+            p.feed(e["text"])
+            ids |= p.ids
+    return ids
+
+
+def version_ids(page_dir: Path) -> set:
+    ids = set()
+    for name in list_versions(page_dir):
+        p = _StructParser()
+        p.feed((page_dir / "versions" / name).read_text(encoding="utf-8"))
+        ids |= p.ids
+    return ids
+
+
 def cmd_reply(page_dir: Path, to: str, text) -> None:
     known = {e["id"] for e in read_events(page_dir) if e.get("kind") in {"comment", "reply"}}
     if to not in known:
@@ -386,6 +453,13 @@ def cmd_reply(page_dir: Path, to: str, text) -> None:
         errs = fragment_errors(body, registry)
         if errs:
             sys.exit("reply widget markup doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs))
+        frag = _StructParser()
+        frag.feed(body)
+        if frag.duplicate_ids:
+            sys.exit(f"reply widget markup reuses an id within itself: {frag.duplicate_ids}")
+        clash = sorted(frag.ids & (version_ids(page_dir) | reply_widget_ids(page_dir)))
+        if clash:
+            sys.exit(f"reply widget ids already taken by the page or an earlier reply: {clash}")
     event = append_event(page_dir, {"kind": "reply", "author": "claude", "parent": to, "text": body})
     print(json.dumps(event, ensure_ascii=False))
 
@@ -425,6 +499,16 @@ def cmd_export(page_dir: Path) -> None:
         print("\n### Versions\n")
         for e in notes:
             print(f"- v{e['version']}: {e['text']}")
+
+    # The reviewer's direct edits are review outcomes; without them the export
+    # understates the review whenever a changelog note doesn't restate them.
+    # Widget-agnostic rendering: verb + detail pairs, against the version edited.
+    actions = [e for e in events if e.get("kind") == "action"]
+    if actions:
+        print("\n### Edits\n")
+        for e in actions:
+            detail = " ".join(f"{k}={v}" for k, v in (e.get("detail") or {}).items())
+            print(f"- `{e.get('widget')}`: {e.get('action')} {detail} (on v{e.get('version')})")
 
     threads = {}
     for e in events:
@@ -479,6 +563,9 @@ CATALOG_PREAMBLE = """\
 # versions. Each entry is JSON Schema over the attributes; x-parent names the
 # required parent, x-content the content model (prose | items | data | none).
 # A "data" body is text in the notation the description names, < > escaped.
+# x-upgrade marks tags a JS module enhances in the browser — the interactive
+# widgets and the data-body renderers; x-chips names attributes the theme
+# renders as chips.
 """
 
 
@@ -859,6 +946,12 @@ def cmd_check(page_dir: Path, version) -> int:
                 f"ids present in {prev_name} but dropped in {name} "
                 f"(anchors on them will break): {dropped}"
             )
+
+    # Reply markup is frozen in the log and rendered into the panel; a page id
+    # colliding with one would steal its action replays (see reply_widget_ids).
+    taken = sorted(parser.ids & reply_widget_ids(page_dir))
+    if taken:
+        errors.append(f"ids already taken by widget markup in a reply: {taken}")
 
     theme_css = (page_dir / "theme.css").read_text(encoding="utf-8") if (page_dir / "theme.css").exists() else ""
     column = _column_width(html, theme_css)

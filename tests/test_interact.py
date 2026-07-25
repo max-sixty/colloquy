@@ -57,6 +57,14 @@ graph LR
 """
 
 
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path_factory, monkeypatch):
+    """Keep the developer's real ~/.claude/colloquy overlay out of every fixture:
+    a personal theme.css would otherwise change what init vendors and check
+    measures."""
+    monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
+
+
 @pytest.fixture
 def page_dir(tmp_path, monkeypatch):
     """An initialized page directory with a valid v001 written."""
@@ -254,25 +262,53 @@ def test_server_round_trip(server, page_dir):
         assert fetch(server + path)[0] == 200, path
     for path in ["/comments.jsonl", "/vendor/..", "/status.json", "/../secret"]:
         assert fetch(server + path)[0] == 404, path
-    # A browser-posted comment lands in the log stamped author=user.
+    # A browser-posted comment lands stamped author=user, with a server-minted id
+    # (client ids are dropped — a reused one would re-root an existing thread).
     status, body = fetch(
         f"{server}/api/event",
         data=json.dumps({"kind": "comment", "id": "c9", "text": "hm", "author": "claude"}).encode(),
     )
     assert status == 200
-    events = interact.read_events(page_dir)
-    assert events[-1]["id"] == "c9" and events[-1]["author"] == "user"
+    posted = interact.read_events(page_dir)[-1]
+    assert posted["author"] == "user" and posted["id"] != "c9"
     status, body = fetch(f"{server}/api/state")
     state = json.loads(body)
     assert state["versions"] == ["v001.html"]
-    assert state["events"][-1]["id"] == "c9"
+    assert state["cursor"] == 0  # nothing delivered to Claude yet
+    assert state["events"][-1]["id"] == posted["id"]
+    # A widget action rides the same channel; half-formed ones are refused at the edge.
+    status, _ = fetch(
+        f"{server}/api/event",
+        data=json.dumps(
+            {
+                "kind": "action",
+                "version": 1,
+                "widget": "feeder-board",
+                "action": "move",
+                "detail": {"card": "card-baffle", "to": "col-doing", "index": 0},
+            }
+        ).encode(),
+    )
+    assert status == 200
+    moved = interact.read_events(page_dir)[-1]
+    assert moved["author"] == "user" and moved["detail"]["to"] == "col-doing"
+    for bad in [
+        {"kind": "action", "action": "move"},  # no widget
+        {"kind": "action", "widget": "", "action": "move", "detail": {}, "version": 1},
+        {"kind": "action", "widget": "b", "action": "move", "version": 1},  # no detail
+        {"kind": "action", "widget": "b", "action": "move", "detail": None, "version": 1},
+        {"kind": "action", "widget": "b", "action": "move", "detail": {}, "version": "1"},
+        ["not", "an", "object"],
+    ]:
+        status, body = fetch(f"{server}/api/event", data=json.dumps(bad).encode())
+        assert status == 400, bad
 
 
 def test_concurrent_posts_never_tear_the_log(server, page_dir):
     def post(i):
         fetch(
             f"{server}/api/event",
-            data=json.dumps({"kind": "comment", "id": f"c{i}", "text": "x" * 500}).encode(),
+            data=json.dumps({"kind": "comment", "text": f"c{i} " + "x" * 500}).encode(),
         )
 
     threads = [threading.Thread(target=post, args=(i,)) for i in range(20)]
@@ -281,17 +317,30 @@ def test_concurrent_posts_never_tear_the_log(server, page_dir):
     for t in threads:
         t.join()
     events = interact.read_events(page_dir)  # raises on any torn non-final line
-    assert {e["id"] for e in events} == {f"c{i}" for i in range(20)}
+    assert {e["text"].split()[0] for e in events} == {f"c{i}" for i in range(20)}
+    assert len({e["id"] for e in events}) == 20  # server-minted, all distinct
 
 
 def test_wait_delivers_new_user_events_and_flips_status(page_dir, capsys):
     # A live server.json (our own pid) satisfies wait's liveness probe.
     interact.write_json(page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"})
     interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hi"})
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "b",
+            "action": "move",
+            "detail": {"card": "x", "to": "y", "index": 0},
+        },
+    )
     assert interact.cmd_wait(page_dir) == 0
-    delivered = json.loads(capsys.readouterr().out.strip())
-    assert delivered["id"] == "c1"
-    assert interact.read_json(page_dir / "cursor.json")["seq"] == 1
+    delivered = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert [e["kind"] for e in delivered] == ["comment", "action"]
+    assert delivered[1]["detail"]["to"] == "y"
+    assert interact.read_json(page_dir / "cursor.json")["seq"] == 2
     assert interact.read_json(page_dir / "status.json")["state"] == "working"
     # Already-delivered events don't re-deliver; a dead server ends the wait.
     (page_dir / "server.json").unlink()
@@ -311,6 +360,16 @@ def test_versions_publish_only_once_noted(page_dir):
     assert interact.published_versions(page_dir) == ["v001.html"]
 
 
+def test_choose_requires_an_id(page_dir):
+    # Actions name their widget by id, so an interactive group can't go without one.
+    registry = interact.load_registry(page_dir)
+    errs = interact.fragment_errors(
+        '<cq-options choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>',
+        registry,
+    )
+    assert errs and "'id' is a dependency of 'choose'" in " ".join(errs)
+
+
 def test_registry_examples_validate(page_dir):
     reg = json.loads((page_dir / "registry.json").read_text())
     registry = interact.load_registry(page_dir)
@@ -319,6 +378,19 @@ def test_registry_examples_validate(page_dir):
     for tag, example in examples.items():
         errs = interact.fragment_errors(example, registry)
         assert not errs, f"{tag} x-example doesn't validate: {errs}"
+
+
+def test_examples_pass_check(tmp_path, monkeypatch):
+    """Every gallery page in examples/ lints clean against the shipped layer."""
+    monkeypatch.chdir(tmp_path)  # keep the project layer out of the overlay
+    examples = sorted((Path(__file__).parent.parent / "examples").glob("*.html"))
+    assert examples
+    for example in examples:
+        d = tmp_path / example.stem
+        CliRunner().invoke(interact.cli, ["init", str(d)])
+        (d / "versions" / "v001.html").write_text(example.read_text())
+        result = check(d)
+        assert result.exit_code == 0, f"{example.name}: {result.output}"
 
 
 def test_catalog_prints_widgets_and_idioms(page_dir):
@@ -348,6 +420,41 @@ def test_reply_validates_widget_markup(page_dir):
     assert events[-1]["author"] == "claude"
 
 
+def test_widget_ids_are_one_universe_across_page_and_replies(page_dir):
+    """The runtime resolves actions document-wide by id, so a reply widget must not
+    reuse a page id — and a later version must not take a reply's."""
+    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    reply = lambda markup: CliRunner().invoke(
+        interact.cli, ["reply", str(page_dir), "--to", "c1", "--text", markup]
+    )
+    # `flow` is the page's cq-diagram id (PAGE fixture) — refused.
+    clash = reply('<cq-options id="flow" choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>')
+    assert clash.exit_code != 0 and "flow" in clash.output
+    fresh = reply('<cq-options id="q1" choose><cq-option id="q1-a"><strong>A</strong></cq-option></cq-options>')
+    assert fresh.exit_code == 0, fresh.output
+    # A second reply can't reuse the first reply's ids either, nor its own within itself.
+    again = reply('<cq-options id="q1" choose><cq-option id="q1-b"><strong>B</strong></cq-option></cq-options>')
+    assert again.exit_code != 0 and "q1" in again.output
+    selfdup = reply('<cq-options id="q2" choose><cq-option id="q2"><strong>B</strong></cq-option></cq-options>')
+    assert selfdup.exit_code != 0 and "within itself" in selfdup.output
+    # A USER reply quoting markup renders as plain text and claims no ids — it must
+    # not poison the universe (the log is append-only; a false claim would deadlock
+    # every future version).
+    interact.append_event(
+        page_dir,
+        {"kind": "reply", "author": "user", "parent": "c1", "text": 'why not <cq-diagram id="quoted"> here?'},
+    )
+    ok = reply('<cq-options id="quoted" choose><cq-option id="quoted-a"><strong>A</strong></cq-option></cq-options>')
+    assert ok.exit_code == 0, ok.output
+    # And a new version taking the reply's id fails check.
+    (page_dir / "versions" / "v002.html").write_text(
+        PAGE.replace('<section id="plan">', '<section id="plan"><p id="q1">stolen</p>')
+    )
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "taken by widget markup in a reply" in result.output and "q1" in result.output
+
+
 def test_export_prints_threads_and_versions(page_dir):
     CliRunner().invoke(interact.cli, ["note", str(page_dir), "--version", "1", "--text", "first cut"])
     interact.append_event(
@@ -362,9 +469,23 @@ def test_export_prints_threads_and_versions(page_dir):
         page_dir,
         {"kind": "comment", "id": "c2", "author": "user", "anchor": {"section": "flow"}, "text": "arrow?"},
     )
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "b",
+            "action": "move",
+            "detail": {"card": "card-x", "to": "col-done", "index": 0},
+        },
+    )
     result = CliRunner().invoke(interact.cli, ["export", str(page_dir)])
     assert result.exit_code == 0, result.output
     assert "- v1: first cut" in result.output
+    # The reviewer's direct edits are review outcomes, not just events.
+    assert "### Edits" in result.output
+    assert "- `b`: move card=card-x to=col-done index=0 (on v1)" in result.output
     assert "> “flip reads”  — resolved" in result.output
     assert "- **User**: why?" in result.output
     assert "- **Claude**: reversibility" in result.output

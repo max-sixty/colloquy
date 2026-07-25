@@ -1,23 +1,26 @@
 {
   "cq-options": {
-    "description": "A decision's alternatives, rendered as a card grid, for places where the reader picks one. Children are cq-option elements only.",
+    "description": "A decision's alternatives, rendered as a card grid, for places where the reader picks one. Children are cq-option elements only. With `choose` (which requires an id), the reader clicks a card to pick it: the pick reaches Claude as a `choose` action and wears a green ring until the next version marks it `chosen`.",
     "type": "object",
     "properties": {
-      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+      "id":     {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "choose": {"type": "boolean"}
     },
+    "dependentRequired": {"choose": ["id"]},
     "additionalProperties": false,
     "x-content": "items",
-    "x-upgrade": false,
-    "x-example": "<cq-options>\n  <cq-option id=\"paper-maps\" effort=\"low\" risk=\"high\">\n    <strong>Paper maps</strong> Print the route ahead of time; nothing to charge.\n  </cq-option>\n  <cq-option id=\"gps-unit\" effort=\"med\" risk=\"low\" recommended>\n    <strong>Dedicated GPS</strong> Offline maps, week-long battery, reversible choice.\n  </cq-option>\n</cq-options>"
+    "x-upgrade": true,
+    "x-example": "<cq-options id=\"nav-gear\" choose>\n  <cq-option id=\"paper-maps\" effort=\"low\" risk=\"high\">\n    <strong>Paper maps</strong> Print the route ahead of time; nothing to charge.\n  </cq-option>\n  <cq-option id=\"gps-unit\" effort=\"med\" risk=\"low\" recommended>\n    <strong>Dedicated GPS</strong> Offline maps, week-long battery, reversible choice.\n  </cq-option>\n</cq-options>"
   },
   "cq-option": {
-    "description": "One alternative in a decision. Lead with a <strong> title; prose follows. `recommended` draws the accent ring; effort/risk render as chips.",
+    "description": "One alternative in a decision. Lead with a <strong> title; prose follows. `recommended` draws the accent ring (the author's take); `chosen` the green one (the reader's pick — the choose upgrade sets it live, and the next version carries it). `effort`/`risk` — the cost and the danger of picking this option — render as chips.",
     "type": "object",
     "properties": {
       "id":          {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
       "effort":      {"enum": ["low", "med", "high"]},
       "risk":        {"enum": ["low", "med", "high"]},
-      "recommended": {"type": "boolean"}
+      "recommended": {"type": "boolean"},
+      "chosen":      {"type": "boolean"}
     },
     "required": ["id"],
     "additionalProperties": false,
@@ -213,6 +216,43 @@
     "x-content": "data",
     "x-upgrade": true,
     "x-example": "<cq-diagram id=\"checkout-flow\">\ngraph LR\n  Cart --> Pay\n  Pay --> Receipt\n</cq-diagram>"
+  },
+  "cq-board": {
+    "description": "A kanban board the reviewer edits directly: cards drag between columns or reorder within one, and each drop reaches Claude as a `move` action naming the card, target column, and position. Children are cq-column elements only. The next version's markup carries the moved card — the document is the state.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-content": "items",
+    "x-upgrade": true,
+    "x-example": "<cq-board id=\"feeder-board\">\n  <cq-column id=\"col-todo\" label=\"To do\">\n    <cq-card id=\"card-heater\"><strong>Heated perch</strong> Wire the south feeder.</cq-card>\n    <cq-card id=\"card-baffle\"><strong>Squirrel baffle</strong></cq-card>\n  </cq-column>\n  <cq-column id=\"col-doing\" label=\"Doing\">\n    <cq-card id=\"card-camera\"><strong>Camera mount</strong></cq-card>\n  </cq-column>\n  <cq-column id=\"col-done\" label=\"Done\"></cq-column>\n</cq-board>"
+  },
+  "cq-column": {
+    "description": "One column on a board. `label` is the column heading; cards stack beneath. Children are cq-card elements only; an empty column is a valid drop target.",
+    "type": "object",
+    "properties": {
+      "id":    {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "label": {"type": "string"}
+    },
+    "required": ["id", "label"],
+    "additionalProperties": false,
+    "x-parent": "cq-board",
+    "x-content": "items",
+    "x-upgrade": false
+  },
+  "cq-card": {
+    "description": "One card on a board. Lead with a <strong> title; prose follows. The reviewer drags it by its grip; the id names it in `move` actions and keeps comment anchors stable across moves.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-parent": "cq-column",
+    "x-content": "prose",
+    "x-upgrade": false
   },
   "$idioms": {
     "description": "Recurring shapes the theme styles directly — no registry entry, no JS. Plain semantic HTML gets the theme's voice for free; these classes cover what HTML lacks an element for.",

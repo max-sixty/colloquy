@@ -45,6 +45,9 @@ Once a page is up, Claude prints a `http://127.0.0.1:…` URL. Open it, then:
   way back to the latest. Each revision is immutable and carries a one-line changelog, so
   the picker is the history — and the Δ toggle marks every passage that changed since
   the previous version, so re-reviewing is cheap.
+- **Some widgets take edits directly.** Drag a card between the columns of a triage
+  board, or click an option card to pick it, and the edit itself reaches Claude — the
+  next version ships with the board as you left it and your pick marked.
 - **"✓ Looks good"** signs off and closes the review.
 
 ### Experimental: plan-mode integration
@@ -62,12 +65,31 @@ source link, `<cq-diagram>` for a mermaid diagram) — and a theme you can own d
 they look. A JSON-Schema registry keeps the renderer, the linter, and the agent's
 documentation agreeing about the vocabulary.
 
+Widgets can also carry input the other way: `<cq-board>` is a kanban board whose cards
+you drag between columns, and each drop reaches Claude as a structured `action` event
+on the same channel as comments. The document stays the state — Claude's next version
+carries the moved card, and until it ships the page shows the version plus your own
+edits.
+
 The whole layer (runtime, theme, registry, widget modules) is vendored into each page's
 directory at `init`, overlaying colloquy's shipped defaults with `~/.claude/colloquy/`
 and the project's `.claude/colloquy/`. Override one CSS token to change the accent
 everywhere; replace `theme.css` to change the voice; add a registry entry and a module
 to add a widget. Because pages are self-contained, a version you approved can't change
 under you when the defaults do.
+
+### Examples
+
+[`examples/`](examples/) holds five complete pages showing the range — an incident
+report, a PR walkthrough, a status report, a design decision, and a draggable triage
+board. Serve one against the shipped layer to try it:
+
+```
+uv run skills/colloquy/scripts/interact.py init /tmp/demo
+cp examples/triage-board.html /tmp/demo/versions/v001.html
+uv run skills/colloquy/scripts/interact.py note /tmp/demo --version 1 --text "demo"
+uv run skills/colloquy/scripts/interact.py serve /tmp/demo
+```
 
 ## How it works
 
