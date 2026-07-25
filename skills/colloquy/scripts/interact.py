@@ -1,17 +1,25 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.8"
-# dependencies = ["click>=8"]
+# requires-python = ">=3.9"
+# dependencies = ["click>=8", "jsonschema>=4"]
 # ///
 """Serve and mediate an interactive colloquy page.
 
-A `uv` script: the PEP 723 header above declares the one dependency
-(`click`), and `uv` is the one prerequisite for the whole plugin — no venv to
-create, no build step. Run it with `uv run interact.py <command> …`.
+A `uv` script: the PEP 723 header above declares the dependencies, and `uv` is
+the one prerequisite for the whole plugin — no venv to create, no build step.
+Run it with `uv run interact.py <command> …`.
 
 A page directory holds:
-    versions/v001.html…  immutable page versions (Claude writes them; the server lists them)
-    interact.js          comment/status layer, served at /interact.js (copied by `init`)
+    versions/v001.html…  immutable page versions (Claude writes them). The server
+                         exposes a version only once its `note` lands, and `note`
+                         itself runs `check` and refuses a failing version — so a
+                         half-written or broken file is never live to an open
+                         browser.
+    colloquy.js          the runtime (widget layer + comment layer), served at /colloquy.js
+    theme.css            tokens, element styles, class idioms, element-widget CSS
+    registry.json        the widget vocabulary: JSON Schema per cq-* tag, plus $idioms
+    widgets/             one ES module per upgraded widget (cq-ref.js, cq-diagram.js)
+    vendor/              vendored third-party assets (mermaid.min.js)
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
     status.json          Claude's declared state: {"state": working|waiting|idle, "detail", "ts"};
                          `wait` flips it to working when it delivers events, covering the handoff gap
@@ -19,18 +27,45 @@ A page directory holds:
     cursor.json          seq of the last event delivered to Claude, written by `wait` on exit
     server.json          {"port", "pid", "url"} for the running server
 
+`init` vendors the runtime, theme, registry, widgets, and vendor assets into the
+page directory, overlaying per file by precedence: colloquy's shipped defaults,
+then the user layer (~/.claude/colloquy/), then the project layer
+(./.claude/colloquy/). The page directory is self-contained, so an approved
+version can't change under its reviewer; re-running `init` is the explicit
+re-vendor, noted in the next version's changelog.
+
+The registry drives three consumers — the JS runtime (which tags upgrade), this
+file's `check` and `reply` validation, and the `catalog` the agent reads. Each
+entry is JSON Schema over the instance built from the element's attributes
+(values as strings, flag attributes as True). What JSON
+Schema has no vocabulary for rides in x- keywords:
+    x-parent    the tag this element must be a direct child of
+    x-content   the content model: "prose" (flow content, widgets welcome),
+                "items" (element children only, no loose text), "data" (a text
+                body in the notation the description names), "none" (empty).
+                Children that declare this tag as x-parent are admissible under
+                any model — that is what x-parent means.
+    x-chips     attributes the theme renders as chips (documentation for CSS)
+    x-upgrade   true when the runtime imports /widgets/<tag>.js for it
+    x-example   one authored example, printed by `catalog`
+
 Event kinds: comment (user; optional anchor {section, quote}), reply (parent=id),
 resolve (parent=id), done (user sign-off), note (claude; per-version changelog).
 The server stamps every browser-posted event author=user; `reply`/`note` stamp
-author=claude.
+author=claude. A Claude reply may carry widget markup — `reply` validates it
+against the vendored registry, the discussion-side analog of `check`; user
+comments stay plain text.
 
 Commands:
-    init serve status wait reply note events stop check
+    init serve status wait reply note events stop check catalog export
 
-`check` is a deterministic pre-handover lint (no browser needed): the HTML
-parses with balanced tags, there is exactly one external <script> tag, every
-anchor id from the previous version survives, and no fixed-pixel-width element
-is wider than the readable column.
+`check` is a deterministic pre-handover lint (no browser, never renders): the
+HTML parses with balanced tags; the page carries exactly one external script
+(<script type="module" src="/colloquy.js">) and one stylesheet link
+(/theme.css); every cq-* element validates against the vendored registry
+(schema, nesting, no self-closing form); ids are unique and every anchor id
+from the previous version survives; no fixed-pixel-width element is wider than
+the readable column.
 """
 
 import errno
@@ -48,9 +83,28 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import click
+from jsonschema import Draft202012Validator
 
 HEARTBEAT_FRESH_SECS = 8
 BROWSER_EVENT_KINDS = {"comment", "reply", "resolve", "done"}
+
+ASSETS = Path(__file__).resolve().parent.parent / "assets"
+VENDORED_FILES = ("colloquy.js", "theme.css", "registry.json")
+VENDORED_DIRS = ("widgets", "vendor")
+# What the server exposes from a page directory: exactly what init vendors,
+# plus the versions.
+SERVED_PATH = re.compile(
+    r"/(?:colloquy\.js|theme\.css|registry\.json"
+    r"|widgets/[a-z0-9-]+\.js|vendor/[A-Za-z0-9._-]+|versions/v[0-9]+\.html)"
+)
+CONTENT_TYPES = {
+    ".js": "application/javascript",
+    ".mjs": "application/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+    ".html": "text/html",
+    ".svg": "image/svg+xml",
+}
 
 # On Windows there is no fcntl; the append lock degrades to a no-op. The log is
 # append-only and a torn final line is tolerated by read_events, so this only
@@ -113,6 +167,18 @@ def list_versions(page_dir: Path) -> list:
     return sorted(p.name for p in versions_dir.glob("v[0-9]*.html"))
 
 
+def published_versions(page_dir: Path) -> list:
+    """Versions the server exposes: those whose `note` has landed. `note` follows a
+    passing `check`, so a half-written or failing version is never live to an open
+    browser — the file existing is not enough."""
+    noted = {e.get("version") for e in read_events(page_dir) if e.get("kind") == "note"}
+    return [
+        name
+        for name in list_versions(page_dir)
+        if int(re.search(r"v0*(\d+)", name).group(1)) in noted
+    ]
+
+
 def pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -135,7 +201,7 @@ def full_state(page_dir: Path) -> dict:
     heartbeat = read_json(page_dir / "heartbeat.json") or {}
     listening = time.time() - heartbeat.get("t", 0) < HEARTBEAT_FRESH_SECS
     return {
-        "versions": list_versions(page_dir),
+        "versions": published_versions(page_dir),
         "status": status,
         "listening": listening,
         "events": read_events(page_dir),
@@ -162,9 +228,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
         if path == "/":
-            versions = list_versions(self.page_dir)
+            versions = published_versions(self.page_dir)
             if not versions:
-                self._json({"error": "no versions yet"}, 404)
+                self._json({"error": "no published versions yet"}, 404)
                 return
             self.send_response(302)
             self.send_header("Location", f"/versions/{versions[-1]}")
@@ -175,10 +241,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/state":
             self._json(full_state(self.page_dir))
             return
-        if re.fullmatch(r"/interact\.js|/versions/v[0-9]+\.html", path):
+        if SERVED_PATH.fullmatch(path):
+            if path.startswith("/versions/") and Path(path).name not in published_versions(
+                self.page_dir
+            ):
+                self._json({"error": "not published yet — `note` the version first"}, 404)
+                return
             file = self.page_dir / path.lstrip("/")
-            if file.exists():
-                ctype = "application/javascript" if path.endswith(".js") else "text/html"
+            # is_file, not exists: the vendor pattern admits "." and "..", which
+            # resolve to directories.
+            if file.is_file():
+                ctype = CONTENT_TYPES.get(Path(path).suffix, "application/octet-stream")
                 self._send(200, f"{ctype}; charset=utf-8", file.read_bytes())
                 return
         self._json({"error": "not found"}, 404)
@@ -199,10 +272,37 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": True, "event": append_event(self.page_dir, event)})
 
 
+def layer_dirs() -> list:
+    """Widget-layer sources, lowest precedence first: colloquy's shipped defaults,
+    the user layer, the project layer (resolved against the working directory).
+    Each mirrors the assets layout: theme.css/registry.json/colloquy.js at the
+    top, modules in widgets/, third-party files in vendor/. The user layer shares
+    ~/.claude/colloquy/ with page directories, which reserves `widgets` and
+    `vendor` as page slugs."""
+    return [
+        ASSETS,
+        Path.home() / ".claude" / "colloquy",
+        Path.cwd() / ".claude" / "colloquy",
+    ]
+
+
 def cmd_init(page_dir: Path) -> None:
     (page_dir / "versions").mkdir(parents=True, exist_ok=True)
-    layer = Path(__file__).resolve().parent.parent / "assets" / "interact.js"
-    (page_dir / "interact.js").write_bytes(layer.read_bytes())
+    for layer in layer_dirs():
+        if not layer.is_dir() or layer.resolve() == page_dir.resolve():
+            continue
+        for name in VENDORED_FILES:
+            src = layer / name
+            if src.is_file():
+                (page_dir / name).write_bytes(src.read_bytes())
+        for sub in VENDORED_DIRS:
+            src_dir = layer / sub
+            if not src_dir.is_dir():
+                continue
+            (page_dir / sub).mkdir(exist_ok=True)
+            for src in src_dir.iterdir():
+                if src.is_file():
+                    (page_dir / sub / src.name).write_bytes(src.read_bytes())
     if not (page_dir / "status.json").exists():
         write_json(page_dir / "status.json", {"state": "working", "detail": "Writing the page", "ts": now_iso()})
     print(f"initialized {page_dir}")
@@ -276,7 +376,17 @@ def cmd_reply(page_dir: Path, to: str, text) -> None:
     known = {e["id"] for e in read_events(page_dir) if e.get("kind") in {"comment", "reply"}}
     if to not in known:
         sys.exit(f"unknown comment id {to!r}; known: {sorted(known)}")
-    event = append_event(page_dir, {"kind": "reply", "author": "claude", "parent": to, "text": read_text_arg(text)})
+    body = read_text_arg(text)
+    # A reply carrying widget markup renders live in the thread, so it validates
+    # against the vendored registry at post time — the discussion-side `check`.
+    if "<cq-" in body:
+        registry = load_registry(page_dir)
+        if registry is None:
+            sys.exit("reply carries widget markup but the page has no registry.json; run `init`")
+        errs = fragment_errors(body, registry)
+        if errs:
+            sys.exit("reply widget markup doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs))
+    event = append_event(page_dir, {"kind": "reply", "author": "claude", "parent": to, "text": body})
     print(json.dumps(event, ensure_ascii=False))
 
 
@@ -284,6 +394,10 @@ def cmd_note(page_dir: Path, version: int, text) -> None:
     name = f"v{version:03d}.html"
     if name not in list_versions(page_dir):
         sys.exit(f"no {name} in {page_dir / 'versions'}; write the version file first")
+    # `note` publishes (the server exposes only noted versions), so it is the one
+    # gate: a version that fails `check` can't go live.
+    if cmd_check(page_dir, version) != 0:
+        sys.exit(f"refusing to publish {name}: `check` failed (issues above)")
     event = append_event(
         page_dir, {"kind": "note", "author": "claude", "version": version, "text": read_text_arg(text)}
     )
@@ -294,6 +408,90 @@ def cmd_events(page_dir: Path, after: int) -> None:
     for event in read_events(page_dir):
         if event["seq"] > after:
             print(json.dumps(event, ensure_ascii=False))
+
+
+def cmd_export(page_dir: Path) -> None:
+    """The review thread as Markdown, for reuse in a PR description."""
+    events = read_events(page_dir)
+    versions = list_versions(page_dir)
+    title = ""
+    if versions:
+        m = re.search(r"<title>(.*?)</title>", (page_dir / "versions" / versions[-1]).read_text(encoding="utf-8"), re.S)
+        title = m.group(1).strip() if m else ""
+    print(f"## Review: {title or page_dir.name}")
+
+    notes = [e for e in events if e.get("kind") == "note"]
+    if notes:
+        print("\n### Versions\n")
+        for e in notes:
+            print(f"- v{e['version']}: {e['text']}")
+
+    threads = {}
+    for e in events:
+        if e.get("kind") == "comment":
+            threads[e["id"]] = {"root": e, "msgs": [e], "resolved": False}
+    index = {e["id"]: e for e in events if "id" in e}
+    for e in events:
+        if e.get("kind") not in ("reply", "resolve"):
+            continue
+        cur = e
+        for _ in range(50):
+            cur = index.get(cur.get("parent"))
+            if cur is None or cur.get("kind") == "comment":
+                break
+        thread = cur and threads.get(cur["id"])
+        if not thread:
+            continue
+        if e["kind"] == "reply":
+            thread["msgs"].append(e)
+        else:
+            thread["resolved"] = True
+
+    if threads:
+        print("\n### Threads\n")
+    for t in threads.values():
+        anchor = t["root"].get("anchor") or {}
+        if anchor.get("quote"):
+            head = f"> “{anchor['quote']}”"
+        elif anchor.get("section"):
+            head = f"> § {anchor['section']}"
+        else:
+            head = "> (page-level)"
+        print(head + ("  — resolved" if t["resolved"] else ""))
+        for m in t["msgs"]:
+            who = "Claude" if m.get("author") == "claude" else "User"
+            body = (m.get("text") or "").replace("\n", "\n  ")
+            print(f"- **{who}**: {body}")
+        print()
+    for e in events:
+        if e.get("kind") == "done":
+            print(f"Approved at {e.get('ts', '?')}.")
+            break
+
+
+CATALOG_PREAMBLE = """\
+# Widget vocabulary, vendored for this page — `check` validates against it.
+#
+# Widgets are cq-* elements in the authored HTML; attributes carry scalars
+# (enums, flags), children carry prose, and an item's title is a leading
+# <strong> child. Every cq-* element takes an explicit end tag — never
+# <cq-foo/>. Ids are authored (lowercase kebab), unique, stable across
+# versions. Each entry is JSON Schema over the attributes; x-parent names the
+# required parent, x-content the content model (prose | items | data | none).
+# A "data" body is text in the notation the description names, < > escaped.
+"""
+
+
+def cmd_catalog(page_dir: Path) -> None:
+    reg = read_json(page_dir / "registry.json")
+    if reg is None:
+        sys.exit(f"no registry.json in {page_dir}; run `init` first")
+    print(CATALOG_PREAMBLE)
+    print(json.dumps({k: v for k, v in reg.items() if not k.startswith("$")}, indent=2, ensure_ascii=False))
+    idioms = reg.get("$idioms")
+    if idioms:
+        print("\n# Theme idioms — shapes the theme styles directly; no registry entry, no JS.\n")
+        print(json.dumps(idioms, indent=2, ensure_ascii=False))
 
 
 def cmd_stop(page_dir: Path) -> None:
@@ -336,16 +534,31 @@ PIXEL_WIDTH_TAGS = {"img", "svg", "table", "canvas", "iframe", "video", "object"
 
 class _StructParser(HTMLParser):
     """Tracks a tag stack to catch unclosed and mismatched tags, and collects
-    element ids and every <script src> tag. Foreign markup inside <svg> is
-    skipped (SVG has its own self-closing rules that don't matter here)."""
+    element ids, every <script src> tag, stylesheet links, and each cq-* element
+    (attributes, direct parent, direct children, direct text) for registry
+    validation. Foreign markup inside <svg> is skipped (SVG has its own
+    self-closing rules that don't matter here)."""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.stack = []  # (tag, lineno)
+        self.stack = []  # (tag, lineno, cq_record | None)
         self.errors = []
-        self.ids = set()
-        self.external_scripts = []  # src values
+        self.all_ids = []
+        self.external_scripts = []  # (src, type)
+        self.stylesheets = []  # hrefs of rel=stylesheet links
+        self.cq_elements = []  # {"tag", "line", "attrs", "parent", "children", "text"}
         self._svg_depth = 0
+
+    @property
+    def ids(self) -> set:
+        return set(self.all_ids)
+
+    @property
+    def duplicate_ids(self) -> list:
+        seen, dupes = set(), set()
+        for i in self.all_ids:
+            (dupes if i in seen else seen).add(i)
+        return sorted(dupes)
 
     def _implicit_close(self, tag):
         """Pop open elements that this start tag implicitly closes (HTML's
@@ -376,29 +589,62 @@ class _StructParser(HTMLParser):
             while top() in ("option", "optgroup"):
                 self.stack.pop()
 
+    def _harvest(self, tag, attrs_d):
+        if attrs_d.get("id"):
+            self.all_ids.append(attrs_d["id"])
+        if tag == "script" and attrs_d.get("src"):
+            self.external_scripts.append((attrs_d["src"], attrs_d.get("type")))
+        if tag == "link" and "stylesheet" in (attrs_d.get("rel") or ""):
+            self.stylesheets.append(attrs_d.get("href"))
+
     def handle_starttag(self, tag, attrs):
         attrs_d = dict(attrs)
-        if "id" in attrs_d and attrs_d["id"]:
-            self.ids.add(attrs_d["id"])
-        if tag == "script" and attrs_d.get("src"):
-            self.external_scripts.append(attrs_d["src"])
+        self._harvest(tag, attrs_d)
         if tag == "svg":
             self._svg_depth += 1
-            self.stack.append((tag, self.getpos()[0]))
+            self.stack.append((tag, self.getpos()[0], None))
             return
         if self._svg_depth:  # don't tag-balance inside SVG
             return
-        if tag not in VOID_TAGS:
-            self._implicit_close(tag)
-            self.stack.append((tag, self.getpos()[0]))
+        if tag in VOID_TAGS:
+            if self.stack and self.stack[-1][2] is not None:
+                self.stack[-1][2]["children"].append(tag)
+            return
+        self._implicit_close(tag)
+        if self.stack and self.stack[-1][2] is not None:
+            self.stack[-1][2]["children"].append(tag)
+        record = None
+        if tag.startswith("cq-"):
+            record = {
+                "tag": tag,
+                "line": self.getpos()[0],
+                "attrs": attrs_d,
+                "parent": self.stack[-1][0] if self.stack else None,
+                "children": [],
+                "text": False,
+            }
+            self.cq_elements.append(record)
+        self.stack.append((tag, self.getpos()[0], record))
 
     def handle_startendtag(self, tag, attrs):
-        # <foo/> — self-closing; still harvest id/script but never pushed.
-        attrs_d = dict(attrs)
-        if "id" in attrs_d and attrs_d["id"]:
-            self.ids.add(attrs_d["id"])
-        if tag == "script" and attrs_d.get("src"):
-            self.external_scripts.append(attrs_d["src"])
+        # <foo/> — self-closing; still harvest but never pushed. For cq-* the
+        # slash is a trap: HTML ignores it, the element stays open in a browser
+        # and swallows the rest of its parent, so reject the form outright.
+        self._harvest(tag, dict(attrs))
+        if self._svg_depth:  # SVG has real self-closing syntax
+            return
+        if tag.startswith("cq-"):
+            self.errors.append(
+                f"<{tag}/> at line {self.getpos()[0]} is self-closing: HTML ignores "
+                f"the slash and the element would swallow what follows — write "
+                f"<{tag} …></{tag}>"
+            )
+        elif self.stack and self.stack[-1][2] is not None:
+            self.stack[-1][2]["children"].append(tag)
+
+    def handle_data(self, data):
+        if self.stack and self.stack[-1][2] is not None and data.strip():
+            self.stack[-1][2]["text"] = True
 
     def handle_endtag(self, tag):
         if tag == "svg":
@@ -412,7 +658,7 @@ class _StructParser(HTMLParser):
             return
         for i in range(len(self.stack) - 1, -1, -1):
             if self.stack[i][0] == tag:
-                orphaned = [(t, ln) for t, ln in self.stack[i + 1:] if t not in OPTIONAL_END]
+                orphaned = [(t, ln) for t, ln, _ in self.stack[i + 1:] if t not in OPTIONAL_END]
                 if orphaned:
                     unclosed = ", ".join(f"<{t}> (line {ln})" for t, ln in orphaned)
                     self.errors.append(f"</{tag}> at line {self.getpos()[0]} closes over unclosed: {unclosed}")
@@ -422,17 +668,21 @@ class _StructParser(HTMLParser):
             self.errors.append(f"stray </{tag}> at line {self.getpos()[0]} with no matching open tag")
 
 
-def _column_width(html: str) -> int:
-    """Best-effort readable-column width from the max-width of a container rule."""
-    widths = []
-    for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", html):
-        selector, body = m.group(1), m.group(2)
-        if not any(sel in selector for sel in COLUMN_SELECTORS):
-            continue
-        mw = re.search(r"max-width\s*:\s*(\d+(?:\.\d+)?)px", body)
-        if mw:
-            widths.append(float(mw.group(1)))
-    return int(max(widths)) if widths else COLUMN_FALLBACK
+def _column_width(html: str, theme_css: str = "") -> int:
+    """Best-effort readable-column width from the max-width of a container rule.
+    A page's own <style> wins over the vendored theme, which wins over the fallback."""
+    for css in (html, theme_css):
+        widths = []
+        for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+            selector, body = m.group(1), m.group(2)
+            if not any(sel in selector for sel in COLUMN_SELECTORS):
+                continue
+            mw = re.search(r"max-width\s*:\s*(\d+(?:\.\d+)?)px", body)
+            if mw:
+                widths.append(float(mw.group(1)))
+        if widths:
+            return int(max(widths))
+    return COLUMN_FALLBACK
 
 
 def _overwide_elements(html: str, column: int) -> list:
@@ -464,6 +714,86 @@ def _overwide_elements(html: str, column: int) -> list:
     return hits
 
 
+def load_registry(page_dir: Path):
+    """The vendored vocabulary: tag → schema entry. None when the page has no
+    vendored registry.json (an un-initialized directory)."""
+    reg = read_json(page_dir / "registry.json")
+    if reg is None:
+        return None
+    return {tag: entry for tag, entry in reg.items() if tag.startswith("cq-")}
+
+
+def widget_errors(cq_elements: list, registry: dict) -> list:
+    """Validate parsed cq-* elements against the registry: schema over the
+    attribute instance, x-parent nesting, and the x-content model."""
+    errors = []
+    # Containers ("items") admit exactly the tags that declare them as x-parent.
+    children_of = {}
+    for tag, entry in registry.items():
+        parent = entry.get("x-parent")
+        if parent:
+            children_of.setdefault(parent, set()).add(tag)
+
+    for rec in cq_elements:
+        tag, where = rec["tag"], f"<{rec['tag']}> (line {rec['line']})"
+        entry = registry.get(tag)
+        if entry is None:
+            errors.append(f"{where}: unknown widget — not in the vendored registry.json")
+            continue
+        # The element validates as the instance built from its attributes:
+        # values as strings, flag attributes as True. HTML's two flag spellings
+        # (bare and ="") both mean true; a literal value on a flag stays a string
+        # so it fails loudly rather than silently meaning true.
+        props = entry.get("properties", {})
+        instance = {
+            name: True
+            if value in (None, "") and props.get(name, {}).get("type") == "boolean"
+            else (value or "")
+            for name, value in rec["attrs"].items()
+        }
+        for err in sorted(Draft202012Validator(entry).iter_errors(instance), key=str):
+            errors.append(f"{where}: {err.message}")
+
+        want_parent = entry.get("x-parent")
+        if want_parent and rec["parent"] != want_parent:
+            actual = f", found <{rec['parent']}>" if rec["parent"] else ""
+            errors.append(f"{where}: must be a direct child of <{want_parent}>{actual}")
+        # Tags declaring this one as x-parent are admissible children under any
+        # content model — that is what x-parent means. "data" forbids all others
+        # (the body is text in a notation), "items" also forbids loose text,
+        # "none" forbids everything.
+        content = entry.get("x-content", "prose")
+        allowed = children_of.get(tag, set())
+        stray = sorted({c for c in rec["children"] if c not in allowed})
+        if content == "none" and (rec["children"] or rec["text"]):
+            errors.append(f"{where}: takes no content — write <{tag} …></{tag}>")
+        elif content == "data" and stray:
+            errors.append(
+                f"{where}: its body is data (text only; escape < and >), "
+                f"found element children: {stray}"
+            )
+        elif content == "items":
+            if stray:
+                errors.append(f"{where}: admits only {sorted(allowed)} children, found {stray}")
+            if rec["text"]:
+                errors.append(f"{where}: loose text between its items isn't allowed")
+    return errors
+
+
+def fragment_errors(html: str, registry: dict) -> list:
+    """Structural + registry validation of a markup fragment (a Claude reply
+    carrying widgets): the discussion-side analog of `check`."""
+    parser = _StructParser()
+    parser.feed(html)
+    parser.close()
+    errors = list(parser.errors)
+    leftover = [(t, ln) for t, ln, _ in parser.stack if t not in OPTIONAL_END]
+    if leftover:
+        errors.append("unclosed tags: " + ", ".join(f"<{t}>" for t, _ in leftover))
+    errors.extend(widget_errors(parser.cq_elements, registry))
+    return errors
+
+
 def cmd_check(page_dir: Path, version) -> int:
     versions = list_versions(page_dir)
     if not versions:
@@ -475,25 +805,47 @@ def cmd_check(page_dir: Path, version) -> int:
 
     errors = []
 
+    for missing in [f for f in VENDORED_FILES if not (page_dir / f).exists()]:
+        errors.append(f"{missing} missing from the page directory — run `init` to vendor the layer")
+
     parser = _StructParser()
     parser.feed(html)
     parser.close()
     errors.extend(parser.errors)
-    leftover = [(t, ln) for t, ln in parser.stack if t not in OPTIONAL_END]
+    leftover = [(t, ln) for t, ln, _ in parser.stack if t not in OPTIONAL_END]
     if leftover:
         unclosed = ", ".join(f"<{t}> (line {ln})" for t, ln in leftover)
         errors.append(f"unclosed tags at end of document: {unclosed}")
 
-    n_ext = len(parser.external_scripts)
-    if n_ext != 1:
+    scripts = parser.external_scripts
+    if len(scripts) != 1:
         errors.append(
-            f"expected exactly one external <script src> tag, found {n_ext}"
-            + (f": {parser.external_scripts}" if parser.external_scripts else "")
+            f"expected exactly one external <script src> tag, found {len(scripts)}"
+            + (f": {[s for s, _ in scripts]}" if scripts else "")
         )
-    elif parser.external_scripts[0] != "/interact.js":
+    elif scripts[0] != ("/colloquy.js", "module"):
         errors.append(
-            f'the external script should be src="/interact.js", found {parser.external_scripts[0]!r}'
+            'the external script must be <script type="module" src="/colloquy.js">, '
+            f"found src={scripts[0][0]!r} type={scripts[0][1]!r}"
         )
+    if parser.stylesheets != ["/theme.css"]:
+        errors.append(
+            'the page must link exactly one stylesheet, <link rel="stylesheet" '
+            f'href="/theme.css">, found {parser.stylesheets}'
+        )
+
+    if parser.duplicate_ids:
+        errors.append(f"duplicate ids (anchors need unique targets): {parser.duplicate_ids}")
+
+    registry = load_registry(page_dir)
+    if registry is not None:
+        errors.extend(widget_errors(parser.cq_elements, registry))
+        for tag, entry in registry.items():
+            if entry.get("x-upgrade") and not (page_dir / "widgets" / f"{tag}.js").is_file():
+                errors.append(
+                    f"registry marks <{tag}> as upgraded but widgets/{tag}.js "
+                    f"isn't vendored — run `init`"
+                )
 
     idx = versions.index(name)
     if idx > 0:
@@ -508,7 +860,8 @@ def cmd_check(page_dir: Path, version) -> int:
                 f"(anchors on them will break): {dropped}"
             )
 
-    column = _column_width(html)
+    theme_css = (page_dir / "theme.css").read_text(encoding="utf-8") if (page_dir / "theme.css").exists() else ""
+    column = _column_width(html, theme_css)
     errors.extend(_overwide_elements(html, column))
 
     if errors:
@@ -516,7 +869,10 @@ def cmd_check(page_dir: Path, version) -> int:
         for e in errors:
             print(f"  - {e}", file=sys.stderr)
         return 1
-    print(f"✓ {name}: parses, one external script, ids carried over, nothing overflows the {column}px column")
+    print(
+        f"✓ {name}: parses, widgets validate, one module script + theme link, "
+        f"ids carried over, nothing overflows the {column}px column"
+    )
     return 0
 
 
@@ -535,7 +891,10 @@ def cli() -> None:
 @cli.command()
 @click.argument("dir")
 def init(dir: str) -> None:
-    """Create the page directory layout and copy in interact.js."""
+    """Create the page directory layout and vendor the widget layer into it.
+
+    Re-running it is the explicit re-vendor for a live page; note the re-vendor
+    in the next version's changelog."""
     cmd_init(resolve_dir(dir, must_exist=False))
 
 
@@ -601,6 +960,20 @@ def stop(dir: str) -> None:
 def check(dir: str, version: int) -> None:
     """Deterministic pre-handover lint of a version."""
     sys.exit(cmd_check(resolve_dir(dir), version))
+
+
+@cli.command()
+@click.argument("dir")
+def catalog(dir: str) -> None:
+    """Print the page's vendored vocabulary: widget schemas, then theme idioms."""
+    cmd_catalog(resolve_dir(dir))
+
+
+@cli.command()
+@click.argument("dir")
+def export(dir: str) -> None:
+    """Print the review thread as Markdown, for reuse in a PR description."""
+    cmd_export(resolve_dir(dir))
 
 
 if __name__ == "__main__":

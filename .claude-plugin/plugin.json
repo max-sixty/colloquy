@@ -1,6 +1,6 @@
 {
   "name": "colloquy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Review Claude's plans and findings like a document: Claude serves a commentable HTML page on localhost, you mark it up in the browser, and revised versions ship with changelogs.",
   "author": {
     "name": "Maximilian Roos"

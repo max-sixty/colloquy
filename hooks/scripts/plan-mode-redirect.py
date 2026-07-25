@@ -22,10 +22,10 @@ REDIRECT = (
     "colloquy-plans is on. Do not start implementing yet. Present the plan you "
     "just finalized as a colloquy review page: follow the colloquy skill — init a "
     "directory under ~/.claude/colloquy/<slug>/, write the plan as "
-    "versions/v001.html (sections with stable ids, real content, SVG for any "
-    "diagram), serve it, run check, and hand over the URL. Then enter the "
-    "comment/reply/revise loop. Treat the user approving in the browser "
-    '("✓ Looks good") as the go-ahead to implement.'
+    "versions/v001.html (sections with stable ids; widgets and idioms per the "
+    "vendored catalog), serve it, run check, note the version, and hand over the "
+    "URL. Then enter the comment/reply/revise loop. Treat the user approving in "
+    'the browser ("✓ Looks good") as the go-ahead to implement.'
 )
 
 

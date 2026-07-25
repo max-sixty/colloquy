@@ -20,8 +20,8 @@ the wedge; nothing in the tool is narrowed to it.
 
 That's it. No config, no accounts. The one prerequisite is
 [`uv`](https://docs.astral.sh/uv/) on your PATH — `interact.py` is a `uv` script (a PEP
-723 inline-metadata header declares its one dependency, `click`), so `uv run` handles the
-rest, and a browser on the same machine as the session.
+723 inline-metadata header declares its dependencies), so `uv run` handles the rest, and
+a browser on the same machine as the session.
 
 ## Using it
 
@@ -35,14 +35,16 @@ the session is currently about.
 Once a page is up, Claude prints a `http://127.0.0.1:…` URL. Open it, then:
 
 - **Select any text** to comment on that exact passage. Your comment anchors to it and
-  stays anchored across new versions.
+  stays anchored across new versions. Diagrams and images take comments too — click
+  one and the same button appears.
 - **Reply in the thread** when Claude answers. The banner shows whether Claude is working
   on your comments or listening for new ones.
 - **New versions arrive on their own.** The page follows Claude's newest revision as it
   ships and picks up where you were: the same passage at the top of the screen, the
   comments panel as you left it. Pick an older version to pin the view; a chip offers the
   way back to the latest. Each revision is immutable and carries a one-line changelog, so
-  the picker is the history.
+  the picker is the history — and the Δ toggle marks every passage that changed since
+  the previous version, so re-reviewing is cheap.
 - **"✓ Looks good"** signs off and closes the review.
 
 ### Experimental: plan-mode integration
@@ -52,12 +54,26 @@ approving a plan in the terminal, you review it in the browser. It's off by defa
 global. This one is a prototype (it auto-approves the plan-mode exit so the page can be
 built), so try it deliberately. `/colloquy-plans off` restores normal plan mode.
 
+## Widgets and the theme
+
+Pages aren't styled one-off. Agents write what things are — plain semantic HTML plus
+`cq-*` widget elements (`<cq-options>` for a decision's alternatives, `<cq-ref>` for a
+source link, `<cq-diagram>` for a mermaid diagram) — and a theme you can own decides how
+they look. A JSON-Schema registry keeps the renderer, the linter, and the agent's
+documentation agreeing about the vocabulary.
+
+The whole layer (runtime, theme, registry, widget modules) is vendored into each page's
+directory at `init`, overlaying colloquy's shipped defaults with `~/.claude/colloquy/`
+and the project's `.claude/colloquy/`. Override one CSS token to change the accent
+everywhere; replace `theme.css` to change the voice; add a registry entry and a module
+to add a widget. Because pages are self-contained, a version you approved can't change
+under you when the defaults do.
+
 ## How it works
 
-No daemon, no database, no build step. A ~400-line `uv` script (stdlib plus `click`)
-serves the page on a loopback port and mediates an append-only event log; a vanilla-JS
-layer the page loads provides the comments, threads, banner, and picker. Two files, one
-dependency.
+No daemon, no database, no build step. A `uv` script serves the page on a loopback port
+and mediates an append-only event log; an ES-module runtime the page loads renders the
+widgets and provides the comments, threads, banner, and picker.
 
 The load-bearing trick is that Claude's turn ends on a background `wait` that exits the
 moment you comment, which re-invokes Claude. So there is nothing running between rounds
@@ -73,18 +89,29 @@ Claude session  ──writes versions, replies──▶  interact.py server  ─
 
 The server binds `127.0.0.1`, so the browser must be on the same machine. Local terminals
 and the desktop app work directly. VS Code Remote-SSH and devcontainers forward localhost
-ports automatically, so the URL opens as-is. In a session that can't reach localhost (a
-cloud session, bare SSH with no forwarding), colloquy degrades to handing over a single
-self-contained HTML file you open with `file://`. The page is still readable; the comment
-loop is what's lost.
+ports automatically, so the URL opens as-is. A session with no path to localhost (a cloud
+session, bare SSH with no forwarding) has no hand-over; an opt-in tunnel is on the
+backlog.
 
 ## Pre-handover check
 
 Before handing over a page, Claude runs `interact.py check`, a deterministic lint that
-needs no browser: the HTML parses with balanced tags, there is exactly one external script
-tag, every comment anchor from the previous version survives, and nothing has a fixed
-pixel width wider than the readable column (the class of bug that makes a page scroll
-sideways). It's near-free, so it runs on every version.
+needs no browser: the HTML parses with balanced tags; the scaffold is exactly the theme
+link and the module script; every widget validates against the page's registry (schema,
+nesting, no self-closed `cq-*` tags); ids are unique and every comment anchor from the
+previous version survives; and nothing has a fixed pixel width wider than the readable
+column (the class of bug that makes a page scroll sideways). It's near-free, so it runs
+on every version — and a version goes live in the browser only once its changelog `note`
+lands, with `note` itself re-running the lint and refusing a failing version.
+
+## Developing
+
+Integration tests cover the lint, vendoring, publishing, catalog, export, and reply
+validation:
+
+```
+uv run --with pytest --with click --with jsonschema python -m pytest tests
+```
 
 ## Recording the demo
 

@@ -22,62 +22,101 @@ $ARGUMENTS
 
 The page lives in its own directory under `~/.claude/colloquy/<slug>/`, where `<slug>`
 is a short kebab-case name for the topic (`migration-options`, `auth-diagnosis`). The
-directory survives the session and is where every version and the event log live.
-`interact.py` mediates everything; its module docstring documents the layout.
+directory survives the session and is where every version, the event log, and the
+vendored widget layer live. `interact.py` mediates everything; its module docstring
+documents the layout.
 
-Invoke it with `uv run` — it's a `uv` script (a PEP 723 header declares its one
-dependency, `click`), and `uv` is the one prerequisite for the whole plugin:
+Invoke it with `uv run` — it's a `uv` script (a PEP 723 header declares its
+dependencies), and `uv` is the one prerequisite for the whole plugin:
 
 ```bash
 IX="uv run ${CLAUDE_SKILL_DIR}/scripts/interact.py"
-$IX init <dir>                          # create layout, copy in the comment layer
+$IX init <dir>                          # create layout, vendor the widget layer
+$IX catalog <dir>                       # the page's vocabulary: widgets + theme idioms
 $IX serve <dir>                         # background task; prints the URL
 $IX status <dir> working "<detail>"     # or: waiting, idle
 $IX wait <dir>                          # background task; exits on new user events
 $IX reply <dir> --to <id> --text "…"
-$IX note <dir> --version <n> --text "<one-line changelog>"
 $IX check <dir>                         # pre-handover lint (see below)
+$IX note <dir> --version 2 --text "<one-line changelog>"   # re-runs check, then publishes
 $IX events <dir>                        # reprint the full thread
-$IX stop <dir>                          # shut the server down
+$IX export <dir>                        # the review thread as Markdown
+$IX stop <dir>                          # stop the server; its background task exits 143 (SIGTERM — normal)
 ```
 
-1. `init`, then Write the page as `<dir>/versions/v001.html` (conventions below).
-2. `serve` as a background task (`run_in_background`). The port is stable per directory
+1. `init`, then read `catalog <dir>` — it prints the vendored registry (widget schemas
+   with examples) and the theme's class idioms, which vary per project.
+2. Write the page as `<dir>/versions/v001.html` (conventions below).
+3. `serve` as a background task (`run_in_background`). The port is stable per directory
    and a live server is reused, so the URL survives restarts.
-3. `check` the version (below), then hand the user the URL with a one-line orientation
-   (select text to comment; "✓ Looks good" signs off) and enter the review loop.
+4. `check`, then `note` the version — the server exposes a version only once its note
+   lands, and `note` re-runs `check` and refuses a failing version, so a half-written or
+   broken file is never live in the reviewer's browser. Then hand the user the URL with
+   a one-line orientation (select text to comment; "✓ Looks good" signs off) and enter
+   the review loop.
 
 ## Page conventions
 
-- Self-contained — inline CSS/JS/SVG — plus exactly one external tag, before `</body>`:
-  `<script src="/interact.js" defer></script>`.
-- Give every section and major block a stable, meaningful `id`: comments anchor to the
-  nearest `id`, and an anchor survives into a new version only where its id does. The
-  reader's place on the page falls back to those same ids when the text around it was
-  rewritten. Keep ids stable across versions so neither detaches.
-- The layer injects the status banner, comment sidebar, and version picker; don't build
-  page UI for any of those.
+- Pages are complete HTML documents. `check` enforces the scaffold — exactly one
+  stylesheet link (`/theme.css`) and one external script (the `/colloquy.js` module);
+  the rest of the head (title, charset, a `cq-base` meta) is yours:
+
+  ```html
+  <!doctype html>
+  <html lang="en">
+  <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>…</title>
+  <link rel="stylesheet" href="/theme.css">
+  </head>
+  <body>
+  <main>
+    …authored HTML and widgets…
+  </main>
+  <script type="module" src="/colloquy.js"></script>
+  </body>
+  </html>
+  ```
+
+- **The theme owns the look.** Palette, type, spacing, headings, tables, code,
+  `details`, and the class idioms all come from the vendored `theme.css` — write plain
+  semantic HTML and it gets the voice for free. A page-local `<style>` is the escape
+  hatch for genuinely page-specific presentation, not for re-declaring the palette.
+- **Widgets are `cq-*` elements**, validated against the vendored registry: attributes
+  carry scalars (enums, flags), children carry prose, an item's title is a leading
+  `<strong>` child. Every `cq-*` element takes an explicit end tag — `<cq-ref …/>` is
+  rejected because HTML ignores the slash. A `data`-bodied widget (`cq-diagram`) takes
+  text in its notation with `<` and `>` escaped. The catalog is the authority; don't
+  invent tags or attributes.
+- Give every section, major block, and widget item a stable, meaningful `id`: comments
+  anchor to the nearest `id`, and an anchor survives into a new version only where its
+  id does. The reader's place on the page falls back to those same ids when the text
+  around it was rewritten. Keep ids stable across versions so neither detaches.
+- The runtime injects the status banner, comment sidebar, and version picker; don't
+  build page UI for any of those.
 - **Never lose user text.** A central tenet of the comment layer: drafts (the general
   box, each reply, the selection composer) survive navigation, reload, version switches,
   and server death; only a successful send clears them.
-- **Use light mode.** Ship a light `:root` palette — dark ink on near-white, one or two
-  accents.
-- **Diagrams are graphical, never ASCII.** Author any architecture/flow/sequence diagram
-  as inline `<svg>`, not box-drawing (`┌─┐ │ ▼`) in a `<pre>`. A good one has labelled
-  rounded-rect nodes; arrowheaded, labelled edges (one small reused `<defs>` marker); a
-  legend or colour meaning when paths differ (e.g. green = fast path, amber = new path);
-  aligned spacing. Draw it from the page's light palette.
-- **Keep wide content inside the column.** The comment layer anchors to on-screen text,
-  so a page that scrolls sideways is hard to review. Give any element that can overflow
-  (a `<pre>`, a `<table>`, an `<svg>`) `max-width: 100%` or `overflow-x: auto`, and size
-  diagrams responsively (`style="width: 100%; height: auto"`) rather than a fixed pixel
-  width wider than the column. `check` flags fixed widths that exceed it.
-- **Show real content, not mocks.** It's a dynamic medium — prefer putting the actual
-  file contents, diff, or output behind `<details>` over paraphrasing it.
-- **Make references clickable.** Render each ticket key, MR/PR/issue number, and URL the
-  reader might open as a real `<a>`, not plain text or `<code>`. Resolve the base once
-  (the tracker or repo host) and link every reference of that kind; don't leave bare
-  text because the host was uncertain.
+- **Diagrams are graphical, never ASCII.** Flow, sequence, and state diagrams go in a
+  `cq-diagram` (mermaid source body); reach for hand-drawn inline `<svg>` only where
+  layout must be bespoke, drawn from the theme's tokens, with labelled nodes and
+  arrowheaded edges. Never box-drawing (`┌─┐ │ ▼`) in a `<pre>`.
+- **Make references clickable.** Declare the repo or tracker base once as
+  `<meta name="cq-base" content="https://host/repo/blob/main/{path}#L{line}">` and
+  write source references as `<cq-ref src="path/to/file.py:88"></cq-ref>`. Render
+  ticket keys, MR/PR numbers, and URLs as real `<a>` links, not plain text. In a
+  labeled specimen a fictional base is fine.
+- **Keep wide content inside the column** — 760px in the default theme. The comment
+  layer anchors to on-screen text, so a page that scrolls sideways is hard to review.
+  Give any element that can overflow (a `<pre>`, a `<table>`, an `<svg>`)
+  `max-width: 100%` or `overflow-x: auto`, and size diagrams responsively rather than a
+  fixed pixel width wider than the column. `check` flags fixed widths that exceed it.
+- **Show real content as evidence; label invented content as a specimen.** Prefer
+  putting the actual file contents, diff, or output behind `<details>` over
+  paraphrasing it. But an example that merely exhibits syntax or a widget must be
+  visibly fictional and labeled a specimen — real project content in an example gets
+  read as a live proposal.
 - **Show the destination, not the journey.** Explain the concept as it stands — total
   cut-over. Don't spend content on what was considered before or how you got here.
 
@@ -87,48 +126,63 @@ Whenever you hand over the URL or finish a round of work: `status <dir> waiting`
 `wait <dir>` as a background task, and end your turn. While `wait` runs, the banner
 shows "Claude is listening"; it exits — re-invoking you — when the user comments,
 replies, resolves, or approves, printing the new events as JSON. It also delivers events
-posted while you were working, so comments never get lost between rounds.
+posted while you were working, so comments never get lost between rounds. User comments
+exist only through the browser — there is no CLI that posts as the user.
 
 On wake:
 
 1. `status <dir> working "<what you're doing>"` — refresh the detail at each milestone;
    the banner shows it live.
-2. Address every comment: `reply` in-thread (brief plain text), and change the page
-   where the comment warrants it — usually both.
+2. Address every comment: `reply` in-thread, and change the page where the comment
+   warrants it — usually both. A reply is brief plain text, or may carry widget markup
+   (a small `cq-diagram` explaining a fix renders live in the thread); `reply` validates
+   widgets against the vendored registry and rejects what `check` would. A comment with
+   `"suggestion": true` proposes replacement text for its quoted passage: take it
+   verbatim into the next version, or reply with why not — never silently rewrite it.
 3. Page changes go in the next version: Write `versions/v002.html` (incrementing; never
    rewrite a version the user has seen — the picker is the history), `check` it, then
-   `note` a one-line changelog for it.
+   `note` its one-line changelog, which publishes it — the browser follows
+   automatically.
 4. Back to `status waiting` + `wait`.
 
 A `done` event is sign-off: `status <dir> idle`, don't restart `wait`, and carry the
-approval back into the main task. `stop` the server once the page won't be revisited. If
-`wait` exits reporting the server died, re-run `serve` and re-enter the loop.
+approval back into the main task — `export` prints the whole review as Markdown when a
+PR description wants it. `stop` the server once the page won't be revisited. If `wait`
+exits reporting the server died, re-run `serve` and re-enter the loop.
+
+## Customizing the widget layer
+
+`init` vendors the layer into the page directory by overlaying, per file: colloquy's
+shipped defaults, then the user's `~/.claude/colloquy/`, then the project's
+`.claude/colloquy/` — each mirroring the same layout (`theme.css`, `registry.json`,
+`widgets/`, `vendor/`) — so a project can override `theme.css`, extend `registry.json`,
+or add widget modules, and `catalog` always reflects what this page actually has. The
+page directory is self-contained: an approved version can't change under its reviewer.
+Re-running `init` on a live page is the explicit re-vendor; note it in the next
+version's changelog.
 
 ## When the browser can't reach the server
 
 The server binds `127.0.0.1`, so the browser must be on the same machine (a local
 terminal, the desktop app, or an IDE that forwards localhost ports — VS Code Remote-SSH
-and devcontainers do this automatically, so the URL opens as-is).
-
-When it can't reach localhost (a cloud session, bare SSH with no forwarding), skip the
-server and hand over a single self-contained file instead: Write the page with
-everything inline and **no** `<script src="/interact.js">` tag, save it to
-`~/.claude/colloquy/<slug>.html`, and give the user the `file://` path. The commentable
-loop is gone, but the page is still readable; iterate by overwriting the same file so
-the path stays stable.
+and devcontainers do this automatically, so the URL opens as-is). In a session with no
+path to localhost there is no hand-over; present in the terminal instead. An opt-in
+tunnel is on the backlog.
 
 ## Check before handing over
 
-Before handing over the URL, and before each `note`d version, run `check`:
+Before each `note`, run `check`:
 
 ```bash
 uv run "${CLAUDE_SKILL_DIR}/scripts/interact.py" check <dir>
 ```
 
 It's a deterministic static lint (no browser, near-zero cost): the HTML parses with
-balanced tags, there is exactly one external `<script>` tag, every anchor id from the
-previous version survives, and no fixed-pixel-width element is wider than the column. It
-exits non-zero and lists what to fix.
+balanced tags; the scaffold is exactly the theme link and the module script; every
+`cq-*` element validates against the vendored registry (schema, nesting, no
+self-closing form); ids are unique and every anchor id from the previous version
+survives; nothing has a fixed pixel width wider than the column. It exits non-zero and
+lists what to fix.
 
 Then read the page once against this checklist:
 
@@ -138,7 +192,7 @@ Then read the page once against this checklist:
 - **Excess pruned.** No paragraph restates another; nothing explains what the reader
   already knows. If a version has been patched several times, rewrite the section clean
   rather than layering another note.
-- **Diagrams read.** Each diagram is SVG, labelled, and says something the prose doesn't.
+- **Diagrams read.** Each diagram earns its place and says something the prose doesn't.
 - **References clickable.** Tickets, PRs, and URLs are real links.
 
 If browser tools are available **and** the page has diagrams, render the served URL and

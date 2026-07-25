@@ -10,23 +10,23 @@ items are recommendations that stood unchallenged. Each item stands alone.
       or a non-idle page with no live watcher ("start `wait` or set status idle"), a
       `UserPromptSubmit` hook that injects pending comments at the next turn, and a
       `SessionEnd` hook that idles pages and stops their servers. `hooks/hooks.json`
-      currently carries only the plan-mode redirect.
+      currently carries only the plan-mode redirect. **Decided 2026-07-24: blocked
+      until Claude Code exports a session id to tool subprocesses.** Hooks must act
+      only on the invoking session's pages, and CLI commands can't tag pages with a
+      session today (`CLAUDE_SESSION_ID` isn't in the Bash environment — verified).
+      The only workaround is process-ancestry matching, and interact.py runs under
+      claude → shell → uv → python, so it means walking `ps` ancestry on both sides —
+      a heuristic, and a misattributed `Stop` hook blocks every session. Revisit the
+      moment the session id reaches subprocesses; the hook designs above stand.
 
 ## Roadmap
 
-- [ ] Dark mode: pages and the injected layer honor `prefers-color-scheme` (the skill
-      currently mandates a light palette).
-- [ ] Version diff: a "changes since vN" toggle with ins/del highlighting, so
-      re-reviewing a revision is cheap.
-- [ ] Suggested edits: a comment variant proposing replacement text for the selected
-      passage, which Claude can accept verbatim into the next version. A reference
-      shape: Workbench's suggestion API (`{type: replace|delete|insert, find, text}`
-      with accept/reject, and unaccepted suggestions hidden from readers).
-- [ ] Export a review thread to Markdown for reuse in a PR description.
-- [ ] Anchor coverage beyond text: comments on a diagram or image currently fall back
-      to whole-page anchoring.
 - [ ] Opt-in tunnel for remote sessions (`cloudflared`/`tailscale` when present),
       gated behind an auth token added to the server first.
 - [ ] Plan-mode integration hardening: remove the auto-approve workaround in
       `/colloquy-plans` and settle the default UX before promoting it from
       experimental.
+- [ ] Widgets after v1, committed: `cq-plan` + `cq-milestones` (the composition test
+      case), then `cq-timeline`, `cq-compare`, `cq-metrics` (element-widgets) and
+      `cq-diff`, `cq-code`, `cq-tree` (upgraded body-parsers, prototyped standalone
+      first). Deferred until a page wants them: risks, verdict.

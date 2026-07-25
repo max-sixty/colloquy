@@ -1,0 +1,248 @@
+{
+  "cq-options": {
+    "description": "A decision's alternatives, rendered as a card grid, for places where the reader picks one. Children are cq-option elements only.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "additionalProperties": false,
+    "x-content": "items",
+    "x-upgrade": false,
+    "x-example": "<cq-options>\n  <cq-option id=\"paper-maps\" effort=\"low\" risk=\"high\">\n    <strong>Paper maps</strong> Print the route ahead of time; nothing to charge.\n  </cq-option>\n  <cq-option id=\"gps-unit\" effort=\"med\" risk=\"low\" recommended>\n    <strong>Dedicated GPS</strong> Offline maps, week-long battery, reversible choice.\n  </cq-option>\n</cq-options>"
+  },
+  "cq-option": {
+    "description": "One alternative in a decision. Lead with a <strong> title; prose follows. `recommended` draws the accent ring; effort/risk render as chips.",
+    "type": "object",
+    "properties": {
+      "id":          {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "effort":      {"enum": ["low", "med", "high"]},
+      "risk":        {"enum": ["low", "med", "high"]},
+      "recommended": {"type": "boolean"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-parent": "cq-options",
+    "x-content": "prose",
+    "x-chips": ["effort", "risk"],
+    "x-upgrade": false
+  },
+  "cq-plan": {
+    "description": "A plan container owning the chrome plan pages hand-build: lead with a <strong> title, optionally a <dl class=\"facts\"> summary row, then <section> children whose h2 headings number themselves. Content is open — sections, prose, and other widgets nest freely.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-content": "prose",
+    "x-upgrade": false,
+    "x-example": "<cq-plan id=\"aviary-plan\">\n  <strong>Rebuilding the aviary feeders</strong>\n  <dl class=\"facts\">\n    <dt>Owner</dt><dd>groundskeeping</dd>\n    <dt>Window</dt><dd>before the spring migration</dd>\n  </dl>\n  <section id=\"aviary-scope\"><h2>Scope</h2><p>Four feeders, one season.</p></section>\n  <section id=\"aviary-rollout\"><h2>Rollout</h2><p>One feeder a week.</p></section>\n</cq-plan>"
+  },
+  "cq-milestones": {
+    "description": "A timeline of milestones with status dots on a rail. Children are cq-milestone elements only.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "additionalProperties": false,
+    "x-content": "items",
+    "x-upgrade": false,
+    "x-example": "<cq-milestones>\n  <cq-milestone id=\"m-survey\" status=\"done\" when=\"week 1\">\n    <strong>Survey the sites</strong> Map sun and squirrel routes.\n  </cq-milestone>\n  <cq-milestone id=\"m-build\" status=\"active\" when=\"weeks 2-3\" tags=\"wood,solar\">\n    <strong>Build the feeders</strong> Two classic, two heated.\n  </cq-milestone>\n  <cq-milestone id=\"m-install\" status=\"planned\" when=\"week 4\">\n    <strong>Install and watch</strong>\n  </cq-milestone>\n</cq-milestones>"
+  },
+  "cq-milestone": {
+    "description": "One milestone. Lead with a <strong> title; prose follows. `status` colors the timeline dot; `when` is a free-text schedule label; `tags` is a comma-separated list rendered as chips.",
+    "type": "object",
+    "properties": {
+      "id":     {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "status": {"enum": ["planned", "active", "done", "blocked"]},
+      "when":   {"type": "string"},
+      "tags":   {"type": "string", "pattern": "^[a-z0-9-]+(,[a-z0-9-]+)*$"}
+    },
+    "required": ["id", "status"],
+    "additionalProperties": false,
+    "x-parent": "cq-milestones",
+    "x-content": "prose",
+    "x-chips": ["when", "tags"],
+    "x-upgrade": true
+  },
+  "cq-timeline": {
+    "description": "A chronological event log — the incident-report shape. Children are cq-event elements only. Where cq-milestones tracks planned work by status, cq-timeline records what happened, when.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "additionalProperties": false,
+    "x-content": "items",
+    "x-upgrade": false,
+    "x-example": "<cq-timeline>\n  <cq-event id=\"e-alert\" at=\"09:14\" kind=\"warning\">\n    <strong>Feeder camera offline</strong> Battery alert from the north feeder.\n  </cq-event>\n  <cq-event id=\"e-swap\" at=\"09:40\" kind=\"action\">\n    <strong>Battery swapped</strong>\n  </cq-event>\n  <cq-event id=\"e-ok\" at=\"09:41\" kind=\"info\">\n    <strong>Camera back</strong> Feed resumed.\n  </cq-event>\n</cq-timeline>"
+  },
+  "cq-event": {
+    "description": "One event on a timeline. Lead with a <strong> title; prose follows. `at` is a free-text time label; `kind` colors the dot.",
+    "type": "object",
+    "properties": {
+      "id":   {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "at":   {"type": "string"},
+      "kind": {"enum": ["info", "action", "warning", "failure"]}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-parent": "cq-timeline",
+    "x-content": "prose",
+    "x-upgrade": false
+  },
+  "cq-compare": {
+    "description": "Labeled variants side by side — neutral exhibition, where cq-options is a decision. Children are cq-variant elements only.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "additionalProperties": false,
+    "x-content": "items",
+    "x-upgrade": false,
+    "x-example": "<cq-compare>\n  <cq-variant id=\"v-cedar\"><strong>Cedar</strong> Weathers silver; no sealant.</cq-variant>\n  <cq-variant id=\"v-pine\"><strong>Pine</strong> Cheaper; seal it yearly.</cq-variant>\n</cq-compare>"
+  },
+  "cq-variant": {
+    "description": "One variant in a comparison. Lead with a <strong> label; any content follows, widgets included.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-parent": "cq-compare",
+    "x-content": "prose",
+    "x-upgrade": false
+  },
+  "cq-metrics": {
+    "description": "A KPI row. Children are cq-metric elements only.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "additionalProperties": false,
+    "x-content": "items",
+    "x-upgrade": false,
+    "x-example": "<cq-metrics>\n  <cq-metric id=\"k-visits\" value=\"312\" delta=\"+41\" direction=\"up-good\">daily visits</cq-metric>\n  <cq-metric id=\"k-refills\" value=\"2.1/wk\" delta=\"+0.4\" direction=\"up-bad\">refills</cq-metric>\n  <cq-metric id=\"k-species\" value=\"14\">species seen</cq-metric>\n</cq-metrics>"
+  },
+  "cq-metric": {
+    "description": "One metric: element text is the label, `value` the headline number, `delta` a signed change (leading + or -), `direction` says which sign is good (up-good, up-bad) so the delta colors honestly; without it the delta stays neutral.",
+    "type": "object",
+    "properties": {
+      "id":        {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "value":     {"type": "string"},
+      "delta":     {"type": "string", "pattern": "^[+-].+$"},
+      "direction": {"enum": ["up-good", "up-bad"]}
+    },
+    "required": ["id", "value"],
+    "additionalProperties": false,
+    "x-parent": "cq-metrics",
+    "x-content": "prose",
+    "x-upgrade": false
+  },
+  "cq-ref": {
+    "description": "An inline reference to a source location, rendered as a link. `src` is path or path:line. The link base is resolved once per page from <meta name=\"cq-base\" content=\"https://host/repo/blob/main/{path}#L{line}\">; without that meta the reference renders as plain code.",
+    "type": "object",
+    "properties": {
+      "id":  {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "src": {"type": "string", "pattern": "^\\S+$"}
+    },
+    "required": ["src"],
+    "additionalProperties": false,
+    "x-content": "none",
+    "x-upgrade": true,
+    "x-example": "<p>The cutoff lives in <cq-ref src=\"jobs/backfill.py:88\"></cq-ref>.</p>"
+  },
+  "cq-diff": {
+    "description": "A unified diff rendered with per-file collapse, add/del coloring, and per-file +/− counts. The body is data: the diff verbatim, at column 0 (context lines keep their leading space), with < and > escaped as &lt; and &gt;. Comments anchor to the required id.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-content": "data",
+    "x-upgrade": true,
+    "x-example": "<cq-diff id=\"mount-diff\">\ndiff --git a/feeders/mount.py b/feeders/mount.py\n--- a/feeders/mount.py\n+++ b/feeders/mount.py\n@@ -1,3 +1,3 @@\n def bracket():\n-    return \"plastic\"\n+    return \"steel\"\n</cq-diff>"
+  },
+  "cq-tree": {
+    "description": "A file tree from an indent-notation body: one node per line, children indented deeper, a trailing / marking a directory, trailing +N/-N tokens rendering as change badges. Body is data — text only.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-content": "data",
+    "x-upgrade": true,
+    "x-example": "<cq-tree id=\"feeder-tree\">\nfeeders/\n  mount.py  +2 -2\n  schedule.py  +1\n  sites/\n    north.toml\n</cq-tree>"
+  },
+  "cq-code": {
+    "description": "An annotated code block — the walkthrough shape. The body is the code verbatim (data, < and > escaped, column 0); `hi` highlights line ranges (\"3-5,8\"); cq-note children anchor remarks at lines.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "hi": {"type": "string", "pattern": "^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-content": "data",
+    "x-upgrade": true,
+    "x-example": "<cq-code id=\"bracket-walk\" hi=\"2\">\ndef bracket(temp):\n    if temp &lt; 0:\n        return \"steel\"\n    return \"cedar\"\n<cq-note at=\"2\">Freezing is the only threshold that matters.</cq-note>\n</cq-code>"
+  },
+  "cq-note": {
+    "description": "A remark anchored at a line of its cq-code parent. Prose content; `at` is the 1-based line number.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "at": {"type": "string", "pattern": "^[0-9]+$"}
+    },
+    "required": ["at"],
+    "additionalProperties": false,
+    "x-parent": "cq-code",
+    "x-content": "prose",
+    "x-upgrade": false
+  },
+  "cq-diagram": {
+    "description": "A diagram rendered from a mermaid-source body (flowchart, sequence, state…). The body is data, not prose: text only, angle brackets escaped as &lt; and &gt;. Comments anchor to the required id, not to text inside the SVG.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-content": "data",
+    "x-upgrade": true,
+    "x-example": "<cq-diagram id=\"checkout-flow\">\ngraph LR\n  Cart --> Pay\n  Pay --> Receipt\n</cq-diagram>"
+  },
+  "$idioms": {
+    "description": "Recurring shapes the theme styles directly — no registry entry, no JS. Plain semantic HTML gets the theme's voice for free; these classes cover what HTML lacks an element for.",
+    ".eyebrow": {
+      "description": "A small-caps label above a heading.",
+      "example": "<p class=\"eyebrow\">design proposal</p>\n<h1>Widgets</h1>"
+    },
+    ".lede": {
+      "description": "The opening paragraph, set slightly larger.",
+      "example": "<p class=\"lede\">One paragraph saying what this page decides.</p>"
+    },
+    ".tag": {
+      "description": "An inline pill label.",
+      "example": "<span class=\"tag\">experimental</span>"
+    },
+    ".callout": {
+      "description": "An aside set off from the prose — a tinted field with a hairline border.",
+      "example": "<aside class=\"callout\">Rollback is one flag flip; the backfill is idempotent.</aside>"
+    },
+    ".facts": {
+      "description": "A label/value grid for summary facts, as a definition list.",
+      "example": "<dl class=\"facts\">\n  <dt>Owner</dt><dd>payments</dd>\n  <dt>Rollout</dt><dd>behind a flag</dd>\n</dl>"
+    },
+    "ol.steps": {
+      "description": "An ordered procedure with numbered markers.",
+      "example": "<ol class=\"steps\">\n  <li>Backfill the new store.</li>\n  <li>Verify counts, then flip reads.</li>\n</ol>"
+    },
+    "details": {
+      "description": "Evidence: a claim as the <summary>, its backing collapsed beneath. Native disclosure; find-in-page reaches the collapsed content.",
+      "example": "<details>\n  <summary>The parser drops the slash on self-closed custom tags</summary>\n  <pre><code>document.querySelector(\"cq-ref\").textContent\n// → \"rest of the paragraph\"</code></pre>\n</details>"
+    }
+  }
+}

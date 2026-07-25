@@ -16,30 +16,32 @@ cat > "$DIR/versions/v001.html" <<'HTML'
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Migration plan</title>
-<style>
-  :root { --ink:#1f2430; --muted:#5b6472; --bg:#fcfcfa; --line:#e5e7eb; --accent:#4f46e5; }
-  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--ink);
-    font:16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  main { max-width:720px; margin:0 auto; padding:40px 24px 120px; }
-  h1 { font-size:1.6rem; letter-spacing:-0.015em; margin:0 0 6px; }
-  .sub { color:var(--muted); margin:0 0 32px; }
-  h2 { font-size:1.15rem; margin:32px 0 8px; }
-  ol { padding-left:22px; } li { margin:8px 0; }
-</style></head>
+<link rel="stylesheet" href="/theme.css"></head>
 <body><main>
-<h1 id="top">Migrating billing to the new service</h1>
-<p class="sub">Three phases, one weekend of downtime. Select any line to comment.</p>
+<header id="top">
+<p class="eyebrow">demo · migration plan</p>
+<h1>Migrating billing to the new service</h1>
+<p class="lede">Three phases, one weekend of downtime. Select any line to comment.</p>
+</header>
 <section id="phases"><h2>Phases</h2>
-<ol>
+<ol class="steps">
 <li id="p1">Dual-write to old and new stores behind a flag.</li>
 <li id="p2">Backfill history, then flip reads to the new store.</li>
 <li id="p3">A weekend cutover window to retire the old store.</li>
-</ol></section>
+</ol>
+<cq-diagram id="flow">
+graph LR
+  DualWrite --> Backfill
+  Backfill --> Cutover
+</cq-diagram>
+</section>
 <section id="risk"><h2>Rollback</h2>
 <p id="r1">Each phase is independently reversible by toggling the flag.</p></section>
-</main><script src="/interact.js" defer></script></body></html>
+</main><script type="module" src="/colloquy.js"></script></body></html>
 HTML
 
+$IX check "$DIR" >/dev/null
+$IX note "$DIR" --version 1 --text "the plan" >/dev/null
 $IX status "$DIR" waiting >/dev/null
 URL=$($IX serve "$DIR" & sleep 1; cat "$DIR/server.json" | python3 -c 'import sys,json;print(json.load(sys.stdin)["url"])')
 
