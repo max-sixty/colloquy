@@ -83,6 +83,11 @@
 - An examples gallery (`examples/`): an incident report, a PR walkthrough, a status
   report, a design decision, and a draggable triage board — complete pages that lint
   clean against the shipped layer in the tests and double as authoring references.
+- `examples/gallery.html`: the whole gallery on one page, one example per tab —
+  generated from the sibling examples by `scripts/gallery.py`, with a test failing
+  any commit where the two drift. Example ids stay disjoint across files (the
+  generator embeds each `<main>` verbatim and refuses a collision), so an id means
+  the same element standalone and in the gallery.
 
 ## 0.2.0 — 2026-07-24
 

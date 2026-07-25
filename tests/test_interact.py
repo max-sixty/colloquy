@@ -444,6 +444,17 @@ def test_examples_pass_check(tmp_path, monkeypatch):
         assert result.exit_code == 0, f"{example.name}: {result.output}"
 
 
+def test_gallery_is_generated_from_the_examples():
+    """examples/gallery.html is derived; a commit that lets it drift fails here."""
+    spec = importlib.util.spec_from_file_location(
+        "gallery", Path(__file__).parent.parent / "scripts" / "gallery.py"
+    )
+    gallery = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gallery)
+    committed = (Path(__file__).parent.parent / "examples" / "gallery.html").read_text()
+    assert gallery.build() == committed, "examples changed — rerun scripts/gallery.py"
+
+
 def test_catalog_prints_widgets_and_idioms(page_dir):
     result = CliRunner().invoke(interact.cli, ["catalog", str(page_dir)])
     assert result.exit_code == 0
