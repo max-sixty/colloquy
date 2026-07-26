@@ -1,15 +1,15 @@
 # colloquy
 
-**Stop reading Claude's plans in the terminal.** Review them like a document instead:
-Claude hands you a web page, you select any line and comment on it like a Google Doc, and
-a revised version arrives with the change. Comment threads, a live "Claude is working /
-listening" banner, and a version picker are all built in.
+A Claude Code plugin: Claude presents plans and write-ups as a web page instead of a
+wall of terminal text. Select any line to comment on it like a shared doc; your comment
+wakes the session, and Claude ships a revised version.
 
 ![colloquy demo](docs/demo.gif)
 
-It works for anything Claude would otherwise dump as a wall of text: a migration plan, an
-architecture write-up, an incident diagnosis, a PR walkthrough, a review. The plan case is
-the wedge; nothing in the tool is narrowed to it.
+[`docs/index.html`](docs/index.html) is the tour: what it does and a review end to end.
+[`docs/how-it-works.html`](docs/how-it-works.html) covers the mechanism. Both are set in
+colloquy's own theme, so they double as specimens. Open them from a checkout, since
+GitHub serves `.html` as source.
 
 ## Install
 
@@ -18,75 +18,25 @@ the wedge; nothing in the tool is narrowed to it.
 /plugin install colloquy@colloquy
 ```
 
-That's it. No config, no accounts. The one prerequisite is
-[`uv`](https://docs.astral.sh/uv/) on your PATH — `interact.py` is a `uv` script (a PEP
-723 inline-metadata header declares its dependencies), so `uv run` handles the rest, and
+That's it. No config, no accounts. It needs [`uv`](https://docs.astral.sh/uv/) on your
+PATH (`interact.py` is a `uv` script, its dependencies declared in a PEP 723 header) and
 a browser on the same machine as the session.
 
-## Using it
+Then ask Claude for a page, or run `/colloquy [topic]`, which with no argument presents
+whatever the session is currently about.
 
-**Just ask.** "Write up the migration options as a page", "explain this design in HTML",
-or "I want to see the options" all trigger it. Claude also reaches for it on its own when
-a plan or write-up would be easier to review as a page than as terminal text.
-
-**`/colloquy [topic]`** is the explicit entry point. With no argument it presents whatever
-the session is currently about.
-
-Once a page is up, Claude prints a `http://127.0.0.1:…` URL. Open it, then:
-
-- **Select any text** to comment on that exact passage. Your comment anchors to it and
-  stays anchored across new versions. Diagrams and images take comments too — click
-  one and the same button appears.
-- **Reply in the thread** when Claude answers. The banner shows whether Claude is working
-  on your comments or listening for new ones — and, when the session behind it has gone
-  quiet or ended, says so rather than leaving you to ask.
-- **New versions arrive on their own.** The page follows Claude's newest revision as it
-  ships and picks up where you were: the same passage at the top of the screen, the
-  comments panel as you left it. Pick an older version to pin the view; a chip offers the
-  way back to the latest. Each revision is immutable and carries a one-line changelog, so
-  the picker is the history — and the Δ toggle marks every passage that changed since
-  the previous version, so re-reviewing is cheap.
-- **Some widgets take edits directly.** Drag a card between the columns of a triage
-  board, or click an option card to pick it, and the edit itself reaches Claude — the
-  next version ships with the board as you left it and your pick marked.
-- **"✓ Looks good"** signs off and closes the review. Pages that seek approval (a
-  plan, a proposed change) carry the button; informational pages take comments only.
-
-### Experimental: plan-mode integration
+## Experimental: plan-mode integration
 
 `/colloquy-plans on` redirects Claude's plan mode into a colloquy page: instead of
 approving a plan in the terminal, you review it in the browser. It's off by default and
 global. This one is a prototype (it auto-approves the plan-mode exit so the page can be
 built), so try it deliberately. `/colloquy-plans off` restores normal plan mode.
 
-## Widgets and the theme
+## Examples
 
-Pages aren't styled one-off. Agents write what things are — plain semantic HTML plus
-`cq-*` widget elements (`<cq-options>` for a decision's alternatives, `<cq-ref>` for a
-source link, `<cq-diagram>` for a mermaid diagram) — and a theme you can own decides how
-they look. A JSON-Schema registry keeps the renderer, the linter, and the agent's
-documentation agreeing about the vocabulary.
-
-Widgets can also carry input the other way: `<cq-board>` is a kanban board whose cards
-you drag between columns, and each drop reaches Claude as a structured `action` event
-on the same channel as comments. The document stays the state — Claude's next version
-carries the moved card, and until it ships the page shows the version plus your own
-edits.
-
-The whole layer (runtime, theme, registry, widget modules) is vendored into each page's
-directory at `init`, overlaying colloquy's shipped defaults with `~/.claude/colloquy/`
-and the project's `.claude/colloquy/`. Override one CSS token to change the accent
-everywhere; replace `theme.css` to change the voice; add a registry entry and a module
-to add a widget. Because pages are self-contained, a version you approved can't change
-under you when the defaults do.
-
-### Examples
-
-[`examples/`](examples/) holds six complete pages showing the range — an incident
-report, a PR walkthrough, a status report, a design decision, a draggable triage
-board, and a tabbed set of parallel workstreams — plus `gallery.html`, all six on
-one page as tabs (generated by `scripts/gallery.py`; edit the examples, not it).
-Serve one against the shipped layer to try it:
+[`examples/`](examples/) holds a complete page for each kind of write-up, plus
+`gallery.html`, which puts them on one page as tabs (generated by `scripts/gallery.py`;
+edit the examples, not it). Serve one against the shipped layer to try it:
 
 ```
 uv run skills/colloquy/scripts/interact.py init /tmp/demo
@@ -95,56 +45,22 @@ uv run skills/colloquy/scripts/interact.py note /tmp/demo --version 1 --text "de
 uv run skills/colloquy/scripts/interact.py serve /tmp/demo
 ```
 
-## How it works
-
-No daemon, no database, no build step. A `uv` script serves the page on a loopback port
-and mediates an append-only event log; an ES-module runtime the page loads renders the
-widgets and provides the comments, threads, banner, and picker.
-
-The load-bearing trick is that Claude's turn ends on a background `wait` that exits the
-moment you comment, which re-invokes Claude. So there is nothing running between rounds
-and nothing to push: your comment itself wakes Claude up.
-
-```
-Claude session  ──writes versions, replies──▶  interact.py server  ──serves page──▶  browser
-      ▲                                                                                   │
-      └──────────── wait exits on your comment, re-invoking Claude ◀────POST comment──────┘
-```
-
-### Remote sessions
-
-The server binds `127.0.0.1`, so the browser must be on the same machine. Local terminals
-and the desktop app work directly. VS Code Remote-SSH and devcontainers forward localhost
-ports automatically, so the URL opens as-is. A session with no path to localhost (a cloud
-session, bare SSH with no forwarding) has no hand-over; an opt-in tunnel is on the
-backlog.
-
-## Pre-handover check
-
-Before handing over a page, Claude runs `interact.py check`, a deterministic lint that
-needs no browser: the HTML parses with balanced tags; the scaffold is exactly the theme
-link and the module script; every widget validates against the page's registry (schema,
-nesting, no self-closed `cq-*` tags); ids are unique and every comment anchor from the
-previous version survives; and nothing has a fixed pixel width wider than the readable
-column (the class of bug that makes a page scroll sideways). It's near-free, so it runs
-on every version — and a version goes live in the browser only once its changelog `note`
-lands, with `note` itself re-running the lint and refusing a failing version.
-
 ## Developing
 
-Integration tests cover two layers. `test_interact.py` exercises the lint, vendoring,
-publishing, catalog, export, and reply validation. `test_render.py` loads the shipped
-examples in a real browser (both color schemes) and asserts what a static lint can't
-reach: every widget upgrades into a box with usable size, the document and the comment
-panel scroll in separate regions, and the comment box grows without any script sizing
-it. One journey test drives the whole review loop through the real UI — select a
-passage, comment, drag a card, follow the next version, find the comment still
-anchored — and pins the event log it leaves. Playwright attaches to the Chrome already
-installed (`channel="chrome"`), so there is no browser download and still no build
-step. Driving a page by hand to check a change works the same way: `init` the
+The suite is integration tests over the real thing. `test_interact.py` exercises the
+lint, vendoring, publishing, catalog, export, and reply validation. `test_render.py`
+loads the shipped examples in a real browser (both color schemes) and asserts what a
+static lint can't reach: every widget upgrades into a box with usable size, the document
+and the comment panel scroll in separate regions, and the comment box grows without any
+script sizing it. One journey test drives the whole review loop through the real UI
+(select a passage, comment, drag a card, follow the next version, find the comment still
+anchored) and pins the event log it leaves. `test_product_page.py` holds the pages under
+`docs/` to the shipped theme and widget registry. Playwright attaches to the Chrome
+already installed (`channel="chrome"`), so there is no browser download and still no
+build step. Driving a page by hand to check a change works the same way: `init` the
 directory, then serve it from `interact.Handler` in-process as the fixtures do. `serve`
-instead puts a live review behind the session, and the review-loop hooks then hold it
-to watching that page.
+instead puts a live review behind the session, and the review-loop hooks then hold it to
+watching that page.
 
 ```
 uv run --with pytest --with click --with jsonschema --with playwright python -m pytest tests

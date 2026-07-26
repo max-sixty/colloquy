@@ -187,7 +187,8 @@
   `file://` open: `index.html` (what colloquy offers, with light/dark screenshots of
   a real session) and `how-it-works.html` (the mechanism, with live widget
   specimens), set in the shipped theme; a test pins the theme copy and widget tags
-  to the shipped layer.
+  to the shipped layer. The README defers to them and keeps what they don't cover:
+  install, the examples recipe, developing, and the demo.
 
 ## 0.2.0 — 2026-07-24
 

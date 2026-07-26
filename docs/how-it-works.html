@@ -97,17 +97,17 @@ state.</p>
 <h2>What a page is made of</h2>
 <p id="scaffold">A version is one complete HTML document, and the required
 scaffold is two lines: the theme stylesheet and the runtime module. Everything
-between them is the agent's, drawn from four sources in ascending order of
+between them is the agent's, drawn from these sources in ascending order of
 specialization; each earns its place only where the one before it lacks the
 shape.</p>
 <ol class="steps" id="sources">
 <li id="src-html"><strong>Plain semantic HTML.</strong> The theme styles bare
 elements, so headings, prose, tables, code, and <code>details</code> carry the
 page's voice unclassed. Most of any page is this.</li>
-<li id="src-idioms"><strong>Class idioms.</strong> A small closed set for
-shapes HTML has no element for: <code>.eyebrow</code>, <code>.lede</code>,
-<code>.tag</code>, <code>.callout</code>, <code>.facts</code>, and
-<code>ol.steps</code>, which numbers this list.</li>
+<li id="src-idioms"><strong>Class idioms.</strong> A small closed set the theme
+defines for shapes HTML has no element for, among them <code>.eyebrow</code>,
+<code>.lede</code>, <code>.tag</code>, <code>.callout</code>,
+<code>.facts</code>, and <code>ol.steps</code>, which numbers this list.</li>
 <li id="src-widgets"><strong><code>cq-*</code> widgets.</strong> Custom
 elements that say what things are: <code>&lt;cq-options&gt;</code> for a
 decision's alternatives, <code>&lt;cq-board&gt;</code> for work in columns.
@@ -178,7 +178,7 @@ diffs with per-file collapse, annotated code walkthroughs, file trees,
 timelines, metric rows, plans with milestones, and tabbed parallel
 workstreams. The
 <a href="https://github.com/max-sixty/colloquy/tree/main/examples">examples
-gallery</a> holds six complete pages showing the range.</p>
+gallery</a> holds complete pages showing the range.</p>
 </section>
 
 <section id="edits">
@@ -221,7 +221,8 @@ a failing version, so an open browser never sees one.</p>
 <p>The server binds <code>127.0.0.1</code>, so the browser must be on the same
 machine. Local terminals and the desktop app work directly; VS Code Remote-SSH
 and devcontainers forward localhost ports automatically, so the URL opens
-as-is.</p>
+as-is. A session with no path to localhost, such as a cloud session or bare SSH
+without port forwarding, has no hand-over.</p>
 </section>
 
 <footer id="colophon">
