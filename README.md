@@ -8,8 +8,8 @@ wakes the session, and Claude ships a revised version.
 
 [`docs/index.html`](docs/index.html) is the tour: what it does and a review end to end.
 [`docs/how-it-works.html`](docs/how-it-works.html) covers the mechanism. Both are set in
-colloquy's own theme, so they double as specimens. Open them from a checkout, since
-GitHub serves `.html` as source.
+colloquy's own theme, so they double as specimens. Open them in a browser from a
+checkout.
 
 ## Install
 
