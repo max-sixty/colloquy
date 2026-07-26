@@ -1,15 +1,21 @@
 /* cq-options: upgraded for two attributes, and without either the theme's CSS is
  * the whole widget and this module is a no-op.
  *
- * `choose` takes the reader's pick: clicking a card picks that option, and each
- * card carries an injected "Choose" button so the keyboard reaches the same path
- * — Tab to the button, Enter picks, a native button, so no key handling of its
- * own. The pick is applied as an absolute placement (chosen on the target,
- * cleared from siblings, ✓ badge moved, chosen's button hidden) and reported as
- * a `choose` action, the second rider on the channel cq-board opened. Clicks
- * that are really text selections or link follows don't choose. An injected
- * button rather than ARIA option/radio roles, whose presentational children
- * would silence links inside an option's prose.
+ * `choose` takes the reader's pick: clicking a card picks that option and
+ * clicking it again clears it, and each card carries one injected mark that is
+ * both the keyboard path and the state — a toggle button reading "choose", which
+ * becomes "your pick" once this reader picks it, or "chosen" where the document
+ * already carries the pick. One element for both states, so nothing hides,
+ * nothing moves, and a keyboard pick leaves focus where it was. The pick is
+ * applied as an absolute placement (chosen on the target, cleared from siblings,
+ * marks relabelled) and reported as a `choose` action naming the group's pick —
+ * or null for no pick, which is how clearing travels rather than a second verb.
+ * It's the second rider on the channel cq-board opened. Clicks that are really
+ * text selections or link follows don't choose. An injected button rather than
+ * ARIA option/radio roles, whose presentational children would silence links
+ * inside an option's prose; `aria-pressed` carries the state alongside the
+ * label, a promise the toggle keeps. Outside a `choose` group the same mark
+ * renders as a span — the document's state, with nothing to press.
  *
  * `settled` retires the decision once it has been made and acted on: the group
  * collapses to one line naming the chosen option, with every card — the chosen
@@ -23,10 +29,15 @@
  * rather than jumping to a card nobody can see, and while the version diff is
  * on the row wears a Δ count so a change can't hide behind the collapse. A
  * settled group still takes a pick once opened — settling is a sweep, not a
- * lock, and the summary line follows whatever is chosen.
+ * lock, and the summary line follows whatever is chosen, including back to a
+ * bare "Settled" when the reader clears it.
  *
  * Authored content is never replaced, so there is no failSoft. */
 import { once, sendAction, toast } from "/colloquy.js";
+
+const OPEN = "choose"; // the card is pickable
+const PICKED = "your pick"; // this reader picked it, this session
+const AUTHORED = "chosen"; // the document arrived carrying the pick
 
 const SETTLED_KEY = "cq-settled:";
 // hidden="until-found" is only a hide where the UA supports it (it rides
@@ -40,83 +51,81 @@ customElements.define(
   class extends HTMLElement {
     connectedCallback() {
       if (!once(this)) return;
-      // An authored `chosen` (the honoring version carrying an earlier pick) gets
-      // the same ✓ badge a live pick gets, so honoring doesn't change the look —
-      // but worded as the document's state, not attributed to this reader.
+      // An authored `chosen` (the honoring version carrying an earlier pick) wears
+      // the same mark a live pick wears, so honoring doesn't change the look — but
+      // worded as the document's state, not attributed to this reader.
       const honored = this.querySelector(":scope > cq-option[chosen]");
-      if (honored) this.#badge(honored, "✓ chosen");
       this.#honored = honored;
+      const choosable = this.hasAttribute("choose");
+      // Without `choose` there is nothing to press: the mark still reports the
+      // document's state, as a span.
+      if (choosable)
+        for (const option of this.querySelectorAll(":scope > cq-option"))
+          this.#mark(option, option === honored ? AUTHORED : OPEN, true);
+      else if (honored) this.#mark(honored, AUTHORED, false);
       if (this.hasAttribute("settled")) this.#settle();
-      if (!this.hasAttribute("choose")) return;
-      for (const option of this.querySelectorAll(":scope > cq-option")) this.#pick(option);
+      if (!choosable) return;
       this.addEventListener("click", (e) => {
-        // A pointer click amid a selection is the selection's, not a pick — but a
-        // keyboard activation (detail 0) can't be one, and a stale selection
-        // elsewhere on the page must not swallow it.
-        if (e.detail !== 0 && getSelection()?.toString()) return;
+        // A click that lands inside a selection is that selection's, not a pick:
+        // it's the mouseup of a drag-select. A selection elsewhere on the page —
+        // a comment's, most often — is none of this click's business, and a
+        // keyboard activation (detail 0) is never a drag-select.
+        const sel = getSelection();
+        if (e.detail !== 0 && sel && !sel.isCollapsed && sel.containsNode(e.target, true)) return;
         if (e.target.closest("a")) return; // links keep their job
         const option = e.target.closest("cq-option");
-        if (!option || option.parentElement !== this || option.hasAttribute("chosen")) return;
+        if (!option || option.parentElement !== this) return;
         const prev = this.querySelector(":scope > cq-option[chosen]");
-        this.#choose(option);
+        // Clicking the card that already holds the pick clears it: one gesture
+        // both ways, so a reader who picked by mistake needn't pick something
+        // else to get out of it.
+        const next = option === prev ? null : option;
+        this.#choose(next);
         const title = option.querySelector(":scope > strong")?.textContent || option.id;
-        sendAction(this, "choose", { option: option.id }).then((ok) => {
-          if (ok) toast(`Chose “${title}” — sent to Claude`);
-          // Unsent means unrecorded: rewind rather than show a pick Claude
-          // will never see. (post already toasted the failure.)
-          else if (prev) this.#choose(prev, prev === this.#honored ? "✓ chosen" : "✓ your pick");
-          else {
-            option.removeAttribute("chosen");
-            option.querySelector(":scope > .cq-chosen-badge")?.remove();
-            const btn = option.querySelector(":scope > .cq-pick");
-            if (btn) btn.hidden = false;
-            this.#retitle();
-          }
+        const sent = next ? `Chose “${title}” — sent to Claude` : "Cleared your pick — sent to Claude";
+        sendAction(this, "choose", { option: next?.id ?? null }).then((ok) => {
+          if (ok) toast(sent);
+          // Unsent means unrecorded: rewind rather than show a pick Claude will
+          // never see. (post already toasted the failure.) No previous pick means
+          // rewinding to no pick at all, which is #choose(null).
+          else this.#choose(prev, prev === this.#honored ? AUTHORED : PICKED);
         });
       });
     }
 
-    // The keyboard affordance: a real button whose click bubbles into the group's
-    // pick handler. The chosen option hides its button — the ✓ badge says it.
-    #pick(option) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "cq-pick cq-ui"; // UI, not content: anchoring skips it
-      btn.dataset.cqGen = "1"; // and the version diff ignores it
-      btn.textContent = "Choose";
-      const title = option.querySelector(":scope > strong")?.textContent || option.id;
-      btn.setAttribute("aria-label", `Choose: ${title}`);
-      btn.hidden = option.hasAttribute("chosen");
-      option.append(btn);
+    // The keyboard affordance and the state marker, one element — a button whose
+    // click bubbles into the group's pick handler where there's a pick to make,
+    // and the same mark as a span where there isn't.
+    #mark(option, label, pressable) {
+      const mark = document.createElement(pressable ? "button" : "span");
+      if (pressable) mark.type = "button";
+      mark.className = "cq-pick cq-ui"; // UI, not content: anchoring skips it
+      mark.dataset.cqGen = "1"; // and the version diff ignores it
+      option.append(mark);
+      this.#relabel(option, label);
     }
 
-    #honored = null; // the authored-chosen option, so a rollback rebadges it honestly
+    #honored = null; // the authored-chosen option, so a rollback rewords it honestly
 
-    #choose(option, badge = "✓ your pick") {
-      // Hiding a focused button dumps focus to <body>; catch that before it
-      // happens and keep the keyboard reviewer's place on the chosen option.
-      const chosenBtn = option.querySelector(":scope > .cq-pick");
-      const hadFocus = chosenBtn && document.activeElement === chosenBtn;
+    #choose(option, label = PICKED) {
       for (const o of this.querySelectorAll(":scope > cq-option")) {
         o.toggleAttribute("chosen", o === option);
-        o.querySelector(":scope > .cq-chosen-badge")?.remove();
-        const btn = o.querySelector(":scope > .cq-pick");
-        if (btn) btn.hidden = o === option;
+        this.#relabel(o, o === option ? label : OPEN);
       }
-      this.#badge(option, badge);
       this.#retitle();
-      if (hadFocus) {
-        option.tabIndex = -1;
-        option.focus({ preventScroll: true });
-      }
     }
 
-    #badge(option, text) {
-      const badge = document.createElement("span");
-      badge.className = "cq-chosen-badge cq-ui"; // UI, not content: anchoring skips it
-      badge.dataset.cqGen = "1"; // and the version diff ignores it
-      badge.textContent = text;
-      option.append(badge);
+    // A button's accessible name has to say which card it picks, and to contain
+    // the visible word — so it tracks the label rather than staying "choose".
+    // Pressed reads off the card, which #choose sets before relabelling.
+    #relabel(option, label) {
+      const mark = option.querySelector(":scope > .cq-pick");
+      if (!mark) return;
+      mark.textContent = label;
+      if (mark.tagName !== "BUTTON") return;
+      const title = option.querySelector(":scope > strong")?.textContent || option.id;
+      mark.setAttribute("aria-label", `${label}: ${title}`);
+      mark.setAttribute("aria-pressed", String(option.hasAttribute("chosen")));
     }
 
     // ---------- settled ----------
@@ -189,9 +198,13 @@ customElements.define(
       this.#row.append(chip);
     }
 
-    // {option}: option X is the chosen one of this group.
+    // {option}: option X is this group's pick — or null, for no pick at all.
     applyAction(action, detail) {
       if (action !== "choose") return;
+      if (detail.option === null) {
+        this.#choose(null);
+        return;
+      }
       const option = document.getElementById(detail.option);
       if (option?.matches("cq-option") && option.parentElement === this) this.#choose(option);
     }

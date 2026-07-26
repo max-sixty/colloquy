@@ -132,34 +132,41 @@ cq-option[risk]::after { content: "risk " attr(risk); right: 12px; }
 cq-option[risk="high"]::after { background: var(--danger-tint); color: var(--danger-ink); }
 cq-option[risk="med"]::after  { background: var(--warn-tint); color: var(--warn-ink); }
 cq-option[risk="low"]::after  { background: var(--ok-tint); color: var(--ok-ink); }
-/* With `choose`, the group takes the reader's pick by click: hover lifts a card,
- * and the pick wears the ok ring plus a ✓ badge (inserted by the upgrade).
- * `chosen` reads after `recommended`, so the reader's pick wins the border. */
+/* With `choose`, the group takes the reader's pick by click: hover lifts a card
+ * and warms its mark, and the pick wears the ok ring. `chosen` reads after
+ * `recommended`, so the reader's pick wins the border. */
 cq-options[choose] > cq-option { cursor: pointer;
-                         padding-bottom: 34px; /* constant room for the ✓ badge — a pick never reflows */
                          transition: box-shadow .12s ease, transform .12s ease; }
-/* Every option lifts on hover; a ring a card already wears layers under the lift. */
+/* Every option lifts on hover, the pick included — clicking it clears it, so it
+ * has to keep looking clickable. A ring a card already wears layers under the lift. */
 cq-options[choose] > cq-option:hover { transform: translateY(-1px);
                          box-shadow: 0 3px 10px rgba(0, 0, 0, .14); }
 cq-options[choose] > cq-option[recommended]:hover {
                          box-shadow: 0 0 0 1px var(--accent), 0 3px 10px rgba(0, 0, 0, .14); }
-cq-option[chosen], cq-options[choose] > cq-option[chosen]:hover {
-                         border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok);
-                         padding-bottom: 34px; /* authored chosen outside a choose group */
-                         transform: none; }
-.cq-chosen-badge { position: absolute; right: 10px; bottom: 8px; font-size: var(--t-6);
-                   padding: 0 8px; border-radius: 999px; line-height: 1.6;
-                   background: var(--ok-tint); color: var(--ok-ink); }
-/* The keyboard affordance for a pick, sharing the badge's reserved strip; the
- * chosen option hides its button (the badge says it). */
-cq-option .cq-pick { position: absolute; left: 10px; bottom: 6px; font: inherit;
-                     font-size: var(--t-6); line-height: 1.6; padding: 0 10px;
-                     border: 1px solid var(--border-2); border-radius: 999px;
-                     background: var(--card); color: var(--ink-2); cursor: pointer; }
-cq-option .cq-pick:hover { background: var(--chip); }
-cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* A keyboard pick moves focus to the option itself once its button hides. */
-cq-option:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+cq-option[chosen] { border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok); }
+cq-options[choose] > cq-option[chosen]:hover {
+                         box-shadow: 0 0 0 1px var(--ok), 0 3px 10px rgba(0, 0, 0, .14); }
+/* The mark the upgrade injects: the keyboard path and the state in one element,
+ * a caption on the card's own left edge rather than a control pinned to a corner.
+ * Its box is identical in both states, so a pick shifts nothing; the strip below
+ * the content is the room it needs, reserved on every card that carries one. */
+cq-options[choose] > cq-option, cq-option[chosen] { padding-bottom: 32px; }
+cq-option .cq-pick { position: absolute; left: var(--sp-3); bottom: 9px;
+                     display: inline-flex; align-items: center; gap: 6px;
+                     font: inherit; font-size: var(--t-6); line-height: 1.5;
+                     padding: 0; border: 0; background: none; color: var(--muted); }
+cq-option .cq-pick::before { content: ""; width: 11px; height: 11px; flex: none;
+                     border: 1.5px solid var(--border-2); border-radius: 50%;
+                     display: grid; place-items: center; box-sizing: border-box;
+                     font-size: 8px; line-height: 1; color: var(--card); }
+cq-option button.cq-pick { cursor: pointer; }
+cq-options[choose] > cq-option:not([chosen]):hover .cq-pick { color: var(--ink-2); }
+cq-options[choose] > cq-option:not([chosen]):hover .cq-pick::before { border-color: var(--muted); }
+cq-option[chosen] .cq-pick { color: var(--ok-ink); }
+cq-option[chosen] .cq-pick::before { content: "✓"; border-color: var(--ok);
+                     background: var(--ok); }
+cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px;
+                     border-radius: 4px; }
 /* `settled`: the decision is made and acted on, so the group reads as one line
  * — the disclosure the upgrade builds — with the cards behind it. Collapsed it
  * lays out as a block, so hidden cards contribute no grid rows and no gaps;

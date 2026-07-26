@@ -62,10 +62,8 @@ stands alone.
       The wide layout fixed this by giving each region its own column; the
       covering layout needs its own answer (the page behind a sheet arguably
       shouldn't scroll at all).
-- [ ] Un-choose: a pick can only be switched, not cleared, and there's no explicit
-      "unchoose" action verb. Widen the action space when a page needs it.
 - [ ] Pending-state marker for board moves: after the toast fades, nothing shows
-      which moves await the honoring version (choose has its badge; move has
+      which moves await the honoring version (choose has its mark; move has
       nothing). Toasts also coalesce — rapid moves show only the last.
 - [ ] Widget-aware Δ: the version diff is additions-only by text key, so a card that
       moved columns isn't marked. The changelog line carries it today; marking cards

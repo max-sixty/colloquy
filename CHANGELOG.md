@@ -81,6 +81,24 @@
   follow the next version, find the comment still anchored to its relocated
   passage — then asserts the event log those gestures leave, down to the
   anchor's quote and the move's placement.
+- One mark per choose option, in place of the Choose button and the ✓ badge. Each
+  card carries a ring and a lowercase word on the card's own left edge, under the
+  prose: `choose`, then `your pick`, or `chosen` where the document arrived carrying
+  the decision. The same element is the keyboard path and the state, so nothing hides
+  on a pick, focus stays where the keyboard left it, and the widget's focus rescue
+  goes with it. The accessible name tracks the word and names the card
+  ("your pick: Redis, cookie fallback"), alongside `aria-pressed`. Outside a `choose`
+  group the mark renders as a span — the document's state, with nothing to press.
+- A pick can now be cleared: the mark is a toggle, and clicking the card that holds
+  the pick releases it, so a misclick doesn't force the reader to pick something else
+  to escape. Clearing travels as `choose` with a null option rather than a second
+  verb, keeping the action an absolute placement of the group's pick, which is what
+  the replay already assumed. The picked card keeps the hover lift it used to lose,
+  since clicking it now does something.
+- A pick no longer falls through when text is selected elsewhere on the page. The
+  guard that stops a drag-select's mouseup from counting as a pick now asks whether
+  the click landed inside the selection, not whether the page holds one at all:
+  selecting a sentence to comment on and then clicking a card did nothing, silently.
 - Sign-off is now the page's ask, not standing chrome. The banner offers
   "✓ Looks good" only when the version declares
   `<meta name="cq-review" content="sign-off">` — a plan, design, or proposed
@@ -100,11 +118,10 @@
   belong to the focused control: `Enter` on a focused thread drops into its reply
   box; the board grip is now a real button — `Enter` grabs, arrows move the card
   (each step announced), `Enter` drops as the same single `move` action a drag sends,
-  `Escape` or focus loss restores — and each choose option carries an injected
-  "Choose" button, so Tab+Enter picks. Widgets register no global keys; the helper
-  surface grows by `announce()` (a polite live region that toasts also route through,
-  so moves and picks are announced to screen readers) and `keyHelp()` (rows for the
-  `?` overlay).
+  `Escape` or focus loss restores — and each choose option's mark is a real button, so
+  Tab+Enter picks. Widgets register no global keys; the helper surface grows by
+  `announce()` (a polite live region that toasts also route through, so moves and picks
+  are announced to screen readers) and `keyHelp()` (rows for the `?` overlay).
 - `cq-tabs`/`cq-tab`: parallel workstreams on one page — each tab is a
   self-contained sub-context and a generated strip switches between them. The open
   tab is the reader's view state, remembered per browser tab like scroll position:
@@ -134,9 +151,8 @@
   version landing) animate instead of teleporting.
 - Affordances: the grip is visible at rest with a ~34px hit target; every choose option
   lifts on hover (the recommended card previously had none — the one option most likely
-  to be picked looked least clickable); choose cards reserve badge room up front so a
-  pick never shifts layout; the ✓ badge reads "your pick" only for this reader's pick,
-  "chosen" when the markup carried it. One global `prefers-reduced-motion` guard covers
+  to be picked looked least clickable); choose cards reserve room for their mark up
+  front so a pick never shifts layout. One global `prefers-reduced-motion` guard covers
   theme, comment layer, and widget animation; JS-driven motion (smooth scrolls,
   Web-Animations moves) honors the same preference through a runtime export.
 
@@ -154,7 +170,7 @@
   presentation is pure theme CSS, so an unupgraded page reads as a static board.
 - `cq-options choose`: the second rider on the channel — clicking an option card
   picks it, the pick arrives as a `choose` action, and the card wears a green ring
-  and ✓ badge until the next version marks it `chosen`. Text selections and link
+  and its mark until the next version marks it `chosen`. Text selections and link
   clicks inside cards don't choose. Works inside a thread reply too: a choose group
   there is an inline question, and the pick comes back as an action. Widget ids are
   one universe across the page and replies — `reply` and `check` both refuse a
