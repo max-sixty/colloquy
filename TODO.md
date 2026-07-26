@@ -35,6 +35,42 @@ stands alone.
       already claimed, clipping every tabbed page to a pixel. Either the registry
       grows a class list per widget that `check` can collide-detect, or the
       chrome's rules get scoped so a widget's classes can't reach them.
+- [ ] A comment on a repeated passage goes back to naming the first copy once the page is
+      revised around it. Context places a comment only while the neighbours it stored are
+      still there in full; a version that rewrites them leaves nothing to check, and the
+      search falls back to document order — right where the comment was made on the first
+      copy, wrong where it was made on a later one. The strict rule is deliberate: a partial
+      match is evidence the page moved on rather than weak evidence for a copy, and
+      preferring the best partial handed comments to copies they were never made on. Closing
+      it properly means a similarity that survives an edit (Hypothesis scores an approximate
+      match over quote, prefix and suffix together) rather than a lower bar on this one, and
+      it wants the corpus to say how often it actually bites first. The other half of the
+      same limit: two copies that are identical *and* identically surrounded can't be told
+      apart at all, and no page here has a pair.
+- [ ] The 💬 button has two writers. `updateFab` decides it from the selection, and the
+      click handler that spots a diagram or image writes it directly — so `updateFab` needs
+      `else if (fabAnchor?.quote)` to avoid clobbering what the click just set, across an
+      ordering constraint ("its handler runs before this queued update") stated only in a
+      comment. That is the shape the file's first norm names, thirty lines below where it
+      names it: a guard reading state another function wrote means the two are one
+      function. The fix is to route the visual path through `updateFab` as well, so one
+      function decides what the button is on. Not a one-liner — the click runs before the
+      queued update, so the merged decider needs the click's find as an input rather than
+      an output — which is why it is here rather than done.
+- [ ] A commented passage is no longer announced. Marks are painted through the highlight
+      registry rather than wrapped in `<mark>`, and a highlight has no accessibility
+      exposure — Chrome's tree shows a `mark` node for the wrapper and nothing at all for
+      the paint. The spec's own answer, `Highlight.type`, doesn't help: it sets cleanly and
+      Chrome 150 still exposes nothing, and its enum has no value meaning "a comment" in
+      any case. The comment itself is still reachable — the panel lists every thread with
+      its quote, and j/k walks them — so what's gone is the correspondence while reading
+      the page. Wrapping can't come back (it splits text nodes, which is what let a redraw
+      eat a click), so the fix is to carry the fact on the block rather than the passage:
+      `aria-describedby` from the block a thread anchors in to that thread in the panel,
+      coarser than the mark but saying the same thing.
+- [ ] Re-record `docs/demo.gif`: its step 2 is a select-and-comment, which now lights
+      the passage while the composer is open, so the hero image shows the old behavior.
+      `scripts/record-demo.sh` prints a shot list for a human to drive.
 - [ ] Widgets deferred until a page wants them: risks, verdict.
 - [ ] Render tests, next tier — deferred while the chrome is still being
       designed, because each is a baseline that re-records on every deliberate

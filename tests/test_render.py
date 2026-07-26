@@ -13,7 +13,9 @@ each, at some point, wrong:
   - the document and the comment panel scrolling in one region, which stacks two
     scrollbars in the same few pixels at the window's right edge;
   - a text box sized by script, which had to shrink itself to re-measure and so
-    flashed a scrollbar on every keystroke.
+    flashed a scrollbar on every keystroke;
+  - the passage under the open composer going unmarked, because focusing the box
+    drops the browser's own selection and nothing drew it back.
 
 One journey test walks the loop the product is — select a passage, comment on
 it, drag a card, follow the next version, and find the comment still anchored —
@@ -63,6 +65,52 @@ LONG_PAGE = """<!doctype html>
 </body>
 </html>
 """.format(paras="\n".join(f"<p id='p{i}'>Paragraph {i}. " + "Filler. " * 20 + "</p>" for i in range(60)))
+
+# A passage is quotable only in the form the page itself holds. The shapes the shipped
+# examples already carry are swept by test_every_passage_in_a_real_page_can_be_quoted;
+# what this fixture is for is the ones they don't have — inline markup (several text nodes
+# to one selection), a widget whose body the runtime's own chrome sits inside, adjacent
+# blocks (a selection across them reads as one line to the browser and as none to the
+# source), a compound the page writes both ways, and a character straddling the quote cap.
+INLINE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>inline</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Inline</h1>
+<cq-options id="opts" choose>
+  <cq-option id="opt-a"><strong>Keep the store</strong> Sessions stay where they are,
+  which costs a replica and buys revocation for free.</cq-option>
+  <cq-option id="opt-b"><strong>Signed tokens</strong> No store at all, until revocation
+  quietly puts one back.</cq-option>
+</cq-options>
+<p id="p">A paragraph carrying <strong>bold text</strong> and <em>emphasis</em> inside it,
+so that a selection across the middle of it lands in more than one text node.</p>
+<p id="p2">A neighbouring block, so a selection reaching across the boundary between
+them has a break in what the reader sees and none in what the document holds.</p>
+<p id="compound">The setup is in the runbook and the rollback is one flag. When the
+shadow index is ready we set up the comparison job and roll back the old one.</p>
+<p id="cap">{long}&#128512;</p>
+{filler}
+<p id="q">A passage far enough down the page that a composer opened on it leaves the
+first paragraph uncovered, which is what lets a test click a highlight up there.</p>
+<figure id="fig"><svg viewBox="0 0 120 40" width="120" height="40" role="img"
+aria-label="specimen"><rect x="2" y="2" width="116" height="36" fill="none"
+stroke="currentColor"></rect></svg><figcaption>A specimen, for element anchors.</figcaption></figure>
+</main>
+</body>
+</html>
+""".format(
+    filler="\n".join(f"<p id='f{i}'>Filler {i}. " + "Words. " * 20 + "</p>" for i in range(6)),
+    # Exactly 399 characters before the emoji, so the 400-character cap falls between its
+    # two UTF-16 halves — the boundary a naive slice cuts a character in two at.
+    long=("Capped. " * 50)[:399],
+)
 
 # A decision already made and acted on, with the alternatives kept for the record.
 SETTLED_PAGE = """<!doctype html>
@@ -372,6 +420,593 @@ def test_composer_grows_with_its_text_without_script(browser, serve):
     page.close()
 
 
+def painted(page, name):
+    """What the page is painting under a highlight name, whitespace-flattened. Marks are
+    ranges in the highlight registry, not elements, so this is where a test looks."""
+    return " ".join(page.evaluate("""(name) => {
+        const h = CSS.highlights.get(name);
+        return h ? [...h].map(r => r.toString()).join('') : '';
+    }""", name).split())
+
+
+def pending_text(page):
+    return painted(page, "cq-pending")
+
+
+def mark_point(page, name, index=0):
+    """A point inside a painted range, for a real mouse press. A highlight is not an
+    element, so there is nothing for a locator to click."""
+    box = page.evaluate("""([name, index]) => {
+        const r = [...CSS.highlights.get(name)][index].getClientRects()[0];
+        return {x: r.left + r.width / 2, y: r.top + r.height / 2};
+    }""", [name, index])
+    return box["x"], box["y"]
+
+
+def test_composer_marks_the_passage_it_is_quoting(browser, serve):
+    """The passage stays visible while its comment is written. Focus moves into the
+    composer the moment it opens, which drops the browser's own selection, so the
+    runtime paints the anchor itself, and repaints it after every pass that redraws
+    the posted threads' marks around it — otherwise a comment arriving mid-sentence
+    would leave the reader's passage stranded across stale text nodes. It comes down
+    with the box, and the whole time it never touches the document."""
+    url = serve(INLINE_PAGE)
+    page, errors = open_page(browser, url)
+    pristine = page.locator("#p").inner_html()
+
+    page.locator("#p").click(click_count=3)  # a real selection, spanning the inline tags
+    page.locator(".cq-fab").click()
+    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+
+    passage = " ".join(page.locator("#p").inner_text().split())
+    quoted = page.evaluate("() => document.querySelector('.cq-composer-quote').textContent")
+    assert pending_text(page) == passage, (
+        f"the page marks {pending_text(page)!r}, but the composer is quoting {quoted!r}"
+    )
+
+    # A comment landing from elsewhere re-runs the anchor pass, which splits the text
+    # nodes the painted range is pinned to. The reader is mid-sentence; their passage
+    # can neither blink out nor come back covering the wrong words.
+    page.request.post(
+        url.rsplit("/versions/", 1)[0] + "/api/event",
+        data={"kind": "comment", "version": 1, "text": "arriving mid-sentence",
+              "anchor": {"section": "p", "quote": "bold text"}},
+    )
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    assert pending_text(page) == passage, "a poll landing while the composer is open disturbed the passage"
+
+    page.get_by_role("button", name="Cancel").click()
+    assert pending_text(page) == "", "the highlight outlived its composer"
+
+    # A passage with the runtime's own chrome inside it paints around the chrome, the way
+    # the search reads around it — one range per segment, not one spanning the lot.
+    # Across both options, so a Choose button falls in the middle of the passage rather
+    # than after it — where a single range spanning the whole thing would swallow it.
+    chrome = page.locator("#opts .cq-ui").first.text_content().strip()
+    assert chrome, "this assertion needs the widget to have rendered chrome inside it"
+    page.evaluate("""() => {
+        const r = document.createRange();
+        r.selectNodeContents(document.querySelector('#opts'));
+        const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+        document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+    }""")
+    page.locator(".cq-fab").click()
+    page.wait_for_function("() => CSS.highlights.get('cq-pending')")
+    assert chrome not in pending_text(page), (
+        f"the highlight painted the widget's own {chrome!r} control along with the passage"
+    )
+    page.get_by_role("button", name="Cancel").click()
+
+    # A diagram has no text to quote, so its anchor is the element and its mark is an
+    # outline. That one the anchor pass really does take down, so it has to be redrawn.
+    page.locator("#fig svg").click()
+    page.locator(".cq-fab").click()
+    page.locator("#fig.cq-mark-el.cq-pending").wait_for()
+    page.request.post(
+        url.rsplit("/versions/", 1)[0] + "/api/event",
+        data={"kind": "comment", "version": 1, "text": "and another"},
+    )
+    page.wait_for_function("() => document.querySelectorAll('.cq-thread').length === 2")
+    assert page.locator("#fig.cq-mark-el.cq-pending").count() == 1, (
+        "a poll landing while the composer is open dropped the outline"
+    )
+
+    # Both classes have to go, asserted apart: leaving .cq-mark-el behind repaints the
+    # figure in the posted amber, pointer cursor and all, over no thread to open.
+    page.get_by_role("button", name="Cancel").click()
+    assert page.locator("#fig.cq-pending").count() == 0, "the outline outlived its composer"
+    assert page.locator("#fig.cq-mark-el").count() == 0, (
+        "the figure kept a thread's outline over no thread"
+    )
+    assert errors == []
+    page.close()
+
+
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
+def test_every_passage_in_a_real_page_can_be_quoted(browser, serve, example):
+    """Anchoring has to work on the pages people actually write, not on a fixture built
+    to suit it. Every failure here has been a place where what the reader selects and
+    what the search reads come apart — an uppercased header, a widget's own chrome, the
+    stylesheet a rendered diagram carries — and a hand-built page has none of them. So
+    this drags across every pair of adjacent blocks in every shipped example, which is
+    the shape a real selection takes, and asks for the highlight the composer promises."""
+    page, errors = open_page(browser, serve(example.read_text()))
+    result = page.evaluate("""async () => {
+        const tick = () => new Promise(r => setTimeout(r, 0));
+        const composer = document.querySelector('.cq-composer');
+        const fab = document.querySelector('.cq-fab');
+        // A reader reaches everything eventually — opens the details, clicks through to
+        // the other tab — so everything is in scope, not just what the page opens on.
+        document.querySelectorAll('details').forEach(d => (d.open = true));
+        document.querySelectorAll('[hidden]').forEach(e => e.removeAttribute('hidden'));
+        const blocks = [...document.querySelectorAll('p,li,h1,h2,h3,td,th,blockquote,'
+            + 'figcaption,summary,cq-option,cq-variant,cq-milestone,cq-metric')]
+          .filter(b => !b.closest('.cq-ui') && b.checkVisibility()
+                    && b.textContent.trim().length > 12);
+        const missed = [], skipped = [], astray = [];
+        for (let i = 0; i < blocks.length; i++) {
+            // Each block alone, then reaching into the next one — a drag rarely stops
+            // tidily on a boundary, and spanning two blocks is where the joins show.
+            for (const end of [blocks[i], blocks[i + 1]].filter(Boolean)) {
+                const range = document.createRange();
+                range.setStart(blocks[i], 0);
+                range.setEnd(end, end.childNodes.length);
+                const sel = getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+                document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+                await tick();
+                // Counted, not shrugged off: a selection the button declines to offer is
+                // a passage silently outside this sweep, and the sweep is the coverage.
+                if (fab.style.display !== 'block') {
+                    skipped.push(range.toString().replace(/\\s+/g, ' ').trim().slice(0, 70));
+                    continue;
+                }
+                fab.click();
+                await tick();
+                const painted = CSS.highlights.get('cq-pending');
+                const quoted = document.querySelector('.cq-composer-quote').textContent;
+                if (!painted || ![...painted].map(r => r.toString()).join('').trim())
+                    missed.push(quoted.slice(0, 70));
+                // Inside what was selected, not merely somewhere: a matcher that finds
+                // the right words in the wrong place paints, and paints a lie.
+                else if ([...painted].some(p =>
+                        p.compareBoundaryPoints(Range.START_TO_START, range) < 0 ||
+                        p.compareBoundaryPoints(Range.END_TO_END, range) > 0))
+                    astray.push(quoted.slice(0, 70));
+                composer.style.display = 'none';
+                sel.removeAllRanges();
+            }
+        }
+        return {missed, skipped, astray};
+    }""")
+    assert result["missed"] == [], (
+        f"{len(result['missed'])} passages in {example.stem} quote text the page "
+        f"can't find: {result['missed']}"
+    )
+    assert result["skipped"] == [], (
+        f"{len(result['skipped'])} passages in {example.stem} raised no Comment button, "
+        f"so this sweep never tested them: {result['skipped']}"
+    )
+    assert result["astray"] == [], (
+        f"{len(result['astray'])} passages in {example.stem} painted outside what was "
+        f"selected: {result['astray']}"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_a_quote_finds_its_passage_whatever_its_whitespace(browser, serve):
+    """The same passage gets written down several ways. The page holds it with the
+    author's line wraps; a selection renders it with a break where two blocks abut and
+    none where one wrapped; older versions of this runtime stored a third form again.
+    All of them name the same words, so all of them have to find them — otherwise a
+    comment made last month hangs off a passage the page insists isn't there."""
+    url = serve(INLINE_PAGE)
+    page, errors = open_page(browser, url)
+    passage = "bold text and emphasis inside it"
+    forms = {
+        "as the page holds it": passage,
+        "wrapped where a source line ended": passage.replace(" and ", "\nand "),
+        "broken where a block ended": passage.replace(" and ", "\n\nand\n"),
+        "spaced out by an editor": passage.replace(" ", "   "),
+        # Reaching across the boundary between two blocks, which the reader sees as a
+        # line break, the source writes as a newline, and a rendering may write as neither.
+        "spanning two blocks": "more than one text node. A neighbouring block",
+    }
+    for name, quote in forms.items():
+        page.request.post(
+            url.rsplit("/versions/", 1)[0] + "/api/event",
+            data={"kind": "comment", "version": 1, "text": name,
+                  "anchor": {"section": None, "quote": quote}},
+        )
+    page.get_by_role("button", name="Comments", exact=False).click()
+    page.wait_for_function(
+        f"() => document.querySelectorAll('.cq-thread').length === {len(forms)}"
+    )
+    stranded = page.locator(".cq-quote.detached").all_text_contents()
+    assert stranded == [], f"quotes naming a passage that is right there: {stranded}"
+
+    # The elasticity runs one way only. A quote is free to have gaps the page lacks; a
+    # page's gaps are word boundaries, and a quote that runs across one is naming
+    # something the page doesn't say — "never" must not find the tail of "on every".
+    page.request.post(
+        url.rsplit("/versions/", 1)[0] + "/api/event",
+        data={"kind": "comment", "version": 1, "text": "words the page never runs together",
+              "anchor": {"section": None, "quote": "boldtext"}},
+    )
+    page.wait_for_function(
+        f"() => document.querySelectorAll('.cq-thread').length === {len(forms) + 1}"
+    )
+    assert page.locator(".cq-quote.detached").count() == 1, (
+        "a quote gluing two of the page's words together still found a passage"
+    )
+
+    # Nor may a gap close up onto a compound the page writes as one word. "set up" and
+    # "setup" are different words, and the page has both — the anchor has to land on the
+    # one that was dragged, and it is stored, so landing wrong is permanent.
+    landed = page.evaluate("""async () => {
+        const p = document.querySelector('#compound');
+        const at = p.firstChild.data.indexOf('set up');
+        const r = document.createRange();
+        r.setStart(p.firstChild, at); r.setEnd(p.firstChild, at + 6);
+        const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+        document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+        await new Promise(x => setTimeout(x, 30));
+        document.querySelector('.cq-fab').click();
+        await new Promise(x => setTimeout(x, 30));
+        const painted = [...(CSS.highlights.get('cq-pending') ?? [])][0];
+        return painted && painted.compareBoundaryPoints(Range.START_TO_START, r) === 0;
+    }""")
+    assert landed, "'set up' anchored onto 'setup', an earlier and different word"
+    assert errors == []
+    page.close()
+
+
+def test_the_captured_quote_is_prose_a_file_can_hold(browser, serve):
+    """A quote is read back as prose — seeded into the suggestion box, printed in the
+    panel, emitted into a Markdown blockquote by `export` — and written to a UTF-8 file
+    on the way. Source text is neither: it carries the author's line wraps, which break
+    a blockquote open, and cutting it to length by UTF-16 unit can halve a character,
+    which no UTF-8 file can hold. The server refuses that write and the reader is told
+    it is offline, with no way to ever send the comment."""
+    url = serve(INLINE_PAGE)
+    page, errors = open_page(browser, url)
+
+    def compose_on(block):
+        page.locator(block).click(click_count=3)
+        page.locator(".cq-fab").click()
+        page.wait_for_function(
+            "() => document.querySelector('.cq-composer').style.display === 'block'"
+        )
+
+    compose_on("#p")  # authored across two source lines
+    wrapped = page.evaluate("() => document.querySelector('.cq-composer-quote').textContent")
+    assert "\n" not in wrapped, f"the quote carries the source's line wrap: {wrapped!r}"
+    page.get_by_role("button", name="Cancel").click()
+
+    # Measured in the page: a lone surrogate does not survive the trip out to the test
+    # runner, which replaces it, so asking out here would always come back clean.
+    # Iterating by code point, a character cut in half is left as a single unit in the
+    # surrogate range; an intact one comes through as the pair it is.
+    compose_on("#cap")
+    assert not page.evaluate("""() => [...document.querySelector('.cq-composer-quote').textContent]
+        .some(c => c.length === 1 && c.charCodeAt(0) >= 0xd800 && c.charCodeAt(0) <= 0xdfff)"""), (
+        "the 400-character cap split a character in half"
+    )
+
+    # And the round trip that proves it: the server has to accept the quote and write it
+    # to a UTF-8 file. A half character fails there, reported to the reader as an offline
+    # server, and no retry can ever succeed.
+    page.locator(".cq-composer textarea").fill("a comment on the capped passage")
+    page.locator(".cq-composer").get_by_role("button", name="Comment").click()
+    page.wait_for_function("""() => document.querySelectorAll('.cq-thread').length === 1
+        || document.querySelector('.cq-toast').classList.contains('show')""")
+    assert page.locator(".cq-thread").count() == 1, (
+        f"the comment never posted — the page says {page.locator('.cq-toast').text_content()!r}"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_an_open_composer_does_not_eat_the_next_click(browser, serve):
+    """Clicks keep working while a composer is open. The composer comes down on the
+    document's mousedown, and anything that rewrites the page's marks there swaps out
+    the node under the pointer between press and release — which is a click the
+    browser never dispatches at all. So a thread's highlight stops opening its thread,
+    and a link inside a highlighted passage stops navigating. Real button presses,
+    because a synthetic click event sails straight past the gap it lives in."""
+    url = serve(INLINE_PAGE)
+    page, errors = open_page(browser, url)
+    page.request.post(
+        url.rsplit("/versions/", 1)[0] + "/api/event",
+        data={"kind": "comment", "version": 1, "text": "on the passage",
+              "anchor": {"section": "p", "quote": "bold text"}},
+    )
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+
+    # Open a composer on other text and type nothing, so the next mousedown outside it
+    # is the one that takes it down.
+    page.locator("#q").click(click_count=3)
+    page.locator(".cq-fab").click()
+    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+
+    page.mouse.click(*mark_point(page, "cq-mark"))
+    page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
+
+    # And the composer's own mark belongs to no thread, so it opens nothing. Its first
+    # range runs up to the posted one, so this lands on the draft and nothing else.
+    page.get_by_role("button", name="Close comments").click()
+    page.locator("#p").click(click_count=3)
+    page.locator(".cq-fab").click()
+    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+    page.mouse.click(*mark_point(page, "cq-pending"))
+    assert not page.locator(".cq-panel").evaluate("el => el.classList.contains('open')"), (
+        "clicking the composer's own highlight opened the panel, but it belongs to no thread"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_a_click_on_a_mark_decides_once(browser, serve):
+    """Opening the panel reflows the document, so anything that hit-tests the page after
+    the panel opens is testing geometry that has already moved. When two handlers each
+    asked where the pointer was, the second missed the mark the first had just opened and
+    raised the comment button on top of it — and the element anchor that left behind reads
+    as composition in progress, which is what stops a page following new versions. The
+    panel starts shut here because a panel already open is the case with no reflow."""
+    url = serve(INLINE_PAGE)
+    page, errors = open_page(browser, url)
+    # A quote inside the figure's caption: a painted range, so opening the panel reflows the
+    # text out from under the pointer. An element anchor wouldn't show it — a figure still
+    # covers the same point after the column narrows.
+    page.request.post(
+        url.rsplit("/versions/", 1)[0] + "/api/event",
+        data={"kind": "comment", "version": 1, "text": "on the caption",
+              "anchor": {"section": "fig", "quote": "A specimen, for element anchors."}},
+    )
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    if page.locator(".cq-panel.open").count():
+        page.get_by_role("button", name="Close comments").click()
+        page.wait_for_function("() => !document.querySelector('.cq-panel').classList.contains('open')")
+
+    page.locator("#fig").scroll_into_view_if_needed()
+    spot = page.evaluate("""() => { const r = [...CSS.highlights.get('cq-mark')][0].getClientRects()[0];
+                                    return {x: r.left + r.width / 2, y: r.top + r.height / 2}; }""")
+    page.mouse.click(spot["x"], spot["y"])
+    page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
+    assert not page.locator(".cq-fab").is_visible(), (
+        "the click opened the thread and then offered to comment on it as well"
+    )
+
+    # The harm that outlives the stray button: a page mid-composition stays put.
+    d = serve.page_dir
+    (d / "versions" / "v002.html").write_text(INLINE_PAGE.replace("<h1 id=\"t\">Inline</h1>",
+                                                                 "<h1 id=\"t\">Inline II</h1>"))
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    page.wait_for_url("**/v002.html", timeout=15000)
+    assert errors == []
+    page.close()
+
+
+def test_two_comments_on_one_element_both_stay_anchored(browser, serve):
+    """A figure can carry more than one thread. When the page's record of what it drew was
+    keyed by the mark, the second comment overwrote the first, and the panel told the
+    reader the first one's passage wasn't in this version — while it sat outlined on
+    screen for the second."""
+    url = serve(INLINE_PAGE)
+    page, errors = open_page(browser, url)
+    for text in ("first on the figure", "second on the figure"):
+        page.request.post(
+            url.rsplit("/versions/", 1)[0] + "/api/event",
+            data={"kind": "comment", "version": 1, "text": text, "anchor": {"section": "fig"}},
+        )
+    page.get_by_role("button", name="Comments", exact=False).click()
+    page.wait_for_function("() => document.querySelectorAll('.cq-thread').length === 2")
+    stranded = page.locator(".cq-quote.detached").all_text_contents()
+    assert stranded == [], f"outlined on screen, reported missing: {stranded}"
+    assert errors == []
+    page.close()
+
+
+def test_the_pointer_stops_claiming_a_mark_it_scrolled_past(browser, serve):
+    """The hover is a function of where the pointer is and where the text is, and scrolling
+    moves the second without touching the first. A wrapped <mark> got this from :hover; a
+    painted range has to be asked again, so everything that moves the page asks."""
+    url = serve(LONG_PAGE)
+    page, errors = open_page(browser, url)
+    page.request.post(
+        url.rsplit("/versions/", 1)[0] + "/api/event",
+        data={"kind": "comment", "version": 1, "text": "up top",
+              "anchor": {"section": "p0", "quote": "Paragraph 0."}},
+    )
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    spot = page.evaluate("""() => { const r = [...CSS.highlights.get('cq-mark')][0].getClientRects()[0];
+                                    return {x: r.left + r.width / 2, y: r.top + r.height / 2}; }""")
+    page.mouse.move(spot["x"], spot["y"])
+    page.wait_for_function("() => document.body.classList.contains('cq-over-mark')")
+    page.evaluate("() => document.body.scrollBy({top: 900, behavior: 'instant'})")
+    page.wait_for_function(
+        "() => !document.body.classList.contains('cq-over-mark')"
+        " && (CSS.highlights.get('cq-mark-hover')?.size ?? 0) === 0"
+    )
+    assert errors == []
+    page.close()
+
+
+# A page that says the same thing twice *within one section*, which is the only case a
+# quote alone cannot place — scoping to a section already separates copies that live under
+# different ids. A unified diff is the case that matters and the reason the section can't
+# help: it holds the changed line on both sides, under one id, so the two occurrences are a
+# bug and its fix, and landing on the wrong one inverts what the comment means.
+TWICE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>twice</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Twice</h1>
+<section id="repeat">
+<p>Ahead of the repeat, so the copies have different neighbours before them.</p>
+<p>A first copy follows. The version stamp never lands. And a first tail after it.</p>
+<p>Something else entirely, so the two copies do not touch each other.</p>
+<p>A second copy follows. The version stamp never lands. And a second tail after it.</p>
+</section>
+<cq-diff id="patch" file="cache.py">@@ -18,7 +18,7 @@ class Bucket:
+ def key(self, request):
+-    return request.path
++    return request.path, request.headers.get("Accept")
+ def store(self, request):</cq-diff>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_repeated_passage_anchors_where_it_was_picked(browser, serve):
+    """A quote names text, not a place. Where one section says the same thing twice, the
+    words on either side are what tell the copies apart — so an anchor carries them, and
+    the occurrence whose neighbours match wins. Driven through the real button, because
+    the context is captured from the live selection and nowhere else."""
+    page, errors = open_page(browser, serve(TWICE_PAGE))
+    landed = page.evaluate("""async () => {
+        const paras = [...document.querySelectorAll('#repeat p')];
+        const p = paras.at(-1);
+        const phrase = 'The version stamp never lands.';
+        const at = p.firstChild.data.indexOf(phrase);
+        if (at === -1) return 'phrase missing';
+        const want = document.createRange();
+        want.setStart(p.firstChild, at); want.setEnd(p.firstChild, at + phrase.length);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(want);
+        document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+        await new Promise(r => setTimeout(r, 40));
+        const fab = document.querySelector('.cq-fab');
+        if (fab.style.display !== 'block') return 'no button';
+        fab.click();
+        await new Promise(r => setTimeout(r, 40));
+        const painted = [...(CSS.highlights.get('cq-pending') ?? [])][0];
+        if (!painted) return 'no mark';
+        return painted.compareBoundaryPoints(Range.START_TO_START, want) === 0;
+    }""")
+    assert landed is True, f"the second copy was picked, the mark went elsewhere ({landed})"
+    assert errors == []
+    page.close()
+
+
+DRIFT_V1 = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>drift</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Drift</h1>
+<section id="drift">
+<p>Cache warmup runs first. {phrase}. Retries are capped at three.</p>
+<p>Queue drain runs first. {phrase}. Retries are capped at four.</p>
+</section>
+</main>
+</body>
+</html>
+""".replace("{phrase}", "The version stamp never lands")
+# v2 rewrites the words on both sides of the *commented* copy and leaves the other alone,
+# so the untouched copy is now the better match for the context the comment stored.
+DRIFT_V2 = (DRIFT_V1.replace("Cache warmup runs first.", "Cache warmup is gone now.")
+                    .replace("lands. Retries are capped at three.", "lands. Backoff is capped at three."))
+
+
+def test_a_revised_neighbourhood_does_not_hand_the_comment_to_another_copy(browser, serve):
+    """Context tells two copies apart; it must not relocate a comment when the page moves
+    on. If a later version rewrites the words beside the anchored copy, that copy confirms
+    almost nothing while an untouched copy elsewhere still matches what was stored — and
+    following that is worse than having stored no context at all, which would have left the
+    comment where it was. So a copy has to confirm its neighbours in full to be preferred,
+    and otherwise the search falls back to the order it used before context existed."""
+    url = serve(DRIFT_V1)
+    page, errors = open_page(browser, url)
+    landed = page.evaluate("""async () => {
+        const p = document.querySelectorAll('#drift p')[0];
+        const phrase = 'The version stamp never lands';
+        const at = p.firstChild.data.indexOf(phrase);
+        const want = document.createRange();
+        want.setStart(p.firstChild, at); want.setEnd(p.firstChild, at + phrase.length);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(want);
+        document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+        await new Promise(r => setTimeout(r, 40));
+        const fab = document.querySelector('.cq-fab');
+        if (fab.style.display !== 'block') return 'no button';
+        fab.click();
+        await new Promise(r => setTimeout(r, 40));
+        document.querySelector('.cq-composer textarea').value = 'is this idempotent?';
+        document.querySelector('.cq-composer textarea')
+            .dispatchEvent(new Event('input', {bubbles: true}));
+        document.querySelector('.cq-composer button.primary').click();
+        return true;
+    }""")
+    assert landed is True, f"couldn't post the comment ({landed})"
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+
+    d = serve.page_dir
+    (d / "versions" / "v002.html").write_text(DRIFT_V2)
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"})
+    page.wait_for_url("**/v002.html", timeout=15000)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    where = page.evaluate("""() => {
+        const r = [...CSS.highlights.get('cq-mark')][0];
+        return r.startContainer.parentElement.textContent.slice(0, 24);
+    }""")
+    assert where.startswith("Cache warmup"), (
+        f"the revision moved the comment to a copy it was never made on: {where!r}"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_a_diff_anchors_to_the_side_it_was_read_on(browser, serve):
+    """The case this exists for, and the one a section cannot narrow: a diff carries the
+    same line added and removed under a single id, so the reviewer commenting on the fix
+    had their comment marked against the bug — stored that way, and shown to Claude that
+    way in the next round."""
+    page, errors = open_page(browser, serve(TWICE_PAGE))
+    landed = page.evaluate("""async () => {
+        const skip = '.cq-ui, script, style';
+        const w = document.createTreeWalker(document.getElementById('patch'),
+            NodeFilter.SHOW_TEXT,
+            {acceptNode: n => n.parentElement?.closest(skip)
+                ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});
+        const hits = [];
+        const phrase = 'return request.path';
+        for (let n = w.nextNode(); n; n = w.nextNode()) {
+            let i = n.data.indexOf(phrase);
+            while (i !== -1) { hits.push({node: n, at: i}); i = n.data.indexOf(phrase, i + 1); }
+        }
+        if (hits.length < 2) return `only ${hits.length} occurrence(s) — fixture broken`;
+        const h = hits.at(-1);   // the added line: the later of the pair
+        const want = document.createRange();
+        want.setStart(h.node, h.at); want.setEnd(h.node, h.at + phrase.length);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(want);
+        document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+        await new Promise(r => setTimeout(r, 40));
+        const fab = document.querySelector('.cq-fab');
+        if (fab.style.display !== 'block') return 'no button';
+        fab.click();
+        await new Promise(r => setTimeout(r, 40));
+        const painted = [...(CSS.highlights.get('cq-pending') ?? [])][0];
+        if (!painted) return 'no mark';
+        return painted.compareBoundaryPoints(Range.START_TO_START, want) === 0;
+    }""")
+    assert landed is True, f"the added line was picked, the mark went elsewhere ({landed})"
+    assert errors == []
+    page.close()
+
+
 # The journey's page: a passage to comment on and a board to drag. In v2 the
 # commented paragraph moves below the notes heading — same text, new position —
 # so the anchor has to re-find its passage rather than replay a location.
@@ -415,7 +1050,7 @@ def test_review_round_trip(browser, serve):
 
     # Select the passage from the keyboard's path: a real Range, then the keyup
     # the runtime watches for keyboard selections, then the c binding — which
-    # runs the same composeSelection as the floating button's click.
+    # runs the same the fab's own click as the floating button's click.
     page.evaluate("""() => {
         const r = document.createRange();
         r.selectNodeContents(document.getElementById('intro'));
@@ -429,7 +1064,9 @@ def test_review_round_trip(browser, serve):
     page.locator(".cq-composer textarea").fill("Is 0041 idempotent?")
     page.locator(".cq-composer").get_by_role("button", name="Comment").click()
     page.wait_for_selector(".cq-thread")
-    page.wait_for_selector(".cq-mark")  # the anchor pass wrapped the passage
+    # The anchor pass painted the passage — a range in the highlight registry, not an
+    # element, so there is no selector for it.
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
 
     # Drag the card between columns through the pointer path — the seam where
     # the vendored SortableJS meets the runtime, which is where drags break.
@@ -448,7 +1085,7 @@ def test_review_round_trip(browser, serve):
     page.wait_for_url("**/v002.html", timeout=15000)
     # The anchor pass runs at render: a mark now means the quote was re-found in
     # its new position; no mark within the wait means the anchor lost it.
-    page.wait_for_selector(".cq-mark", timeout=5000)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0", timeout=5000)
     assert not page.evaluate(
         "document.querySelector('.cq-thread .cq-quote').classList.contains('detached')"
     ), "the passage moved and the comment lost it"

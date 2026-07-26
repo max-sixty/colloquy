@@ -72,7 +72,9 @@ Schema has no vocabulary for rides in x- keywords:
     x-upgrade   true when the runtime imports /widgets/<tag>.js for it
     x-example   one authored example, printed by `catalog`
 
-Event kinds: comment (user; optional anchor {section, quote}), reply (parent=id),
+Event kinds: comment (user; optional anchor {section, quote, and the neighbouring
+text as prefix/suffix where there is any, which is what tells two identical
+passages apart), reply (parent=id),
 resolve (parent=id), done (user sign-off; the banner offers it only on a page
 declaring <meta name="cq-review" content="sign-off">), action (user; a widget reporting the
 user editing the document through it — widget=element id, action=verb, detail

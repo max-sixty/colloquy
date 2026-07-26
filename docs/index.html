@@ -54,10 +54,11 @@ banner tracks whether Claude is working or listening.</figcaption>
 <li id="loop-ask"><strong>Ask.</strong> "Write up the migration options as a page"
 triggers it, as does <code>/colloquy</code>. Claude writes the page, serves it on a
 loopback port, and prints the URL.</li>
-<li id="loop-comment"><strong>Mark it up.</strong> Select any passage and comment;
-the comment anchors to it and stays anchored as versions change. Diagrams and
-images take comments by click, and a suggestion mode proposes replacement text
-that Claude takes verbatim or answers with why not.</li>
+<li id="loop-comment"><strong>Mark it up.</strong> Select any passage and comment; the
+passage stays lit while you write, and the comment anchors to it and stays anchored as
+versions change — to the passage you picked, even where the page says the same thing
+twice. Diagrams and images take comments by click, and a suggestion mode proposes
+replacement text that Claude takes verbatim or answers with why not.</li>
 <li id="loop-wake"><strong>Your comment wakes Claude.</strong> The session's turn
 ends on a background <code>wait</code> that exits the moment an event lands,
 re-invoking Claude. Nothing runs between rounds.</li>
