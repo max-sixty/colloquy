@@ -75,7 +75,12 @@
   clean, the two scroll regions don't overlap, and nothing sizes a textarea from
   script. The lint is static by design and none of the above is visible to it.
   The server answers `/favicon.ico` with 204 rather than letting it fall through
-  to 404, which is what makes an empty console worth asserting on.
+  to 404, which is what makes an empty console worth asserting on. The example
+  sweep runs in both color schemes, and one journey test drives the review loop
+  end to end through the real UI — select a passage, comment, drag a card,
+  follow the next version, find the comment still anchored to its relocated
+  passage — then asserts the event log those gestures leave, down to the
+  anchor's quote and the move's placement.
 - Sign-off is now the page's ask, not standing chrome. The banner offers
   "✓ Looks good" only when the version declares
   `<meta name="cq-review" content="sign-off">` — a plan, design, or proposed

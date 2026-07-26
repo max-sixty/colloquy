@@ -15,6 +15,12 @@ each, at some point, wrong:
   - a text box sized by script, which had to shrink itself to re-measure and so
     flashed a scrollbar on every keystroke.
 
+One journey test walks the loop the product is — select a passage, comment on
+it, drag a card, follow the next version, and find the comment still anchored —
+and asserts the event log those gestures leave behind. The log is the trail
+Claude actually reads, so it is the artifact worth pinning; the DOM along the
+way is checked only where a step depends on it.
+
 Chrome is driven through Playwright's `channel="chrome"`, which attaches to the
 installed browser: no download, no build step, `uv` still the one prerequisite.
 """
@@ -117,6 +123,7 @@ def serve(tmp_path, monkeypatch):
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         servers.append(httpd)
+        go.page_dir = d  # for tests that publish a v2 or read the event log
         return f"http://127.0.0.1:{httpd.server_address[1]}/versions/v001.html"
 
     servers = []
@@ -125,9 +132,9 @@ def serve(tmp_path, monkeypatch):
         httpd.shutdown()
 
 
-def open_page(browser, url):
+def open_page(browser, url, scheme="light"):
     """A page with its console errors collected, settled enough for mermaid."""
-    page = browser.new_page(viewport={"width": 1200, "height": 900})
+    page = browser.new_page(viewport={"width": 1200, "height": 900}, color_scheme=scheme)
     errors = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -139,12 +146,14 @@ def open_page(browser, url):
     return page, errors
 
 
+@pytest.mark.parametrize("scheme", ["light", "dark"])
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
-def test_example_renders(browser, serve, example):
+def test_example_renders(browser, serve, example, scheme):
     """Every shipped example loads clean and lays out: no fail-soft error box, no
     console error, and every visible widget occupies real space. A widget that
-    upgrades into a 1x1 box is the shape of failure a static lint cannot see."""
-    page, errors = open_page(browser, serve(example.read_text()))
+    upgrades into a 1x1 box is the shape of failure a static lint cannot see.
+    Both color schemes: the dark theme is real CSS nobody otherwise renders."""
+    page, errors = open_page(browser, serve(example.read_text()), scheme)
 
     assert page.locator(".cq-error").count() == 0, page.locator(".cq-error").all_inner_texts()
     assert errors == []
@@ -270,6 +279,107 @@ def test_composer_grows_with_its_text_without_script(browser, serve):
     assert capped["scrollable"], "past the ceiling the scrollbar is real and belongs there"
     assert shrunk["h"] == empty["h"], "and it must shrink back"
     assert page.evaluate("window.__styled") == 0, "nothing may size the box from script"
+    page.close()
+
+
+# The journey's page: a passage to comment on and a board to drag. In v2 the
+# commented paragraph moves below the notes heading — same text, new position —
+# so the anchor has to re-find its passage rather than replay a location.
+SENTENCE = "The version stamp never lands, so migration 0041 replays on every deploy."
+JOURNEY_SCAFFOLD = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>journey</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Journey</h1>
+{before}
+<cq-board id="board">
+  <cq-column id="col-todo" label="Todo">
+    <cq-card id="card-x"><strong>Guard the session delete</strong> One line.</cq-card>
+  </cq-column>
+  <cq-column id="col-done" label="Done"></cq-column>
+</cq-board>
+<h2 id="notes">Notes</h2>
+{after}
+</main>
+</body>
+</html>
+"""
+PASSAGE = f'<p id="intro">{SENTENCE}</p>'
+JOURNEY_V1 = JOURNEY_SCAFFOLD.format(before=PASSAGE, after="<p id='p-filler'>Filler.</p>")
+JOURNEY_V2 = JOURNEY_SCAFFOLD.format(before="<p id='p-filler'>Filler.</p>", after=PASSAGE)
+
+
+def test_review_round_trip(browser, serve):
+    """The loop the product is, driven through the real UI: select a passage and
+    comment on it, drag a card to another column, then follow the next version
+    and find the comment still anchored to its (relocated) passage. The final
+    assertion is the event log — the trail Claude reads — down to the anchor's
+    quote and the move's placement."""
+    page, errors = open_page(browser, serve(JOURNEY_V1))
+
+    # Select the passage from the keyboard's path: a real Range, then the keyup
+    # the runtime watches for keyboard selections, then the c binding — which
+    # runs the same composeSelection as the floating button's click.
+    page.evaluate("""() => {
+        const r = document.createRange();
+        r.selectNodeContents(document.getElementById('intro'));
+        getSelection().removeAllRanges();
+        getSelection().addRange(r);
+        document.body.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    }""")
+    page.wait_for_selector(".cq-fab", state="visible")  # the selection raised the button
+    page.keyboard.press("c")
+    page.wait_for_selector(".cq-composer", state="visible")
+    page.locator(".cq-composer textarea").fill("Is 0041 idempotent?")
+    page.locator(".cq-composer").get_by_role("button", name="Comment").click()
+    page.wait_for_selector(".cq-thread")
+    page.wait_for_selector(".cq-mark")  # the anchor pass wrapped the passage
+
+    # Drag the card between columns through the pointer path — the seam where
+    # the vendored SortableJS meets the runtime, which is where drags break.
+    grip = page.locator("#card-x .cq-grip").bounding_box()
+    dest = page.locator("#col-done").bounding_box()
+    page.mouse.move(grip["x"] + grip["width"] / 2, grip["y"] + grip["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(dest["x"] + dest["width"] / 2, dest["y"] + dest["height"] / 2, steps=15)
+    page.mouse.up()
+    page.wait_for_selector("#col-done #card-x")  # the drop reparented the card
+
+    # Claude ships v2 with the passage moved; the page follows on its next poll.
+    d = serve.page_dir
+    (d / "versions" / "v002.html").write_text(JOURNEY_V2)
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "moved"})
+    page.wait_for_url("**/v002.html", timeout=15000)
+    # The anchor pass runs at render: a mark now means the quote was re-found in
+    # its new position; no mark within the wait means the anchor lost it.
+    page.wait_for_selector(".cq-mark", timeout=5000)
+    assert not page.evaluate(
+        "document.querySelector('.cq-thread .cq-quote').classList.contains('detached')"
+    ), "the passage moved and the comment lost it"
+
+    assert errors == []
+    # The trail those gestures left, exactly — kinds, authorship (the server
+    # stamps browser events `user`), the anchor, and the move's placement.
+    events = [json.loads(line) for line in (d / "comments.jsonl").read_text().splitlines()]
+    assert [(e["kind"], e["author"], e["version"]) for e in events] == [
+        ("note", "claude", 1),
+        ("comment", "user", 1),
+        ("action", "user", 1),
+        ("note", "claude", 2),
+    ]
+    assert events[1]["anchor"] == {"section": "intro", "quote": SENTENCE}
+    assert events[1]["text"] == "Is 0041 idempotent?"
+    assert {k: events[2][k] for k in ("widget", "action", "detail")} == {
+        "widget": "board",
+        "action": "move",
+        "detail": {"card": "card-x", "to": "col-done", "index": 0},
+    }
     page.close()
 
 
