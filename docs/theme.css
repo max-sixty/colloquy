@@ -1,0 +1,412 @@
+/* Colloquy default theme, vendored into each page directory by `init` and served
+ * at /theme.css. Four tiers, cheapest first: tokens, element styles for plain
+ * semantic HTML, class idioms (one rule + one catalog line each), and
+ * element-widgets (cq-* tags rendered entirely by CSS). Customization is the
+ * same cascade: override a token, then a widget's rule, then replace the file
+ * via a project or user layer (see interact.py `init`).
+ *
+ * Every surface rides a token, so the dark palette is exactly one more token
+ * block — nothing else in this file (or the runtime, which styles its UI from
+ * the same tokens) knows about color schemes. */
+
+:root {
+  --paper: #fbfbf9;  --ink: #1f2328;  --muted: #6b7280;  --rule: #e4e7eb;
+  --accent: #2563eb; --ok: #16a34a;   --warn: #d97706;   --danger: #dc2626;
+  --r: 8px;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 16px; --sp-4: 24px;
+  --t-6: 11px; --t-5: 13.5px; --t-4: 16px; --t-3: 19px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --card: #ffffff;   /* raised surfaces: cards, panels, controls */
+  --field: #f6f5f0;  /* tinted fields: details, callouts, notes */
+  --code-bg: #eef0f2; --pre-bg: #f4f5f6;
+  --chip: #f3f4f6;   /* neutral chip */
+  --ink-2: #374151;  --muted-2: #9ca3af; --border-2: #d1d5db;
+  --veil: #ffffffee; /* the banner's translucent backdrop */
+  --mark: #fde68a80; --mark-strong: #fde68a; --quote-bar: #f59e0b;
+  --ok-tint: #dcfce7;     --ok-ink: #166534;
+  --warn-tint: #fef3c7;   --warn-ink: #92400e;
+  --danger-tint: #fee2e2; --danger-ink: #b91c1c;
+  --add-tint: #e6ffec; --del-tint: #ffebe9; --hi-tint: #fef9c3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #16181d;  --ink: #e6e8eb;  --muted: #9aa3ad;  --rule: #2c313a;
+    --accent: #60a5fa; --ok: #4ade80;   --warn: #fbbf24;   --danger: #f87171;
+
+    --card: #1d2026; --field: #21242b;
+    --code-bg: #262a32; --pre-bg: #1c1f25;
+    --chip: #2a2f38;
+    --ink-2: #c3c9d1; --muted-2: #6c7683; --border-2: #3a414d;
+    --veil: #16181dee;
+    --mark: #a1852a59; --mark-strong: #a1852a99; --quote-bar: #d3a53c;
+    --ok-tint: #14321f;     --ok-ink: #7fdda0;
+    --warn-tint: #362a10;   --warn-ink: #f0c674;
+    --danger-tint: #3a1c1c; --danger-ink: #f1948a;
+    --add-tint: #12301d; --del-tint: #38191b; --hi-tint: #38320f;
+  }
+}
+
+/* ---------- elements ---------- */
+
+body { margin: 0; background: var(--paper); color: var(--ink);
+       font: var(--t-4)/1.55 system-ui, -apple-system, sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 64px 24px 96px; }
+h1 { font-size: 27px; line-height: 1.2; letter-spacing: -0.01em; margin: 0 0 10px; }
+h2 { font-size: var(--t-3); margin: 44px 0 10px; }
+h3 { font-size: var(--t-4); margin: 28px 0 8px; }
+p { margin: 10px 0; }
+ul, ol { margin: 8px 0; padding-left: 22px; }
+li { margin: 5px 0; }
+a { color: var(--accent); }
+hr { border: none; border-top: 1px solid var(--rule); margin: 32px 0; }
+code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px;
+       font-size: 87%; font-family: var(--mono); }
+pre { background: var(--pre-bg); border: 1px solid var(--rule); border-radius: var(--r);
+      padding: 12px 14px; overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+      font-family: var(--mono); }
+pre code { background: none; padding: 0; font-size: 100%; }
+blockquote { margin: 14px 0; padding: 2px 14px; border-left: 2px solid var(--rule);
+             color: var(--muted); }
+figure { margin: 18px 0; }
+figcaption { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+img, svg, video { max-width: 100%; height: auto; }
+table { width: 100%; border-collapse: collapse; font-size: var(--t-5); margin: 14px 0; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule);
+         vertical-align: top; }
+th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
+     color: var(--muted); font-weight: 600; }
+details { background: var(--field); border: 1px solid var(--rule);
+          border-radius: var(--r); padding: 8px 14px; margin: 14px 0; }
+summary { cursor: pointer; font-weight: 600; font-size: 14.5px; }
+details pre { margin: 10px 0 6px; }
+dl { margin: 8px 0; }
+dt { font-weight: 600; }
+dd { margin: 0 0 8px 0; }
+
+/* ---------- class idioms ---------- */
+
+.eyebrow { font-size: var(--t-6); letter-spacing: .08em; text-transform: uppercase;
+           color: var(--muted); margin: 0 0 6px; }
+.lede { color: var(--ink-2); font-size: 16.5px; margin: 0 0 8px; }
+.tag { display: inline-block; font-size: var(--t-6); padding: 2px 8px;
+       border-radius: 999px; background: var(--chip); color: var(--ink-2);
+       vertical-align: middle; }
+/* A tinted field with a hairline border — never a left-accent bar. */
+.callout { background: var(--field); border: 1px solid var(--rule);
+           border-radius: var(--r); padding: 10px 14px; margin: 14px 0;
+           font-size: 15px; }
+.facts { display: grid; grid-template-columns: max-content 1fr;
+         gap: var(--sp-1) var(--sp-3); margin: 14px 0; }
+.facts dt { color: var(--muted); font-weight: 400; font-size: var(--t-5);
+            padding-top: 1px; }
+.facts dd { margin: 0; }
+ol.steps { list-style: none; counter-reset: step; padding-left: 0; }
+ol.steps > li { counter-increment: step; position: relative; padding-left: 34px;
+                margin: 10px 0; }
+ol.steps > li::before { content: counter(step); position: absolute; left: 0;
+                        top: 2px; width: 21px; height: 21px; border-radius: 50%;
+                        background: var(--accent); color: var(--card); font-size: 12px;
+                        font-weight: 600; display: grid; place-items: center; }
+
+/* ---------- element-widgets ---------- */
+
+/* cq-options / cq-option: this is the widget's whole definition — no JS.
+ * Chips are pseudo-elements reading the attributes: effort top-left,
+ * risk top-right (tinted per value); `recommended` is the accent ring. */
+cq-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+             gap: var(--sp-3); margin: 14px 0; }
+cq-option { display: block; position: relative; border: 1px solid var(--rule);
+            border-radius: var(--r); padding: var(--sp-3); background: var(--card);
+            font-size: 14px; }
+cq-option[effort], cq-option[risk] { padding-top: 40px; }
+cq-option > strong { display: block; margin: 0 0 4px; font-size: 15px; }
+cq-option[recommended] { border-color: var(--accent);
+                         box-shadow: 0 0 0 1px var(--accent); }
+cq-option::before, cq-option::after { position: absolute; top: 12px;
+    font-size: var(--t-6); line-height: 1.6; padding: 0 8px; border-radius: 999px;
+    background: var(--chip); color: var(--ink-2); }
+cq-option[effort]::before { content: "effort " attr(effort); left: 12px; }
+cq-option[risk]::after { content: "risk " attr(risk); right: 12px; }
+cq-option[risk="high"]::after { background: var(--danger-tint); color: var(--danger-ink); }
+cq-option[risk="med"]::after  { background: var(--warn-tint); color: var(--warn-ink); }
+cq-option[risk="low"]::after  { background: var(--ok-tint); color: var(--ok-ink); }
+/* With `choose`, the group takes the reader's pick by click: hover lifts a card,
+ * and the pick wears the ok ring plus a ✓ badge (inserted by the upgrade).
+ * `chosen` reads after `recommended`, so the reader's pick wins the border. */
+cq-options[choose] > cq-option { cursor: pointer;
+                         padding-bottom: 34px; /* constant room for the ✓ badge — a pick never reflows */
+                         transition: box-shadow .12s ease, transform .12s ease; }
+/* Every option lifts on hover; a ring a card already wears layers under the lift. */
+cq-options[choose] > cq-option:hover { transform: translateY(-1px);
+                         box-shadow: 0 3px 10px rgba(0, 0, 0, .14); }
+cq-options[choose] > cq-option[recommended]:hover {
+                         box-shadow: 0 0 0 1px var(--accent), 0 3px 10px rgba(0, 0, 0, .14); }
+cq-option[chosen], cq-options[choose] > cq-option[chosen]:hover {
+                         border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok);
+                         padding-bottom: 34px; /* authored chosen outside a choose group */
+                         transform: none; }
+.cq-chosen-badge { position: absolute; right: 10px; bottom: 8px; font-size: var(--t-6);
+                   padding: 0 8px; border-radius: 999px; line-height: 1.6;
+                   background: var(--ok-tint); color: var(--ok-ink); }
+/* The keyboard affordance for a pick, sharing the badge's reserved strip; the
+ * chosen option hides its button (the badge says it). */
+cq-option .cq-pick { position: absolute; left: 10px; bottom: 6px; font: inherit;
+                     font-size: var(--t-6); line-height: 1.6; padding: 0 10px;
+                     border: 1px solid var(--border-2); border-radius: 999px;
+                     background: var(--card); color: var(--ink-2); cursor: pointer; }
+cq-option .cq-pick:hover { background: var(--chip); }
+cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* A keyboard pick moves focus to the option itself once its button hides. */
+cq-option:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+/* `settled`: the decision is made and acted on, so the group reads as one line
+ * — the disclosure the upgrade builds — with the cards behind it. Collapsed it
+ * lays out as a block, so hidden cards contribute no grid rows and no gaps;
+ * open, the grid is back. Unupgraded (and in print) every card shows. */
+cq-options[settled].cq-rendered:not([open]) { display: block; }
+/* Scoped, not a bare .cq-settled: the row wears cq-ui so anchoring skips it, and
+ * the runtime's own .cq-ui font and color rules are later in the cascade. This
+ * is the page's disclosure, so it reads at the theme's summary size. */
+cq-options[settled] > .cq-settled {
+              grid-column: 1 / -1; display: flex; width: 100%; align-items: baseline;
+              gap: var(--sp-2); margin: 0 0 var(--sp-2); padding: 7px 12px;
+              font: inherit; font-size: 14.5px; font-weight: 600; text-align: left;
+              background: var(--field); color: var(--ink); cursor: pointer;
+              border: 1px solid var(--rule); border-radius: var(--r); }
+cq-options[settled]:not([open]) > .cq-settled { margin-bottom: 0; }
+cq-options[settled] > .cq-settled:hover { border-color: var(--border-2); }
+cq-options[settled] > .cq-settled:focus-visible { outline: 2px solid var(--accent);
+              outline-offset: 1px; }
+.cq-settled::before { content: "▸"; color: var(--muted); font-weight: 400; }
+cq-options[open] > .cq-settled::before { content: "▾"; }
+.cq-settled-count { margin-left: auto; font-weight: 400; font-size: var(--t-6);
+                    color: var(--muted); white-space: nowrap; }
+.cq-settled-diff { font-weight: 400; font-size: var(--t-6); padding: 0 6px;
+                   border-radius: 999px; background: var(--add-tint); color: var(--ok-ink); }
+/* The collapse is a screen affordance, and scoping it says so — print gets the
+ * cards back by simply not hiding them, rather than by undoing a hide. */
+@media screen {
+  /* until-found keeps the card's own box in flow, and a card is bordered and
+   * padded — zero it, or the collapse leaves a stack of empty boxes behind. */
+  cq-options[settled] > cq-option[hidden] { padding: 0; border: 0; box-shadow: none; }
+  /* The boolean-hidden fallback (no until-found support) hides here, because the
+   * display:block above outranks the UA's [hidden] rule. */
+  cq-options[settled] > cq-option[hidden]:not([hidden="until-found"]) { display: none; }
+}
+/* Print shows every card: the row hides with the rest of the UI, and the grid
+ * comes back (content-visibility is the only part of the hide left to undo). */
+@media print {
+  cq-options[settled].cq-rendered:not([open]) { display: grid; }
+  cq-options[settled] > cq-option { content-visibility: visible !important; }
+}
+
+/* cq-plan: the chrome plan pages hand-build — title, facts row, numbered
+ * sections — as one element-widget. Numbering is CSS counters. */
+cq-plan { display: block; counter-reset: cq-plan-section; margin: 14px 0; }
+cq-plan > strong { display: block; font-size: 22px; line-height: 1.25;
+                   letter-spacing: -0.01em; margin: 0 0 6px; }
+cq-plan > section > h2::before { counter-increment: cq-plan-section;
+                                 content: counter(cq-plan-section) ".  ";
+                                 color: var(--muted); }
+
+/* cq-milestones / cq-milestone: a rail of status dots. The rail and dots are
+ * CSS; the chip row (`when`, `tags`) is built by the cq-milestone upgrade. */
+cq-milestones { display: block; margin: 14px 0 14px 8px; }
+cq-milestone { display: block; position: relative; padding: 0 0 16px 26px;
+               border-left: 2px solid var(--rule); }
+cq-milestone:last-child { border-left-color: transparent; padding-bottom: 2px; }
+cq-milestone::before { content: ""; position: absolute; left: -7px; top: 3px;
+                       width: 10px; height: 10px; border-radius: 50%;
+                       background: var(--paper); border: 2px solid var(--muted); }
+cq-milestone[status="done"]::before   { background: var(--ok); border-color: var(--ok); }
+cq-milestone[status="active"]::before { border-color: var(--accent);
+                                        box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+cq-milestone[status="blocked"]::before { background: var(--danger); border-color: var(--danger); }
+cq-milestone > strong { display: block; margin: 0 0 2px; }
+cq-milestone[status="done"] > strong { color: var(--muted); }
+.cq-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 6px; }
+.cq-chips span { font-size: var(--t-6); line-height: 1.6; padding: 0 8px;
+                 border-radius: 999px; background: var(--chip); color: var(--ink-2); }
+
+/* cq-timeline / cq-event: an event log on a rail. The dot (::after, absolute,
+ * colored by kind) and the time label (::before, from the at attribute) spend
+ * exactly the CSS pseudo budget — no JS. */
+cq-timeline { display: block; margin: 14px 0 14px 8px; }
+cq-event { display: block; position: relative; padding: 0 0 16px 26px;
+           border-left: 2px solid var(--rule); }
+cq-event:last-child { border-left-color: transparent; padding-bottom: 2px; }
+cq-event::after { content: ""; position: absolute; left: -7px; top: 4px;
+                  width: 10px; height: 10px; border-radius: 50%;
+                  background: var(--paper); border: 2px solid var(--muted); }
+cq-event[kind="info"]::after    { background: var(--muted); }
+cq-event[kind="action"]::after  { background: var(--accent); border-color: var(--accent); }
+cq-event[kind="warning"]::after { background: var(--warn); border-color: var(--warn); }
+cq-event[kind="failure"]::after { background: var(--danger); border-color: var(--danger); }
+cq-event[at]::before { content: attr(at); display: block; font-family: var(--mono);
+                       font-size: var(--t-6); color: var(--muted); margin-bottom: 1px; }
+cq-event > strong { margin-right: 6px; }
+
+/* cq-compare / cq-variant: labeled columns; exhibition, not decision. */
+cq-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+             gap: var(--sp-3); margin: 14px 0; }
+cq-variant { display: block; border: 1px solid var(--rule); border-radius: var(--r);
+             padding: var(--sp-3); background: var(--card); font-size: 14px; }
+cq-variant > strong { display: block; margin: 0 0 4px; font-size: 15px; }
+
+/* cq-metrics / cq-metric: a KPI row. Value is ::before from the attribute, the
+ * delta ::after colors by sign × direction — honest coloring, still no JS. */
+cq-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+             gap: var(--sp-3); margin: 14px 0; }
+cq-metric { display: block; border: 1px solid var(--rule); border-radius: var(--r);
+            padding: 10px 14px; background: var(--card); font-size: var(--t-6);
+            text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+cq-metric::before { content: attr(value); display: block; font-size: 24px;
+                    font-weight: 600; line-height: 1.3; letter-spacing: -0.01em;
+                    text-transform: none; color: var(--ink); }
+cq-metric[delta]::after { content: attr(delta); display: inline-block; margin-left: 6px;
+                          padding: 0 7px; border-radius: 999px; letter-spacing: 0;
+                          text-transform: none; font-size: var(--t-6); line-height: 1.6;
+                          background: var(--chip); color: var(--ink-2); }
+cq-metric[direction="up-good"][delta^="+"]::after,
+cq-metric[direction="up-bad"][delta^="-"]::after  { background: var(--ok-tint); color: var(--ok-ink); }
+cq-metric[direction="up-good"][delta^="-"]::after,
+cq-metric[direction="up-bad"][delta^="+"]::after  { background: var(--danger-tint); color: var(--danger-ink); }
+
+/* cq-board / cq-column / cq-card: the one widget the reviewer edits directly.
+ * All presentation is CSS; the cq-board upgrade only wires dragging (grips,
+ * dropzones) and reports each drop as a `move` action. Unupgraded it reads as a
+ * static board. */
+cq-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(10rem, 1fr);
+           gap: var(--sp-2); margin: 14px 0; align-items: stretch; overflow-x: auto; }
+cq-column { display: block; background: var(--field); border: 1px solid var(--rule);
+            border-radius: var(--r); padding: 8px; min-height: 64px; }
+cq-column::before { content: attr(label); display: block; font-size: var(--t-6);
+            text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+            padding: 2px 4px 8px; }
+cq-column.cq-dropping { border-color: var(--accent); }
+cq-card { display: block; position: relative; background: var(--card);
+          border: 1px solid var(--rule); border-radius: var(--r);
+          padding: 8px 34px 8px 10px; margin: 0 0 var(--sp-2); font-size: 14px; }
+cq-card:last-child { margin-bottom: 0; }
+cq-card > strong { display: block; margin: 0 0 2px; }
+/* The grip is a <button>, so the keyboard reaches it: Enter grabs, arrows move. */
+cq-card .cq-grip { position: absolute; top: 2px; right: 0; color: var(--muted);
+          background: none; border: none; cursor: grab; padding: 8px 10px;
+          border-radius: 4px; user-select: none;
+          -webkit-user-select: none; font-size: 14px; line-height: 1;
+          touch-action: none; /* the handle owns the gesture; scroll stays on the card */ }
+cq-card:hover > .cq-grip { color: var(--ink-2); }
+cq-card .cq-grip:hover { background: var(--chip); }
+cq-card .cq-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px;
+          color: var(--ink-2); }
+/* SortableJS drag states: the in-flow slot, the pressed card, the follower. */
+cq-card.cq-ghost { opacity: .4; border-style: dashed; border-color: var(--accent); }
+cq-card.cq-lift { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
+/* (No transform here: Sortable positions the follower with an inline matrix.) */
+cq-card.cq-inhand { opacity: 1; cursor: grabbing;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, .22); }
+
+/* cq-tabs / cq-tab: parallel workstreams, one panel on screen at a time. The
+ * strip is generated by the upgrade; which tab is open is the reader's view
+ * state, so everything here is presentation. Unupgraded (and in print) the
+ * panels stack as labeled sections. */
+cq-tabs { display: block; margin: 14px 0; }
+cq-tab { display: block; }
+cq-tab::before { content: attr(label); display: block; font-size: var(--t-6);
+                 text-transform: uppercase; letter-spacing: .05em;
+                 color: var(--muted); margin: 18px 0 8px; }
+cq-tabs.cq-rendered > cq-tab { margin-top: 14px; }
+cq-tabs.cq-rendered > cq-tab::before { content: none; } /* the strip carries the label */
+/* until-found keeps the element's own box in flow; zero it so inactive panels
+ * leave no stray gap below the active one. */
+cq-tabs.cq-rendered > cq-tab[hidden] { margin: 0; }
+/* The boolean-hidden fallback (no until-found support) hides here, because the
+ * display:block above outranks the UA's [hidden] rule. */
+cq-tabs.cq-rendered > cq-tab[hidden]:not([hidden="until-found"]) { display: none; }
+.cq-tabstrip { display: flex; flex-wrap: wrap; gap: 2px;
+               border-bottom: 1px solid var(--rule); }
+.cq-tabstrip button { font: inherit; font-size: var(--t-5); padding: 6px 12px;
+               border: none; background: none; color: var(--muted); cursor: pointer;
+               border-bottom: 2px solid transparent; margin-bottom: -1px;
+               border-radius: var(--r) var(--r) 0 0; }
+.cq-tabstrip button:hover { color: var(--ink-2); background: var(--chip); }
+.cq-tabstrip button[aria-selected="true"] { color: var(--ink); font-weight: 600;
+               border-bottom-color: var(--accent); }
+.cq-tabdiff { font-size: var(--t-6); font-weight: 400; margin-left: 6px;
+              padding: 0 6px; border-radius: 999px;
+              background: var(--add-tint); color: var(--ok-ink); }
+/* Print shows every panel: the strip hides with the rest of the UI, and the
+ * stacked labels come back. */
+@media print {
+  cq-tabs.cq-rendered > cq-tab { display: block !important;
+                             content-visibility: visible !important;
+                             margin-top: 14px; }
+  cq-tabs.cq-rendered > cq-tab::before { content: attr(label); }
+}
+
+/* Upgraded widgets: pre-upgrade presentation, so a page degrades readably. */
+cq-ref { font-family: var(--mono); font-size: 87%; }
+cq-diagram, cq-diff, cq-tree, cq-code { display: block; margin: 14px 0;
+             white-space: pre; font-family: var(--mono); font-size: 12.5px;
+             color: var(--muted); overflow-x: auto; }
+cq-diagram.cq-rendered, cq-diff.cq-rendered, cq-tree.cq-rendered,
+cq-code.cq-rendered {
+             white-space: normal; font: inherit; color: inherit; overflow: visible; }
+cq-diagram svg { display: block; margin: 0 auto; }
+
+/* cq-diff rendered form: one details per file, lines colored by kind. */
+cq-diff.cq-rendered details { margin: 8px 0; padding: 0; overflow: hidden;
+                              background: var(--card); }
+cq-diff.cq-rendered summary { padding: 6px 12px; font-size: 12.5px; }
+cq-diff .cq-diff-stat { color: var(--muted); font-weight: 400; margin-left: 8px;
+                        font-size: var(--t-6); }
+cq-diff.cq-rendered pre { margin: 0; border: none; border-top: 1px solid var(--rule);
+                          border-radius: 0; padding: 6px 0; }
+cq-diff pre span { display: block; padding: 0 12px; }
+cq-diff pre .add  { background: var(--add-tint); }
+cq-diff pre .del  { background: var(--del-tint); }
+cq-diff pre .hunk { color: var(--accent); background: var(--pre-bg); }
+cq-diff pre .meta { display: none; } /* the summary already names the file */
+
+/* cq-tree rendered form: nested lists with hairline guides and change badges. */
+cq-tree.cq-rendered { font-family: var(--mono); font-size: 12.5px; }
+cq-tree ul { list-style: none; margin: 0; padding-left: 0; }
+cq-tree ul ul { padding-left: 18px; border-left: 1px solid var(--rule); margin-left: 5px; }
+cq-tree li { margin: 3px 0; }
+cq-tree .cq-tree-dir { font-weight: 600; }
+cq-tree .cq-tree-badge { font-size: var(--t-6); padding: 0 6px; margin-left: 6px;
+                         border-radius: 999px; }
+cq-tree .cq-tree-badge.add { background: var(--ok-tint); color: var(--ok-ink); }
+cq-tree .cq-tree-badge.del { background: var(--danger-tint); color: var(--danger-ink); }
+
+/* cq-code rendered form: numbered lines, hi ranges, notes docked at their line. */
+cq-code.cq-rendered pre { counter-reset: cq-code-line; padding: 12px 0; }
+cq-code .cq-code-line { display: block; padding: 0 14px 0 0; }
+cq-code .cq-code-line::before { counter-increment: cq-code-line;
+             content: counter(cq-code-line); display: inline-block; width: 34px;
+             padding-right: 12px; text-align: right; color: var(--muted-2); }
+cq-code .cq-code-line.hi { background: var(--hi-tint); }
+cq-code .cq-code-note { margin: 4px 8px 6px 46px; padding: 6px 10px;
+             background: var(--field); border: 1px solid var(--rule);
+             border-radius: var(--r); font-family: system-ui, sans-serif;
+             font-size: var(--t-5); white-space: normal; }
+cq-code cq-note { display: block; }
+
+/* Where a widget upgrade fails, it fails soft into this box. */
+.cq-error { border: 1px solid var(--danger); background: var(--danger-tint);
+            color: var(--danger-ink); border-radius: var(--r); padding: 8px 12px;
+            font-size: var(--t-5); white-space: normal;
+            font-family: system-ui, sans-serif; }
+.cq-error pre { margin: 8px 0 0; white-space: pre; }
+
+/* Reduced motion: one global guard covers every animation and transition in the
+ * theme and the injected layers (!important outranks inline styles, so
+ * JS-driven transitions stop too). JS-driven motion — smooth scrolls,
+ * Web-Animations moves — honors the runtime's REDUCED/SCROLL exports. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}

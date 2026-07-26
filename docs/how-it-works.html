@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>how colloquy works</title>
+<meta name="description" content="The mechanism behind colloquy: one uv script, an append-only event log, a background wait that ends when you comment, and a vendored theme-and-widget layer.">
+<link rel="stylesheet" href="theme.css">
+<style>
+/* Landing layer over the stock theme: specimen frames and the architecture
+   diagram. Every color and size below rides theme.css tokens. */
+.specimen { position: relative; border: 1px dashed var(--border-2);
+            border-radius: var(--r); padding: 4px 14px 14px; margin: 18px 0 6px; }
+.specimen-tag { position: absolute; top: -9px; left: 12px; padding: 0 8px;
+                background: var(--paper); font-size: var(--t-6);
+                letter-spacing: .06em; text-transform: uppercase;
+                color: var(--muted); }
+p.specimen-note { font-size: 12.5px; color: var(--muted); margin: 6px 0 20px; }
+svg.arch { display: block; margin: 20px auto; width: 100%; max-width: 720px;
+           height: auto; }
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
+         font-size: var(--t-5); color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+
+<header id="top">
+<p class="eyebrow"><a href="index.html">colloquy</a> · how it works</p>
+<h1>How colloquy works</h1>
+<p class="lede" id="lede">No daemon, no database, no build step. One
+<code>uv</code> script serves the page and mediates an append-only event log; an
+ES-module runtime renders the widgets and injects the comments, threads, banner,
+and version picker.</p>
+</header>
+
+<section id="wake">
+<h2>The loop</h2>
+
+<svg class="arch" id="arch" viewBox="0 0 720 190" role="img"
+     aria-labelledby="arch-title">
+<title id="arch-title">Claude writes versions and replies through interact.py's
+loopback server to the browser; a comment ends the background wait, which
+re-invokes Claude.</title>
+<defs>
+<marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7"
+        markerHeight="7" orient="auto-start-reverse">
+  <path d="M0 0 L8 4 L0 8 z" fill="var(--muted-2)"></path>
+</marker>
+<marker id="arr-accent" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7"
+        markerHeight="7" orient="auto-start-reverse">
+  <path d="M0 0 L8 4 L0 8 z" fill="var(--accent)"></path>
+</marker>
+</defs>
+<g>
+<rect x="8" y="44" width="180" height="68" rx="8" fill="var(--card)"
+      stroke="var(--rule)"></rect>
+<text x="98" y="72" text-anchor="middle" font-size="14" font-weight="600"
+      fill="var(--ink)">Claude Code session</text>
+<text x="98" y="93" text-anchor="middle" font-size="11.5"
+      fill="var(--muted)">writes versions, replies</text>
+</g>
+<g>
+<rect x="270" y="44" width="180" height="68" rx="8" fill="var(--card)"
+      stroke="var(--rule)"></rect>
+<text x="360" y="72" text-anchor="middle" font-size="14" font-weight="600"
+      fill="var(--ink)">interact.py</text>
+<text x="360" y="93" text-anchor="middle" font-size="11.5"
+      fill="var(--muted)">loopback port · event log</text>
+</g>
+<g>
+<rect x="532" y="44" width="180" height="68" rx="8" fill="var(--card)"
+      stroke="var(--rule)"></rect>
+<text x="622" y="72" text-anchor="middle" font-size="14" font-weight="600"
+      fill="var(--ink)">your browser</text>
+<text x="622" y="93" text-anchor="middle" font-size="11.5"
+      fill="var(--muted)">comments, drags, picks</text>
+</g>
+<line x1="192" y1="78" x2="264" y2="78" stroke="var(--muted-2)"
+      stroke-width="1.5" marker-end="url(#arr)"></line>
+<line x1="454" y1="78" x2="526" y2="78" stroke="var(--muted-2)"
+      stroke-width="1.5" marker-end="url(#arr)"></line>
+<path d="M622 116 L622 160 L98 160 L98 122" fill="none" stroke="var(--accent)"
+      stroke-width="1.5" marker-end="url(#arr-accent)"></path>
+<text x="360" y="152" text-anchor="middle" font-size="12"
+      fill="var(--accent)">a comment ends the background wait · Claude wakes</text>
+</svg>
+
+<p id="wait-trick">Claude's turn ends on a background <code>wait</code> that
+exits the moment an event lands, re-invoking the session. Nothing runs between
+rounds and there is nothing to keep alive: the server exists to hand events
+across, and the page directory (versions plus the event log) is the whole
+state.</p>
+</section>
+
+<section id="pages">
+<h2>What a page is made of</h2>
+<p id="scaffold">A version is one complete HTML document, and the required
+scaffold is two lines: the theme stylesheet and the runtime module. Everything
+between them is the agent's, drawn from four sources in ascending order of
+specialization; each earns its place only where the one before it lacks the
+shape.</p>
+<ol class="steps" id="sources">
+<li id="src-html"><strong>Plain semantic HTML.</strong> The theme styles bare
+elements, so headings, prose, tables, code, and <code>details</code> carry the
+page's voice unclassed. Most of any page is this.</li>
+<li id="src-idioms"><strong>Class idioms.</strong> A small closed set for
+shapes HTML has no element for: <code>.eyebrow</code>, <code>.lede</code>,
+<code>.tag</code>, <code>.callout</code>, <code>.facts</code>, and
+<code>ol.steps</code>, which numbers this list.</li>
+<li id="src-widgets"><strong><code>cq-*</code> widgets.</strong> Custom
+elements that say what things are: <code>&lt;cq-options&gt;</code> for a
+decision's alternatives, <code>&lt;cq-board&gt;</code> for work in columns.
+Attributes carry scalars, children carry prose, a leading
+<code>&lt;strong&gt;</code> is an item's title, and a JSON-Schema registry
+keeps the renderer, the linter, and the agent's documentation agreeing about
+the vocabulary.</li>
+<li id="src-bespoke"><strong>Bespoke presentation.</strong> A page-local
+<code>&lt;style&gt;</code> and hand-drawn inline SVG, both riding the theme's
+tokens; the architecture diagram above is one. This is the escape hatch for
+presentation only this page needs, never a second palette.</li>
+</ol>
+<p id="boundaries">Each language has one owner. HTML is the author's whole
+medium: pages carry markup and never script, and interactivity is authored as
+markup too, so writing <code>&lt;cq-board&gt;</code> is what adds dragging.
+CSS is the theme's: it renders every widget's look, and many widgets need
+nothing else. JS is the runtime's, opt-in per widget: a registry flag
+(<code>x-upgrade</code>) names the tags whose behavior module loads, and the
+behavior attaches to markup that has already rendered, so a module that fails
+to load leaves a readable page rather than a blank one.</p>
+<p id="review-meta">The head's meta channel carries what the page asks of its
+reader: one that seeks approval declares
+<code>&lt;meta name="cq-review" content="sign-off"&gt;</code>, and only then does
+the banner offer "✓ Looks good". The declaration versions with the document;
+without it a review is open-ended and takes comments only.</p>
+<p id="dogfood">This page is set in the plugin's own <code>theme.css</code>, and
+the widgets below are rendering in it right now, with no script involved.</p>
+
+<div class="specimen" id="spec-options-frame">
+<span class="specimen-tag">live widget · cq-options</span>
+<cq-options id="spec-options">
+  <cq-option id="so-rewrite" effort="high" risk="med"><strong>Rewrite the
+  importer</strong> A clean slate on the new schema; the old importer keeps
+  running until parity.</cq-option>
+  <cq-option id="so-shim" effort="low" risk="high"><strong>Shim the old
+  schema</strong> Fastest to ship; every future field pays the translation
+  tax.</cq-option>
+  <cq-option id="so-stage" effort="med" risk="low" recommended><strong>Migrate in
+  stages</strong> New fields land on the new schema while reads fall back,
+  table by table.</cq-option>
+</cq-options>
+</div>
+<p class="specimen-note">A specimen decision. In a session the group takes your
+pick by click, and the next version ships with your choice marked.</p>
+
+<div class="specimen" id="spec-board-frame">
+<span class="specimen-tag">live widget · cq-board</span>
+<cq-board id="spec-board">
+  <cq-column id="sb-incoming" label="Incoming">
+    <cq-card id="sc-flaky"><strong>Flaky auth test</strong> Fails one run in
+    twenty on CI only.</cq-card>
+    <cq-card id="sc-contrast"><strong>Dark-mode contrast pass</strong></cq-card>
+  </cq-column>
+  <cq-column id="sb-sprint" label="This week">
+    <cq-card id="sc-ratelimit"><strong>Rate-limit the export</strong></cq-card>
+  </cq-column>
+  <cq-column id="sb-done" label="Done">
+    <cq-card id="sc-tokens"><strong>Tokenize the palette</strong></cq-card>
+  </cq-column>
+</cq-board>
+</div>
+<p class="specimen-note">A specimen triage board. In a session, cards drag
+between columns by a grip, and each drop reaches Claude as a structured
+move.</p>
+
+<p id="catalog">The committed catalog runs wider: mermaid diagrams, unified
+diffs with per-file collapse, annotated code walkthroughs, file trees,
+timelines, metric rows, plans with milestones, and tabbed parallel
+workstreams. The
+<a href="https://github.com/max-sixty/colloquy/tree/main/examples">examples
+gallery</a> holds six complete pages showing the range.</p>
+</section>
+
+<section id="edits">
+<h2>Edits are events; the document stays the state</h2>
+<p>Dragging a card or clicking an option reaches Claude as a structured action
+on the same channel as comments, and the next version ships with the board as
+you left it and your pick marked. Until it ships, the page shows the version
+plus your own edits; a reload replays them, and a second tab follows along
+live.</p>
+<p id="decline">Declining is a version too. When Claude disagrees with an edit,
+it ships the next version without the change, says why in the changelog, and the
+page rolls back to the authored state as that version lands.</p>
+</section>
+
+<section id="layer">
+<h2>Each page owns its layer</h2>
+<p><code>init</code> vendors the whole layer (runtime, theme, registry, widget
+modules) into the page's directory, overlaying the shipped defaults with
+<code>~/.claude/colloquy/</code> and the project's
+<code>.claude/colloquy/</code>. Override one CSS token to change the accent
+everywhere; replace <code>theme.css</code> to change the voice; add a registry
+entry and a module to add a widget. Because pages are self-contained, a version
+you approved can't change under you when the defaults do.</p>
+</section>
+
+<section id="gate">
+<h2>Nothing broken goes live</h2>
+<p>Before a version is published, <code>interact.py check</code> lints it
+deterministically, with no browser: the HTML parses with balanced tags, the
+scaffold is exactly the theme link and the runtime module, every
+<code>cq-*</code> element validates against the page's registry along with the
+head's <code>cq-*</code> metas, ids stay unique
+and every comment anchor from the previous version survives, and nothing is
+wider than the readable column. The changelog note re-runs the lint and refuses
+a failing version, so an open browser never sees one.</p>
+</section>
+
+<section id="local">
+<h2>Local by construction</h2>
+<p>The server binds <code>127.0.0.1</code>, so the browser must be on the same
+machine. Local terminals and the desktop app work directly; VS Code Remote-SSH
+and devcontainers forward localhost ports automatically, so the URL opens
+as-is.</p>
+</section>
+
+<footer id="colophon">
+<p><a href="index.html">What colloquy offers</a> ·
+<a href="https://github.com/max-sixty/colloquy">GitHub</a> · MIT license. This
+page is a static render of the theme and widgets it describes; the comment layer
+joins in when a live session serves a page.</p>
+</footer>
+
+</main>
+</body>
+</html>

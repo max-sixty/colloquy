@@ -167,6 +167,11 @@
   any commit where the two drift. Example ids stay disjoint across files (the
   generator embeds each `<main>` verbatim and refuses a collision), so an id means
   the same element standalone and in the gallery.
+- A product page under `docs/`, GitHub Pages-ready and rendering from a plain
+  `file://` open: `index.html` (what colloquy offers, with light/dark screenshots of
+  a real session) and `how-it-works.html` (the mechanism, with live widget
+  specimens), set in the shipped theme; a test pins the theme copy and widget tags
+  to the shipped layer.
 
 ## 0.2.0 — 2026-07-24
 
