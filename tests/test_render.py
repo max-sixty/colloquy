@@ -20,13 +20,20 @@ installed browser: no download, no build step, `uv` still the one prerequisite.
 """
 
 import json
+import os
+import re
+import subprocess
+import sys
 import threading
+import time
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 from conftest import interact
 
@@ -263,4 +270,87 @@ def test_composer_grows_with_its_text_without_script(browser, serve):
     assert capped["scrollable"], "past the ceiling the scrollbar is real and belongs there"
     assert shrunk["h"] == empty["h"], "and it must shrink back"
     assert page.evaluate("window.__styled") == 0, "nothing may size the box from script"
+    page.close()
+
+
+@pytest.fixture(scope="module")
+def dead_pid():
+    """A pid that is certainly not running, for a page whose session has exited."""
+    spent = subprocess.Popen([sys.executable, "-c", ""])
+    spent.wait()
+    return spent.pid
+
+
+@contextmanager
+def live_watcher(page_dir):
+    """Bump heartbeat.json for the duration of the block, as a running `wait` does."""
+    stop = threading.Event()
+
+    def pump():
+        while True:
+            interact.write_json(page_dir / "heartbeat.json", {"t": time.time()})
+            if stop.wait(0.5):
+                return
+
+    threading.Thread(target=pump, daemon=True).start()
+    try:
+        yield
+    finally:
+        stop.set()
+        (page_dir / "heartbeat.json").unlink(missing_ok=True)
+
+
+def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, dead_pid):
+    """The banner may claim no more than the page directory can prove. A watch that
+    has stopped must read differently from a watch with nothing to report, because
+    otherwise the reviewer's only way to tell them apart is to ask."""
+    page, _ = open_page(browser, serve(LONG_PAGE, comments=1))
+    d = tmp_path / "page"
+    text, dot = page.locator(".cq-status-text"), page.locator(".cq-dot")
+
+    def declare(state, detail="", *, handoff=False, quiet_for=0, session_pid=None):
+        ts = datetime.now().astimezone() - timedelta(seconds=quiet_for)
+        status = {"state": state, "detail": detail, "ts": ts.isoformat(timespec="seconds")}
+        if handoff:
+            status["handoff"] = True
+        interact.write_json(
+            d / "session.json", {"id": "s", "pid": session_pid or os.getpid(), "ts": "t"}
+        )
+        interact.write_json(d / "status.json", status)
+
+    declare("working", "revising the plan")
+    expect(text).to_have_text(re.compile(r"^Claude is working — revising the plan \(.+\)$"))
+    expect(dot).to_have_class(re.compile(r"\bworking\b"))
+
+    declare("waiting")
+    with live_watcher(d):
+        expect(text).to_have_text("Claude is listening — select text to comment")
+        expect(dot).to_have_class(re.compile(r"\blistening\b"))
+
+    # No watcher, but Claude checked in moments ago, so it is between turns.
+    expect(text).to_have_text(
+        "Claude isn't watching right now. 1 comment waiting. It picks them up next turn."
+    )
+
+    # The failure the whole mechanism exists for: `wait` delivered, set this status,
+    # and Claude never came back. The handoff mark is what dates it.
+    declare("working", "picking up 1 update", handoff=True, quiet_for=20 * 60)
+    expect(text).to_have_text(
+        "Claude last checked in 20m ago. 1 comment waiting. Nudge it in the terminal."
+    )
+    expect(dot).to_have_class(re.compile(r"\baway\b"))
+
+    # Claude's own status gets a far longer rope: the same silence is just a long turn.
+    declare("working", "running the migration", quiet_for=10 * 60)
+    expect(text).to_have_text(re.compile(r"^Claude is working — running the migration"))
+
+    # A dead session needs no timeout at all — the owning pid is simply gone.
+    declare("working", "running the migration", session_pid=dead_pid)
+    expect(text).to_have_text(
+        "The Claude session reviewing this page has ended. 1 comment waiting."
+        " Start one in the terminal to pick it up."
+    )
+
+    declare("idle")
+    expect(text).to_have_text("Review closed")
     page.close()

@@ -1287,45 +1287,53 @@ diffBtn.onclick = async () => {
 };
 
 // ---------- banner ----------
-// "Claude is working" is a claim in status.json, and nothing revises a claim once
-// the session behind it walks away — so a page nobody is watching reads exactly
-// like a page whose reviewer has said nothing yet. The banner therefore takes the
-// claim only as far as the directory can vouch for it: `listening` is a heartbeat
-// a live `wait` bumps, `session_alive` is the owning process, and a working status
-// that goes unrefreshed past its grace is reported as what it is. The rope is short
-// for a handoff status (`wait` wrote it as it delivered, and Claude's first act on
-// waking is its own `status`, so minutes mean the pickup was dropped) and long for
-// Claude's own, where a quiet stretch is just a long turn.
+// "Claude is working" is a claim in status.json, and nothing revises a claim once the
+// session behind it walks away — so a page nobody is watching reads exactly like a page
+// whose reviewer has said nothing yet. The banner asks whether anyone is attending, and
+// only two things answer yes: Claude is credibly busy, or a `wait` is live. Everything
+// else is absence, where the reason and the remedy are all that vary.
 const HANDOFF_GRACE_MS = 2 * 60 * 1000;
 const WORKING_GRACE_MS = 15 * 60 * 1000;
 function renderStatus(state) {
   const { status, listening, pending, session_alive } = state;
-  // Comments land in the append-only log either way; what changes is when they're read.
-  const saved = pending
-    ? ` ${pending} comment${pending === 1 ? "" : "s"} waiting.`
-    : " Your comments are saved.";
+  // The one hard fact here is the owning process. Unknown counts as alive: a page
+  // nothing claimed (interact.py run outside Claude Code) isn't an abandoned one.
+  const alive = session_alive !== false;
+  // How long the claim has gone unrefreshed. The rope is short for the status `wait`
+  // writes as it delivers, because Claude's first act on waking is its own `status` —
+  // that mark outliving minutes is a dropped pickup, not a long turn.
+  const grace = status.handoff ? HANDOFF_GRACE_MS : WORKING_GRACE_MS;
+  const quiet = Boolean(status.ts) && Date.now() - new Date(status.ts).getTime() > grace;
   let cls = "away",
     text = "",
     showAge = false;
-  if (session_alive === false && status.state !== "idle") {
-    text = `The Claude session reviewing this page has ended.${saved} Start one in the terminal to pick it up.`;
-  } else if (status.state === "working") {
-    const grace = status.handoff ? HANDOFF_GRACE_MS : WORKING_GRACE_MS;
-    if (status.ts && Date.now() - new Date(status.ts).getTime() > grace) {
-      text = `Claude last checked in ${ago(status.ts)}.${saved} Nudge it in the terminal.`;
-    } else {
-      cls = "working";
-      showAge = Boolean(status.ts);
-      text = `Claude is working${status.detail ? " — " + status.detail : ""}`;
-    }
-  } else if (status.state === "waiting" && listening) {
-    cls = "listening";
-    text = "Claude is listening — select text to comment";
-  } else if (status.state === "waiting") {
-    text = `Claude isn't watching right now.${saved} It picks them up next turn.`;
-  } else {
+  if (status.state === "idle") {
     cls = "";
     text = "Review closed";
+  } else if (alive && status.state === "working" && !quiet) {
+    cls = "working";
+    showAge = Boolean(status.ts);
+    text = `Claude is working${status.detail ? " — " + status.detail : ""}`;
+  } else if (alive && listening) {
+    cls = "listening";
+    text = "Claude is listening — select text to comment";
+  } else {
+    // Nobody is attending: say why, what's waiting, and what to do. A dead session is
+    // never coming back, a recent check-in means Claude is mid-turn, and a long silence
+    // means it lost the thread.
+    const [why, how] = !alive
+      ? [
+          "The Claude session reviewing this page has ended.",
+          "Start one in the terminal to pick it up.",
+        ]
+      : quiet
+        ? [`Claude last checked in ${ago(status.ts)}.`, "Nudge it in the terminal."]
+        : ["Claude isn't watching right now.", "It picks them up next turn."];
+    // Comments land in the append-only log either way; what changes is when they're read.
+    const held = pending
+      ? `${pending} comment${pending === 1 ? "" : "s"} waiting.`
+      : "Your comments are saved.";
+    text = `${why} ${held} ${how}`;
   }
   dot.className = "cq-dot " + cls;
   statusText.textContent = "";
