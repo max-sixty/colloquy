@@ -569,6 +569,22 @@ def test_choose_requires_an_id(page_dir):
     assert errs and "'id' is a dependency of 'choose'" in " ".join(errs)
 
 
+def test_specimen_admits_interactive_widgets(page_dir):
+    # The registry marks a specimen's content quoted; the runtime leaves the
+    # interactive widgets inside unwired. Validation is unchanged by the
+    # wrapper: nesting rules (cq-option under cq-options) still hold.
+    registry = interact.load_registry(page_dir)
+    errs = interact.fragment_errors(
+        '<cq-specimen id="sp" label="a decision">'
+        '<cq-options id="g" choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>'
+        '<cq-board id="b"><cq-column id="c" label="To do">'
+        '<cq-card id="k"><strong>Card</strong></cq-card></cq-column></cq-board>'
+        "</cq-specimen>",
+        registry,
+    )
+    assert errs == []
+
+
 def test_settling_a_decision_drops_no_ids(page_dir):
     """Retiring a settled decision is a collapse, not a deletion — which is the
     whole reason it's expressible: `check` forbids dropping an id, and the

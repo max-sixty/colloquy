@@ -15,6 +15,7 @@
 import Sortable from "/vendor/sortable.esm.js";
 import {
   once,
+  quoted,
   sendAction,
   toast,
   announce,
@@ -36,6 +37,9 @@ customElements.define(
 
     connectedCallback() {
       if (!once(this)) return;
+      // A quoted board is an exhibit: no grips, no sortable, no grip keys in
+      // the "?" overlay — it stays the static board the theme renders anyway.
+      if (quoted(this)) return;
       if (!helpRegistered) {
         helpRegistered = true;
         keyHelp("On a card grip", [

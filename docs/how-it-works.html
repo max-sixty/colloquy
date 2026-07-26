@@ -7,15 +7,8 @@
 <meta name="description" content="The mechanism behind colloquy: one uv script, an append-only event log, a background wait that ends when you comment, and a vendored theme-and-widget layer.">
 <link rel="stylesheet" href="theme.css">
 <style>
-/* Landing layer over the stock theme: specimen frames and the architecture
-   diagram. Every color and size below rides theme.css tokens. */
-.specimen { position: relative; border: 1px dashed var(--border-2);
-            border-radius: var(--r); padding: 4px 14px 14px; margin: 18px 0 6px; }
-.specimen-tag { position: absolute; top: -9px; left: 12px; padding: 0 8px;
-                background: var(--paper); font-size: var(--t-6);
-                letter-spacing: .06em; text-transform: uppercase;
-                color: var(--muted); }
-p.specimen-note { font-size: 12.5px; color: var(--muted); margin: 6px 0 20px; }
+/* Landing layer over the stock theme: the architecture diagram. Every color
+   and size below rides theme.css tokens. */
 svg.arch { display: block; margin: 20px auto; width: 100%; max-width: 720px;
            height: auto; }
 footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
@@ -134,10 +127,12 @@ reader: one that seeks approval declares
 the banner offer "✓ Looks good". The declaration versions with the document;
 without it a review is open-ended and takes comments only.</p>
 <p id="dogfood">This page is set in the plugin's own <code>theme.css</code>, and
-the widgets below are rendering in it right now, with no script involved.</p>
+the widgets below are rendering in it right now, with no script involved. Each
+sits in a <code>cq-specimen</code> — the gutter that marks quoted material — so
+an example decision never reads as one the page is asking you to make.</p>
 
-<div class="specimen" id="spec-options-frame">
-<span class="specimen-tag">live widget · cq-options</span>
+<figure>
+<cq-specimen id="spec-options-frame" label="cq-options">
 <cq-options id="spec-options">
   <cq-option id="so-rewrite" effort="high" risk="med"><strong>Rewrite the
   importer</strong> A clean slate on the new schema; the old importer keeps
@@ -149,12 +144,13 @@ the widgets below are rendering in it right now, with no script involved.</p>
   stages</strong> New fields land on the new schema while reads fall back,
   table by table.</cq-option>
 </cq-options>
-</div>
-<p class="specimen-note">A specimen decision. In a session the group takes your
-pick by click, and the next version ships with your choice marked.</p>
+</cq-specimen>
+<figcaption>In a session the group takes your pick by click, and the next
+version ships with your choice marked.</figcaption>
+</figure>
 
-<div class="specimen" id="spec-board-frame">
-<span class="specimen-tag">live widget · cq-board</span>
+<figure>
+<cq-specimen id="spec-board-frame" label="cq-board">
 <cq-board id="spec-board">
   <cq-column id="sb-incoming" label="Incoming">
     <cq-card id="sc-flaky"><strong>Flaky auth test</strong> Fails one run in
@@ -168,10 +164,10 @@ pick by click, and the next version ships with your choice marked.</p>
     <cq-card id="sc-tokens"><strong>Tokenize the palette</strong></cq-card>
   </cq-column>
 </cq-board>
-</div>
-<p class="specimen-note">A specimen triage board. In a session, cards drag
-between columns by a grip, and each drop reaches Claude as a structured
-move.</p>
+</cq-specimen>
+<figcaption>In a session, cards drag between columns by a grip, and each drop
+reaches Claude as a structured move.</figcaption>
+</figure>
 
 <p id="catalog">The committed catalog runs wider: mermaid diagrams, unified
 diffs with per-file collapse, annotated code walkthroughs, file trees,

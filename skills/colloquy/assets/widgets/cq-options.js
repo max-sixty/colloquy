@@ -32,8 +32,14 @@
  * lock, and the summary line follows whatever is chosen, including back to a
  * bare "Settled" when the reader clears it.
  *
+ * Inside a <cq-specimen> the group is quoted — exhibited, not offered — so it
+ * takes the same path as a group that never declared `choose`: the mark is a
+ * span, the click handler is never wired, and an example decision can't be
+ * answered. `settled` still collapses there, because quoting gates the action
+ * channel and not presentation.
+ *
  * Authored content is never replaced, so there is no failSoft. */
-import { once, sendAction, toast } from "/colloquy.js";
+import { once, quoted, sendAction, toast } from "/colloquy.js";
 
 const OPEN = "choose"; // the card is pickable
 const PICKED = "your pick"; // this reader picked it, this session
@@ -56,7 +62,10 @@ customElements.define(
       // worded as the document's state, not attributed to this reader.
       const honored = this.querySelector(":scope > cq-option[chosen]");
       this.#honored = honored;
-      const choosable = this.hasAttribute("choose");
+      // Quoted material is exhibited, not offered, so a specimen renders exactly
+      // like a group that was never choosable: it shows what a decision looks
+      // like without taking one.
+      const choosable = this.hasAttribute("choose") && !quoted(this);
       // Without `choose` there is nothing to press: the mark still reports the
       // document's state, as a span.
       if (choosable)

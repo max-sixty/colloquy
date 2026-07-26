@@ -91,6 +91,49 @@ SETTLED_PAGE = """<!doctype html>
 """
 
 
+# Exhibited widgets beside live ones, so a missing affordance can be pinned on the
+# quoting rather than on a broken upgrade.
+SPECIMEN_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>specimen</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">What a decision looks like</h1>
+<cq-specimen id="spec" label="a decision">
+  <cq-options id="quoted-group" choose>
+    <cq-option id="q-shim"><strong>Shim the old schema</strong> Fastest to ship.</cq-option>
+    <cq-option id="q-stage" recommended><strong>Migrate in stages</strong> Table by table.</cq-option>
+  </cq-options>
+  <cq-board id="quoted-board">
+    <cq-column id="q-col" label="Doing">
+      <cq-card id="q-card"><strong>Wire the importer</strong></cq-card>
+    </cq-column>
+  </cq-board>
+  <cq-options id="quoted-settled" choose settled>
+    <cq-option id="q-lax" chosen><strong>Lax cookie</strong> Host-only.</cq-option>
+    <cq-option id="q-bearer"><strong>Bearer header</strong> Suits mobile.</cq-option>
+  </cq-options>
+</cq-specimen>
+<cq-options id="live-group" choose>
+  <cq-option id="l-shim"><strong>Shim the old schema</strong> Fastest to ship.</cq-option>
+  <cq-option id="l-stage" recommended><strong>Migrate in stages</strong> Table by table.</cq-option>
+</cq-options>
+<cq-board id="live-board">
+  <cq-column id="l-col" label="Doing">
+    <cq-card id="l-card"><strong>Wire the importer</strong></cq-card>
+  </cq-column>
+</cq-board>
+</main>
+</body>
+</html>
+"""
+
+
 @pytest.fixture(scope="module")
 def browser():
     with sync_playwright() as p:
@@ -242,6 +285,53 @@ def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     assert page.locator("#opt-strict").is_visible(), (
         "clicking a thread's quote must open the group holding it"
     )
+    page.close()
+
+
+def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
+    """A specimen is a mention, not a use. The exhibited widgets render at full
+    fidelity — that is the whole point of showing one — but wire nothing that
+    would carry the reader's edits back, so an example decision can't be
+    answered and an example board can't be dragged. The unquoted copies on the
+    same page are the control: they prove the affordances are missing because
+    the specimen suppressed them, not because the upgrade failed.
+
+    Presentation and view state are not input, so they still run: a quoted
+    settled group collapses like any other."""
+    page, errors = open_page(browser, serve(SPECIMEN_PAGE))
+    assert errors == []
+    assert page.locator(".cq-error").count() == 0
+
+    # The exhibit rendered: the gutter's label, and cards with real size.
+    assert page.locator("#spec").evaluate(
+        "el => getComputedStyle(el, '::before').content"
+    ) == '"specimen · a decision"'
+    assert page.locator("#quoted-group cq-option").count() == 2
+    assert page.locator("#quoted-group cq-option").first.evaluate(
+        "el => Math.round(el.getBoundingClientRect().height)"
+    ) > 20
+
+    # …but takes nothing back. Nothing pressable: no grips, and no mark that is
+    # a button — an unpicked quoted card carries no mark at all, exactly as a
+    # group that never declared `choose`. A click chooses nothing either (the
+    # choose path sets `chosen` before it sends, so a pick would show here).
+    assert page.locator("#quoted-group button.cq-pick").count() == 0
+    assert page.locator("#quoted-board .cq-grip").count() == 0
+    page.locator("#q-shim").click()
+    assert page.locator("#quoted-group cq-option[chosen]").count() == 0
+
+    # The document's own state still reads: the settled group's authored pick
+    # wears its mark, as a span.
+    assert page.locator("#quoted-settled span.cq-pick").count() == 1
+
+    # The control: the same markup unquoted wires all of it.
+    assert page.locator("#live-group button.cq-pick").count() == 2
+    assert page.locator("#live-board .cq-grip").count() == 1
+
+    # View state still runs inside a specimen: the settled group collapsed.
+    assert page.locator("#quoted-settled cq-option:visible").count() == 0
+    page.locator("#quoted-settled .cq-settled").click()
+    assert page.locator("#quoted-settled cq-option:visible").count() == 2
     page.close()
 
 

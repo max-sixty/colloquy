@@ -280,6 +280,19 @@
     "x-content": "prose",
     "x-upgrade": false
   },
+  "cq-specimen": {
+    "description": "Quoted material: a region the page exhibits rather than speaks — a sample decision, a demo board, markup shown as an example. Renders as quotation: a hairline left gutter under a small-caps \"specimen\" line (`label` extends it — \"specimen · a decision\"). Content is open and renders at full fidelity, but it is a mention, not a use: interactive widgets inside are inert — a choose group takes no clicks, a board no drags. Keep the content visibly fictional. For a caption, wrap in <figure> with a <figcaption> after.",
+    "type": "object",
+    "properties": {
+      "id":    {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "label": {"type": "string"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-content": "prose",
+    "x-upgrade": false,
+    "x-example": "<figure>\n  <cq-specimen id=\"spec-gear\" label=\"a decision\">\n    <cq-options>\n      <cq-option id=\"sp-paper\" effort=\"low\" risk=\"high\"><strong>Paper maps</strong> Nothing to charge.</cq-option>\n      <cq-option id=\"sp-gps\" effort=\"med\" risk=\"low\" recommended><strong>Dedicated GPS</strong> Offline maps, week-long battery.</cq-option>\n    </cq-options>\n  </cq-specimen>\n  <figcaption>In a live page, a choose group like this takes the reader's pick by click.</figcaption>\n</figure>"
+  },
   "$idioms": {
     "description": "Recurring shapes the theme styles directly — no registry entry, no JS. Plain semantic HTML gets the theme's voice for free; these classes cover what HTML lacks an element for.",
     ".eyebrow": {

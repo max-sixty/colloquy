@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `cq-specimen`: quoted material as a first-class element. A widget or section
+  exhibited as an example — a sample decision, a demo board — wraps in one and
+  wears the quotation idiom: a hairline left gutter under a small-caps
+  "specimen" label (`label` extends it — "specimen · cq-options"), the same
+  family as blockquote's quote-bar rather than the callout's tinted field, with
+  the content rendering at full fidelity. It is a mention, not a use: the
+  interactive widgets check `quoted()` (a new runtime export) before wiring, so
+  a quoted choose group takes no clicks and a quoted board no drags. The
+  product page's page-local specimen frames cut over to it, and the skill's
+  specimen convention now names the element.
 - A decided question stops spending the page's height. `cq-options` takes
   `settled`: the group collapses to one line naming the pick, with every card
   behind a disclosure the reader can open — so a four-option block whose answer

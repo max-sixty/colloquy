@@ -352,6 +352,35 @@ cq-tabs.cq-rendered > cq-tab[hidden]:not([hidden="until-found"]) { display: none
   cq-tabs.cq-rendered > cq-tab::before { content: attr(label); }
 }
 
+/* cq-specimen: quoted material — a widget or section the page exhibits rather
+ * than speaks (a sample decision, a demo board). It wears the quotation idiom,
+ * blockquote's muted hairline gutter opened by a small-caps label — not the
+ * callout's tinted field, and not the left-accent bar that rule forbids: a
+ * quote-bar marks provenance, an accent bar demands attention. The content
+ * itself renders at full fidelity (an exhibit must show the real thing), so
+ * the gutter and label alone say "mention, not use". Input never leaves one:
+ * the interactive widgets check quoted() before wiring (cq-options.js,
+ * cq-board.js), so a quoted choose group renders as though it never declared
+ * `choose` and a quoted board stays the static board the theme already
+ * renders. */
+cq-specimen { display: block; margin: 18px 0; padding: 2px 0 2px 16px;
+              border-left: 2px solid var(--border-2); }
+cq-specimen::before { content: "specimen"; display: block; font-size: var(--t-6);
+              letter-spacing: .08em; text-transform: uppercase;
+              color: var(--muted); }
+cq-specimen[label]::before { content: "specimen · " attr(label); }
+/* A quoted choose group keeps its resting look — rings, mark strip — but none of
+ * the come-hither: no pointer cursor, no hover lift, so each card holds whatever
+ * ring it already wears. The upgrade side (quoted() in cq-options.js) renders the
+ * group as if it never declared `choose`; these keep the CSS half of the promise,
+ * since the attribute the theme keys on is still in the markup. */
+cq-specimen cq-options[choose] > cq-option { cursor: auto; }
+cq-specimen cq-options[choose] > cq-option:hover { transform: none; box-shadow: none; }
+cq-specimen cq-options[choose] > cq-option[recommended]:hover {
+              box-shadow: 0 0 0 1px var(--accent); }
+cq-specimen cq-options[choose] > cq-option[chosen]:hover {
+              box-shadow: 0 0 0 1px var(--ok); }
+
 /* Upgraded widgets: pre-upgrade presentation, so a page degrades readably. */
 cq-ref { font-family: var(--mono); font-size: 87%; }
 cq-diagram, cq-diff, cq-tree, cq-code { display: block; margin: 14px 0;

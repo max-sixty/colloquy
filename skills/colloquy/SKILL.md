@@ -121,18 +121,19 @@ $IX stop <dir>                          # stop the server; its background task e
 - **Make references clickable.** Declare the repo or tracker base once as
   `<meta name="cq-base" content="https://host/repo/blob/main/{path}#L{line}">` and
   write source references as `<cq-ref src="path/to/file.py:88"></cq-ref>`. Render
-  ticket keys, MR/PR numbers, and URLs as real `<a>` links, not plain text. In a
-  labeled specimen a fictional base is fine.
+  ticket keys, MR/PR numbers, and URLs as real `<a>` links, not plain text. Inside
+  a `<cq-specimen>` a fictional base is fine.
 - **Keep wide content inside the column** — 760px in the default theme. The comment
   layer anchors to on-screen text, so a page that scrolls sideways is hard to review.
   Give any element that can overflow (a `<pre>`, a `<table>`, an `<svg>`)
   `max-width: 100%` or `overflow-x: auto`, and size diagrams responsively rather than a
   fixed pixel width wider than the column. `check` flags fixed widths that exceed it.
-- **Show real content as evidence; label invented content as a specimen.** Prefer
+- **Show real content as evidence; quote invented content in a specimen.** Prefer
   putting the actual file contents, diff, or output behind `<details>` over
-  paraphrasing it. But an example that merely exhibits syntax or a widget must be
-  visibly fictional and labeled a specimen — real project content in an example gets
-  read as a live proposal.
+  paraphrasing it. An example that merely exhibits syntax or a widget goes in a
+  `<cq-specimen>` — its gutter and label mark the region as quoted rather than
+  spoken, and interactive widgets inside take no input — with visibly fictional
+  content: real project content in an example gets read as a live proposal.
 - **Show the destination, not the journey.** Explain the concept as it stands — total
   cut-over. Don't spend content on what was considered before or how you got here.
 - **Retire a decision once it's settled**, which is the same rule applied across

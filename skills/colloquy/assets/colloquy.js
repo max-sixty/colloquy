@@ -5,9 +5,9 @@
  * module per tag marked x-upgrade — element-widgets need no JS at all; the theme's CSS
  * renders them. Upgrades flush before the first anchor pass, so comment quotes always
  * search the enhanced DOM. Widget modules import the helper surface exported here
- * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `toast`, `announce`,
- * `keyHelp`, `reveal`, `REDUCED`, `SCROLL`); it stays minimal until a real widget
- * needs more.
+ * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `quoted`, `toast`,
+ * `announce`, `keyHelp`, `reveal`, `pageScroller`, `REDUCED`, `SCROLL`); it stays
+ * minimal until a real widget needs more.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
  * through it as an `action` event — sendAction posts it, `wait` delivers it, and the
@@ -110,6 +110,16 @@ export function refUrl(path, line) {
 // this instead.
 export const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 export const SCROLL = REDUCED ? "instant" : "smooth";
+
+// Mention, not use: a widget inside <cq-specimen> is quoted material. An
+// interactive widget consults this before wiring anything that would carry
+// input back (cq-options' choose path, cq-board's grips and drags), so an
+// exhibit never takes the reader's edits. Presentational upgrades and view
+// state run regardless — a quoted diagram still renders, a quoted settled
+// group still collapses.
+export function quoted(el) {
+  return el.closest("cq-specimen") !== null;
+}
 
 // The element the document scrolls: body, not the viewport (see the stylesheet below,
 // and Scrolling in the module header). Anything that reads a reading position, sets
