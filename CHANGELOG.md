@@ -26,9 +26,15 @@
   hooks close it: `Stop` refuses to end a turn that leaves one of the session's pages
   `waiting` under no live watcher, or holding events Claude never picked up;
   `UserPromptSubmit` surfaces those events at the next prompt; `SessionEnd` idles the
-  session's pages and stops their servers. Every command tags its page with
-  `CLAUDE_CODE_SESSION_ID`, so a hook only ever acts on its own session's pages, and a
-  page nothing has claimed (interact.py run outside Claude Code) is left alone.
+  session's pages and stops their servers. `serve` and `wait` tag the page with
+  `CLAUDE_CODE_SESSION_ID` — exposing a page to a browser and listening on one are the
+  acts that put a session behind a review — so a hook only ever acts on pages its own
+  session has actually put in front of someone: a directory built and linted to test
+  the widget layer isn't one, and neither is a page nothing has claimed (interact.py
+  run outside Claude Code). Unread events are the one thing `status idle` can't close
+  over: a review that ends on comments nobody read is the failure the guard exists to
+  catch, so the command refuses and points at `wait`, which returns at once when
+  events are already waiting.
 - The banner no longer takes `status.json` at face value. A claim never expires on its
   own, so "Claude is working" outlives the session that wrote it and reads exactly like
   a busy agent. `/api/state` now carries what the directory can prove beside the

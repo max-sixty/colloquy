@@ -208,7 +208,11 @@ Between turns a page is either watched or idle, and a `Stop` hook holds you to i
 ending a turn with a page still `waiting` under no live `wait`, or holding events you
 never picked up, is blocked and names the page. The invariant is what the reviewer is
 owed — from the browser, a page nobody is listening to looks exactly like a page whose
-reviewer simply hasn't commented yet, so without it they find out by asking. `wait`
+reviewer simply hasn't commented yet, so without it they find out by asking. It covers
+the pages you `serve` or `wait` on, the two acts that put a reviewer on the other end,
+so a directory you only built or linted is outside it. `status idle` ends a review and
+so refuses while events sit unread: pick them up first with `wait`, which returns at
+once when events are already there. `wait`
 also restarts a server that died under it and reports the restart on stderr; exit 2
 means it couldn't, and the page stays down until `serve`.
 

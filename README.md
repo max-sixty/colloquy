@@ -138,7 +138,10 @@ examples in a real browser and asserts what a static lint can't reach: every wid
 upgrades into a box with usable size, the document and the comment panel scroll in
 separate regions, and the comment box grows without any script sizing it. Playwright
 attaches to the Chrome already installed (`channel="chrome"`), so there is no browser
-download and still no build step.
+download and still no build step. Driving a page by hand to check a change works the
+same way: `init` the directory, then serve it from `interact.Handler` in-process as the
+fixtures do. `serve` instead puts a live review behind the session, and the review-loop
+hooks then hold it to watching that page.
 
 ```
 uv run --with pytest --with click --with jsonschema --with playwright python -m pytest tests

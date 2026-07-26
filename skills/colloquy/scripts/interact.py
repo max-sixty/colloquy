@@ -44,9 +44,11 @@ The `hook` command closes the same gap from the agent's side. Registered on
 Stop, UserPromptSubmit and SessionEnd, it refuses to let a turn end with one of
 this session's pages unwatched, surfaces undelivered comments at the next
 prompt, and idles the pages and stops their servers when the session exits. It
-finds them through ~/.claude/colloquy/.sessions/<session id>.json, which every
-command writes from CLAUDE_CODE_SESSION_ID — absent that (interact.py run
-outside Claude Code), nothing is claimed and the hooks stand down.
+finds them through ~/.claude/colloquy/.sessions/<session id>.json, which `serve`
+and `wait` write from CLAUDE_CODE_SESSION_ID — absent that (interact.py run
+outside Claude Code), nothing is claimed and the hooks stand down. Undelivered
+events are the one thing `status idle` can't close over: idling is how a review
+ends, and a review can't end on comments nobody read.
 
 `init` vendors the runtime, theme, registry, widgets, and vendor assets into the
 page directory, overlaying per file by precedence: colloquy's shipped defaults,
@@ -245,7 +247,14 @@ def claim_page(page_dir: Path) -> None:
     both directions: the page names its session (so the server can see when that
     session is gone), the session lists its pages (so the hooks can find them
     wherever they live). Claude Code puts the id and its pid in the environment
-    of every Bash tool call, so this needs no cooperation from the agent."""
+    of every Bash tool call, so this needs no cooperation from the agent.
+
+    `serve` and `wait` claim; nothing else does. The claim tracks the watch
+    obligation the hooks enforce: `serve` puts the page in front of a reviewer
+    and so incurs it, `wait` takes it up. Authoring — `init`, `check`, `note`,
+    `reply` — neither incurs the obligation nor discharges it, so a directory a
+    session only wrote to, like a throwaway page for testing the widget layer,
+    owes nobody a watcher."""
     sid, pid = os.environ.get("CLAUDE_CODE_SESSION_ID"), os.environ.get("CLAUDE_PID")
     if not sid or not pid:
         return
@@ -424,11 +433,11 @@ def cmd_init(page_dir: Path) -> None:
                     (page_dir / sub / src.name).write_bytes(src.read_bytes())
     if not (page_dir / "status.json").exists():
         cmd_status(page_dir, "working", "Writing the page")
-    claim_page(page_dir)  # resolve_dir couldn't: the directory didn't exist yet
     print(f"initialized {page_dir}")
 
 
 def cmd_serve(page_dir: Path) -> None:
+    claim_page(page_dir)
     existing = running_server(page_dir)
     if existing:
         print(existing["url"], flush=True)
@@ -485,6 +494,7 @@ def revive_server(page_dir: Path) -> bool:
 
 
 def cmd_wait(page_dir: Path) -> int:
+    claim_page(page_dir)
     cursor = (read_json(page_dir / "cursor.json") or {}).get("seq", 0)
     server_check_at = 0.0
     revived = False
@@ -1189,10 +1199,6 @@ def resolve_dir(dir_arg: str, must_exist: bool = True) -> Path:
     page_dir = Path(dir_arg).expanduser().resolve()
     if must_exist and not page_dir.is_dir():
         sys.exit(f"{page_dir} does not exist; run `init` first")
-    if page_dir.is_dir():
-        # Every command naming a page is this session working on it — the one
-        # place that's true, so the claim goes here rather than in each command.
-        claim_page(page_dir)
     return page_dir
 
 
@@ -1224,7 +1230,18 @@ def serve(dir: str) -> None:
 @click.argument("detail", required=False, default="")
 def status(dir: str, state: str, detail: str) -> None:
     """Declare Claude's state for the banner."""
-    cmd_status(resolve_dir(dir), state, detail)
+    page_dir = resolve_dir(dir)
+    # Idling over undelivered events ends the review on a reviewer still owed an
+    # answer. Here rather than in cmd_status because SessionEnd idles pages whose
+    # session is already gone, where nothing is left to pick them up.
+    pending = full_state(page_dir)["pending"] if state == "idle" else 0
+    if pending:
+        sys.exit(
+            f"{pending} user event{'s' if pending != 1 else ''} nobody has picked up; "
+            "idling closes the review over them. `wait` prints them and returns at "
+            "once when events are already waiting."
+        )
+    cmd_status(page_dir, state, detail)
 
 
 @cli.command()

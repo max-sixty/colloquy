@@ -12,7 +12,7 @@ their servers.
 The decision lives in interact.py, which owns the page-directory model. This
 script exists to keep the common case cheap: it fires on every turn of every
 session that has the plugin installed, so it checks whether this session has
-touched a colloquy page at all before paying for a `uv run`.
+served or watched a colloquy page at all before paying for a `uv run`.
 
 Anything unexpected — missing session file, a broken interact.py, a timeout —
 falls through silently and the turn proceeds. A Stop hook is the worst possible

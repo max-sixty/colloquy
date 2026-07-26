@@ -484,6 +484,49 @@ def test_prompt_hook_surfaces_comments_claude_never_picked_up(claimed, capsys):
     assert capsys.readouterr().out == ""
 
 
+def test_only_serving_or_watching_a_page_puts_the_session_under_the_guard(
+    page_dir, monkeypatch, capsys
+):
+    """Verifying a change to the page layer means driving throwaway pages, and the
+    guard must not read a handful of test fixtures as a handful of abandoned
+    reviews. A directory this session only built and linted was handed to nobody.
+    Listening on one is what puts a reviewer on the other end, and from there the
+    guard holds the session to it."""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "s7")
+    monkeypatch.setenv("CLAUDE_PID", str(os.getpid()))
+    assert check(page_dir).exit_code == 0
+    assert CliRunner().invoke(interact.cli, ["catalog", str(page_dir)]).exit_code == 0
+    assert interact.session_pages("s7") == []
+    # `init` left the page "working", which is the state the guard blocks on — but
+    # only for a page some session answers for, and none does.
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s7"})
+    assert capsys.readouterr().out == ""
+
+    interact.append_event(page_dir, {"kind": "comment", "author": "user", "text": "hi"})
+    assert CliRunner().invoke(interact.cli, ["wait", str(page_dir)]).exit_code == 0
+    assert interact.session_pages("s7") == [page_dir.resolve()]
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s7"})
+    assert "no watcher" in json.loads(capsys.readouterr().out)["reason"]
+
+
+def test_idle_cannot_close_a_review_over_events_nobody_read(claimed, capsys):
+    """`status idle` is the way out of the guard's other case, so it reads as the
+    way out of this one too. The events are the reviewer's: a page idled over them
+    ends the review on someone still waiting for an answer, and from the browser
+    that looks exactly like a review that ran its course."""
+    interact.append_event(claimed, {"kind": "comment", "author": "user", "text": "hi"})
+    refused = CliRunner().invoke(interact.cli, ["status", str(claimed), "idle"])
+    assert refused.exit_code == 1
+    assert "1 user event nobody has picked up" in refused.output
+    assert interact.read_json(claimed / "status.json")["state"] != "idle"
+
+    # `wait` is the way through, and it returns at once when events already wait.
+    assert CliRunner().invoke(interact.cli, ["wait", str(claimed)]).exit_code == 0
+    assert CliRunner().invoke(interact.cli, ["status", str(claimed), "idle"]).exit_code == 0
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
+    assert capsys.readouterr().out == ""
+
+
 def test_session_end_idles_the_page_and_stops_its_server(claimed):
     assert interact.revive_server(claimed)  # a real detached server to clean up
     interact.cmd_status(claimed, "waiting", "")
