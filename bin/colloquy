@@ -1,0 +1,17 @@
+#!/bin/sh
+# The one entry point. Claude Code appends every enabled plugin's bin/ to PATH, so
+# the skill's examples can be this command verbatim — no path for the agent to
+# resolve, and no shell-specific variable expansion to get wrong.
+#
+# `check --render` is the one subcommand that needs Playwright. Declaring it in the
+# script's PEP 723 header would put its wheel behind every serve, wait, and note, so
+# it is supplied here, on the one invocation that opens a browser.
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+script=$root/skills/colloquy/scripts/interact.py
+
+for arg in "$@"; do
+  if [ "$arg" = "--render" ]; then
+    exec uv run --with playwright "$script" "$@"
+  fi
+done
+exec uv run "$script" "$@"

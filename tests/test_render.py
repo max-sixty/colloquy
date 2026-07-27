@@ -314,6 +314,39 @@ def test_check_render_refuses_what_only_a_browser_can_see(serve):
     assert "scrolls sideways" in broken.stderr
 
 
+UNPARSEABLE_DIAGRAM = LONG_PAGE.replace(
+    "</main>",
+    "<cq-diagram id='d-broken'>\nflowchart LR\n  A[Start --&gt; B{{{ ]]] broken\n</cq-diagram>\n</main>",
+)
+
+
+def test_the_shim_runs_the_gate_from_anywhere(serve, tmp_path):
+    """`colloquy` is what the skill hands an agent, so the shim's own resolution
+    is load-bearing: it finds the script from its location rather than the cwd,
+    and on `--render` it supplies the Playwright the PEP 723 header deliberately
+    omits. Running it from an unrelated directory exercises both.
+
+    The version under it carries a mermaid body that doesn't parse — a shape the
+    static lint cannot reach, since it validates the element and never the
+    notation inside it. The widget fails soft and the browser half is what sees
+    the error box, which is why the gate is worth its couple of seconds."""
+    serve(UNPARSEABLE_DIAGRAM)
+    d = serve.page_dir
+    assert CliRunner().invoke(interact.cli, ["check", str(d)]).exit_code == 0
+
+    shim = Path(__file__).parent.parent / "bin" / "colloquy"
+    run = subprocess.run(
+        [str(shim), "check", str(d), "--render"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert run.returncode == 1, run.stdout + run.stderr
+    # "needs Playwright" here would mean the shim dispatched the plain `uv run`.
+    assert "failed soft" in run.stderr and "Parse error" in run.stderr
+
+
 def test_page_and_panel_scroll_in_separate_regions(browser, serve):
     """The document scrolls its own column, not the viewport. If it scrolled the
     viewport, its scrollbar would be drawn at the window's right edge — over the
