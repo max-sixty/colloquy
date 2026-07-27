@@ -41,9 +41,8 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-from playwright.sync_api import expect, sync_playwright
-
 from conftest import interact
+from playwright.sync_api import expect, sync_playwright
 
 EXAMPLES = sorted((Path(__file__).parent.parent / "examples").glob("*.html"))
 assert EXAMPLES, "no examples found — parametrizing over an empty list tests nothing"
@@ -259,9 +258,9 @@ def serve(tmp_path, monkeypatch):
         httpd.shutdown()
 
 
-def open_page(browser, url, scheme="light"):
+def open_page(browser, url):
     """A page with its console errors collected, settled enough for mermaid."""
-    page = browser.new_page(viewport={"width": 1200, "height": 900}, color_scheme=scheme)
+    page = browser.new_page(viewport={"width": 1200, "height": 900}, color_scheme="light")
     errors = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -273,36 +272,46 @@ def open_page(browser, url, scheme="light"):
     return page, errors
 
 
-@pytest.mark.parametrize("scheme", ["light", "dark"])
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
-def test_example_renders(browser, serve, example, scheme):
-    """Every shipped example loads clean and lays out: no fail-soft error box, no
-    console error, and every visible widget occupies real space. A widget that
-    upgrades into a 1x1 box is the shape of failure a static lint cannot see.
-    Both color schemes: the dark theme is real CSS nobody otherwise renders."""
-    page, errors = open_page(browser, serve(example.read_text()), scheme)
+def test_example_renders(browser, serve, example):
+    """Every shipped example loads clean and lays out, in both color schemes: no
+    fail-soft error box, no console error, every visible widget occupies real
+    space, no sideways scroll. A widget that upgrades into a 1x1 box is the
+    shape of failure a static lint cannot see. The invariants themselves live in
+    interact.render_version — the pass `check --render` runs on agent-authored
+    pages — so this sweep also proves the gate a reviewer's page goes through."""
+    assert interact.render_version(browser, serve(example.read_text())) == []
 
-    assert page.locator(".cq-error").count() == 0, page.locator(".cq-error").all_inner_texts()
-    assert errors == []
 
-    # [hidden] needs its own exclusion: hidden="until-found" (what a closed tab
-    # wears) resolves to content-visibility, which checkVisibility reports as
-    # visible while the box measures zero. That collapse is the point of a closed
-    # tab; the collapse being hunted here is the one nothing asked for.
-    tiny = page.evaluate("""() => [...document.querySelectorAll('*')]
-        .filter(el => el.tagName.toLowerCase().startsWith('cq-')
-                   && el.textContent.trim()
-                   && el.checkVisibility()
-                   && !el.closest('[hidden]'))
-        .map(el => ({ tag: el.tagName.toLowerCase(), id: el.id,
-                      w: Math.round(el.getBoundingClientRect().width),
-                      h: Math.round(el.getBoundingClientRect().height) }))
-        .filter(box => box.w < 40 || box.h < 10)""")
-    assert tiny == [], f"widgets rendered with no usable size: {json.dumps(tiny)}"
+def test_check_render_refuses_what_only_a_browser_can_see(serve):
+    """`check --render` end to end, as the agent runs it: the static lint passes
+    both of these versions, and only the one that renders clean may reach a
+    reviewer. The broken version is deliberately unnoted — refusing it before
+    `note` publishes it is the gate's whole job, so the preview server has to
+    expose what no reviewer-facing server would."""
+    serve(LONG_PAGE)
+    d = serve.page_dir
 
-    overflow = page.evaluate("document.body.scrollWidth - document.body.clientWidth")
-    assert overflow <= 0, f"page scrolls sideways by {overflow}px"
-    page.close()
+    def gate(*args):
+        return subprocess.run(
+            [sys.executable, str(interact.__file__), "check", str(d), "--render", *args],
+            capture_output=True,
+            text=True,
+            check=False,  # both exit codes are the subject
+        )
+
+    ok = gate()
+    assert ok.returncode == 0, ok.stderr
+    assert "renders clean" in ok.stdout
+
+    # A vw width slips the static lint (which counts only px) and overflows only
+    # in a layout engine.
+    (d / "versions" / "v002.html").write_text(
+        LONG_PAGE.replace("</main>", "<div style='width:150vw'>wide</div>\n</main>")
+    )
+    broken = gate("--version", "2")
+    assert broken.returncode == 1
+    assert "scrolls sideways" in broken.stderr
 
 
 def test_page_and_panel_scroll_in_separate_regions(browser, serve):
@@ -545,7 +554,6 @@ def test_composer_marks_the_passage_it_is_quoting(browser, serve):
     with the box, and the whole time it never touches the document."""
     url = serve(INLINE_PAGE)
     page, errors = open_page(browser, url)
-    pristine = page.locator("#p").inner_html()
 
     page.locator("#p").click(click_count=3)  # a real selection, spanning the inline tags
     page.locator(".cq-fab").click()

@@ -87,14 +87,23 @@ comments stay plain text.
 Commands:
     init serve status wait reply note events stop check catalog export
 
-`check` is a deterministic pre-handover lint (no browser, never renders): the
-HTML parses with balanced tags; the page carries exactly one external script
-(<script type="module" src="/colloquy.js">) and one stylesheet link
-(/theme.css); every cq-* element validates against the vendored registry
-(schema, nesting, no self-closing form); every cq-* meta is a known page
-declaration with an allowed value; ids are unique and every anchor id
+`check` is a deterministic pre-handover lint (no browser, near-free — `note`
+re-runs it on every version): the HTML parses with balanced tags; the page
+carries exactly one external script (<script type="module" src="/colloquy.js">)
+and one stylesheet link (/theme.css); every cq-* element validates against the
+vendored registry (schema, nesting, no self-closing form); every cq-* meta is a
+known page declaration with an allowed value; ids are unique and every anchor id
 from the previous version survives; no fixed-pixel-width element is wider than
 the readable column.
+
+`check --render` adds the browser half, run once before a page's URL is first
+handed over: the version loads in the machine's installed Chrome (Playwright
+`channel="chrome"` — the caller supplies playwright via
+`uv run --with playwright`) and the render invariants the static lint cannot
+reach run against it — no console or page errors, no fail-soft error box, every
+visible widget occupies real space, no sideways scroll, in both color schemes.
+The invariants live in render_version, which tests/test_render.py drives over
+the shipped examples, so the gate and the suite cannot drift apart.
 """
 
 import errno
@@ -105,6 +114,7 @@ import secrets
 import signal
 import subprocess
 import sys
+import threading
 import time
 import zlib
 from datetime import datetime
@@ -314,6 +324,18 @@ def full_state(page_dir: Path) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     page_dir = None  # set before serving
+    # The render gate previews a version before its `note` publishes it —
+    # refusing the note is the gate's whole job. Set to that version's name, the
+    # handler exposes on-disk versions up to it, previewed one included as
+    # latest, so the runtime neither 404s the preview nor follows the published
+    # latest away from it mid-check. None — every server a reviewer reaches —
+    # exposes noted versions only.
+    preview_upto = None
+
+    def versions_live(self):
+        if self.preview_upto is None:
+            return published_versions(self.page_dir)
+        return [n for n in list_versions(self.page_dir) if n <= self.preview_upto]
 
     def log_message(self, *args):
         pass
@@ -332,7 +354,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
         if path == "/":
-            versions = published_versions(self.page_dir)
+            versions = self.versions_live()
             if not versions:
                 self._json({"error": "no published versions yet"}, 404)
                 return
@@ -343,7 +365,9 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         if path == "/api/state":
-            self._json(full_state(self.page_dir))
+            # versions through the handler's own view, so a preview server's
+            # state agrees with what it serves (identical when not previewing).
+            self._json({**full_state(self.page_dir), "versions": self.versions_live()})
             return
         # Browsers ask for this unprompted. Answering "no content" rather than
         # letting it fall through to 404 keeps the console clean, which is what
@@ -352,9 +376,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(204, "image/x-icon", b"")
             return
         if SERVED_PATH.fullmatch(path):
-            if path.startswith("/versions/") and Path(path).name not in published_versions(
-                self.page_dir
-            ):
+            if path.startswith("/versions/") and Path(path).name not in self.versions_live():
                 self._json({"error": "not published yet — `note` the version first"}, 404)
                 return
             file = self.page_dir / path.lstrip("/")
@@ -633,7 +655,7 @@ def cmd_export(page_dir: Path) -> None:
     versions = list_versions(page_dir)
     title = ""
     if versions:
-        m = re.search(r"<title>(.*?)</title>", (page_dir / "versions" / versions[-1]).read_text(encoding="utf-8"), re.S)
+        m = re.search(r"<title>(.*?)</title>", (page_dir / "versions" / versions[-1]).read_text(encoding="utf-8"), re.DOTALL)
         title = m.group(1).strip() if m else ""
     print(f"## Review: {title or page_dir.name}")
 
@@ -1098,7 +1120,7 @@ def fragment_errors(html: str, registry: dict) -> list:
     return errors
 
 
-def cmd_check(page_dir: Path, version) -> int:
+def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     versions = list_versions(page_dir)
     if not versions:
         sys.exit(f"no versions in {page_dir / 'versions'}; write versions/v001.html first")
@@ -1193,6 +1215,128 @@ def cmd_check(page_dir: Path, version) -> int:
     print(
         f"✓ {name}: parses, widgets validate, one module script + theme link, "
         f"ids carried over, nothing overflows the {column}px column"
+    )
+    # Render only what passed the static half: an unparseable page would drown
+    # the browser's report in consequences of what the lint already named.
+    return render_check(page_dir, name) if render else 0
+
+
+# ---------- check --render: the browser half of the gate ----------
+
+RENDER_VIEWPORT = {"width": 1200, "height": 900}
+
+
+def render_version(browser, url: str) -> list:
+    """Everything wrong with a served version that only a browser can see: a
+    console or page error, a request that 404s, a fail-soft error box, a widget
+    upgraded into a box of no usable size, the page scrolling sideways — each in
+    both color schemes, because the dark theme is real CSS nobody otherwise
+    renders. Returns human-readable failures; [] is a pass.
+
+    One implementation with two callers — `check --render` on the page an agent
+    just wrote, and the render suite on the shipped examples
+    (tests/test_render.py) — so the gate and the suite hold one set of
+    invariants. `browser` is a live Playwright browser; nothing here imports
+    playwright at module level, so the module stays importable without it."""
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    def in_scheme(scheme):
+        page = browser.new_page(viewport=RENDER_VIEWPORT, color_scheme=scheme)
+        errors = []
+        page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        # The console's own word for a bad response is "Failed to load resource",
+        # which names nothing; carry the status and URL so a failure says what
+        # went missing.
+        page.on("response", lambda r: errors.append(f"{r.status} {r.url}") if r.status >= 400 else None)
+        try:
+            page.goto(url, wait_until="networkidle")
+            page.wait_for_function("() => document.querySelector('.cq-banner') !== null")
+        except PlaywrightTimeout:
+            page.close()
+            return [
+                f"[{scheme}] the runtime never injected its banner — "
+                + ("; ".join(errors) or "and no console error explains why")
+            ]
+        failsoft = page.evaluate(
+            "[...document.querySelectorAll('.cq-error')].map(e => e.textContent.trim())"
+        )
+        # [hidden] needs its own exclusion: hidden="until-found" (what a closed
+        # tab wears) resolves to content-visibility, which checkVisibility
+        # reports as visible while the box measures zero. That collapse is the
+        # point of a closed tab; the collapse being hunted here is the one
+        # nothing asked for.
+        tiny = page.evaluate("""() => [...document.querySelectorAll('*')]
+            .filter(el => el.tagName.toLowerCase().startsWith('cq-')
+                       && el.textContent.trim()
+                       && el.checkVisibility()
+                       && !el.closest('[hidden]'))
+            .map(el => ({ tag: el.tagName.toLowerCase(), id: el.id,
+                          w: Math.round(el.getBoundingClientRect().width),
+                          h: Math.round(el.getBoundingClientRect().height) }))
+            .filter(box => box.w < 40 || box.h < 10)""")
+        overflow = page.evaluate("document.body.scrollWidth - document.body.clientWidth")
+        page.close()
+        found = [f"[{scheme}] console: {e}" for e in errors]
+        found += [f"[{scheme}] a widget failed soft: {t}" for t in failsoft]
+        if tiny:
+            found.append(f"[{scheme}] widgets rendered with no usable size: {json.dumps(tiny)}")
+        if overflow > 0:
+            found.append(f"[{scheme}] the page scrolls sideways by {overflow}px")
+        return found
+
+    return [*in_scheme("light"), *in_scheme("dark")]
+
+
+def render_check(page_dir: Path, name: str) -> int:
+    """Serve the page directory to the machine's installed Chrome and run the
+    render invariants on this version.
+
+    Playwright is the gate's own extra, not the script's: declaring it in the
+    PEP 723 header would put its wheel in every `serve`, `wait`, and `note`, so
+    the import happens here and its absence names the invocation that supplies
+    it. Chrome being absent is different — the machine's fact, not the
+    command's, and the reviewer may well hold another browser — so the gate says
+    loudly that it couldn't look and lets the static result stand."""
+    try:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print(
+            "check --render needs Playwright; run it as\n"
+            "  uv run --with playwright interact.py check --render <dir>",
+            file=sys.stderr,
+        )
+        return 1
+    handler = type("PreviewHandler", (Handler,), {"page_dir": page_dir, "preview_upto": name})
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.launch(channel="chrome")
+            except PlaywrightError as e:
+                print(
+                    f"⚠ render check skipped — Chrome didn't launch ({str(e).strip().splitlines()[0]}). "
+                    "The static checks stand; the page goes out unrendered.",
+                    file=sys.stderr,
+                )
+                return 0
+            try:
+                url = f"http://127.0.0.1:{httpd.server_address[1]}/versions/{name}"
+                failures = render_version(browser, url)
+            finally:
+                browser.close()
+    finally:
+        httpd.shutdown()
+    if failures:
+        print(f"✗ {name}: renders broken — {len(failures)} issue(s)", file=sys.stderr)
+        for f in failures:
+            print(f"  - {f}", file=sys.stderr)
+        return 1
+    print(
+        f"✓ {name}: renders clean in Chrome, light and dark — no console errors, "
+        "every widget takes space, no sideways scroll"
     )
     return 0
 
@@ -1298,9 +1442,14 @@ def hook() -> None:
 @cli.command()
 @click.argument("dir")
 @click.option("--version", type=int, default=None, help="version to check (default: latest)")
-def check(dir: str, version: int) -> None:
-    """Deterministic pre-handover lint of a version."""
-    sys.exit(cmd_check(resolve_dir(dir), version))
+@click.option(
+    "--render",
+    is_flag=True,
+    help="also render the version in the installed Chrome (invoke via uv run --with playwright)",
+)
+def check(dir: str, version: int, render: bool) -> None:
+    """Deterministic pre-handover lint of a version; --render adds the browser half."""
+    sys.exit(cmd_check(resolve_dir(dir), version, render))
 
 
 @cli.command()

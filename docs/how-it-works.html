@@ -209,7 +209,10 @@ scaffold is exactly the theme link and the runtime module, every
 head's <code>cq-*</code> metas, ids stay unique
 and every comment anchor from the previous version survives, and nothing is
 wider than the readable column. The changelog note re-runs the lint and refuses
-a failing version, so an open browser never sees one.</p>
+a failing version, so an open browser never sees one. Before a page's URL first
+goes out, <code>check --render</code> also loads it in the machine's own Chrome
+and refuses what only a layout engine can see — a console error, a widget
+rendered into a box of no size, a sideways scroll — in both color schemes.</p>
 </section>
 
 <section id="local">

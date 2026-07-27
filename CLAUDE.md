@@ -136,5 +136,7 @@ and outside clicks hide, they don't discard. Cancel is the only discard.
 - **Measure before optimising and before assuming.** The cost claims in this codebase came
   from timing the real thing on `examples/gallery.html`, not from reasoning.
 - **`check` runs on every version** and refuses one whose changelog `note` would publish a
-  failing page. It's near-free and deterministic; keep it that way, and put anything
-  needing a browser in the render suite instead.
+  failing page. It's near-free and deterministic; keep it that way. The browser lives in
+  `check --render`, run once per page at handover: its invariants are `render_version`,
+  which `test_example_renders` drives over the shipped examples — one implementation, so
+  the gate a reviewer's page passes and the suite the examples pass cannot drift.

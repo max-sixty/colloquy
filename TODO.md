@@ -95,11 +95,6 @@ stands alone.
       assert the PDF paginates); keyboard bindings (assert colloquy leaves the
       browser's scroll keys alone, not that Chrome scrolls); and the narrow
       viewport, once the covering-layout scrollbar item above is settled.
-- [ ] `check --render`: run the render invariants against agent-authored pages
-      at handover, not only the shipped examples — the suite currently protects
-      colloquy's developers, not the reviewer of a fresh page. A product
-      decision, not just a test: it puts Playwright and Chrome in the handover
-      path, where `uv` is today the whole prerequisite story.
 - [ ] cq-board is flat to assistive tech: columns don't group or label their
       cards (the ARIA snapshot shows bare text runs), so a screen reader hears
       seven cards and seven Move buttons with no column boundaries — and the

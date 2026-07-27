@@ -55,9 +55,10 @@ $IX stop <dir>                          # stop the server; its background task e
    and a live server is reused, so the URL survives restarts.
 4. `check`, then `note` the version — the server exposes a version only once its note
    lands, and `note` re-runs `check` and refuses a failing version, so a half-written or
-   broken file is never live in the reviewer's browser. Then hand the user the URL with
-   a one-line orientation (select text to comment; on a sign-off page, "✓ Looks good"
-   approves) and enter the review loop.
+   broken file is never live in the reviewer's browser. Before the URL first goes out,
+   run the browser half too: `check --render` (see "Check before handing over"). Then
+   hand the user the URL with a one-line orientation (select text to comment; on a
+   sign-off page, "✓ Looks good" approves) and enter the review loop.
 
 ## Page conventions
 
@@ -251,6 +252,19 @@ self-closing form); ids are unique and every anchor id from the previous version
 survives; nothing has a fixed pixel width wider than the column. It exits non-zero and
 lists what to fix.
 
+Once before the page's URL first goes to the user, add the browser half:
+
+```bash
+uv run --with playwright "${CLAUDE_SKILL_DIR}/scripts/interact.py" check --render <dir>
+```
+
+It loads the version in the machine's installed Chrome (a couple of seconds, and works
+before the version is noted) and fails on what the static lint can't see: a console
+error, a widget upgraded into a box of no size, a page that scrolls sideways — in both
+color schemes. `--with playwright` supplies the gate's one extra dependency; when
+Chrome itself isn't installed, the gate says so on stderr and lets the static result
+stand rather than blocking the hand-over.
+
 Then read the page once against this checklist:
 
 - **Claims backed.** Every assertion the reader would question is traceable to real
@@ -265,5 +279,5 @@ Then read the page once against this checklist:
 
 If browser tools are available **and** the page has diagrams, render the served URL and
 take one screenshot to confirm the diagrams aren't clipped — a single shot, not a
-scroll-through. Without browser tools, `check` plus the first user comment are the safety
-net; skip it.
+scroll-through. Without browser tools, `check --render` plus the first user comment are
+the safety net; skip it.
