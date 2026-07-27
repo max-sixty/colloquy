@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release notes: 3.2 — drafts for review</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<p class="eyebrow">release 3.2</p>
+<h1>Release notes, drafted</h1>
+<p class="lede" id="rn-lede">Three notes cover everything user-visible in 3.2. Each is a
+draft you own: double-click one (or its ✎) and rewrite it until it reads right — the
+exact wording reaches me, and the next version of this page carries it. When the set
+reads well, sign off; if a note shouldn't ship at all, say so in a comment.</p>
+
+<section id="rn-cli-section">
+<h2>CLI</h2>
+<cq-draft id="rn-cli">
+Adds --dry-run to every mutating command. Running without it is unchanged, so
+existing scripts keep working.
+</cq-draft>
+</section>
+
+<section id="rn-api-section">
+<h2>API</h2>
+<p id="rn-api-why">Kept deliberately dry — the Sunset header does the announcing, and
+the migration guide carries the detail.</p>
+<cq-draft id="rn-api">
+Deprecates the v1 auth header. It keeps working until the next major, and the
+server now sets a Sunset header on every v1 response.
+</cq-draft>
+</section>
+
+<section id="rn-ops-section">
+<h2>Operations</h2>
+<p id="rn-ops-why">The minute figure is from staging (1.1M rows) — rounded rather than
+promised.</p>
+<cq-draft id="rn-migration">
+Run the schema migration before deploying. It is online and takes about a
+minute on a million rows.
+</cq-draft>
+</section>
+
+<section id="rn-omitted">
+<h2>Left out on purpose</h2>
+<p id="rn-omitted-body">The dependency bumps and the flaky-test fixes stay in the
+changelog only — nothing a user would change behavior over. If one of them deserves a
+note after all, say so in a comment and a draft for it arrives in the next version.</p>
+</section>
+
+</main>
+</body>
+</html>

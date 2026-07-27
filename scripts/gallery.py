@@ -25,6 +25,7 @@ TABS = [
     ("pr-walkthrough", "PR walkthrough"),
     ("status-report", "Status report"),
     ("triage-board", "Triage board"),
+    ("release-notes", "Release notes"),
     ("parallel-workstreams", "Parallel workstreams"),
 ]
 

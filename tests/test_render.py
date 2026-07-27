@@ -1007,10 +1007,14 @@ def test_a_diff_anchors_to_the_side_it_was_read_on(browser, serve):
     page.close()
 
 
-# The journey's page: a passage to comment on and a board to drag. In v2 the
-# commented paragraph moves below the notes heading — same text, new position —
-# so the anchor has to re-find its passage rather than replay a location.
+# The journey's page: a passage to comment on, a board to drag, and a draft to
+# edit. In v2 the commented paragraph moves below the notes heading — same text,
+# new position — so the anchor has to re-find its passage rather than replay a
+# location. The draft's source lines are indented like any other child content;
+# the widget owes the reviewer the text without them.
 SENTENCE = "The version stamp never lands, so migration 0041 replays on every deploy."
+DRAFT_TEXT = "Run the migration before deploying.\nIt is online."
+DRAFT_EDITED = "Run the migration before deploying. It takes about a minute."
 JOURNEY_SCAFFOLD = """<!doctype html>
 <html lang="en">
 <head>
@@ -1029,6 +1033,10 @@ JOURNEY_SCAFFOLD = """<!doctype html>
   </cq-column>
   <cq-column id="col-done" label="Done"></cq-column>
 </cq-board>
+<cq-draft id="draft-ops">
+    Run the migration before deploying.
+    It is online.
+</cq-draft>
 <h2 id="notes">Notes</h2>
 {after}
 </main>
@@ -1042,10 +1050,11 @@ JOURNEY_V2 = JOURNEY_SCAFFOLD.format(before="<p id='p-filler'>Filler.</p>", afte
 
 def test_review_round_trip(browser, serve):
     """The loop the product is, driven through the real UI: select a passage and
-    comment on it, drag a card to another column, then follow the next version
-    and find the comment still anchored to its (relocated) passage. The final
-    assertion is the event log — the trail Claude reads — down to the anchor's
-    quote and the move's placement."""
+    comment on it, drag a card to another column, rewrite a draft in place, then
+    follow the next version and find the comment still anchored to its
+    (relocated) passage and the draft still wearing the reviewer's words. The
+    final assertion is the event log — the trail Claude reads — down to the
+    anchor's quote, the move's placement, and the edit's text."""
     page, errors = open_page(browser, serve(JOURNEY_V1))
 
     # Select the passage from the keyboard's path: a real Range, then the keyup
@@ -1078,8 +1087,29 @@ def test_review_round_trip(browser, serve):
     page.mouse.up()
     page.wait_for_selector("#col-done #card-x")  # the drop reparented the card
 
-    # Claude ships v2 with the passage moved; the page follows on its next poll.
+    # Rewrite the draft through its fast path: double-click opens the text in
+    # place (winning over the word-selection the gesture makes — no comment
+    # button contests it), Save sends the whole new body. The text must have
+    # arrived without the source's indentation.
+    draft = page.locator("#draft-ops")
+    assert draft.locator(".cq-draft-body").inner_text() == DRAFT_TEXT
+    draft.locator(".cq-draft-body").dblclick()
+    draft.locator("textarea").fill(DRAFT_EDITED)
+    draft.get_by_role("button", name="Save").click()
+    page.wait_for_function(
+        "t => document.querySelector('#draft-ops .cq-draft-body').textContent === t",
+        arg=DRAFT_EDITED,
+    )
+
+    # The edit must be in the log before v2's note lands, or the trail below
+    # would interleave — the browser posts it, so wait server-side.
     d = serve.page_dir
+    deadline = time.time() + 5
+    while '"action": "edit"' not in (d / "comments.jsonl").read_text():
+        assert time.time() < deadline, "the edit never reached the log"
+        time.sleep(0.05)
+
+    # Claude ships v2 with the passage moved; the page follows on its next poll.
     (d / "versions" / "v002.html").write_text(JOURNEY_V2)
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "moved"})
     page.wait_for_url("**/v002.html", timeout=15000)
@@ -1089,6 +1119,12 @@ def test_review_round_trip(browser, serve):
     assert not page.evaluate(
         "document.querySelector('.cq-thread .cq-quote').classList.contains('detached')"
     ), "the passage moved and the comment lost it"
+    # v2's markup carries the original draft text — Claude hasn't honored the
+    # edit — so the reviewer's words must arrive by replay, not visibly revert.
+    page.wait_for_function(
+        "t => document.querySelector('#draft-ops .cq-draft-body').textContent === t",
+        arg=DRAFT_EDITED,
+    )
 
     assert errors == []
     # The trail those gestures left, exactly — kinds, authorship (the server
@@ -1098,6 +1134,7 @@ def test_review_round_trip(browser, serve):
         ("note", "claude", 1),
         ("comment", "user", 1),
         ("action", "user", 1),
+        ("action", "user", 1),
         ("note", "claude", 2),
     ]
     assert events[1]["anchor"] == {"section": "intro", "quote": SENTENCE}
@@ -1106,6 +1143,11 @@ def test_review_round_trip(browser, serve):
         "widget": "board",
         "action": "move",
         "detail": {"card": "card-x", "to": "col-done", "index": 0},
+    }
+    assert {k: events[3][k] for k in ("widget", "action", "detail")} == {
+        "widget": "draft-ops",
+        "action": "edit",
+        "detail": {"text": DRAFT_EDITED},
     }
     page.close()
 

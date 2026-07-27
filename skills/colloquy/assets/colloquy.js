@@ -413,14 +413,16 @@ let pendingAnchor = null;
 // ---------- draft persistence ----------
 // Text the user typed but hasn't sent must survive navigation, reload, version switches,
 // and server death; only a successful send clears it. Storage failures never break typing.
+// Exported: a widget holding user text (cq-draft's in-place edit) keeps it under the
+// same discipline, in the same store, rather than growing a second one.
 const DRAFT = "cq-draft:";
-const saveDraft = (ctx, val) => {
+export const saveDraft = (ctx, val) => {
   try {
     if (val) localStorage.setItem(DRAFT + ctx, val);
     else localStorage.removeItem(DRAFT + ctx);
   } catch {}
 };
-const loadDraft = (ctx) => {
+export const loadDraft = (ctx) => {
   try {
     return localStorage.getItem(DRAFT + ctx) || "";
   } catch {

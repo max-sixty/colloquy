@@ -429,6 +429,21 @@ cq-code .cq-code-note { margin: 4px 8px 6px 46px; padding: 6px 10px;
              font-size: var(--t-5); white-space: normal; }
 cq-code cq-note { display: block; }
 
+/* cq-draft rendered form: a block of text the reviewer owns. The dashed border says
+   "editable"; the ✎ button is the accessible door (double-click is the fast path) and
+   sharpens on hover or focus. Newlines in a draft are content, so the body preserves
+   them. An edited-but-unhonored draft trades the dash for an accent-tinted solid
+   border until a version carries the words. Unupgraded, the same box shows raw text. */
+cq-draft { display: block; position: relative; border: 1px dashed var(--border-2); border-radius: 6px;
+           padding: 10px 40px 10px 14px; margin: 12px 0; background: var(--card); }
+cq-draft[data-cq-edited] { border-style: solid;
+                           border-color: color-mix(in srgb, var(--accent) 45%, var(--border-2)); }
+.cq-draft-body { white-space: pre-wrap; max-width: 100%; overflow-x: auto; }
+.cq-draft-pencil { position: absolute; top: 6px; right: 6px; opacity: .45; }
+cq-draft:hover .cq-draft-pencil, cq-draft:focus-within .cq-draft-pencil { opacity: 1; }
+.cq-draft-edit { width: 100%; min-height: 64px; }
+.cq-draft-editrow { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+
 /* Where a widget upgrade fails, it fails soft into this box. */
 .cq-error { border: 1px solid var(--danger); background: var(--danger-tint);
             color: var(--danger-ink); border-radius: var(--r); padding: 8px 12px;

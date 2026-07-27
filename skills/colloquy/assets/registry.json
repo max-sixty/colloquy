@@ -280,6 +280,18 @@
     "x-content": "prose",
     "x-upgrade": false
   },
+  "cq-draft": {
+    "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach Claude as an `edit` action naming the element. The body is the draft text verbatim (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off close the review. Usable anywhere prose flows. The next version's markup carries the edited text — the document is the state.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "required": ["id"],
+    "additionalProperties": false,
+    "x-content": "data",
+    "x-upgrade": true,
+    "x-example": "<cq-draft id=\"note-cli\">\nAdds --dry-run to every mutating command.\n</cq-draft>"
+  },
   "cq-specimen": {
     "description": "Quoted material: a region the page exhibits rather than speaks — a sample decision, a demo board, markup shown as an example. Renders as quotation: a hairline left gutter under a small-caps \"specimen\" line (`label` extends it — \"specimen · a decision\"). Content is open and renders at full fidelity, but it is a mention, not a use: interactive widgets inside are inert — a choose group takes no clicks, a board no drags. Keep the content visibly fictional. For a caption, wrap in <figure> with a <figcaption> after.",
     "type": "object",
