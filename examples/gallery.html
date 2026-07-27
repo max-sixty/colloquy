@@ -14,9 +14,9 @@
 <p class="eyebrow">examples gallery</p>
 <h1>The colloquy gallery, on one page</h1>
 <p class="lede" id="gal-lede">The shipped examples, one per tab, every widget
-live: boards drag, options take a pick, diagrams render. All content is
-specimen. Switch tabs freely (that's your view alone); select any text to
-comment on the example it belongs to.</p>
+live: boards drag, options take a pick, diagrams render. Every project, name,
+and number here is invented. Switch tabs freely (that's your view alone); select
+any text to comment on the example it belongs to.</p>
 
 <cq-tabs id="gallery">
 
@@ -108,6 +108,26 @@ graph LR
 keep a session alive through a Redis blip, but revocation, rolling expiry, and new
 logins all require the store. A revoked session survives at most the cookie's
 5-minute lifetime.</aside>
+</section>
+
+<section id="next-decision">
+<h2>The cutover</h2>
+<p id="cutover-note">Sessions that are alive when this ships have to go
+somewhere, and where depends on which store wins. So the cutover is a second
+decision, and it comes after this one.</p>
+<cq-specimen id="cutover-frame" label="next week's decision">
+<cq-options id="cutover-options" choose>
+  <cq-option id="cut-hard" effort="low" risk="med">
+    <strong>Log everyone out at deploy</strong> The new store starts empty, so
+    there is nothing to migrate. Every session alive at the switch ends mid-task.
+  </cq-option>
+  <cq-option id="cut-drain" effort="med" risk="low">
+    <strong>Drain the old instances</strong> New logins go to the store, while the
+    outgoing app servers stay up serving the sessions already in their memory.
+    Both run for a day, and nobody is logged out.
+  </cq-option>
+</cq-options>
+</cq-specimen>
 </section>
 </cq-tab>
 
@@ -389,7 +409,7 @@ note after all, say so in a comment and a draft for it arrives in the next versi
 </cq-tab>
 
 <cq-tab id="gal-parallel-workstreams" label="Parallel workstreams">
-<p class="eyebrow">specimen · parallel workstreams</p>
+<p class="eyebrow">parallel workstreams</p>
 <h1>Aviary projects, week 3</h1>
 <p class="lede" id="workstreams-lede">Three mini-projects run side by side; each tab below is
 one project's full context — status, board, decisions. Which tab is open is your

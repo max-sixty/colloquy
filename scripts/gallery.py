@@ -17,8 +17,8 @@ from pathlib import Path
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 GALLERY = EXAMPLES_DIR / "gallery.html"
-# Order is editorial: the first tab is the one a reader lands on, and the
-# parallel-workstreams specimen reads best last (it's tabs inside a tab).
+# Order is editorial: the first tab is the one a reader lands on, and
+# parallel-workstreams reads best last (it's tabs inside a tab).
 TABS = [
     ("design-decision", "Design decision"),
     ("incident-report", "Incident report"),
@@ -45,9 +45,9 @@ HEAD = """\
 <p class="eyebrow">examples gallery</p>
 <h1>The colloquy gallery, on one page</h1>
 <p class="lede" id="gal-lede">The shipped examples, one per tab, every widget
-live: boards drag, options take a pick, diagrams render. All content is
-specimen. Switch tabs freely (that's your view alone); select any text to
-comment on the example it belongs to.</p>
+live: boards drag, options take a pick, diagrams render. Every project, name,
+and number here is invented. Switch tabs freely (that's your view alone); select
+any text to comment on the example it belongs to.</p>
 
 <cq-tabs id="gallery">
 """

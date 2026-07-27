@@ -182,6 +182,42 @@ SPECIMEN_PAGE = """<!doctype html>
 """
 
 
+# A page with nothing to decide: the widgets under test arrive in the panel, on a
+# reply, which is the other place markup renders.
+REPLY_HOST_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>reply</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Session store</h1>
+<p id="intro">Redis, with a signed-cookie fallback for reads.</p>
+</main>
+</body>
+</html>
+"""
+
+# Claude answering with a question to put and, beside it, the framing that question
+# replaced — quoted, so the reply asks one thing rather than two.
+SPECIMEN_REPLY = """Two shapes for the same question; this is the one I'd ship:
+<cq-options id="rp-live" choose>
+  <cq-option id="rp-shim"><strong>Shim the old schema</strong> Fastest to ship.</cq-option>
+  <cq-option id="rp-stage" recommended><strong>Migrate in stages</strong> Table by table.</cq-option>
+</cq-options>
+And the framing it replaces, for the record:
+<cq-specimen id="rp-spec" label="the April thread">
+  <cq-options id="rp-quoted" choose>
+    <cq-option id="rp-memory"><strong>App memory</strong> Nothing to build.</cq-option>
+    <cq-option id="rp-sticky"><strong>Sticky sessions</strong> Until an instance recycles.</cq-option>
+  </cq-options>
+</cq-specimen>
+"""
+
+
 @pytest.fixture(scope="module")
 def browser():
     with sync_playwright() as p:
@@ -376,10 +412,67 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     assert page.locator("#live-group button.cq-pick").count() == 2
     assert page.locator("#live-board .cq-grip").count() == 1
 
+    # Nor the room for one. A quoted card stands at the height of a card in a
+    # group that never declared `choose`, because that is what it is; reserving
+    # the mark strip would leave every exhibit trailing 32px of space that,
+    # quoted, nothing can ever fill.
+    pad = "el => getComputedStyle(el).paddingBottom"
+    assert page.locator("#q-shim").evaluate(pad) != page.locator("#l-shim").evaluate(pad)
+
     # View state still runs inside a specimen: the settled group collapsed.
     assert page.locator("#quoted-settled cq-option:visible").count() == 0
     page.locator("#quoted-settled .cq-settled").click()
     assert page.locator("#quoted-settled cq-option:visible").count() == 2
+
+    # The exception, once that group is open: the card the document marks does
+    # carry a mark, so it keeps the strip a live pick would.
+    assert page.locator("#q-lax").evaluate(pad) == page.locator("#l-shim").evaluate(pad)
+    page.close()
+
+
+def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
+    """The panel is where a live question actually gets put — Claude's replies
+    carry widget markup — so it is also where a quoted one has to stay quoted.
+    One reply holds both: the question wires up and its pick reaches the log,
+    the exhibit beside it does neither, and the gutter marking it renders in the
+    panel's narrower column as it does in the document. The theme's specimen
+    rules and quoted()'s closest() both have to reach outside <main>, and
+    nothing else in the suite renders a specimen there."""
+    url = serve(REPLY_HOST_PAGE)
+    d = serve.page_dir
+    interact.append_event(d, {"kind": "comment", "id": "c-ask", "author": "user",
+                              "version": 1, "text": "What would the alternative look like?"})
+    interact.append_event(d, {"kind": "reply", "author": "claude", "parent": "c-ask",
+                              "version": 1, "text": SPECIMEN_REPLY})
+    page, errors = open_page(browser, url)
+    page.get_by_role("button", name="Comments", exact=False).click()
+    page.wait_for_selector("#rp-live button.cq-pick")  # the reply's widgets upgraded
+    assert errors == []
+
+    # The gutter renders in the panel: the specimen rules aren't scoped to the
+    # document's column, and neither is the label.
+    assert page.locator("#rp-spec").evaluate(
+        "el => getComputedStyle(el, '::before').content"
+    ) == '"specimen · the April thread"'
+    assert page.locator("#rp-spec").evaluate(
+        "el => getComputedStyle(el).borderLeftWidth"
+    ) == "2px"
+    assert page.locator("#rp-quoted cq-option").count() == 2  # and the exhibit is all there
+
+    # The exhibit takes the click first, so anything it sends would reach the log
+    # ahead of the live group's pick — then the live group takes its own.
+    assert page.locator("#rp-quoted button.cq-pick").count() == 0
+    page.locator("#rp-memory").click()
+    page.locator("#rp-stage").click()
+
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        actions = [e for e in interact.read_events(d) if e["kind"] == "action"]
+        if actions:
+            break
+
+    assert [(e["widget"], e["detail"]) for e in actions] == [("rp-live", {"option": "rp-stage"})]
+    assert page.locator("#rp-quoted cq-option[chosen]").count() == 0
     page.close()
 
 

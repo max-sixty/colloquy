@@ -369,12 +369,21 @@ cq-specimen::before { content: "specimen"; display: block; font-size: var(--t-6)
               letter-spacing: .08em; text-transform: uppercase;
               color: var(--muted); }
 cq-specimen[label]::before { content: "specimen · " attr(label); }
-/* A quoted choose group keeps its resting look — rings, mark strip — but none of
- * the come-hither: no pointer cursor, no hover lift, so each card holds whatever
- * ring it already wears. The upgrade side (quoted() in cq-options.js) renders the
- * group as if it never declared `choose`; these keep the CSS half of the promise,
- * since the attribute the theme keys on is still in the markup. */
+/* A quoted choose group renders as one that never declared `choose`, and these
+ * are that promise in CSS: no pointer cursor, no hover lift, and no room held
+ * for a mark strip nothing will fill — each card at the height it would have
+ * with no pick to make. Two cards sit out: the one the document marks (that
+ * mark is the document's state, quoted or not) and a hidden one, which the
+ * settled collapse has zeroed and which this selector would otherwise outrank.
+ * Not the upgrade's job restated — cq-options is a CSS-only widget and a page
+ * can render the whole vocabulary with no script (docs/how-it-works.html does),
+ * so the pressable look is keyed on `choose` here and can only be unkeyed here;
+ * stripping the attribute in quoted() would leave a script-less specimen with a
+ * pointer cursor over a card nothing can pick. The upgrade holds the half no
+ * stylesheet can: the click handler. */
 cq-specimen cq-options[choose] > cq-option { cursor: auto; }
+cq-specimen cq-options[choose] > cq-option:not([chosen], [hidden]) {
+              padding-bottom: var(--sp-3); }
 cq-specimen cq-options[choose] > cq-option:hover { transform: none; box-shadow: none; }
 cq-specimen cq-options[choose] > cq-option[recommended]:hover {
               box-shadow: 0 0 0 1px var(--accent); }
