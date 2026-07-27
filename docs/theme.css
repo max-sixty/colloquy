@@ -288,7 +288,9 @@ cq-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(10re
            gap: var(--sp-2); margin: 14px 0; align-items: stretch; overflow-x: auto; }
 cq-column { display: block; background: var(--field); border: 1px solid var(--rule);
             border-radius: var(--r); padding: 8px; min-height: 64px; }
-cq-column::before { content: attr(label); display: block; font-size: var(--t-6);
+/* Empty alt text: the upgrade puts this label on the column as the accessible
+   name of a list, so the generated copy would be the same words a second time. */
+cq-column::before { content: attr(label) / ""; display: block; font-size: var(--t-6);
             text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
             padding: 2px 4px 8px; }
 cq-column.cq-dropping { border-color: var(--accent); }

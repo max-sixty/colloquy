@@ -89,17 +89,13 @@ stands alone.
       designed, because each is a baseline that re-records on every deliberate
       restyle: a per-example box dump (id/tag, position, size on a 4px grid —
       the text-snapshot equivalent for layout) and per-example ARIA snapshots
-      (`aria_snapshot()`, which caught cq-board's flat announcement below);
+      (`aria_snapshot()`, which caught cq-board announcing itself flat — one
+      board's tree is pinned in the render suite now, the corpus's is not);
       an axe-core pass (`axe-core-python` ships the JS in the wheel, no npm);
       print output (the @media print rule is load-bearing and unguarded —
       assert the PDF paginates); keyboard bindings (assert colloquy leaves the
       browser's scroll keys alone, not that Chrome scrolls); and the narrow
       viewport, once the covering-layout scrollbar item above is settled.
-- [ ] cq-board is flat to assistive tech: columns don't group or label their
-      cards (the ARIA snapshot shows bare text runs), so a screen reader hears
-      seven cards and seven Move buttons with no column boundaries — and the
-      Move button's label doesn't say which column the card is in. The one fact
-      a non-visual user needs about a card is the thing never announced.
 - [ ] Narrow viewports still stack the two scrollbars. Under 720px the panel
       covers the page rather than squeezing it, so `body` keeps its full width
       and its scrollbar shares the window's right edge with the thread list's.

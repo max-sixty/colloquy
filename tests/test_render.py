@@ -138,6 +138,33 @@ SETTLED_PAGE = """<!doctype html>
 """
 
 
+# Short card titles, so the whole board fits in an expected ARIA snapshot and the
+# snapshot stays about structure. One column starts empty: a keyboard user has to
+# hear it to move a card into it.
+BOARD_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>board</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Sprint</h1>
+<cq-board id="sprint">
+  <cq-column id="col-todo" label="Todo">
+    <cq-card id="card-heater"><strong>Heated perch</strong></cq-card>
+    <cq-card id="card-baffle"><strong>Squirrel baffle</strong></cq-card>
+  </cq-column>
+  <cq-column id="col-done" label="Done"></cq-column>
+</cq-board>
+</main>
+</body>
+</html>
+"""
+
+
 # Exhibited widgets beside live ones, so a missing affordance can be pinned on the
 # quoting rather than on a broken upgrade.
 SPECIMEN_PAGE = """<!doctype html>
@@ -482,6 +509,54 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
 
     assert [(e["widget"], e["detail"]) for e in actions] == [("rp-live", {"option": "rp-stage"})]
     assert page.locator("#rp-quoted cq-option[chosen]").count() == 0
+    page.close()
+
+
+def test_a_board_says_which_column_each_card_is_in(browser, serve):
+    """Which column a card sits in is the one fact about it that isn't in its own
+    text, and columns are three boxes side by side — geometry, which the
+    accessibility tree doesn't carry. Flat, this board was six text runs and two
+    Move buttons in a row: no boundary between the columns, and no button saying
+    where its card was.
+
+    Both halves are asserted from the tree itself rather than from the attributes
+    behind it, because that is where they can be wrong: the column heading is CSS
+    generated content, so the name reaching the tree once (as the list's) rather
+    than twice depends on its alt text. Then a card moves, and the assertion is
+    the second snapshot — a name set where the move happens goes stale on
+    whichever path forgets to restate it, and there are four such paths."""
+    page, errors = open_page(browser, serve(BOARD_PAGE))
+    board = page.locator("#sprint")
+
+    assert board.aria_snapshot() == (
+        '- list "Todo":\n'
+        "  - listitem:\n"
+        "    - strong: Heated perch\n"
+        "    - 'button \"Move: Heated perch — Todo\"': ⠿\n"
+        "  - listitem:\n"
+        "    - strong: Squirrel baffle\n"
+        "    - 'button \"Move: Squirrel baffle — Todo\"': ⠿\n"
+        '- list "Done"'  # empty, and still announced: it is a drop target
+    )
+
+    # Grab the second card and push it into the next column, the keyboard's path.
+    board.get_by_role("button", name="Move: Squirrel baffle — Todo").focus()
+    page.keyboard.press("Enter")
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("Enter")
+    page.wait_for_selector("#col-done #card-baffle")
+
+    assert board.aria_snapshot() == (
+        '- list "Todo":\n'
+        "  - listitem:\n"
+        "    - strong: Heated perch\n"
+        "    - 'button \"Move: Heated perch — Todo\"': ⠿\n"
+        '- list "Done":\n'
+        "  - listitem:\n"
+        "    - strong: Squirrel baffle\n"
+        "    - 'button \"Move: Squirrel baffle — Done\"': ⠿"
+    )
+    assert errors == []
     page.close()
 
 
