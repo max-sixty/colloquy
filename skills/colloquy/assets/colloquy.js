@@ -46,8 +46,10 @@
  * flashes a scrollbar per keystroke. A poll that re-renders the thread list restores
  * scroll offset, focus, and the caret, so an arriving reply never interrupts one being
  * typed. A composer open on a selection keeps that passage marked in the page until it
- * closes, because focusing the box drops the browser's own selection. Whether the box is
- * up is state the stylesheet renders, never state read back off the stylesheet.
+ * closes, because focusing the box drops the browser's own selection — and that mark is
+ * what says which passage the box is on, so the box only quotes the passage back when
+ * this version no longer has one to mark. Whether the box is up is state the stylesheet
+ * renders, never state read back off the stylesheet.
  *
  * Scrolling: the document scrolls body, not the viewport, and body's margin keeps its
  * box clear of the open panel. Two scroll regions side by side, each scrollbar drawn
@@ -254,6 +256,9 @@ style.textContent = `
   .cq-quote { margin: 0 0 8px; padding: 2px 8px; border-left: 3px solid var(--quote-bar); color: var(--muted); font-style: italic; cursor: pointer; overflow-wrap: anywhere; }
   .cq-quote:hover { color: var(--ink-2); }
   .cq-quote.detached { border-left-style: dashed; border-left-color: var(--border-2); color: var(--muted-2); cursor: default; }
+  /* Out of the picture, still in the accessibility tree — see the composer's quote in
+     paintAnchors for the one thing that wears this and why. */
+  .cq-unseen { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); }
   .cq-msg { margin: 8px 0; }
   .cq-msg-head { display: flex; gap: 6px; align-items: baseline; }
   .cq-msg-head b { font-size: 12.5px; }
@@ -280,7 +285,9 @@ style.textContent = `
   .cq-fab { position: fixed; z-index: 9100; display: none; }
   .cq-composer { position: fixed; z-index: 9100; display: none; width: 320px; background: var(--card);
     border: 1px solid var(--border-2); border-radius: var(--r); box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 10px; }
-  .cq-composer-quote { margin: 0 0 8px; padding: 2px 8px; border-left: 3px solid var(--quote-bar); color: var(--muted); font-style: italic; overflow-wrap: anywhere; max-height: 4.2em; overflow-y: auto; display: none; }
+  /* A stranded quote is the whole passage, and the box is 320px wide. Only while showing:
+     on the hidden one this would out-specify .cq-unseen's own overflow. */
+  .cq-composer .cq-quote:not(.cq-unseen) { max-height: 4.2em; overflow-y: auto; }
   .cq-suggest-row { display: none; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
   .cq-suggest-row input { margin: 0; accent-color: var(--accent); }
   .cq-suggest-label { font-size: var(--t-6); letter-spacing: .05em; text-transform: uppercase; color: var(--ok-ink); margin: 4px 0 2px; }
@@ -376,7 +383,13 @@ panel.append(panelHead, threadsBox, generalRow);
 
 const fab = el("button", "cq-ui cq-btn primary cq-fab", "💬 Comment");
 const composer = el("div", "cq-ui cq-composer");
-const composerQuote = el("blockquote", "cq-composer-quote");
+// Only ever shown detached — paintAnchors, its one writer, keeps it out of sight while
+// the page is marking the passage. cq-ui on the element itself, not just on the composer
+// around it: this is the only injected chrome carrying an id, and "which section is this
+// in" is asked as `[id]:not(.cq-ui)` of the element rather than of its ancestors, so
+// without the class it answers that question with itself.
+const composerQuote = el("blockquote", "cq-ui cq-quote detached");
+composerQuote.id = "cq-composer-quote";
 // Suggestion mode: the box holds replacement text for the quoted passage
 // instead of a remark — Claude accepts it verbatim into the next version.
 const suggestRow = el("label", "cq-suggest-row");
@@ -384,6 +397,11 @@ const suggestCheck = document.createElement("input");
 suggestCheck.type = "checkbox";
 suggestRow.append(suggestCheck, document.createTextNode("Suggest replacement text"));
 const composerInput = document.createElement("textarea");
+// The mark is a paint, and a paint is nothing to a screen reader (see "Paint; don't wrap"
+// in CLAUDE.md). So what the box is anchored to travels as the box's own description,
+// announced on focus — which is more than the visible quote ever said, since nothing
+// pointed a reader at it.
+composerInput.setAttribute("aria-describedby", composerQuote.id);
 const composerRow = el("div", "cq-composer-row");
 const composerCancel = el("button", "cq-btn", "Cancel");
 const composerSend = el("button", "cq-btn primary", "Comment");
@@ -610,16 +628,20 @@ function msgNode(m) {
   return div;
 }
 
+// How an anchor reads where it has to be printed rather than pointed at — every thread in
+// the panel, and the open composer when the page has no passage left to mark. A quote-less
+// anchor points at an element (a diagram or image commented on by click rather than by
+// selection) and names its section instead of quoting it. One function, so the two places
+// can't come to say it differently.
+const anchorLabel = (anchor) =>
+  anchor?.quote ? `“${anchor.quote}”` : anchor?.section ? `§ ${anchor.section}` : "";
+
 function threadNode(t, syncs) {
   const div = el("div", "cq-thread");
   div.tabIndex = -1; // j/k focus target; Enter (below) drops into its reply box
   div.dataset.id = t.root.id;
-  // A quote-less anchor points at an element — a diagram or image commented on by click
-  // rather than by selection — and names its section instead of quoting it.
-  if (t.root.anchor?.quote || t.root.anchor?.section) {
-    const label = t.root.anchor.quote
-      ? `“${t.root.anchor.quote}”`
-      : `§ ${t.root.anchor.section}`;
+  const label = anchorLabel(t.root.anchor);
+  if (label) {
     const quote = el("blockquote", "cq-quote", label);
     quote.onclick = () => scrollToThread(t.root.id);
     div.append(quote);
@@ -1042,6 +1064,7 @@ function resolveAnchor(anchor) {
 const MARK = "cq-mark";
 const PENDING = "cq-pending";
 const marked = new Map(); // thread id -> (Range | Element)[]: the pass's record of what it drew
+let pendingMarks = []; // the same record for the open composer's own passage
 let pendingOutline = null; // the element the open composer outlines, owned by nobody else
 const pointer = { x: -1, y: -1 }; // last seen, so a repaint can re-answer the hover
 let hovering = null;
@@ -1074,11 +1097,40 @@ function paintAnchors() {
   // never reads as a posted comment. An element a thread already outlines keeps the posted
   // colour: there is one outline to give, and the thread's is the clickable one.
   const draft = composerOpen && pendingAnchor && resolveAnchor(pendingAnchor);
+  // Where the draft's passage is, recorded the way the threads' is, because placeComposer
+  // has to keep the box off it. An element a thread already outlines belongs in the record
+  // too — it is marked, just in the posted colour rather than the accent.
+  pendingMarks = draft
+    ? draft.element
+      ? [draft.element]
+      : draft.segments.map((seg) => rangeOf([seg]))
+    : [];
   const pending = [];
   if (draft?.element && !allMarks().includes(draft.element)) {
     draft.element.classList.add("cq-mark-el", PENDING);
     pendingOutline = draft.element;
-  } else if (draft?.segments) pending.push(...draft.segments.map((seg) => rangeOf([seg])));
+  } else if (draft?.segments) pending.push(...pendingMarks);
+
+  // The composer's echo of its own passage, decided here because here is where it is known
+  // whether the page is showing that passage. Usually it is — the box opens beside the words
+  // it just marked, and printing them inside it says the same sentence twice, side by side.
+  // So the quote is the fallback rather than the statement: it shows where the mark can't,
+  // which is where this version no longer holds the passage — a draft the reviewer carried
+  // onto a newer version, whose text survived the trip when its passage didn't. Dashed and
+  // muted, the panel's detached treatment, for the same fact.
+  //
+  // Scrolled out of view looks like that case and is not: the passage is still there, one
+  // scroll back, and the reader put it there seconds ago. A quote coming and going with the
+  // scroll position would resize the box under the hands typing in it.
+  //
+  // Out of sight is not gone: a painted mark has no accessibility exposure at all, so the
+  // quote stays in the tree as the box's description whichever way it renders. Written only
+  // when it changes, because assigning textContent replaces the node even with the same
+  // string, and this pass reruns whenever a comment arrives — a stranded quote is the only
+  // copy of that passage left, so it is text a reviewer may be selecting to keep.
+  const label = composerOpen ? anchorLabel(pendingAnchor) : "";
+  if (composerQuote.textContent !== label) composerQuote.textContent = label;
+  composerQuote.classList.toggle("cq-unseen", !label || Boolean(draft));
 
   // A draft outranks a posted mark where they overlap; the hover outranks both, so the
   // passage under the pointer answers the pointer.
@@ -1178,6 +1230,31 @@ const rightEdge = () => innerWidth - (panelOpen ? panel.offsetWidth : 0) - 8;
 function place(node, left, top) {
   node.style.left = Math.max(8, Math.min(left, rightEdge() - node.offsetWidth)) + "px";
   node.style.top = Math.max(48, Math.min(top, innerHeight - node.offsetHeight - 8)) + "px";
+}
+// The composer, which has one more thing to stay clear of: its own mark. That mark is the
+// only thing naming the passage the box is about, so a box standing on all of it is a box
+// about nothing. Not "no overlap" — the box has always covered the tail of a long passage
+// and that reads fine — but every rect hidden is the case to move for, and it is a case
+// that happens: a restored draft reappears near the top of the viewport, and the reading
+// position puts the passage it was made on back in the same place.
+// Below the passage where the viewport has room, above it otherwise; place()'s own clamp
+// has the last word, so a passage too tall for either side simply keeps the better spot.
+function placeComposer(left, top) {
+  place(composer, left, top);
+  const rects = pendingMarks.flatMap((where) =>
+    where instanceof Range ? [...where.getClientRects()] : [where.getBoundingClientRect()],
+  );
+  const box = composer.getBoundingClientRect();
+  // Vertically only: the document never scrolls sideways and body's margin keeps it clear
+  // of the panel, so off-screen means scrolled past, and a mark scrolled past is not one
+  // this box is standing on.
+  const onScreen = (r) => r.bottom > 48 && r.top < innerHeight;
+  const behindBox = (r) =>
+    r.left >= box.left && r.right <= box.right && r.top >= box.top && r.bottom <= box.bottom;
+  if (!rects.length || rects.some((r) => onScreen(r) && !behindBox(r))) return;
+  const below = Math.max(...rects.map((r) => r.bottom)) + 8;
+  const above = Math.min(...rects.map((r) => r.top)) - box.height - 8;
+  place(composer, left, below + box.height <= innerHeight - 8 ? below : above);
 }
 // The anchor a selection makes: the enclosing section, and the passage as the document
 // holds it. Not the selection's own toString(), which is what the reader sees rendered —
@@ -1374,13 +1451,12 @@ function openComposer(anchor, text, left, top, suggest = false) {
   suggestCheck.checked = suggest;
   suggestRow.style.display = anchor?.quote ? "flex" : "none";
   composerSend.textContent = suggest ? "Suggest" : "Comment";
-  // "" would fall back to the stylesheet's display:none, hiding what's being quoted.
-  composerQuote.style.display = anchor?.quote || anchor?.section ? "block" : "none";
-  if (anchor?.quote) composerQuote.textContent = `“${anchor.quote}”`;
-  else if (anchor?.section) composerQuote.textContent = `§ ${anchor.section}`;
-  showComposer(true); // before place(): a hidden box has no height to fit
+  // before placing: a hidden box has no height to fit, and the pass inside this call is
+  // both what decides whether the quote takes up some of that height and what records
+  // where the passage is that the box has to stay off.
+  showComposer(true);
   syncComposer();
-  place(composer, left, top);
+  placeComposer(left, top);
   composerInput.focus();
 }
 // Hiding keeps the draft and closing discards it, but the mark goes down with the box

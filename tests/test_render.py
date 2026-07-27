@@ -545,13 +545,44 @@ def mark_point(page, name, index=0):
     return box["x"], box["y"]
 
 
-def test_composer_marks_the_passage_it_is_quoting(browser, serve):
+def composer_quote(page):
+    """What the composer says about its own passage, and whether the reader can see it.
+    The node stays in the accessibility tree either way — a painted mark has no exposure,
+    so it is the box's aria description — which is why this asks the class, not the text."""
+    return page.evaluate("""() => {
+        const q = document.getElementById('cq-composer-quote');
+        return {text: q.textContent, shown: !q.classList.contains('cq-unseen')};
+    }""")
+
+
+def mark_shows_beside_composer(page):
+    """Whether any of the composer's own mark is on screen and not behind the box. The mark
+    is the only thing naming the passage the box is about, so a box covering all of it is a
+    box about nothing — which no state may reach."""
+    return page.evaluate("""() => {
+        const box = document.querySelector('.cq-composer').getBoundingClientRect();
+        const rects = [...(CSS.highlights.get('cq-pending') ?? [])]
+            .flatMap(r => [...r.getClientRects()])
+            .concat([...document.querySelectorAll('.cq-mark-el.cq-pending')]
+                .map(e => e.getBoundingClientRect()));
+        const onScreen = (r) => r.right > 0 && r.left < innerWidth
+                             && r.bottom > 48 && r.top < innerHeight;
+        const behind = (r) => r.left >= box.left && r.right <= box.right
+                           && r.top >= box.top && r.bottom <= box.bottom;
+        return rects.some(r => onScreen(r) && !behind(r));
+    }""")
+
+
+def test_composer_marks_the_passage_instead_of_quoting_it(browser, serve):
     """The passage stays visible while its comment is written. Focus moves into the
     composer the moment it opens, which drops the browser's own selection, so the
     runtime paints the anchor itself, and repaints it after every pass that redraws
     the posted threads' marks around it — otherwise a comment arriving mid-sentence
     would leave the reader's passage stranded across stale text nodes. It comes down
-    with the box, and the whole time it never touches the document."""
+    with the box, and the whole time it never touches the document.
+
+    And because the mark says which passage the box is on, the box doesn't say it too:
+    the quote inside it stays out of sight while the page is marking the passage."""
     url = serve(INLINE_PAGE)
     page, errors = open_page(browser, url)
 
@@ -560,10 +591,29 @@ def test_composer_marks_the_passage_it_is_quoting(browser, serve):
     page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
 
     passage = " ".join(page.locator("#p").inner_text().split())
-    quoted = page.evaluate("() => document.querySelector('.cq-composer-quote').textContent")
+    quote = composer_quote(page)
     assert pending_text(page) == passage, (
-        f"the page marks {pending_text(page)!r}, but the composer is quoting {quoted!r}"
+        f"the page marks {pending_text(page)!r}, but the composer is anchored to {quote['text']!r}"
     )
+    assert not quote["shown"], (
+        f"the passage is marked on the page and the composer prints it as well: {quote['text']!r}"
+    )
+    # Out of sight, not gone: it is what the box's description resolves to, and a screen
+    # reader hears nothing from a painted mark.
+    assert quote["text"] == f"“{passage}”", (
+        f"the composer's description of its passage says {quote['text']!r}"
+    )
+    assert page.evaluate(
+        "() => document.querySelector('.cq-composer textarea').getAttribute('aria-describedby')"
+    ) == "cq-composer-quote", "nothing announces what the box is anchored to"
+    # Carrying that description costs the node an id, which is what makes it the one piece
+    # of injected chrome that could answer "which section of the document is this in" with
+    # itself. The reading position rides on that answer, so a reload would scroll to the
+    # comment box instead of to the page.
+    assert page.evaluate(
+        "() => document.getElementById('cq-composer-quote')"
+        ".closest('[id]:not(.cq-ui)')?.id ?? null"
+    ) is None, "the composer's own quote offers itself as a landmark in the document"
 
     # A comment landing from elsewhere re-runs the anchor pass, which splits the text
     # nodes the painted range is pinned to. The reader is mid-sentence; their passage
@@ -603,6 +653,9 @@ def test_composer_marks_the_passage_it_is_quoting(browser, serve):
     page.locator("#fig svg").click()
     page.locator(".cq-fab").click()
     page.locator("#fig.cq-mark-el.cq-pending").wait_for()
+    assert not composer_quote(page)["shown"], (
+        "the outline is on the figure and the composer names its section as well"
+    )
     page.request.post(
         url.rsplit("/versions/", 1)[0] + "/api/event",
         data={"kind": "comment", "version": 1, "text": "and another"},
@@ -618,6 +671,119 @@ def test_composer_marks_the_passage_it_is_quoting(browser, serve):
     assert page.locator("#fig.cq-pending").count() == 0, "the outline outlived its composer"
     assert page.locator("#fig.cq-mark-el").count() == 0, (
         "the figure kept a thread's outline over no thread"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_the_composer_never_stands_on_its_own_mark(browser, serve):
+    """The mark is the only thing naming the passage the box is about, so a box covering
+    all of it is a box about nothing. That is not hypothetical: a restored draft reappears
+    just under the banner, and the reading position puts the passage it was made on back
+    where it was — which, for a passage that was near the top of a narrow column, is
+    exactly there. The box has to move off it.
+
+    Not off every pixel of it. The box has always covered the tail of a long passage and
+    that reads fine; what may not happen is every rect hidden at once."""
+    filler = "\n".join(f"<p id='f{i}'>Filler {i}. " + "Words. " * 20 + "</p>" for i in range(30))
+    url = serve(SETTLED_PAGE.replace("</main>", filler + "\n</main>"))
+    page, errors = open_page(browser, url)
+
+    page.locator(".cq-settled").click()  # open the settled group, as a reader would
+    page.wait_for_selector("#opt-strict:visible")
+    # A card in the middle column, scrolled just under the banner: narrower than the 320px
+    # box and centred on it, which is the geometry the box can swallow whole.
+    page.evaluate("""() => {
+        const r = document.querySelector('#opt-strict').getBoundingClientRect();
+        document.body.scrollBy({top: r.top - 60, behavior: 'instant'});
+    }""")
+    page.locator("#opt-strict").click(click_count=3)
+    page.locator(".cq-fab").click()
+    page.locator(".cq-composer textarea").fill("what did the trial actually show?")
+    assert mark_shows_beside_composer(page), "the box covered the passage it just opened on"
+
+    page.reload()
+    page.wait_for_function(
+        "() => document.querySelector('.cq-composer').style.display === 'block'"
+    )
+    page.wait_for_function("() => (CSS.highlights.get('cq-pending')?.size ?? 0) > 0")
+    assert mark_shows_beside_composer(page), (
+        "the restored box came back on top of its own mark, and with the mark hidden "
+        "nothing on screen says what the draft is about"
+    )
+    assert not composer_quote(page)["shown"], (
+        "the mark is showing and the composer prints the passage as well"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser, serve):
+    """A draft survives the version it was written against — the reviewer opens the new
+    one with unsent text — and the passage it was about may not have. The mark is what
+    normally says which passage the box is on, so where there is no passage left to mark
+    the quote is the only record there is, and it comes back: dashed and muted, the same
+    detached treatment the panel gives a thread this version dropped."""
+    url = serve(INLINE_PAGE)
+    page, errors = open_page(browser, url)
+
+    page.locator("#p").click(click_count=3)
+    page.locator(".cq-fab").click()
+    page.locator(".cq-composer textarea").fill("half-written when the version turned over")
+    passage = " ".join(page.locator("#p").inner_text().split())
+    assert not composer_quote(page)["shown"], "the passage is right here, and marked"
+
+    # Claude ships a version that rewrites the passage out. The page holds still — a
+    # draft is mid-composition — and offers the new version as a chip, which the
+    # reviewer takes.
+    d = serve.page_dir
+    (d / "versions" / "v002.html").write_text(
+        INLINE_PAGE.replace(
+            "A paragraph carrying <strong>bold text</strong> and <em>emphasis</em> inside it,\n"
+            "so that a selection across the middle of it lands in more than one text node.",
+            "Rewritten, with nothing left of the sentence the draft was about.",
+        )
+    )
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    expect(page.locator(".cq-latest-chip")).to_be_visible()
+    page.get_by_role("button", name="New version available", exact=False).click()
+    page.wait_for_url("**/v002.html", timeout=15000)
+    page.wait_for_function(
+        "() => document.querySelector('.cq-composer').style.display === 'block'"
+    )
+
+    assert page.locator(".cq-composer textarea").input_value() == (
+        "half-written when the version turned over"
+    ), "the draft didn't survive the version it was written against"
+    assert pending_text(page) == "", "v2 rewrote the passage and the page marked it anyway"
+    quote = composer_quote(page)
+    assert quote["shown"], (
+        "nothing on screen says what the draft is about — no mark, and no quote either"
+    )
+    assert quote["text"] == f"“{passage}”", f"the quote says {quote['text']!r}"
+    assert page.locator(".cq-composer .cq-quote.detached").count() == 1, (
+        "the stranded quote reads as one that still points somewhere"
+    )
+
+    # A stranded quote is the last copy of that passage anywhere on the page, so it is text
+    # a reviewer selects to keep. The anchor pass reruns on every arriving comment, and a
+    # rewritten node takes the selection with it.
+    page.evaluate("""() => {
+        const q = document.getElementById('cq-composer-quote');
+        const r = document.createRange();
+        r.setStart(q.firstChild, 1);
+        r.setEnd(q.firstChild, 20);
+        const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    }""")
+    held = page.evaluate("() => getSelection().toString()")
+    assert len(held) == 19, f"this assertion needs a selection to survive; it made {held!r}"
+    page.request.post(
+        url.rsplit("/versions/", 1)[0] + "/api/event",
+        data={"kind": "comment", "version": 2, "text": "arriving from another tab"},
+    )
+    page.wait_for_function("() => document.querySelectorAll('.cq-thread').length === 1")
+    assert page.evaluate("() => getSelection().toString()") == held, (
+        "the anchor pass rewrote the stranded quote and took the reader's selection with it"
     )
     assert errors == []
     page.close()
@@ -666,7 +832,10 @@ def test_every_passage_in_a_real_page_can_be_quoted(browser, serve, example):
                 fab.click();
                 await tick();
                 const painted = CSS.highlights.get('cq-pending');
-                const quoted = document.querySelector('.cq-composer-quote').textContent;
+                // The captured quote, read off the node whether or not the reader can
+                // see it: the composer shows it only where the page has no mark to give,
+                // which is the very case this loop is counting.
+                const quoted = document.getElementById('cq-composer-quote').textContent;
                 if (!painted || ![...painted].map(r => r.toString()).join('').trim())
                     missed.push(quoted.slice(0, 70));
                 // Inside what was selected, not merely somewhere: a matcher that finds
@@ -725,7 +894,7 @@ def test_a_quote_finds_its_passage_whatever_its_whitespace(browser, serve):
     page.wait_for_function(
         f"() => document.querySelectorAll('.cq-thread').length === {len(forms)}"
     )
-    stranded = page.locator(".cq-quote.detached").all_text_contents()
+    stranded = page.locator(".cq-panel .cq-quote.detached").all_text_contents()
     assert stranded == [], f"quotes naming a passage that is right there: {stranded}"
 
     # The elasticity runs one way only. A quote is free to have gaps the page lacks; a
@@ -739,7 +908,7 @@ def test_a_quote_finds_its_passage_whatever_its_whitespace(browser, serve):
     page.wait_for_function(
         f"() => document.querySelectorAll('.cq-thread').length === {len(forms) + 1}"
     )
-    assert page.locator(".cq-quote.detached").count() == 1, (
+    assert page.locator(".cq-panel .cq-quote.detached").count() == 1, (
         "a quote gluing two of the page's words together still found a passage"
     )
 
@@ -781,8 +950,10 @@ def test_the_captured_quote_is_prose_a_file_can_hold(browser, serve):
             "() => document.querySelector('.cq-composer').style.display === 'block'"
         )
 
+    # Read off the composer's description of its own anchor, which is the captured quote
+    # verbatim — the string that goes on to the panel, the file, and the export.
     compose_on("#p")  # authored across two source lines
-    wrapped = page.evaluate("() => document.querySelector('.cq-composer-quote').textContent")
+    wrapped = composer_quote(page)["text"]
     assert "\n" not in wrapped, f"the quote carries the source's line wrap: {wrapped!r}"
     page.get_by_role("button", name="Cancel").click()
 
@@ -791,7 +962,7 @@ def test_the_captured_quote_is_prose_a_file_can_hold(browser, serve):
     # Iterating by code point, a character cut in half is left as a single unit in the
     # surrogate range; an intact one comes through as the pair it is.
     compose_on("#cap")
-    assert not page.evaluate("""() => [...document.querySelector('.cq-composer-quote').textContent]
+    assert not page.evaluate("""() => [...document.getElementById('cq-composer-quote').textContent]
         .some(c => c.length === 1 && c.charCodeAt(0) >= 0xd800 && c.charCodeAt(0) <= 0xdfff)"""), (
         "the 400-character cap split a character in half"
     )
@@ -904,7 +1075,7 @@ def test_two_comments_on_one_element_both_stay_anchored(browser, serve):
         )
     page.get_by_role("button", name="Comments", exact=False).click()
     page.wait_for_function("() => document.querySelectorAll('.cq-thread').length === 2")
-    stranded = page.locator(".cq-quote.detached").all_text_contents()
+    stranded = page.locator(".cq-panel .cq-quote.detached").all_text_contents()
     assert stranded == [], f"outlined on screen, reported missing: {stranded}"
     assert errors == []
     page.close()
