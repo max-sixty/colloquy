@@ -106,7 +106,8 @@ stands alone.
       opened. Worth doing when someone actually wants to comment on a tab's name or a
       settled line; until then the asymmetry is small and stated rather than hidden.
 - [ ] Re-record `docs/demo.gif`: its step 2 is a select-and-comment, which now lights
-      the passage while the composer is open, so the hero image shows the old behavior.
+      the passage while the composer is open and no longer repeats it inside the box, so
+      the hero image shows the old behavior twice over.
       `scripts/record-demo.sh` prints a shot list for a human to drive.
 - [ ] Widgets deferred until a page wants them: risks, verdict.
 - [ ] Render tests, next tier — deferred while the chrome is still being
