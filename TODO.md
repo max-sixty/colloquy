@@ -3,14 +3,6 @@
 Backlog for improving colloquy: recommendations that stood unchallenged. Each item
 stands alone.
 
-- [ ] Resolve config and state locations — probably XDG paths, not `.claude`.
-      `~/.claude/colloquy/` holds three unlike things today: the user overlay layer
-      (theme.css, registry.json, widgets/, vendor/), every page directory (versions
-      plus event log), and the `/colloquy-plans` toggle (`config.json`) — and the
-      sharing is why `widgets` and `vendor` are reserved as page slugs. Splitting by
-      kind (overlay and config to `$XDG_CONFIG_HOME/colloquy/`, page directories to
-      `$XDG_STATE_HOME` or `$XDG_DATA_HOME`) dissolves the reserved-slug rule. The
-      project layer (`./.claude/colloquy/`) is a separate question.
 - [ ] Additive overlay: customizing one token, or adding one widget or idiom, means
       forking a whole file today — init's overlay replaces theme.css and
       registry.json per file. Let the overlay add rather than replace (token

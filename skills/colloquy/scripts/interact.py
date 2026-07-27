@@ -44,18 +44,19 @@ The `hook` command closes the same gap from the agent's side. Registered on
 Stop, UserPromptSubmit and SessionEnd, it refuses to let a turn end with one of
 this session's pages unwatched, surfaces undelivered comments at the next
 prompt, and idles the pages and stops their servers when the session exits. It
-finds them through ~/.claude/colloquy/.sessions/<session id>.json, which `serve`
-and `wait` write from CLAUDE_CODE_SESSION_ID — absent that (interact.py run
-outside Claude Code), nothing is claimed and the hooks stand down. Undelivered
+finds them through ~/.local/state/colloquy/sessions/<session id>.json, which
+`serve` and `wait` write from CLAUDE_CODE_SESSION_ID — absent that (interact.py
+run outside Claude Code), nothing is claimed and the hooks stand down. Undelivered
 events are the one thing `status idle` can't close over: idling is how a review
 ends, and a review can't end on comments nobody read.
 
 `init` vendors the runtime, theme, registry, widgets, and vendor assets into the
 page directory, overlaying per file by precedence: colloquy's shipped defaults,
-then the user layer (~/.claude/colloquy/), then the project layer
-(./.claude/colloquy/). The page directory is self-contained, so an approved
-version can't change under its reviewer; re-running `init` is the explicit
-re-vendor, noted in the next version's changelog.
+then the user layer (~/.config/colloquy/), then the project layer
+(./.claude/colloquy/). The page directory itself lives wherever the caller says
+— conventionally ~/.local/state/colloquy/pages/<slug>/ — and is self-contained,
+so an approved version can't change under its reviewer; re-running `init` is the
+explicit re-vendor, noted in the next version's changelog.
 
 The registry drives three consumers — the JS runtime (which tags upgrade), this
 file's `check` and `reply` validation, and the `catalog` the agent reads. Each
@@ -237,11 +238,18 @@ def running_server(page_dir: Path):
     return None
 
 
-def colloquy_home() -> Path:
-    """~/.claude/colloquy/ — page directories by convention, the user's overlay
-    layer, and .sessions/. A leading dot keeps that last one clear of the
-    kebab-case slugs a page can take."""
-    return Path.home() / ".claude" / "colloquy"
+def config_home() -> Path:
+    """$XDG_CONFIG_HOME/colloquy (~/.config/colloquy/) — the user's overlay
+    layer, and the config.json the /colloquy-plans toggle writes."""
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "colloquy"
+
+
+def state_home() -> Path:
+    """$XDG_STATE_HOME/colloquy (~/.local/state/colloquy/) — pages/ holds page
+    directories by convention, sessions/ the live-session registry. State, not
+    config: page directories carry pids, ports, and absolute paths, so they are
+    bound to this machine."""
+    return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "colloquy"
 
 
 def claim_page(page_dir: Path) -> None:
@@ -261,7 +269,7 @@ def claim_page(page_dir: Path) -> None:
     if not sid or not pid:
         return
     write_json(page_dir / "session.json", {"id": sid, "pid": int(pid), "ts": now_iso()})
-    sessions = colloquy_home() / ".sessions"
+    sessions = state_home() / "sessions"
     sessions.mkdir(parents=True, exist_ok=True)
     # Sessions that died without a SessionEnd hook leave their file behind; drop
     # them here rather than on a timer, the way init drops a killed writer's .tmp.
@@ -276,7 +284,7 @@ def claim_page(page_dir: Path) -> None:
 
 def session_pages(session_id: str) -> list:
     """The page directories a session has worked on, those still on disk."""
-    entry = read_json(colloquy_home() / ".sessions" / f"{session_id}.json") or {"pages": []}
+    entry = read_json(state_home() / "sessions" / f"{session_id}.json") or {"pages": []}
     return [d for d in (Path(p) for p in entry["pages"]) if d.is_dir()]
 
 
@@ -408,10 +416,8 @@ def layer_dirs() -> list:
     """Widget-layer sources, lowest precedence first: colloquy's shipped defaults,
     the user layer, the project layer (resolved against the working directory).
     Each mirrors the assets layout: theme.css/registry.json/colloquy.js at the
-    top, modules in widgets/, third-party files in vendor/. The user layer shares
-    ~/.claude/colloquy/ with page directories, which reserves `widgets` and
-    `vendor` as page slugs."""
-    return [ASSETS, colloquy_home(), Path.cwd() / ".claude" / "colloquy"]
+    top, modules in widgets/, third-party files in vendor/."""
+    return [ASSETS, config_home(), Path.cwd() / ".claude" / "colloquy"]
 
 
 def cmd_init(page_dir: Path) -> None:
@@ -771,7 +777,7 @@ def cmd_hook(payload: dict) -> None:
         for page_dir in owned_pages(sid):
             cmd_status(page_dir, "idle", "the session that opened this page has ended")
             cmd_stop(page_dir)
-        (colloquy_home() / ".sessions" / f"{sid}.json").unlink(missing_ok=True)
+        (state_home() / "sessions" / f"{sid}.json").unlink(missing_ok=True)
         return
     # stop_hook_active means this hook already blocked once and Claude is running
     # again on the strength of it; blocking a second time is how a hook loops.
