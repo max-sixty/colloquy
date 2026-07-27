@@ -20,13 +20,14 @@ $ARGUMENTS
 
 ## Setup
 
-The page lives in its own directory, conventionally `~/.claude/colloquy/<slug>/`,
-where `<slug>` is a short kebab-case name for the topic (`migration-options`,
-`auth-diagnosis`) — every command takes the directory explicitly, so any location
-works. The directory survives the session and is where every version, the event log,
-and the vendored widget layer live. The same `~/.claude/colloquy/` also carries the user's
-personal overlay layer (see Customizing), which reserves `widgets` and `vendor` as
-slugs. `interact.py` mediates everything; its module docstring documents the layout.
+The page lives in its own directory, conventionally
+`~/.local/state/colloquy/pages/<slug>/`, where `<slug>` is a short kebab-case name
+for the topic (`migration-options`, `auth-diagnosis`) — every command takes the
+directory explicitly, so any location works. The directory survives the session and
+is where every version, the event log, and the vendored widget layer live. It is
+review state, not an archive: content with a life beyond the review leaves through
+`export` or a copied version, to wherever that content belongs. `interact.py`
+mediates everything; its module docstring documents the layout.
 
 Invoke it with `uv run` — it's a `uv` script (a PEP 723 header declares its
 dependencies), and `uv` is the one prerequisite for the whole plugin. If
@@ -221,7 +222,7 @@ means it couldn't, and the page stays down until `serve`.
 ## Customizing the widget layer
 
 `init` vendors the layer into the page directory by overlaying, per file: colloquy's
-shipped defaults, then the user's `~/.claude/colloquy/`, then the project's
+shipped defaults, then the user's `~/.config/colloquy/`, then the project's
 `.claude/colloquy/` — each mirroring the same layout (`theme.css`, `registry.json`,
 `widgets/`, `vendor/`) — so a project can override `theme.css`, extend `registry.json`,
 or add widget modules, and `catalog` always reflects what this page actually has. The

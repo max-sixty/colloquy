@@ -6,22 +6,28 @@ ExitPlanMode call is auto-approved and Claude is redirected to present the plan
 as a colloquy review page instead of dropping into implementation, so the plan
 is reviewed in the browser rather than approved as a terminal wall-of-text.
 
-The toggle lives at ~/.claude/colloquy/config.json ({"plans": true}). Anything
+The toggle lives at ~/.config/colloquy/config.json ({"plans": true}). Anything
 other than an explicit enable — missing file, disabled, malformed, any error —
 falls through to the normal plan-mode flow, so a colloquy bug can never block
 the user's plans.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
-CONFIG = Path.home() / ".claude" / "colloquy" / "config.json"
+# Must match interact.py's config_home() and scripts/plans.py.
+CONFIG = (
+    Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    / "colloquy"
+    / "config.json"
+)
 
 REDIRECT = (
     "colloquy-plans is on. Do not start implementing yet. Present the plan you "
     "just finalized as a colloquy review page: follow the colloquy skill — init a "
-    "directory under ~/.claude/colloquy/<slug>/, write the plan as "
+    "directory under ~/.local/state/colloquy/pages/<slug>/, write the plan as "
     "versions/v001.html (sections with stable ids; widgets and idioms per the "
     'vendored catalog; <meta name="cq-review" content="sign-off"> in the head — '
     "approval is the point of a plan page), serve it, run check, note the version, "
