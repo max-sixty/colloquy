@@ -208,7 +208,7 @@ scaffold is exactly the theme link and the runtime module, every
 <code>cq-*</code> element validates against the page's registry along with the
 head's <code>cq-*</code> metas, ids stay unique
 and every comment anchor from the previous version survives, and nothing is
-wider than the readable column. The changelog note re-runs the lint and refuses
+wider than the readable column. The changelog note runs the lint and refuses
 a failing version, so an open browser never sees one. Before a page's URL first
 goes out, <code>check --render</code> also loads it in the machine's own Chrome
 and refuses what only a layout engine can see — a console error, a widget

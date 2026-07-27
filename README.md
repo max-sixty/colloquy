@@ -20,7 +20,8 @@ checkout.
 
 That's it. No config, no accounts. It needs [`uv`](https://docs.astral.sh/uv/) on your
 PATH (`interact.py` is a `uv` script, its dependencies declared in a PEP 723 header) and
-a browser on the same machine as the session.
+a browser on the same machine as the session. Installing puts `colloquy` on the session's
+PATH too, which is how Claude drives a page.
 
 Then ask Claude for a page, or run `/colloquy [topic]`, which with no argument presents
 whatever the session is currently about.

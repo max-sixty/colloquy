@@ -7,7 +7,9 @@
 
 A `uv` script: the PEP 723 header above declares the dependencies, and `uv` is
 the one prerequisite for the whole plugin — no venv to create, no build step.
-Run it with `uv run interact.py <command> …`.
+Run it with `uv run interact.py <command> …`, or as `colloquy <command> …`: the
+plugin ships `bin/colloquy`, which Claude Code puts on PATH, so the skill can
+hand an agent a command that resolves nothing and expands nothing.
 
 A page directory holds:
     versions/v001.html…  immutable page versions (Claude writes them). The server
@@ -99,10 +101,10 @@ the readable column.
 
 `check --render` adds the browser half, run once before a page's URL is first
 handed over: the version loads in the machine's installed Chrome (Playwright
-`channel="chrome"` — the caller supplies playwright via
-`uv run --with playwright`) and the render invariants the static lint cannot
-reach run against it — no console or page errors, no fail-soft error box, every
-visible widget occupies real space, no sideways scroll, in both color schemes.
+`channel="chrome"` — the caller supplies playwright, which `bin/colloquy` does
+on seeing `--render`) and the render invariants the static lint cannot reach run
+against it — no console or page errors, no fail-soft error box, every visible
+widget occupies real space, no sideways scroll, in both color schemes.
 The invariants live in render_version, which tests/test_render.py drives over
 the shipped examples, so the gate and the suite cannot drift apart.
 """
@@ -1310,7 +1312,9 @@ def render_check(page_dir: Path, name: str) -> int:
     except ImportError:
         print(
             "check --render needs Playwright; run it as\n"
-            "  uv run --with playwright interact.py check --render <dir>",
+            "  colloquy check --render <dir>\n"
+            "or, from a checkout,\n"
+            "  uv run --with playwright skills/colloquy/scripts/interact.py check --render <dir>",
             file=sys.stderr,
         )
         return 1
@@ -1451,7 +1455,7 @@ def hook() -> None:
 @click.option(
     "--render",
     is_flag=True,
-    help="also render the version in the installed Chrome (invoke via uv run --with playwright)",
+    help="also render the version in the installed Chrome (needs playwright, which bin/colloquy supplies)",
 )
 def check(dir: str, version: int, render: bool) -> None:
     """Deterministic pre-handover lint of a version; --render adds the browser half."""
@@ -1473,4 +1477,6 @@ def export(dir: str) -> None:
 
 
 if __name__ == "__main__":
-    cli()
+    # `colloquy` is the name the skill hands an agent and the name on PATH, so it is
+    # the name the usage lines have to say back, whichever way the script was reached.
+    cli(prog_name="colloquy")

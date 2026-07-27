@@ -30,7 +30,7 @@ REDIRECT = (
     "directory under ~/.local/state/colloquy/pages/<slug>/, write the plan as "
     "versions/v001.html (sections with stable ids; widgets and idioms per the "
     'vendored catalog; <meta name="cq-review" content="sign-off"> in the head — '
-    "approval is the point of a plan page), serve it, run check, note the version, "
+    "approval is the point of a plan page), serve it, note the version, "
     "and hand over the URL. Then enter the comment/reply/revise loop. Treat the "
     'user approving in the browser ("✓ Looks good") as the go-ahead to implement.'
 )

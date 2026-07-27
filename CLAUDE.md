@@ -9,7 +9,10 @@ buildable.
 Six things, and nothing between them:
 
 - `skills/colloquy/scripts/interact.py` — a `uv` script: the server, the event log, the
-  lint (`check`), vendoring, export. No daemon, no database.
+  lint (`check`), vendoring, export. No daemon, no database. Reached as `colloquy`,
+  through the `bin/` shim Claude Code puts on PATH for every enabled plugin, so the skill
+  can hand an agent commands with no path to resolve and nothing shell-specific to
+  expand.
 - `skills/colloquy/assets/colloquy.js` — the runtime the page loads. One ES module owning
   the widget layer and the comment layer, with its stylesheet in a `<style>` block inside
   it. No build step.

@@ -26,40 +26,43 @@ for the topic (`migration-options`, `auth-diagnosis`) — every command takes th
 directory explicitly, so any location works. The directory survives the session and
 is where every version, the event log, and the vendored widget layer live. It is
 review state, not an archive: content with a life beyond the review leaves through
-`export` or a copied version, to wherever that content belongs. `interact.py`
-mediates everything; its module docstring documents the layout.
+`export` or a copied version, to wherever that content belongs.
 
-Invoke it with `uv run` — it's a `uv` script (a PEP 723 header declares its
-dependencies), and `uv` is the one prerequisite for the whole plugin. If
-`CLAUDE_SKILL_DIR` isn't set in your shell, the script lives at
-`scripts/interact.py` beside this file:
+`colloquy` mediates everything, and is on PATH because Claude Code puts each enabled
+plugin's `bin/` there. Nothing below has a path to resolve or a variable to expand, so
+it runs verbatim in any shell.
 
 ```bash
-IX="uv run ${CLAUDE_SKILL_DIR}/scripts/interact.py"
-$IX init <dir>                          # create layout, vendor the widget layer
-$IX catalog <dir>                       # the page's vocabulary: widgets + theme idioms
-$IX serve <dir>                         # background task; prints the URL
-$IX status <dir> working "<detail>"     # or: waiting, idle
-$IX wait <dir>                          # background task; exits on new user events
-$IX reply <dir> --to <id> --text "…"
-$IX check <dir>                         # pre-handover lint (see below)
-$IX note <dir> --version 1 --text "<one-line changelog>"   # re-runs check, then publishes vNNN.html
-$IX events <dir>                        # reprint the full thread
-$IX export <dir>                        # the review thread as Markdown
-$IX stop <dir>                          # stop the server; its background task exits 143 (SIGTERM — normal)
+colloquy init <dir>                          # create layout, vendor the widget layer
+colloquy catalog <dir>                       # the page's vocabulary: widgets + theme idioms
+colloquy serve <dir>                         # background task; prints the URL
+colloquy status <dir> working "<detail>"     # or: waiting, idle
+colloquy wait <dir>                          # background task; exits on new user events
+colloquy reply <dir> --to <id> --text "…"
+colloquy note <dir> --version 1 --text "<one-line changelog>"   # lints, then publishes vNNN.html
+colloquy check --render <dir>                # the browser gate, once per page (see below)
+colloquy events <dir>                        # reprint the full thread
+colloquy export <dir>                        # the review thread as Markdown
+colloquy stop <dir>                          # stop the server; its background task exits 143 (SIGTERM — normal)
 ```
+
+`command not found` means colloquy isn't installed as a plugin — say so rather than
+hunting for the script. From a checkout of the repo the same command is
+`uv run skills/colloquy/scripts/interact.py`; that script's module docstring documents
+the page directory's layout, and its PEP 723 header is why `uv` is the plugin's one
+prerequisite.
 
 1. `init`, then read `catalog <dir>` — it prints the vendored registry (widget schemas
    with examples) and the theme's class idioms, which vary per project.
 2. Write the page as `<dir>/versions/v001.html` (conventions below).
 3. `serve` as a background task (`run_in_background`). The port is stable per directory
    and a live server is reused, so the URL survives restarts.
-4. `check`, then `note` the version — the server exposes a version only once its note
-   lands, and `note` re-runs `check` and refuses a failing version, so a half-written or
-   broken file is never live in the reviewer's browser. Before the URL first goes out,
-   run the browser half too: `check --render` (see "Check before handing over"). Then
-   hand the user the URL with a one-line orientation (select text to comment; on a
-   sign-off page, "✓ Looks good" approves) and enter the review loop.
+4. `note` the version — the server exposes a version only once its note lands, and
+   `note` lints first and refuses a failing version, so a half-written or broken file is
+   never live in the reviewer's browser. Before the URL first goes out, run the browser
+   gate too: `check --render` (see "Before the URL goes out"). Then hand the user the
+   URL with a one-line orientation (select text to comment; on a sign-off page,
+   "✓ Looks good" approves) and enter the review loop.
 
 ## Page conventions
 
@@ -195,9 +198,9 @@ On wake:
      thread. Reply markup is frozen in the log — versions neither carry nor revert
      it, and the picked state stays put on its own.
 3. Page changes go in the next version: Write `versions/v002.html` (incrementing; never
-   rewrite a version the user has seen — the picker is the history), `check` it, then
-   `note` its changelog — brief, though a decline's why can take a sentence or two —
-   which publishes it; the browser follows automatically.
+   rewrite a version the user has seen — the picker is the history), then `note` its
+   changelog — brief, though a decline's why can take a sentence or two — which lints it
+   and publishes it; the browser follows automatically.
 4. Back to `status waiting` + `wait`.
 
 A `done` event is sign-off — it arrives only from a page declaring it (see the
@@ -238,35 +241,33 @@ and devcontainers do this automatically, so the URL opens as-is). In a session w
 path to localhost there is no hand-over; present in the terminal instead. An opt-in
 tunnel is on the backlog.
 
-## Check before handing over
+## Before the URL goes out
 
-Before each `note`, run `check`:
+Three passes stand between a version and its reviewer.
 
-```bash
-uv run "${CLAUDE_SKILL_DIR}/scripts/interact.py" check <dir>
-```
+**The lint.** `note` runs it on every version and refuses to publish one that fails, so
+the workflow holds no separate `check` call. It is deterministic and needs no browser:
+the HTML parses with balanced tags; the scaffold is exactly the theme link and the
+module script; every `cq-*` element validates against the vendored registry (schema,
+nesting, no self-closing form); ids are unique and every anchor id from the previous
+version survives; nothing has a fixed pixel width wider than the column.
 
-It's a deterministic static lint (no browser, near-zero cost): the HTML parses with
-balanced tags; the scaffold is exactly the theme link and the module script; every
-`cq-*` element validates against the vendored registry (schema, nesting, no
-self-closing form); ids are unique and every anchor id from the previous version
-survives; nothing has a fixed pixel width wider than the column. It exits non-zero and
-lists what to fix.
-
-Once before the page's URL first goes to the user, add the browser half:
+**The render gate**, once, before the page's URL first reaches the user:
 
 ```bash
-uv run --with playwright "${CLAUDE_SKILL_DIR}/scripts/interact.py" check --render <dir>
+colloquy check --render <dir>
 ```
 
 It loads the version in the machine's installed Chrome (a couple of seconds, and works
-before the version is noted) and fails on what the static lint can't see: a console
-error, a widget upgraded into a box of no size, a page that scrolls sideways — in both
-color schemes. `--with playwright` supplies the gate's one extra dependency; when
-Chrome itself isn't installed, the gate says so on stderr and lets the static result
-stand rather than blocking the hand-over.
+before the version is noted) and fails, in both color schemes, on what a static lint
+cannot see: a console error, a widget upgraded into a box of no size, a page that
+scrolls sideways, a `cq-diagram` whose mermaid source doesn't parse. The lint validates
+that element but never the notation in its body, so a typo there would otherwise reach
+the reader as an error box. When Chrome isn't installed, the gate says so on stderr and
+lets the lint's result stand. It is the page's whole browser budget; a screenshot after
+it reads neither the console nor the second scheme.
 
-Then read the page once against this checklist:
+**Then read the page yourself.** Nothing above has an opinion about any of this:
 
 - **Claims backed.** Every assertion the reader would question is traceable to real
   evidence on the page — a command, a diff, a linked source, output behind `<details>` —
@@ -277,8 +278,3 @@ Then read the page once against this checklist:
   full height: mark its `cq-options` group `settled`.
 - **Diagrams read.** Each diagram earns its place and says something the prose doesn't.
 - **References clickable.** Tickets, PRs, and URLs are real links.
-
-If browser tools are available **and** the page has diagrams, render the served URL and
-take one screenshot to confirm the diagrams aren't clipped — a single shot, not a
-scroll-through. Without browser tools, `check --render` plus the first user comment are
-the safety net; skip it.
