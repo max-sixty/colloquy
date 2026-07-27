@@ -146,3 +146,8 @@ and outside clicks hide, they don't discard. Cancel is the only discard.
 - **Merge locally.** The project isn't at the stage of PRs: a finished branch lands with
   `wt merge`, a direct squash merge to main. That holds for background jobs too, whose
   harness default is to push and open a draft PR.
+- **The main checkout is the installed plugin.** `.claude-plugin/marketplace.json` sets
+  `source: "./"`, so Claude Code loads skills, commands, hooks, and `bin/` from the
+  directory the marketplace points at, and landing on main publishes them. `claude plugin
+  install` also copies the tree under `~/.claude/plugins/cache/colloquy/`, which nothing
+  loads.
