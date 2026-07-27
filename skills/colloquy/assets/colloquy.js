@@ -771,14 +771,17 @@ function segmentsIn(range) {
 // file can hold. Where the spaces landed is cosmetic to the search: a quote's own
 // whitespace is elastic to findQuote, so nothing downstream depends on this.
 const blockOf = (node) => node.parentElement.closest(TEXT_BLOCK) ?? node.parentElement;
-function quoteFrom(segments, cap = Infinity) {
+function quoteFrom(segments) {
   let text = "";
   segments.forEach((seg, i) => {
     if (i && blockOf(seg.node) !== blockOf(segments[i - 1].node)) text += " ";
     text += seg.node.data.slice(seg.start, seg.end);
   });
-  return [...text.replace(/\s+/g, " ").trim()].slice(0, cap).join("");
+  return [...text.replace(/\s+/g, " ").trim()].join("");
 }
+// Cutting one to length is the caller's business and always by code point: half a surrogate
+// pair is a character no UTF-8 file can hold, and a quote is written to one.
+const cut = (text, from, to) => [...text].slice(from, to).join("");
 
 // A passage as one Range: what paints it, and what measures it for a scroll.
 function rangeOf(segments) {
@@ -810,9 +813,9 @@ const EDGE = "\u0000"; // no document holds one, so it can't collide with page t
 // marked the broken one — the reviewer's objection attached to the code they were objecting
 // to, and stored that way. Section scoping cannot reach it, because both sides of a diff
 // live under one id. Context rather than an offset: an offset goes stale silently when the
-// page is revised, while neighbours that no longer match simply score lower and lose to a
-// better match elsewhere. Anchors written before this carry none and resolve as they did.
-const CONTEXT = 24;
+// page is revised, while neighbours can be checked against the page as it now stands — see
+// `confirms` for what checking them means, and what it deliberately refuses to do.
+// Anchors written before this carry none and resolve as they did.
 // The characters of raw[lo..hi) as segments, so a neighbourhood can be read back with the
 // same function that wrote it down. Edges hold no character and are simply absent.
 function spanOf(origin, lo, hi) {
@@ -830,9 +833,14 @@ function spanOf(origin, lo, hi) {
 // A partial match is not weak evidence for the right copy — it is evidence the page moved
 // on, and acting on it is how a comment ends up somewhere it was never made: a version that
 // rewrote the sentence beside the anchored copy left an untouched copy elsewhere matching
-// better, and the comment followed it there. Demanding the whole stored context makes this
-// strictly safer than carrying none, because anything short of certainty falls back to the
-// order the search used before context existed.
+// better, and the comment followed it there. Demanding the whole stored context is what
+// makes that rare: anything short of certainty falls back to the order the search used
+// before context existed.
+//
+// Rare, not impossible. The bar is however much was stored, so a passage at the edge of its
+// section has thin context and thin context is a bar another copy can clear — which is why
+// the search below refuses one-sided context outright. That still leaves a side of one
+// character clearing the gate; TODO.md carries what closing it properly would take.
 //
 // The bar is what the capture actually produces, not a number picked to fit: across every
 // selection in the shipped examples, an unmodified page confirms its stored context in full.
@@ -842,15 +850,19 @@ const confirms = (a, b, fromEnd) => {
   while (n < len && (fromEnd ? a.at(-1 - n) === b.at(-1 - n) : a[n] === b[n])) n++;
   return n;
 };
-// As much collapsed text as the stored context could hold, however much raw text that
-// takes. A fixed raw budget reads less than the capture wrote wherever whitespace runs
-// dense — an indented line inside a <pre> — and the right occurrence then confirms none of
-// its own neighbours.
+// As much collapsed text as the stored context is long, however much raw text that takes.
+// A fixed raw budget reads less than the capture wrote wherever whitespace runs dense — an
+// indented line inside a <pre> — and the right occurrence then confirms none of its own
+// neighbours. `want` is the stored string's own length rather than the cap the capture
+// spent, because the capture counted code points and this counts code units: an emoji in
+// the neighbourhood makes those different numbers, and a window short by even one character
+// can never confirm, so the anchor would fall back to first-match on that page forever.
 function neighbourhood(origin, at, want, before) {
   for (let raw = want * 2; ; raw *= 2) {
     const lo = before ? at - raw : at;
     const hi = before ? at : at + raw;
     const text = quoteFrom(spanOf(origin, lo, hi));
+    // >=, not >, so a caller asking for nothing gets an answer: doubling zero never grows.
     if (text.length >= want || (before ? lo <= 0 : hi >= origin.length)) return text;
   }
 }
@@ -888,11 +900,17 @@ function findQuote(segments, quote, anchor) {
   let found = null;
   for (const at of raw.matchAll(pattern)) {
     first ??= at;
-    if (!pre && !post) break;
+    // Both sides or nothing. The bar is however much was stored, so a passage that opens or
+    // closes its section offers only one side — a bar another copy can clear, and then a
+    // revision hands the comment to a passage it was never made on. That failure is silent
+    // and arrives later, when nobody is looking; the failure it costs is the mark painting
+    // on the wrong copy while the reviewer is still composing, in front of them. Two of the
+    // 197 selections context places across the shipped examples are the price.
+    if (!pre || !post) break;
     const stop = at.index + at[0].length;
     const kept =
-      confirms(neighbourhood(origin, at.index, CONTEXT, true), pre, true) +
-      confirms(neighbourhood(origin, stop, CONTEXT, false), post, false);
+      confirms(neighbourhood(origin, at.index, pre.length, true), pre, true) +
+      confirms(neighbourhood(origin, stop, post.length, false), post, false);
     if (kept === pre.length + post.length) {
       found = at;
       break;
@@ -954,7 +972,7 @@ function captureView() {
     }
     // Written down the way a comment's quote is, so the search that re-finds it is
     // looking for a string of the same kind.
-    const text = quoteFrom(textNodesUnder(block), LANDMARK_CAP);
+    const text = cut(quoteFrom(textNodesUnder(block)), 0, LANDMARK_CAP);
     // A short line ("Risks") would match anywhere; keep scanning for a quotable block.
     if (text.length >= 24) {
       // Unconditionally, so a quotable block under no section clears the earlier one
@@ -1170,6 +1188,9 @@ function place(node, left, top) {
 // such a selection meant anyway.
 const QUOTE_CAP = 400;
 const LANDMARK_CAP = 160;
+// How much of a passage's surroundings an anchor writes down. Only the capture decides
+// this; the search asks for whatever a given anchor happens to hold.
+const CONTEXT = 24;
 function selectionAnchor(sel) {
   const range = sel.getRangeAt(0);
   const node = range.commonAncestorContainer;
@@ -1185,19 +1206,25 @@ function selectionAnchor(sel) {
   after.selectNodeContents(root);
   after.setStart(range.endContainer, range.endOffset);
   const whole = quoteFrom(segmentsIn(range));
-  const quote = [...whole].slice(0, QUOTE_CAP).join("");
-  const prefix = [...quoteFrom(segmentsIn(upto))].slice(-CONTEXT).join("");
-  const suffix = [...quoteFrom(segmentsIn(after))].slice(0, CONTEXT).join("");
-  // Only what there is, and only what can be checked. A passage filling its section has no
-  // neighbours, and writing that down as two empty strings puts a field in every event that
-  // never says anything. A quote cut to the cap ends inside the selection, so the text after
-  // the selection is not the text after the quote — storing it would name a place no
-  // occurrence can confirm, which under the rule above means every one falls back.
+  const quote = cut(whole, 0, QUOTE_CAP);
+  const prefix = cut(quoteFrom(segmentsIn(upto)), -CONTEXT, Infinity);
+  const suffix = cut(quoteFrom(segmentsIn(after)), 0, CONTEXT);
+  // Only what there is, and only what follows the quote. A passage filling its section has
+  // no neighbours, and writing that down as two empty strings puts a field in every event
+  // that never says anything. A quote cut to the cap ends inside the selection, so what
+  // follows it is the rest of the selection rather than the text after it — read from there,
+  // the suffix still names the place the search will look.
+  // trimStart because the search reads its side through quoteFrom, which trims, and `whole`
+  // is already collapsed so there is at most one space to lose. Without it, a cut landing
+  // just before a space stored a suffix beginning with one — a character no occurrence can
+  // produce, so every one failed at the first comparison.
+  const tail =
+    quote === whole ? suffix : cut(cut(whole, QUOTE_CAP, Infinity).trimStart(), 0, CONTEXT);
   return {
     section,
     quote,
     ...(prefix && { prefix }),
-    ...(suffix && quote === whole && { suffix }),
+    ...(tail && { suffix: tail }),
   };
 }
 

@@ -36,17 +36,30 @@ stands alone.
       grows a class list per widget that `check` can collide-detect, or the
       chrome's rules get scoped so a widget's classes can't reach them.
 - [ ] A comment on a repeated passage goes back to naming the first copy once the page is
-      revised around it. Context places a comment only while the neighbours it stored are
-      still there in full; a version that rewrites them leaves nothing to check, and the
-      search falls back to document order — right where the comment was made on the first
-      copy, wrong where it was made on a later one. The strict rule is deliberate: a partial
-      match is evidence the page moved on rather than weak evidence for a copy, and
-      preferring the best partial handed comments to copies they were never made on. Closing
-      it properly means a similarity that survives an edit (Hypothesis scores an approximate
-      match over quote, prefix and suffix together) rather than a lower bar on this one, and
-      it wants the corpus to say how often it actually bites first. The other half of the
-      same limit: two copies that are identical *and* identically surrounded can't be told
-      apart at all, and no page here has a pair.
+      revised around it. Context places a comment only where the neighbours it stored are
+      still there in full on both sides; anything less falls back to document order — right
+      where the comment was made on the first copy, wrong where it was made on a later one.
+      Both halves of that rule are deliberate. A partial match is evidence the page moved on
+      rather than weak evidence for a copy, and preferring the best partial handed comments
+      to copies they were never made on. Requiring both sides costs the passages that open or
+      close their section, since those store one neighbour: one of the 259 ambiguous
+      selections across the shipped examples, `"minutes."` ending a section in
+      `incident-report.html`. It fails visibly — the mark paints on the wrong copy while the
+      reviewer is still composing — where the case it closes fails silently a version later
+      with nobody watching. Closing the remainder wants a similarity that
+      survives an edit (Hypothesis scores an approximate match over quote, prefix and suffix
+      together) rather than a lower bar. Two copies that are identical *and* identically
+      surrounded can't be told apart at all, and no page here has a pair.
+- [ ] A passage at the edge of its section gets thin context, and thin context is a weak
+      bar. The search refuses one-sided context outright, but a side of one character — a
+      passage closing its section stores everything before it and a `"."` — clears the gate
+      and can still be matched by an earlier copy. A length threshold would be a tuning knob
+      this file has otherwise avoided, and any number for it is arbitrary. The structural
+      answer: the context is thin only because the capture clips to the section root, while
+      the body has text on both sides. Build the search string over the body and restrict
+      candidates to those inside the section element, and every passage gets two full sides
+      except at the very ends of the document. That wants a containment test per candidate,
+      so it is a real change rather than a small one.
 - [ ] The 💬 button has two writers. `updateFab` decides it from the selection, and the
       click handler that spots a diagram or image writes it directly — so `updateFab` needs
       `else if (fabAnchor?.quote)` to avoid clobbering what the click just set, across an

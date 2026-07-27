@@ -969,6 +969,218 @@ def test_a_revised_neighbourhood_does_not_hand_the_comment_to_another_copy(brows
     page.close()
 
 
+# A passage among padded emoji, which is the only shape that catches the seam between how a
+# context is stored and how it is compared: astral characters make the stored string longer
+# in code units than in the code points the capture counted, and the padding makes the
+# search's window collapse to less than it read. Both are needed, and the padding is tuned
+# rather than decorative — a marker plus three spaces collapses 5 units to 3, which leaves
+# the pre-fix window just short of the stored length. Two spaces and it is already long
+# enough; five and the window doubles and overshoots. Tied to CONTEXT = 24, and to markers
+# outside the BMP: ✅ and ⚠ are one code unit each and will not do it.
+# The two inputs a well-meaning edit would touch, asserted so the fixture can't quietly
+# stop guarding: BMP symbols and padding outside the band both leave the pre-fix code
+# passing, and neither shows up as a failure anywhere.
+MARKERS = '🔴🟢🟡🔵🟣🟤🟠🟥🟩🟦🔴🟢🟡🔵🟣🟤'
+PAD = "   "
+assert all(ord(c) > 0xFFFF for c in MARKERS), "BMP markers will not reproduce this"
+assert len(PAD) in (3, 4), "outside the band the window is long enough either way"
+ASTRAL_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>astral</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Astral</h1>
+<section id="astral">
+<p>Ordinary prose ahead of the first copy here. {phrase} and a tail.</p>
+<p>A divider paragraph between the copies.</p>
+<p>{run}{phrase} and a tail.</p>
+</section>
+</main>
+</body>
+</html>
+""".replace("{run}", "".join(m + PAD for m in MARKERS)).replace(
+    "{phrase}", "TARGET PHRASE")
+
+
+def test_a_passage_among_padded_emoji_confirms_its_neighbours(browser, serve):
+    """A stored context is counted in code points; the comparison counts code units; and an
+    astral character is two of the second for one of the first. Ask the page for the first
+    number and the window comes up short of what was written down — and short is fatal,
+    because a passage confirms its neighbours in full or not at all. The anchor would fall
+    back to naming the first copy on that page for good, silently. No shipped example holds
+    an astral character, so only a fixture can hold this."""
+    page, errors = open_page(browser, serve(ASTRAL_PAGE))
+    landed = page.evaluate("""async () => {
+        const skip = '.cq-ui, script, style';
+        const w = document.createTreeWalker(document.getElementById('astral'),
+            NodeFilter.SHOW_TEXT,
+            {acceptNode: n => n.parentElement?.closest(skip)
+                ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});
+        const phrase = 'TARGET PHRASE';
+        const hits = [];
+        for (let n = w.nextNode(); n; n = w.nextNode()) {
+            let i = n.data.indexOf(phrase);
+            while (i !== -1) { hits.push({node: n, at: i}); i = n.data.indexOf(phrase, i + 1); }
+        }
+        if (hits.length !== 2) return `fixture holds ${hits.length} copies, wanted 2`;
+        const h = hits[1];   // the copy among the emoji
+        const want = document.createRange();
+        want.setStart(h.node, h.at); want.setEnd(h.node, h.at + phrase.length);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(want);
+        document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+        await new Promise(r => setTimeout(r, 60));
+        const fab = document.querySelector('.cq-fab');
+        if (fab.style.display !== 'block') return 'no button';
+        fab.click();
+        await new Promise(r => setTimeout(r, 60));
+        const painted = [...(CSS.highlights.get('cq-pending') ?? [])][0];
+        if (!painted) return 'no mark';
+        return painted.compareBoundaryPoints(Range.START_TO_START, want) === 0;
+    }""")
+    assert landed is True, f"the emoji copy was picked, the mark went elsewhere ({landed})"
+    assert errors == []
+    page.close()
+
+
+# A passage past the 400-code-point quote cap whose 400th code point is a space — the cut
+# lands where the search's own reading of that spot would begin with whitespace, and it
+# trims. Roughly one capped quote in six for English prose.
+CAPPED_PASSAGE = 'Note: the migration replays on every deploy because the version stamp never lands, and the guard reads a column the writer never fills, and the whole batch runs again from the top on each release, and the counters disagree with the log and with each other, and the retry budget is spent before anyone looks at it, and the operator reads the dashboard at noon and files the incident, and the fix ships behind a flag nobody remembers to turn on, and the runbook still names a host that was retired last spring.'
+CAPPED_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>capped</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Capped</h1>
+<section id="capped">
+<p>Ahead of the first copy sits this line. {passage}</p>
+<p>Between the copies sits this other line. {passage}</p>
+</section>
+</main>
+</body>
+</html>
+""".replace("{passage}", CAPPED_PASSAGE)
+
+
+def test_a_capped_quote_keeps_a_suffix_the_page_can_show(browser, serve):
+    """A quote longer than the cap ends inside the selection, so its neighbours are read
+    from after the cut rather than after the selection. The search reads its side through
+    the same collapsing that trims leading whitespace — so a cut landing just before a space
+    must not store one, or the stored suffix names a string no occurrence can produce and
+    every copy fails at the first character."""
+    assert CAPPED_PASSAGE[400] == " ", "the fixture no longer cuts on a space"
+    page, errors = open_page(browser, serve(CAPPED_PAGE))
+    landed = page.evaluate("""async () => {
+        const copies = document.querySelectorAll('#capped p');
+        if (copies.length !== 2) return `fixture holds ${copies.length} copies, wanted 2`;
+        const p = copies[1];
+        const text = p.firstChild.data;
+        const at = text.indexOf('Note:');
+        const want = document.createRange();
+        want.setStart(p.firstChild, at); want.setEnd(p.firstChild, text.length);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(want);
+        document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+        await new Promise(r => setTimeout(r, 60));
+        const fab = document.querySelector('.cq-fab');
+        if (fab.style.display !== 'block') return 'no button';
+        fab.click();
+        await new Promise(r => setTimeout(r, 60));
+        const painted = [...(CSS.highlights.get('cq-pending') ?? [])][0];
+        if (!painted) return 'no mark';
+        return painted.compareBoundaryPoints(Range.START_TO_START, want) === 0;
+    }""")
+    assert landed is True, f"the second copy was picked, the mark went elsewhere ({landed})"
+    assert errors == []
+    page.close()
+
+
+# A passage that opens its section stores no prefix — note there is no whitespace between
+# the section tag and the paragraph, which is what makes the copy's leading context empty
+# rather than short. Both copies carry the identical tail, so a suffix on its own is a bar
+# the other copy clears just as well.
+THIN_V1 = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>thin</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Thin</h1>
+<section id="thin"><p>{phrase}. Retries are capped at three.</p>
+<p>An unrelated middle paragraph.</p>
+<p>Queue drain runs first. {phrase}. Retries are capped at three.</p>
+</section>
+</main>
+</body>
+</html>
+""".replace("{phrase}", "The version stamp never lands")
+# Only the commented copy's tail changes, so the untouched copy is now the better match for
+# the one neighbour the comment stored.
+THIN_V2 = THIN_V1.replace(
+    "lands. Retries are capped at three.</p>\n<p>An unrelated",
+    "lands. Backoff is capped at three.</p>\n<p>An unrelated")
+
+
+def test_one_neighbour_is_not_enough_to_move_a_comment(browser, serve):
+    """Context may place a comment only where both of a passage's neighbours are still
+    there. A passage at the edge of its section has just one, and one is a bar another copy
+    clears — so a revision that rewrites the commented copy's only neighbour would hand the
+    comment to a copy it was never made on, silently, a version after anyone was looking.
+    The cost of refusing is visible instead: a passage like this is placed by document
+    order, and a reviewer watching sees it land."""
+    url = serve(THIN_V1)
+    page, errors = open_page(browser, url)
+    posted = page.evaluate("""async () => {
+        const p = document.querySelectorAll('#thin p')[0];
+        const phrase = 'The version stamp never lands';
+        const at = p.firstChild.data.indexOf(phrase);
+        const want = document.createRange();
+        want.setStart(p.firstChild, at); want.setEnd(p.firstChild, at + phrase.length);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(want);
+        document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+        await new Promise(r => setTimeout(r, 40));
+        const fab = document.querySelector('.cq-fab');
+        if (fab.style.display !== 'block') return 'no button';
+        fab.click();
+        await new Promise(r => setTimeout(r, 40));
+        const box = document.querySelector('.cq-composer textarea');
+        box.value = 'does this hold?';
+        box.dispatchEvent(new Event('input', {bubbles: true}));
+        document.querySelector('.cq-composer button.primary').click();
+        return true;
+    }""")
+    assert posted is True, f"couldn't post the comment ({posted})"
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+
+    d = serve.page_dir
+    (d / "versions" / "v002.html").write_text(THIN_V2)
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"})
+    page.wait_for_url("**/v002.html", timeout=15000)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    where = page.evaluate("""() => {
+        const r = [...CSS.highlights.get('cq-mark')][0];
+        return r.startContainer.parentElement.textContent.slice(0, 40);
+    }""")
+    assert where.startswith("The version stamp never lands. Backoff"), (
+        f"one neighbour was enough to move the comment: {where!r}"
+    )
+    assert errors == []
+    page.close()
+
+
 def test_a_diff_anchors_to_the_side_it_was_read_on(browser, serve):
     """The case this exists for, and the one a section cannot narrow: a diff carries the
     same line added and removed under a single id, so the reviewer commenting on the fix
