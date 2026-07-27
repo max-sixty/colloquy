@@ -86,9 +86,9 @@ def test_init_vendors_the_layer(page_dir):
 
 def test_init_user_layer_applies(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    (home / ".claude" / "colloquy" / "widgets").mkdir(parents=True)
-    (home / ".claude" / "colloquy" / "theme.css").write_text(":root { --accent: teal }")
-    (home / ".claude" / "colloquy" / "widgets" / "cq-foo.js").write_text("// user widget")
+    (home / ".config" / "colloquy" / "widgets").mkdir(parents=True)
+    (home / ".config" / "colloquy" / "theme.css").write_text(":root { --accent: teal }")
+    (home / ".config" / "colloquy" / "widgets" / "cq-foo.js").write_text("// user widget")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
     d = tmp_path / "page"
@@ -507,6 +507,33 @@ def test_only_serving_or_watching_a_page_puts_the_session_under_the_guard(
     assert interact.session_pages("s7") == [page_dir.resolve()]
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s7"})
     assert "no watcher" in json.loads(capsys.readouterr().out)["reason"]
+
+
+def test_hook_scripts_agree_with_interact_on_homes(tmp_path, monkeypatch):
+    """review-guard.py, plan-mode-redirect.py, and plans.py run under plain
+    python3, so they inline the XDG resolution interact.py owns rather than
+    importing the uv script; this holds the copies to it."""
+    root = Path(__file__).parent.parent
+
+    def load(path):
+        spec = importlib.util.spec_from_file_location(path.stem.replace("-", "_"), path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    for env in (
+        {},
+        {"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "XDG_STATE_HOME": str(tmp_path / "st")},
+    ):
+        for key in ("XDG_CONFIG_HOME", "XDG_STATE_HOME"):
+            monkeypatch.delenv(key, raising=False)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        guard = load(root / "hooks" / "scripts" / "review-guard.py")
+        redirect = load(root / "hooks" / "scripts" / "plan-mode-redirect.py")
+        plans = load(root / "scripts" / "plans.py")
+        assert guard.SESSIONS == interact.state_home() / "sessions"
+        assert redirect.CONFIG == plans.CONFIG == interact.config_home() / "config.json"
 
 
 def test_idle_cannot_close_a_review_over_events_nobody_read(claimed, capsys):

@@ -3,14 +3,14 @@
 Backlog for improving colloquy: recommendations that stood unchallenged. Each item
 stands alone.
 
-- [ ] Resolve config and state locations — probably XDG paths, not `.claude`.
-      `~/.claude/colloquy/` holds three unlike things today: the user overlay layer
-      (theme.css, registry.json, widgets/, vendor/), every page directory (versions
-      plus event log), and the `/colloquy-plans` toggle (`config.json`) — and the
-      sharing is why `widgets` and `vendor` are reserved as page slugs. Splitting by
-      kind (overlay and config to `$XDG_CONFIG_HOME/colloquy/`, page directories to
-      `$XDG_STATE_HOME` or `$XDG_DATA_HOME`) dissolves the reserved-slug rule. The
-      project layer (`./.claude/colloquy/`) is a separate question.
+- [ ] Consider worktree-local pages. Today every page lives under
+      `~/.local/state/colloquy/pages/`; a page reviewing a branch's work could
+      instead live in that branch's worktree, keeping the review beside the code
+      it discusses and dying with the worktree when the work lands. What that
+      has to answer: the review record vanishes on merge (today it outlives the
+      branch), the vendored layer and event log would need gitignoring, and
+      repo-less pages (personal-admin topics) still need the global home — so it
+      would be a second convention beside it, not a replacement.
 - [ ] Additive overlay: customizing one token, or adding one widget or idiom, means
       forking a whole file today — init's overlay replaces theme.css and
       registry.json per file. Let the overlay add rather than replace (token
@@ -89,17 +89,13 @@ stands alone.
       designed, because each is a baseline that re-records on every deliberate
       restyle: a per-example box dump (id/tag, position, size on a 4px grid —
       the text-snapshot equivalent for layout) and per-example ARIA snapshots
-      (`aria_snapshot()`, which caught cq-board's flat announcement below);
+      (`aria_snapshot()`, which caught cq-board announcing itself flat — one
+      board's tree is pinned in the render suite now, the corpus's is not);
       an axe-core pass (`axe-core-python` ships the JS in the wheel, no npm);
       print output (the @media print rule is load-bearing and unguarded —
       assert the PDF paginates); keyboard bindings (assert colloquy leaves the
       browser's scroll keys alone, not that Chrome scrolls); and the narrow
       viewport, once the covering-layout scrollbar item above is settled.
-- [ ] cq-board is flat to assistive tech: columns don't group or label their
-      cards (the ARIA snapshot shows bare text runs), so a screen reader hears
-      seven cards and seven Move buttons with no column boundaries — and the
-      Move button's label doesn't say which column the card is in. The one fact
-      a non-visual user needs about a card is the thing never announced.
 - [ ] Narrow viewports still stack the two scrollbars. Under 720px the panel
       covers the page rather than squeezing it, so `body` keeps its full width
       and its scrollbar shares the window's right edge with the thread list's.

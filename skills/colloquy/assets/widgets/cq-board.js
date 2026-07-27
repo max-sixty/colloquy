@@ -11,7 +11,15 @@
  * the wire. applyAction states the absolute placement (card X sits at index i
  * of column C), so the poll's replay reconstructs a reload, syncs a second
  * tab, and no-ops on the sender. Presentation is theme CSS; authored content
- * is never replaced, so there is no failSoft. */
+ * is never replaced, so there is no failSoft.
+ *
+ * The board also says what it is non-visually: columns are labeled lists and
+ * cards their items (#structure), and each grip is named for the column its
+ * card now sits in (#names). Both are attributes on authored elements — the
+ * light DOM stays verbatim, which is what the anchor pass and the version diff
+ * walk. The theme's column heading is CSS generated content with empty alt
+ * text, so the label reaches the tree once, as the list's name, rather than
+ * twice. */
 import Sortable from "/vendor/sortable.esm.js";
 import {
   once,
@@ -37,6 +45,7 @@ customElements.define(
 
     connectedCallback() {
       if (!once(this)) return;
+      this.#structure();
       // A quoted board is an exhibit: no grips, no sortable, no grip keys in
       // the "?" overlay — it stays the static board the theme renders anyway.
       if (quoted(this)) return;
@@ -52,6 +61,43 @@ customElements.define(
       for (const card of this.querySelectorAll(":scope > cq-column > cq-card"))
         this.#grip(card);
       for (const col of this.querySelectorAll(":scope > cq-column")) this.#sortable(col);
+      this.#names();
+      // Grip names come from where their cards sit, so the board's own mutations
+      // are what restate them — not the four paths that move a card (arrow step,
+      // drag, cancel, replay), one of which would eventually forget, and one of
+      // which is Sortable reparenting cards without telling us. Setting an
+      // attribute records no childList mutation, so the pass can't feed itself.
+      const moves = new MutationObserver(() => this.#names());
+      for (const col of this.querySelectorAll(":scope > cq-column"))
+        moves.observe(col, { childList: true });
+    }
+
+    // What a board is, said in roles: each column a labeled list, each card an
+    // item in it. What says so visually is three boxes side by side — geometry,
+    // which the accessibility tree doesn't carry — so without this a board is
+    // one flat run of cards and Move buttons, and which column a card is in,
+    // the one fact about it not in its own text, is never announced. Roles
+    // describe rather than afford, so this holds for a quoted board too: an
+    // exhibit is read like anything else, it just takes no input.
+    #structure() {
+      for (const col of this.querySelectorAll(":scope > cq-column")) {
+        col.setAttribute("role", "list");
+        col.setAttribute("aria-label", col.getAttribute("label"));
+        for (const card of this.#cards(col)) card.setAttribute("role", "listitem");
+      }
+    }
+
+    // Every grip's name, in the idiom the live region already announces moves in
+    // ("card — column"): the reviewer who lands on a grip by Tab hears where the
+    // card is without having read the list it sits in.
+    #names() {
+      for (const col of this.querySelectorAll(":scope > cq-column")) {
+        const where = col.getAttribute("label");
+        for (const card of this.#cards(col)) {
+          const name = `Move: ${this.#title(card)} — ${where}`;
+          card.querySelector(":scope > .cq-grip")?.setAttribute("aria-label", name);
+        }
+      }
     }
 
     // A board inside a Claude reply detaches on every panel rebuild; no blur
@@ -74,8 +120,7 @@ customElements.define(
       grip.className = "cq-grip cq-ui"; // UI, not content: anchoring skips it
       grip.dataset.cqGen = "1"; // and the version diff ignores it
       grip.textContent = "⠿";
-      grip.title = "Drag to move — or Enter, then arrows";
-      grip.setAttribute("aria-label", `Move: ${this.#title(card)}`);
+      grip.title = "Drag to move — or Enter, then arrows"; // the name is #names'
       grip.addEventListener("keydown", (ev) => this.#key(ev, card, grip));
       // Leaving the grip drops the grab: restore the origin. Arrow moves reparent
       // the grip (which blurs it) and synchronously refocus, so by the time this

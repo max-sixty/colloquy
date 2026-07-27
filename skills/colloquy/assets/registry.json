@@ -231,7 +231,7 @@
     "x-example": "<cq-board id=\"feeder-board\">\n  <cq-column id=\"col-todo\" label=\"To do\">\n    <cq-card id=\"card-heater\"><strong>Heated perch</strong> Wire the south feeder.</cq-card>\n    <cq-card id=\"card-baffle\"><strong>Squirrel baffle</strong></cq-card>\n  </cq-column>\n  <cq-column id=\"col-doing\" label=\"Doing\">\n    <cq-card id=\"card-camera\"><strong>Camera mount</strong></cq-card>\n  </cq-column>\n  <cq-column id=\"col-done\" label=\"Done\"></cq-column>\n</cq-board>"
   },
   "cq-column": {
-    "description": "One column on a board. `label` is the column heading; cards stack beneath. Children are cq-card elements only; an empty column is a valid drop target.",
+    "description": "One column on a board. `label` is the column heading, and the name a screen reader announces for the list of cards beneath it — so it has to read as the column's name on its own. Children are cq-card elements only; an empty column is a valid drop target.",
     "type": "object",
     "properties": {
       "id":    {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},

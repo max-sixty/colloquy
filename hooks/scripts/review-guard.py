@@ -17,15 +17,28 @@ served or watched a colloquy page at all before paying for a `uv run`.
 Anything unexpected — missing session file, a broken interact.py, a timeout —
 falls through silently and the turn proceeds. A Stop hook is the worst possible
 place for a colloquy bug to strand the user.
+
+The sessions path assumes the hook's environment and the Bash tool's agree on
+XDG_STATE_HOME: `serve` and `wait` write the registry from a shell initialized
+by the user's profile, this script reads it from Claude Code's own process env.
+A value set only in the shell profile makes the guard silently stand down —
+fail-open, like everything else here.
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 INTERACT = Path(__file__).resolve().parents[2] / "skills" / "colloquy" / "scripts" / "interact.py"
-SESSIONS = Path.home() / ".claude" / "colloquy" / ".sessions"
+# Must match interact.py's state_home(): this script runs under plain python3
+# and can't import the uv script it fronts.
+SESSIONS = (
+    Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+    / "colloquy"
+    / "sessions"
+)
 
 
 def main() -> None:

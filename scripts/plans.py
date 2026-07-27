@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """Toggle the opt-in plan-mode prototype (#2C).
 
-Reads/writes ~/.claude/colloquy/config.json, the same file the ExitPlanMode
+Reads/writes ~/.config/colloquy/config.json, the same file the ExitPlanMode
 hook checks. Usage: plans.py [on|off|status]  (no arg = status).
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
-CONFIG = Path.home() / ".claude" / "colloquy" / "config.json"
+# Must match interact.py's config_home() and the ExitPlanMode hook.
+CONFIG = (
+    Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    / "colloquy"
+    / "config.json"
+)
 
 
 def load() -> dict:

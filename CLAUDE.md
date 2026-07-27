@@ -143,3 +143,6 @@ and outside clicks hide, they don't discard. Cancel is the only discard.
   `check --render`, run once per page at handover: its invariants are `render_version`,
   which `test_example_renders` drives over the shipped examples — one implementation, so
   the gate a reviewer's page passes and the suite the examples pass cannot drift.
+- **Merge locally.** The project isn't at the stage of PRs: a finished branch lands with
+  `wt merge`, a direct squash merge to main. That holds for background jobs too, whose
+  harness default is to push and open a draft PR.
