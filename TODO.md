@@ -3,6 +3,14 @@
 Backlog for improving colloquy: recommendations that stood unchallenged. Each item
 stands alone.
 
+- [ ] Consider worktree-local pages. Today every page lives under
+      `~/.local/state/colloquy/pages/`; a page reviewing a branch's work could
+      instead live in that branch's worktree, keeping the review beside the code
+      it discusses and dying with the worktree when the work lands. What that
+      has to answer: the review record vanishes on merge (today it outlives the
+      branch), the vendored layer and event log would need gitignoring, and
+      repo-less pages (personal-admin topics) still need the global home — so it
+      would be a second convention beside it, not a replacement.
 - [ ] Additive overlay: customizing one token, or adding one widget or idiom, means
       forking a whole file today — init's overlay replaces theme.css and
       registry.json per file. Let the overlay add rather than replace (token
