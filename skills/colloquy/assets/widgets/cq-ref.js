@@ -11,7 +11,7 @@ customElements.define(
       if (!once(this)) return;
       this.dataset.cqGen = "1"; // everything inside is generated; the version diff skips it
       try {
-        const src = this.getAttribute("src") || "";
+        const src = this.getAttribute("src");
         const m = src.match(/^(.*?)(?::(\d+))?$/);
         const path = m[1];
         const line = m[2];

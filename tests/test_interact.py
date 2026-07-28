@@ -932,6 +932,9 @@ def test_server_round_trip(server, page_dir):
         {"kind": "action", "widget": "b", "action": "move", "version": 1},  # no detail
         {"kind": "action", "widget": "b", "action": "move", "detail": None, "version": 1},
         {"kind": "action", "widget": "b", "action": "move", "detail": {}, "version": "1"},
+        {"kind": "comment"},  # no text: a blank thread nobody can read
+        {"kind": "reply", "parent": "nope", "text": "hi"},  # parent names no message
+        {"kind": "resolve", "parent": "nope"},
         ["not", "an", "object"],
     ]:
         status, body = fetch(f"{server}/api/event", data=json.dumps(bad).encode())

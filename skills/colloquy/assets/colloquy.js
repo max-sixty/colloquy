@@ -672,11 +672,12 @@ const ago = (ts) => {
 
 // ---------- threads ----------
 const byId = () => new Map(events.map((e) => [e.id, e]));
+// A parent names a comment or a reply — the server holds both writers to it — so
+// climbing from either lands on the comment that roots the thread.
 function rootOf(event, index) {
   let cur = event;
-  for (let hops = 0; cur && cur.kind !== "comment" && hops < 50; hops++)
-    cur = index.get(cur.parent);
-  return cur && cur.kind === "comment" ? cur.id : null;
+  while (cur.kind !== "comment") cur = index.get(cur.parent);
+  return cur;
 }
 function buildThreads() {
   const index = byId();
@@ -690,14 +691,12 @@ function buildThreads() {
     // (the honoring version retires the wrapper that held the mapping, and one
     // atomic event can't half-arrive the way a second POST could).
     if (e.kind === "action" && e.action === "accept") {
-      const answered = threads.get(e.detail?.resolves);
+      const answered = threads.get(e.detail.resolves);
       if (answered) answered.resolved = true;
       continue;
     }
-    const rootId =
-      e.kind === "reply" || e.kind === "resolve" ? rootOf(e, index) : null;
-    const thread = rootId && threads.get(rootId);
-    if (!thread) continue;
+    if (e.kind !== "reply" && e.kind !== "resolve") continue;
+    const thread = threads.get(rootOf(e, index).id);
     if (e.kind === "reply") thread.msgs.push(e);
     if (e.kind === "resolve") thread.resolved = true;
   }
@@ -718,20 +717,18 @@ function msgNode(m) {
   let body = msgBodies.get(m.id);
   if (!body) {
     body = el("p", "");
-    // Claude's replies may carry widget markup, validated server-side by `reply`
-    // against the vendored registry; already-defined widgets upgrade on insertion.
+    // Claude's messages may carry widget markup, validated server-side by `comment`
+    // and `reply`; already-defined widgets upgrade on insertion.
     // User text is always plain.
-    if (m.author === "claude" && /<cq-[a-z]/.test(m.text || "")) {
+    if (m.author === "claude" && /<cq-[a-z]/.test(m.text)) {
       body.innerHTML = m.text;
       renderSaid(body); // custom elements upgrade themselves on insertion; this doesn't
-    } else body.textContent = m.text || "";
+    } else body.textContent = m.text;
     if (m.suggestion) body.classList.add("cq-suggest-body");
-    if (m.id) {
-      // The node a commented block points its aria-describedby at, so the id has to
-      // hold the comment's words and none of the thread's controls.
-      body.id = "cq-msg-" + m.id;
-      msgBodies.set(m.id, body);
-    }
+    // The node a commented block points its aria-describedby at, so the id has to
+    // hold the comment's words and none of the thread's controls.
+    body.id = "cq-msg-" + m.id; // server-minted, on every event
+    msgBodies.set(m.id, body);
   }
   div.append(head);
   if (m.suggestion) div.append(el("div", "cq-suggest-label", "suggested replacement"));
@@ -2121,7 +2118,7 @@ const lastActionByWidget = new Map();
 // not "the page has an element by that id", so a literal detail value can't
 // collide with an unrelated element that happens to be called the same thing.
 function restsOn(e, widget) {
-  const parts = Object.values(e.detail || {})
+  const parts = Object.values(e.detail)
     .map((v) => (typeof v === "string" ? document.getElementById(v) : null))
     .filter((el) => el && widget.contains(el))
     .map((el) => el.id);
@@ -2267,7 +2264,7 @@ function domFacet(el, record) {
 // The state the folded action left, from the detail field the record declares,
 // collapsed the way the DOM reading collapses where it is words.
 function foldedFacet(e, record) {
-  const value = e.detail?.[record.value];
+  const value = e.detail[record.value];
   if (record.kind === "body") return [...String(value ?? "").replace(/\s+/g, " ").trim()].join("");
   return value ?? null;
 }
@@ -2305,7 +2302,7 @@ function stateFold(upto) {
     const spec = registry?.[el.tagName.toLowerCase()]?.["x-state"]?.[e.action];
     if (!spec) continue;
     if (restsOn(e, el).some((id) => (floors.get(id) ?? 0) > e.version)) continue;
-    const unit = spec.unit === "widget" || !spec.unit ? e.widget : e.detail?.[spec.unit];
+    const unit = spec.unit === "widget" || !spec.unit ? e.widget : e.detail[spec.unit];
     if (typeof unit === "string") fold.set(unit, { e, spec });
   }
   return fold;

@@ -171,7 +171,18 @@ import click
 from jsonschema import Draft202012Validator
 
 HEARTBEAT_FRESH_SECS = 8
-BROWSER_EVENT_KINDS = {"comment", "reply", "resolve", "done", "action"}
+# The browser's event kinds, and per kind the fields something downstream reads.
+# POST /api/event is the one door they come through, so this is where the shape is
+# checked; every reader indexes the fields rather than asking whether they arrived.
+# The browser sends more than this (a comment carries the version it was made
+# against); what nothing reads, nothing requires.
+BROWSER_EVENT_FIELDS = {
+    "comment": {"text": str},
+    "reply": {"parent": str, "text": str},
+    "resolve": {"parent": str},
+    "done": {},
+    "action": {"widget": str, "action": str, "detail": dict, "version": int},
+}
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 VENDORED_FILES = ("colloquy.js", "theme.css", "registry.json")
@@ -261,32 +272,30 @@ def read_events(page_dir: Path) -> list:
 def build_threads(events: list) -> dict:
     """Comment threads by root id: {"root", "msgs", "resolved"}. A reply or
     resolve names its parent, which may itself be a reply, so each walks up to
-    the comment that roots it. An `accept` action carrying `resolves` settles
-    the thread its suggestion answered — snapshotted into the action at decision
-    time, because the honoring version retires the wrapper that held the
-    mapping, and one atomic event can't half-arrive the way a second POST can."""
+    the comment that roots it — and always reaches one, since both writers hold a
+    parent to naming a message already in the log. An `accept` action carrying
+    `resolves` settles the thread its suggestion answered — snapshotted into the
+    action at decision time, because the honoring version retires the wrapper that
+    held the mapping, and one atomic event can't half-arrive the way a second POST
+    can."""
     threads = {
         e["id"]: {"root": e, "msgs": [e], "resolved": False}
         for e in events
-        if e.get("kind") == "comment"
+        if e["kind"] == "comment"
     }
-    index = {e["id"]: e for e in events if "id" in e}
+    index = {e["id"]: e for e in events}
     for e in events:
-        if e.get("kind") == "action" and e.get("action") == "accept":
-            answered = threads.get((e.get("detail") or {}).get("resolves"))
+        if e["kind"] == "action" and e["action"] == "accept":
+            answered = threads.get(e["detail"].get("resolves"))
             if answered:
                 answered["resolved"] = True
             continue
-        if e.get("kind") not in ("reply", "resolve"):
+        if e["kind"] not in ("reply", "resolve"):
             continue
         cur = e
-        for _ in range(50):
-            cur = index.get(cur.get("parent"))
-            if cur is None or cur.get("kind") == "comment":
-                break
-        thread = cur and threads.get(cur["id"])
-        if not thread:
-            continue
+        while cur["kind"] != "comment":
+            cur = index[cur["parent"]]
+        thread = threads[cur["id"]]
         if e["kind"] == "reply":
             thread["msgs"].append(e)
         else:
@@ -337,15 +346,11 @@ def published_versions(page_dir: Path) -> list:
     """Versions the server exposes: those whose `note` has landed. `note` follows a
     passing `check`, so a half-written or failing version is never live to an open
     browser — the file existing is not enough."""
-    noted = {e.get("version") for e in read_events(page_dir) if e.get("kind") == "note"}
+    noted = {e["version"] for e in read_events(page_dir) if e["kind"] == "note"}
     return [name for name in list_versions(page_dir) if version_num(name) in noted]
 
 
 def pid_alive(pid: int) -> bool:
-    # A missing pid reads as -1 from callers, and os.kill takes that as "every
-    # process I may signal" — which would answer True for a page nobody owns.
-    if pid < 1:
-        return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -357,7 +362,7 @@ def pid_alive(pid: int) -> bool:
 
 def running_server(page_dir: Path):
     info = read_json(page_dir / "server.json")
-    if info and pid_alive(info.get("pid", -1)):
+    if info and pid_alive(info["pid"]):
         return info
     return None
 
@@ -399,7 +404,7 @@ def claim_page(page_dir: Path) -> None:
     # them here rather than on a timer, the way init drops a killed writer's .tmp.
     for stale in sessions.glob("*.json"):
         entry = read_json(stale)
-        if entry and not pid_alive(entry.get("pid", -1)):
+        if entry and not pid_alive(entry["pid"]):
             stale.unlink(missing_ok=True)
     entry = read_json(sessions / f"{sid}.json") or {"pages": []}
     pages = sorted({*entry["pages"], str(page_dir)})
@@ -418,7 +423,7 @@ def owned_pages(session_id: str) -> list:
     its server, its turn to be held to the loop."""
     return [
         d for d in session_pages(session_id)
-        if (read_json(d / "session.json") or {}).get("id") == session_id
+        if (read_json(d / "session.json") or {"id": None})["id"] == session_id
     ]
 
 
@@ -426,26 +431,28 @@ def undelivered(events: list, cursor: int) -> list:
     """The reviewer's events past the handoff cursor: posted, and not yet in
     Claude's hands. The one predicate for that — the banner's pending count and
     `wait`'s delivery must agree on which events those are."""
-    return [e for e in events if e["seq"] > cursor and e.get("author") == "user"]
+    return [e for e in events if e["seq"] > cursor and e["author"] == "user"]
 
 
 def full_state(page_dir: Path) -> dict:
+    # A file that isn't there stands in as its whole record, so every read below
+    # indexes rather than asking twice whether the field arrived.
     status = read_json(page_dir / "status.json") or {"state": "idle", "detail": "", "ts": None}
-    heartbeat = read_json(page_dir / "heartbeat.json") or {}
-    session = read_json(page_dir / "session.json") or {}
+    heartbeat = read_json(page_dir / "heartbeat.json") or {"t": 0}
+    session = read_json(page_dir / "session.json")
     events = read_events(page_dir)
     # What `wait` has delivered to Claude: an action past this seq can't have
     # been seen (so not declined), which is what lets the runtime carry it
     # forward onto versions written without it.
-    cursor = (read_json(page_dir / "cursor.json") or {}).get("seq", 0)
+    cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
     return {
         "versions": published_versions(page_dir),
         "status": status,
-        "listening": time.time() - heartbeat.get("t", 0) < HEARTBEAT_FRESH_SECS,
+        "listening": time.time() - heartbeat["t"] < HEARTBEAT_FRESH_SECS,
         "cursor": cursor,
         "pending": len(undelivered(events, cursor)),
         # None when nothing claimed the page — interact.py run outside Claude Code.
-        "session_alive": pid_alive(session["pid"]) if session.get("pid") else None,
+        "session_alive": pid_alive(session["pid"]) if session else None,
         "events": events,
     }
 
@@ -528,24 +535,23 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(event, dict):
             self._json({"error": "event must be a JSON object"}, 400)
             return
-        if event.get("kind") not in BROWSER_EVENT_KINDS:
-            self._json({"error": f"kind must be one of {sorted(BROWSER_EVENT_KINDS)}"}, 400)
+        if event.get("kind") not in BROWSER_EVENT_FIELDS:
+            self._json({"error": f"kind must be one of {sorted(BROWSER_EVENT_FIELDS)}"}, 400)
             return
-        if event["kind"] == "action" and not (
-            isinstance(event.get("widget"), str)
-            and event["widget"]
-            and isinstance(event.get("action"), str)
-            and event["action"]
-            and isinstance(event.get("detail"), dict)
-            and isinstance(event.get("version"), int)
-        ):
-            self._json(
-                {
-                    "error": "action events need non-empty string `widget` and `action`,"
-                    " object `detail`, integer `version`"
-                },
-                400,
-            )
+        wrong = [
+            f"`{name}` ({typ.__name__})"
+            for name, typ in BROWSER_EVENT_FIELDS[event["kind"]].items()
+            if not isinstance(event.get(name), typ) or event[name] == ""
+        ]
+        if wrong:
+            self._json({"error": f"{event['kind']} events need {', '.join(wrong)}"}, 400)
+            return
+        # A parent names a message in a thread, the same rule `reply` holds Claude
+        # to. Enforced here so a walk up the log always terminates at a comment.
+        if "parent" in event and event["parent"] not in {
+            e["id"] for e in read_events(self.page_dir) if e["kind"] in {"comment", "reply"}
+        }:
+            self._json({"error": f"unknown parent {event['parent']!r}"}, 400)
             return
         # The server owns identity: a client-supplied id could collide with an
         # existing event's and silently re-root its thread.
@@ -660,7 +666,7 @@ def revive_server(page_dir: Path) -> bool:
 
 def cmd_wait(page_dir: Path) -> int:
     claim_page(page_dir)
-    cursor = (read_json(page_dir / "cursor.json") or {}).get("seq", 0)
+    cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
     server_check_at = 0.0
     revived = False
     try:
@@ -690,7 +696,7 @@ def cmd_wait(page_dir: Path) -> int:
                     # An idle page has no reviewer to keep online, and the
                     # SessionEnd hook idles then stops: without this the watcher
                     # it raced would put the server straight back up.
-                    if (read_json(page_dir / "status.json") or {}).get("state") == "idle":
+                    if (read_json(page_dir / "status.json") or {"state": "idle"})["state"] == "idle":
                         print("the review is closed; not restarting the server", file=sys.stderr)
                         return 2
                     # One revival per wait: a server that dies the moment it comes
@@ -725,11 +731,7 @@ def thread_widget_ids(page_dir: Path) -> set:
     for e in read_events(page_dir):
         # author gate mirrors the renderer: only Claude's messages inject HTML — a user
         # comment or reply merely quoting markup renders as text and claims nothing.
-        if (
-            e.get("kind") in ("comment", "reply")
-            and e.get("author") == "claude"
-            and "<cq-" in (e.get("text") or "")
-        ):
+        if e["kind"] in ("comment", "reply") and e["author"] == "claude" and "<cq-" in e["text"]:
             p = _StructParser()
             p.feed(e["text"])
             ids |= p.ids
@@ -814,7 +816,7 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
 
 
 def cmd_reply(page_dir: Path, to: str, text) -> None:
-    known = {e["id"] for e in read_events(page_dir) if e.get("kind") in {"comment", "reply"}}
+    known = {e["id"] for e in read_events(page_dir) if e["kind"] in {"comment", "reply"}}
     if to not in known:
         sys.exit(f"unknown comment id {to!r}; known: {sorted(known)}")
     body = read_text_arg(text)
@@ -874,7 +876,7 @@ def cmd_export(page_dir: Path) -> None:
         title = m.group(1).strip() if m else ""
     print(f"## Review: {title or page_dir.name}")
 
-    notes = [e for e in events if e.get("kind") == "note"]
+    notes = [e for e in events if e["kind"] == "note"]
     if notes:
         print("\n### Versions\n")
         for e in notes:
@@ -887,18 +889,18 @@ def cmd_export(page_dir: Path) -> None:
     # Widget-agnostic rendering: verb + detail pairs, against the version edited.
     edits = [
         e for e in events
-        if e.get("kind") == "action" or (e.get("kind") == "note" and e.get("restated"))
+        if e["kind"] == "action" or (e["kind"] == "note" and e.get("restated"))
     ]
     if edits:
         print("\n### Edits\n")
         for e in edits:
-            if e.get("kind") == "note":
-                for wid in e.get("restated", []):
-                    print(f"- `{wid}`: rewritten by v{e.get('version')}, retracting what was decided on it")
+            if e["kind"] == "note":
+                for wid in e["restated"]:
+                    print(f"- `{wid}`: rewritten by v{e['version']}, retracting what was decided on it")
                 continue
-            detail = " ".join(f"{k}={v}" for k, v in (e.get("detail") or {}).items())
-            verb = f"{e.get('action')} {detail}".strip()  # a bare reject carries no detail
-            print(f"- `{e.get('widget')}`: {verb} (on v{e.get('version')})")
+            detail = " ".join(f"{k}={v}" for k, v in e["detail"].items())
+            verb = f"{e['action']} {detail}".strip()  # a bare reject carries no detail
+            print(f"- `{e['widget']}`: {verb} (on v{e['version']})")
 
     threads = build_threads(events)
     if threads:
@@ -913,13 +915,13 @@ def cmd_export(page_dir: Path) -> None:
             head = "> (page-level)"
         print(head + ("  — resolved" if t["resolved"] else ""))
         for m in t["msgs"]:
-            who = "Claude" if m.get("author") == "claude" else "User"
-            body = (m.get("text") or "").replace("\n", "\n  ")
+            who = "Claude" if m["author"] == "claude" else "User"
+            body = m["text"].replace("\n", "\n  ")
             print(f"- **{who}**: {body}")
         print()
     for e in events:
-        if e.get("kind") == "done":
-            print(f"Approved at {e.get('ts', '?')}.")
+        if e["kind"] == "done":
+            print(f"Approved at {e['ts']}.")
             break
 
     # To stderr — stdout is the artifact. Export is a review's closing act, and
@@ -1778,11 +1780,11 @@ def vocabulary_gaps(page_dir: Path) -> list:
         verbs = {"choose", "move", "edit", "accept", "reject"}
     missing = {}
     for e in events:
-        kind = e.get("kind")
+        kind = e["kind"]
         if kind not in kinds:
             key = f"kind `{kind}`"
-        elif kind == "action" and e.get("action") not in verbs:
-            key = f"verb `{e.get('action')}`"
+        elif kind == "action" and e["action"] not in verbs:
+            key = f"verb `{e['action']}`"
         else:
             continue
         missing[key] = missing.get(key, 0) + 1
@@ -1913,9 +1915,9 @@ def action_subjects(event: dict, byid: dict, now: dict, registry: dict) -> list:
     *inside the widget that sent the action* — not merely an id the page has
     somewhere, which would let a literal like "approved" collide with an element
     that happens to be called that."""
-    widget = event.get("widget")
+    widget = event["widget"]
     parts = [
-        v for v in (event.get("detail") or {}).values()
+        v for v in event["detail"].values()
         if isinstance(v, str) and widget in now.get(v, EMPTY).within
     ]
     leaves = [
@@ -1939,9 +1941,9 @@ def retractions(events: list, upto=None) -> dict:
     early floor inside the window instead of vanishing with the late one."""
     at = {}
     for e in events:
-        if e.get("kind") == "note" and (upto is None or e.get("version", 0) <= upto):
+        if e["kind"] == "note" and (upto is None or e["version"] <= upto):
             for wid in e.get("restated", []):
-                at[wid] = max(at.get(wid, 0), e.get("version", 0))
+                at[wid] = max(at.get(wid, 0), e["version"])
     return at
 
 
@@ -1952,9 +1954,9 @@ def action_rests_on(event: dict, spk: dict) -> list:
     it, in both runtimes — while `action_subjects` stays the words gate's finer,
     leaf-keyed view of the same containment. Two views, one containment test;
     a third keying would fork the JS/Python twin a third way."""
-    widget = event.get("widget")
+    widget = event["widget"]
     parts = [
-        v for v in (event.get("detail") or {}).values()
+        v for v in event["detail"].values()
         if isinstance(v, str) and widget in spk.get(v, EMPTY).within
     ]
     return [widget, *parts]
@@ -1980,20 +1982,20 @@ def state_fold(events: list, byid: dict, spk: dict, registry: dict, upto, floors
     report to everything recorded (None)."""
     fold = {}
     for e in events:
-        if e.get("kind") != "action":
+        if e["kind"] != "action":
             continue
-        if upto is not None and e.get("version", 0) > upto:
+        if upto is not None and e["version"] > upto:
             continue
-        rec = byid.get(e.get("widget"))
-        spec = (registry.get(rec["tag"], {}).get("x-state") or {}).get(e.get("action")) if rec else None
+        rec = byid.get(e["widget"])
+        spec = (registry.get(rec["tag"], {}).get("x-state") or {}).get(e["action"]) if rec else None
         if not spec:
             continue
-        if any(floors.get(i, 0) > e.get("version", 0) for i in action_rests_on(e, spk)):
+        if any(floors.get(i, 0) > e["version"] for i in action_rests_on(e, spk)):
             continue
         unit = (
-            e.get("widget")
+            e["widget"]
             if spec.get("unit", "widget") == "widget"
-            else (e.get("detail") or {}).get(spec["unit"])
+            else e["detail"].get(spec["unit"])
         )
         if isinstance(unit, str):
             fold[unit] = (e, spec)
@@ -2028,7 +2030,7 @@ def folded_facet(e: dict, spec: dict):
     record = spec.get("record")
     if not record:
         return NO_RECORD
-    value = (e.get("detail") or {}).get(record["value"])
+    value = e["detail"].get(record["value"])
     if record["kind"] == "body":
         return " ".join(str(value).split())
     return value
@@ -2068,14 +2070,16 @@ def suggestion_outcomes(events: list, version=None) -> dict:
     (applyActions in colloquy.js): an outcome recorded after `version` hasn't
     happened there yet, and one whose suggestion a later version restated is
     taken back rather than standing. With no version, the whole log's word."""
+    # A reply or resolve names no version — nothing here rests on one — so the
+    # filter reads them as version 0 rather than the kinds that do carry it.
     considered = [e for e in events if version is None or e.get("version", 0) <= version]
     taken_back = retractions(considered)
     return {
         e["widget"]: e["action"]
         for e in considered
-        if e.get("kind") == "action"
-        and e.get("action") in ("accept", "reject")
-        and taken_back.get(e["widget"], 0) <= e.get("version", 0)
+        if e["kind"] == "action"
+        and e["action"] in ("accept", "reject")
+        and taken_back.get(e["widget"], 0) <= e["version"]
     }
 
 
@@ -2119,19 +2123,19 @@ def restatement_errors(cur, prev, was: dict, now: dict, events: list, prev_num: 
 
     decided = {}  # subject id → the actions resting on it
     for e in events:
-        if e.get("kind") != "action" or not e.get("widget"):
+        if e["kind"] != "action":
             continue
         # One key space for liveness: an action is dead when any id it rests on
         # was floored — replay skips it by this same containment, so a finer,
         # leaf-keyed floor here would keep alive a decision the browser has
         # already dropped (a group-level retraction never names the option the
         # pick rested on, and the pick must die with the group all the same).
-        if any(taken_back.get(i, 0) > e.get("version", 0) for i in action_rests_on(e, now)):
+        if any(taken_back.get(i, 0) > e["version"] for i in action_rests_on(e, now)):
             continue
         for subject in action_subjects(e, byid, now, registry):
             # Only what the reviewer had recorded by the time they were looking
             # at prev.
-            if subject in was and e.get("version", 0) <= prev_num:
+            if subject in was and e["version"] <= prev_num:
                 decided.setdefault(subject, []).append(e)
 
     # The state gate, beside the words gate: one gate, two divergence kinds.
@@ -2175,7 +2179,7 @@ def restatement_errors(cur, prev, was: dict, now: dict, events: list, prev_num: 
         echoed = {
             " ".join(str(v).split())
             for e in live
-            for v in (e.get("detail") or {}).values()
+            for v in e["detail"].values()
             if isinstance(v, str)
         }
         said = now.get(sid, EMPTY).words
@@ -2301,7 +2305,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     events = read_events(page_dir)
     errors.extend(
         suggestion_errors(
-            parser.suggestions, {e["id"] for e in events if e.get("kind") == "comment"}
+            parser.suggestions, {e["id"] for e in events if e["kind"] == "comment"}
         )
     )
 
@@ -2313,7 +2317,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     # stands against an empty one: nothing of its can have been dropped and
     # nothing decided, which is exactly what makes a `restated` on it an error
     # like any other unearned one.
-    noted = {e.get("version") for e in events if e.get("kind") == "note"}
+    noted = {e["version"] for e in events if e["kind"] == "note"}
     earlier = [v for v in versions if version_num(v) < version_num(name) and version_num(v) in noted]
     prev, prev_num, was = _StructParser(), 0, {}
     prev.close()

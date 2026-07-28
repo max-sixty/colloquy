@@ -44,12 +44,12 @@ customElements.define(
         btn.type = "button";
         btn.setAttribute("role", "tab");
         btn.setAttribute("aria-controls", panel.id);
-        btn.textContent = panel.getAttribute("label") || panel.id;
+        btn.textContent = panel.getAttribute("label");
         btn.onclick = () => this.#activate(panel, true);
         strip.append(btn);
         this.#buttons.set(panel, btn);
         panel.setAttribute("role", "tabpanel");
-        panel.setAttribute("aria-label", panel.getAttribute("label") || panel.id);
+        panel.setAttribute("aria-label", panel.getAttribute("label"));
         panel.tabIndex = 0; // a tabpanel of prose has no focusable content; Tab must still reach it
         // The browser found something inside (find-in-page, an anchor jump), or
         // the runtime is about to scroll a comment anchor into view: open up.

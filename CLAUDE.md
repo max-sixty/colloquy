@@ -4,6 +4,20 @@ A page Claude hands the reviewer, and the loop that carries their comments back.
 README covers what it does; this covers how it is built, and the rules that keep it
 buildable.
 
+## Stage
+
+Early, and nothing owes the past anything: there is no deployment, no database, no
+page or log older than the directory in front of you that has to keep working. So the
+trade between simplicity and robustness is already settled — take the simpler code.
+A guard earns its place only where the state it defends against is reachable and
+there is something to do about it; the rest is complexity paid for a case that never
+arrives, and it reads as if the impossible were expected.
+
+Where data enters, check it once and completely: browser events at `POST /api/event`,
+authored markup at `check`, a replayed action's detail in the widget's own
+`applyAction`, since only it knows that shape. Everything downstream then indexes the
+field rather than asking a second time whether it arrived.
+
 ## Shape
 
 Six things, and nothing between them:
