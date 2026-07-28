@@ -1256,10 +1256,31 @@ def test_a_comment_carries_the_neighbours_that_tell_two_copies_apart(page_dir):
     copy of the same words, so a written anchor stores it exactly as a selection does."""
     event = json.loads(comment(published(page_dir), "--quote", "Verify, then flip", "--text", "ok").output)
     anchor = event["anchor"]
-    # Read out of the section the anchor names, and out of the collapsed text: the
-    # runtime reads its side back the same way, and only a full match counts.
+    # Read out of the whole collapsed text and stopped by the fences around the option
+    # row — the runtime writes controls between options, words this reading doesn't
+    # hold. The runtime reads its side back the same way, and only a full match counts.
     assert anchor["prefix"] == "med Backfill first"
     assert anchor["suffix"] == ". low"  # the option's risk, said at its trailing edge
+
+
+def test_a_quote_closing_its_section_stores_the_next_sections_words(page_dir):
+    """A suffix clipped at the section's edge could be one character, a bar an identical
+    copy elsewhere might clear; the whole reading gives a closing passage a full side.
+    The section the anchor names scopes where the search may land, never what surrounds
+    the passage."""
+    two = PAGE.replace(
+        '  <cq-diagram id="flow">\ngraph LR\n  A --> B\n  </cq-diagram>\n',
+        "  <p>Deploys pause overnight.</p>\n",
+    ).replace(
+        "</main>",
+        '<section id="rollout">\n  <p>The rollout resumes.</p>\n</section>\n</main>',
+    )
+    (page_dir / "versions" / "v001.html").write_text(two)
+    event = json.loads(
+        comment(published(page_dir), "--quote", "Deploys pause overnight.", "--text", "x").output
+    )
+    assert event["anchor"]["section"] == "plan"
+    assert event["anchor"]["suffix"] == "The rollout resumes."
 
 
 def test_a_comment_refuses_a_quote_the_version_does_not_hold(page_dir):

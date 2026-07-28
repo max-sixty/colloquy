@@ -44,25 +44,15 @@ stands alone.
       where the comment was made on the first copy, wrong where it was made on a later one.
       Both halves of that rule are deliberate. A partial match is evidence the page moved on
       rather than weak evidence for a copy, and preferring the best partial handed comments
-      to copies they were never made on. Requiring both sides costs the passages that open or
-      close their section, since those store one neighbour: one of the 259 ambiguous
-      selections across the shipped examples, `"minutes."` ending a section in
-      `incident-report.html`. It fails visibly — the mark paints on the wrong copy while the
-      reviewer is still composing — where the case it closes fails silently a version later
-      with nobody watching. Closing the remainder wants a similarity that
-      survives an edit (Hypothesis scores an approximate match over quote, prefix and suffix
-      together) rather than a lower bar. Two copies that are identical *and* identically
-      surrounded can't be told apart at all, and no page here has a pair.
-- [ ] A passage at the edge of its section gets thin context, and thin context is a weak
-      bar. The search refuses one-sided context outright, but a side of one character — a
-      passage closing its section stores everything before it and a `"."` — clears the gate
-      and can still be matched by an earlier copy. A length threshold would be a tuning knob
-      this file has otherwise avoided, and any number for it is arbitrary. The structural
-      answer: the context is thin only because the capture clips to the section root, while
-      the body has text on both sides. Build the search string over the body and restrict
-      candidates to those inside the section element, and every passage gets two full sides
-      except at the very ends of the document. That wants a containment test per candidate,
-      so it is a real change rather than a small one.
+      to copies they were never made on. The capture reads neighbours from the whole body,
+      stopping only at a fence, so a side comes up short only against the document's own
+      ends or beside a widget's seam rather than at every section edge — and that cost
+      fails visibly, the mark painting on the wrong copy while the reviewer is still
+      composing, where the failure the rule closes is silent a version later with nobody
+      watching. Closing the remainder wants a similarity that survives an edit (Hypothesis
+      scores an approximate match over quote, prefix and suffix together) rather than a
+      lower bar. Two copies that are identical *and* identically surrounded can't be told
+      apart at all, and no page here has a pair.
 - [ ] A tab's name can't be commented on. Every other word a widget renders from an
       authored attribute is text a reviewer can select (`x-says`), but `cq-tab`'s
       `label` renders into the strip button the upgrade builds, and a control's label

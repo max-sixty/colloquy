@@ -1537,21 +1537,20 @@ def capture_anchor(html: str, registry, quote: str, section: str, decided=None) 
 
     lo = hits[0]
     hi = lo + len(wanted)
-    # The section the anchor names scopes the search, so the neighbours have to be read
-    # out of that same subtree — a context captured from anywhere else can't be matched.
     section = section or enclosing_section(owner, lo, hi)
-    if section:
-        lo_bound, hi_bound = section_span(owner, section)
     stored = wanted[:QUOTE_CAP]
     tail = lo + len(stored)  # a quote cut to the cap ends inside itself
-    # Each side reaches back only to the nearest fence, because past one the page holds
-    # words this doesn't: context the runtime can never confirm leaves every copy equally
-    # unconfirmed, which is where an anchor carrying none starts anyway.
+    # The neighbours come from the whole reading, as the browser's do — the section
+    # filters where the search may land, never what surrounds a passage — so a passage
+    # closing its section still stores a full suffix. Each side reaches only to the
+    # nearest fence, because past one the page holds words this doesn't: context the
+    # runtime can never confirm leaves every copy equally unconfirmed, which is where
+    # an anchor carrying none starts anyway.
     # Both are trimmed before they are cut, since the runtime reads its side back through
     # the same collapse, which trims — a stored space no occurrence produces fails at the
     # first comparison.
-    prefix = text[max([lo_bound] + [f for f in fences if f <= lo]):lo].strip()[-CONTEXT:]
-    suffix = text[tail:min([hi_bound] + [f for f in fences if f >= tail])].strip()[:CONTEXT]
+    prefix = text[max([0] + [f for f in fences if f <= lo]):lo].strip()[-CONTEXT:]
+    suffix = text[tail:min([len(text)] + [f for f in fences if f >= tail])].strip()[:CONTEXT]
     return {
         "section": section,
         "quote": stored,

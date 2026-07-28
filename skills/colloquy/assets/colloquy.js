@@ -978,10 +978,12 @@ function spanOf(origin, lo, hi) {
 // makes that rare: anything short of certainty falls back to the order the search used
 // before context existed.
 //
-// Rare, not impossible. The bar is however much was stored, so a passage at the edge of its
-// section has thin context and thin context is a bar another copy can clear — which is why
-// the search below refuses one-sided context outright. That still leaves a side of one
-// character clearing the gate; TODO.md carries what closing it properly would take.
+// Rare, not impossible. The bar is however much was stored, and the capture reads the
+// neighbours out of the whole document — a section is a filter on where a passage may sit,
+// not on what surrounds it — so both sides are full except against the document's own
+// ends, where the search below refuses one-sided context outright. Anchors written before
+// context reached past the section carry a side clipped at its edge; they confirm at that
+// shorter bar, which is the bar they were stored under.
 //
 // The bar is what the capture actually produces, not a number picked to fit: across every
 // selection in the shipped examples, an unmodified page confirms its stored context in full.
@@ -1008,7 +1010,7 @@ function neighbourhood(origin, at, want, before) {
   }
 }
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-function findQuote(segments, quote, anchor) {
+function findQuote(segments, quote, anchor, within) {
   let raw = "";
   const origin = []; // origin[i] = {node, offset} for raw[i]; null for an edge
   for (const seg of segments) {
@@ -1029,24 +1031,32 @@ function findQuote(segments, quote, anchor) {
       .join(`[\\s${EDGE}]+`),
     "g",
   );
-  // The first occurrence whose neighbours are all still there; failing that, the first
-  // occurrence at all — which is what a context-less anchor gets, and what every anchor got
-  // before context existed. matchAll steps past each hit, so overlapping occurrences of a
-  // quote that repeats inside itself are not candidates. The neighbourhood is read back
-  // through quoteFrom, the same function that wrote the context down: anything else is a
-  // second answer to "what does the page say here", and the two disagree exactly where a
-  // diff puts its line breaks.
+  // The first occurrence inside `within` whose neighbours are all still there; failing
+  // that, the first inside `within` at all — which is what a context-less anchor gets, and
+  // what every anchor got before context existed. `within` is the section the anchor
+  // names: a candidate is a place the passage may sit, so both its ends have to be in the
+  // section, while its neighbours are read from the document at large — which is what
+  // gives a passage closing its section a full suffix to be told apart by. matchAll steps
+  // past each hit, so overlapping occurrences of a quote that repeats inside itself are
+  // not candidates. The neighbourhood is read back through quoteFrom, the same function
+  // that wrote the context down: anything else is a second answer to "what does the page
+  // say here", and the two disagree exactly where a diff puts its line breaks.
   const [pre, post] = [anchor.prefix ?? "", anchor.suffix ?? ""];
   let first = null;
   let found = null;
   for (const at of raw.matchAll(pattern)) {
+    if (
+      within &&
+      !(within.contains(origin[at.index].node) &&
+        within.contains(origin[at.index + at[0].length - 1].node))
+    )
+      continue;
     first ??= at;
-    // Both sides or nothing. The bar is however much was stored, so a passage that opens or
-    // closes its section offers only one side — a bar another copy can clear, and then a
-    // revision hands the comment to a passage it was never made on. That failure is silent
-    // and arrives later, when nobody is looking; the failure it costs is the mark painting
-    // on the wrong copy while the reviewer is still composing, in front of them. Two of the
-    // 197 selections context places across the shipped examples are the price.
+    // Both sides or nothing. A partial confirmation is evidence the page moved on, and a
+    // missing side — the document's own edge, or an anchor stored before context reached
+    // past the section — is a bar another copy could clear. That failure is silent and
+    // arrives later, when nobody is looking; the failure this costs is the mark painting
+    // on the wrong copy while the reviewer is still composing, in front of them.
     if (!pre || !post) break;
     const stop = at.index + at[0].length;
     const kept =
@@ -1091,7 +1101,7 @@ const VIEW_KEY = "cq-view";
 // block's landmark is the top of its first line (a range), not its border box; restore
 // measures the matched text the same way, so the line box's leading cancels out.
 // The quote and the section it's searched in come from the same block, or the search is
-// scoped to a subtree the text isn't in and can only ever fail — restore then falls back
+// filtered to a section the text isn't in and can only ever fail — restore then falls back
 // to the section, which doesn't absorb content added above the reader inside it.
 function captureView() {
   const view = { v: VNUM, y: pageScroller.scrollTop };
@@ -1152,11 +1162,10 @@ function restoreView(view) {
 // mark, the composer's own, and the reading position a version change rides on — cannot
 // disagree about where to look. A quoteless anchor has no text to paint and resolves to
 // its element instead.
-// The tree a passage is looked for in: the section it names, if the page still has one.
-// The capture that writes a passage's neighbours down reads them out of this same tree, so
-// there is one answer to "which tree" rather than one per caller.
-const searchRoot = (section) =>
-  (section ? document.getElementById(section) : null) ?? document.body;
+// The search always reads the whole document — the same text the capture wrote the
+// neighbours from — and the section the anchor names filters where a candidate may sit.
+// A section the page no longer has filters nothing, so the quote is still looked for
+// everywhere, which is all a stale section ever meant.
 function resolveAnchor(anchor) {
   // An element anchor asks a different question — whether the section exists at all — and
   // the whole page is not an answer to it.
@@ -1164,7 +1173,8 @@ function resolveAnchor(anchor) {
     const section = anchor.section && document.getElementById(anchor.section);
     return section ? { element: section } : null;
   }
-  const segments = findQuote(textNodesUnder(searchRoot(anchor.section)), anchor.quote, anchor);
+  const within = (anchor.section && document.getElementById(anchor.section)) || null;
+  const segments = findQuote(textNodesUnder(document.body), anchor.quote, anchor, within);
   return segments.length ? { segments } : null;
 }
 
@@ -1420,23 +1430,23 @@ function selectionAnchor(sel) {
   const holder = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   const section = holder.closest("[id]:not(.cq-ui)")?.id || null;
   // The neighbours, read the same way and out of the same tree the search will read them
-  // from — a context captured from anywhere else is a context the search cannot match.
-  const root = searchRoot(section);
+  // from — the whole document, so a passage at its section's edge still gets two full
+  // sides. The section scopes where the search may land, never what surrounds a passage.
   const upto = document.createRange();
-  upto.selectNodeContents(root);
+  upto.selectNodeContents(document.body);
   upto.setEnd(range.startContainer, range.startOffset);
   const after = document.createRange();
-  after.selectNodeContents(root);
+  after.selectNodeContents(document.body);
   after.setStart(range.endContainer, range.endOffset);
   const whole = quoteFrom(segmentsIn(range));
   const quote = cut(whole, 0, QUOTE_CAP);
   const prefix = cut(quoteFrom(segmentsIn(upto)), -CONTEXT, Infinity);
   const suffix = cut(quoteFrom(segmentsIn(after)), 0, CONTEXT);
-  // Only what there is, and only what follows the quote. A passage filling its section has
-  // no neighbours, and writing that down as two empty strings puts a field in every event
-  // that never says anything. A quote cut to the cap ends inside the selection, so what
-  // follows it is the rest of the selection rather than the text after it — read from there,
-  // the suffix still names the place the search will look.
+  // Only what there is, and only what follows the quote. A passage against the document's
+  // own edge has no neighbour on that side, and writing that down as an empty string puts
+  // a field in the event that never says anything. A quote cut to the cap ends inside the
+  // selection, so what follows it is the rest of the selection rather than the text after
+  // it — read from there, the suffix still names the place the search will look.
   // trimStart because the search reads its side through quoteFrom, which trims, and `whole`
   // is already collapsed so there is at most one space to lose. Without it, a cut landing
   // just before a space stored a suffix beginning with one — a character no occurrence can

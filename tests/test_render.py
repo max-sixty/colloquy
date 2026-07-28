@@ -2209,6 +2209,85 @@ def test_a_passage_among_padded_emoji_confirms_its_neighbours(browser, serve):
     page.close()
 
 
+# Two copies of one phrase behind an identical lead, the second closing its section. The
+# words that tell them apart are the next section's, which only a capture reading past the
+# section edge can store.
+EDGE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>edge</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Edge</h1>
+<section id="edge">
+<p>First pass: when the deploy fails again in the night, the run is retried until it lands. Nothing else moves.</p>
+<p>Second pass: when the deploy fails again in the night, the run is retried until it lands.</p>
+</section>
+<section id="tail">
+<p>Rollout resumes once the queue drains completely.</p>
+</section>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_passage_closing_its_section_anchors_to_its_own_copy(browser, serve):
+    """A passage closing its section used to store a suffix clipped at the section's
+    edge — one character, a bar the identical copy above it also cleared, so the mark
+    painted there while the reviewer was still composing. The neighbours now come from
+    the whole document and the section only filters where the search may land, so the
+    closing copy is told apart by the words of the section after it."""
+    page, errors = open_page(browser, serve(EDGE_PAGE))
+    landed = page.evaluate("""async () => {
+        const p = document.querySelectorAll('#edge p')[1];
+        const phrase = 'the run is retried until it lands';
+        const at = p.firstChild.data.indexOf(phrase);
+        const want = document.createRange();
+        want.setStart(p.firstChild, at); want.setEnd(p.firstChild, at + phrase.length);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(want);
+        document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+        await new Promise(r => setTimeout(r, 60));
+        const fab = document.querySelector('.cq-fab');
+        if (fab.style.display !== 'block') return 'no button';
+        fab.click();
+        await new Promise(r => setTimeout(r, 60));
+        const painted = [...(CSS.highlights.get('cq-pending') ?? [])][0];
+        if (!painted) return 'no mark';
+        return painted.compareBoundaryPoints(Range.START_TO_START, want) === 0;
+    }""")
+    assert landed is True, f"the closing copy was picked, the mark went elsewhere ({landed})"
+    assert errors == []
+    page.close()
+
+
+def test_an_anchor_stored_under_the_section_clipped_capture_still_resolves(browser, serve):
+    """The bar is however much was stored. An anchor from an older log carries context
+    clipped at its section's edge; it confirms at that shorter bar exactly as it did when
+    it was written, so nothing already in a log detaches when the capture reaches
+    further."""
+    url = serve(EDGE_PAGE)
+    interact.append_event(serve.page_dir, {
+        "kind": "comment", "author": "claude", "version": 1, "text": "old bar",
+        "anchor": {"section": "edge", "quote": "the run is retried until it lands",
+                   "prefix": "fails again in the night,", "suffix": "."}})
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    where = page.evaluate("""() => {
+        const r = [...CSS.highlights.get('cq-mark')][0];
+        return r.startContainer.parentElement.textContent.slice(0, 11);
+    }""")
+    assert where == "First pass:", (
+        f"an old anchor's thin bar changed where it lands: {where!r}"
+    )
+    assert errors == []
+    page.close()
+
+
 # A passage past the 400-code-point quote cap whose 400th code point is a space — the cut
 # lands where the search's own reading of that spot would begin with whitespace, and it
 # trims. Roughly one capped quote in six for English prose.
@@ -2532,7 +2611,12 @@ def test_review_round_trip(browser, serve):
         ("action", "user", 1),
         ("note", "claude", 2),
     ]
-    assert events[1]["anchor"] == {"section": "intro", "quote": SENTENCE}
+    assert events[1]["anchor"] == {
+        "section": "intro",
+        "quote": SENTENCE,
+        "prefix": "Journey",
+        "suffix": "Todo Guard the session d",
+    }
     assert events[1]["text"] == "Is 0041 idempotent?"
     assert {k: events[2][k] for k in ("widget", "action", "detail")} == {
         "widget": "board",
