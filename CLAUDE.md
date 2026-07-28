@@ -169,6 +169,13 @@ with nowhere else to be said: after upgrade a `cq-tabs` strip button is a tab's 
 label, and a settled `cq-options` row names the chosen card while collapsing it. Neither
 is quotable, and both are in `TODO.md` rather than quietly absent.
 
+Paper asks the same question and answers it harder: nothing there can be pressed, so
+`.cq-ui` doesn't print at all. Where a control's label is also the page's only statement
+of a state, the widget owes paper that statement — `cq-tabs` hides its strip and each
+panel's own label comes back, and a `cq-options` pick prints the mark on the card
+carrying it. Skip that half and a printed decision rests on a border colour greyscale
+drops, or, for a settled group whose summary row is UI too, on nothing at all.
+
 ### Widgets declare, the runtime decides
 
 A widget module gets the helper surface `colloquy.js` exports, and no more until one

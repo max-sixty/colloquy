@@ -537,15 +537,18 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
     # Navigation still positions the page: a quote click scrolls its passage into
     # view under the lock, so the sheet closes onto the passage it talked about.
     page.locator(".cq-quote", has_text="Paragraph 40").click()
-    # Settled, not merely arrived: the scroll is smooth, so the passage enters the
-    # viewport frames before the animation ends, and a position read then is one the
-    # next frame falsifies. Same top twice in a row is the animation saying it's done.
+    # Settled, not merely arrived: the click scrolls twice — instantly, to bring the
+    # passage's own box into view, then smoothly to centre the painted range — so both
+    # "it is on screen" and "scrollTop read the same twice" are already true while the
+    # page is still moving, and a position read there is hundreds of pixels off the
+    # resting one. Held for 200ms is the page saying it has stopped.
     page.wait_for_function(
-        """() => { const r = document.getElementById('p40').getBoundingClientRect();
-                   const t = document.body.scrollTop;
-                   const settled = window.__testLastTop === t;
-                   window.__testLastTop = t;
-                   return settled && r.top >= 0 && r.top < innerHeight; }"""
+        """() => { const t = document.body.scrollTop, now = performance.now();
+                   if (window.__testLastTop !== t) {
+                     window.__testLastTop = t; window.__testSince = now; return false;
+                   }
+                   const r = document.getElementById('p40').getBoundingClientRect();
+                   return now - window.__testSince > 200 && r.top >= 0 && r.top < innerHeight; }"""
     )
     at_mark = page.evaluate("() => document.body.scrollTop")
     assert at_mark != before
@@ -661,6 +664,48 @@ def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     assert page.locator("#opt-strict").is_visible(), (
         "clicking a thread's quote must open the group holding it"
     )
+    page.close()
+
+
+def test_a_printed_page_says_which_option_carries_the_pick(browser, serve):
+    """Print drops the runtime's layer, and the controls a widget injects go with
+    it: on paper there is nothing to press. The pick's mark is a control and a
+    statement at once, though, so dropping it takes the statement too — and a
+    settled group loses its summary row the same way, leaving a printed decision
+    stated in the ok ring alone, a colour greyscale drops.
+
+    So on paper a choose group renders as one that was never choosable: the marks
+    offering a pick go, the one on the card carrying it stays and says so, and the
+    strip of room the marks need is reserved where a mark shows rather than on
+    every card. It is what cq-tabs already does when its strip hides and each
+    panel's own label comes back."""
+    page, errors = open_page(browser, serve(SETTLED_PAGE))
+    row = page.locator("#transport .cq-settled")
+    expect(row).to_contain_text("Settled: Lax cookie")
+
+    # The strip the mark sits in: what the card's bottom padding holds over its own
+    # base, so the measure follows the theme's spacing instead of pinning a number.
+    strip = """el => parseFloat(getComputedStyle(el).paddingBottom) -
+                     parseFloat(getComputedStyle(el).paddingLeft)"""
+    pick = page.locator("#opt-lax .cq-pick")
+    page.emulate_media(media="print")
+    expect(row).to_be_hidden()  # the disclosure is a screen affordance; paper has the cards
+    expect(pick).to_be_visible()
+    expect(pick).to_have_text("chosen")
+    expect(page.locator("#opt-strict .cq-pick")).to_be_hidden()
+    assert page.locator("#opt-strict").evaluate(strip) == 0, (
+        "a card whose mark can't print is holding room for it — an empty strip "
+        "under a card the printed page says nothing about"
+    )
+
+    page.emulate_media(media="screen")
+    row.click()
+    expect(page.locator("#opt-strict")).to_be_visible()
+    assert page.locator("#opt-strict").evaluate(strip) > 0, (
+        "on screen the pick can still land here, and the card has to already hold "
+        "the room or picking it moves the box"
+    )
+    assert errors == []
     page.close()
 
 

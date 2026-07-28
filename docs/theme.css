@@ -182,8 +182,11 @@ cq-options[choose] > cq-option[chosen]:hover {
 /* The mark the upgrade injects: the keyboard path and the state in one element,
  * a caption on the card's own left edge rather than a control pinned to a corner.
  * Its box is identical in both states, so a pick shifts nothing; the strip below
- * the content is the room it needs, reserved on every card that carries one. */
-cq-options[choose] > cq-option, cq-option[chosen] { padding-bottom: 32px; }
+ * the content is the room it needs. On screen every card in a choose group
+ * reserves it, because the pick can land on any of them; on paper it can land
+ * nowhere, so the room is reserved where the mark shows. */
+cq-option[chosen] { padding-bottom: 32px; }
+@media screen { cq-options[choose] > cq-option { padding-bottom: 32px; } }
 cq-option .cq-pick { position: absolute; left: var(--sp-3); bottom: 9px;
                      display: inline-flex; align-items: center; gap: 6px;
                      font: inherit; font-size: var(--t-6); line-height: 1.5;
@@ -200,6 +203,12 @@ cq-option[chosen] .cq-pick::before { content: "✓"; border-color: var(--ok);
                      background: var(--ok); }
 cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px;
                      border-radius: 4px; }
+/* Paper takes no input, so the group prints as one that was never choosable: the
+ * marks offering a pick go with the rest of the UI, and the one on the card that
+ * carries it comes back to say which option the page holds. Left hidden, a
+ * printout states the decision in the ok ring alone, which greyscale drops — and
+ * a settled group states it nowhere at all, its summary row being UI too. */
+@media print { cq-option[chosen] .cq-pick { display: inline-flex !important; } }
 /* `settled`: the decision is made and acted on, so the group reads as one line
  * — the disclosure the upgrade builds — with the cards behind it. Collapsed it
  * lays out as a block, so hidden cards contribute no grid rows and no gaps;
