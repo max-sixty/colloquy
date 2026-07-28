@@ -509,17 +509,31 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
     # Navigation still positions the page: a quote click scrolls its passage into
     # view under the lock, so the sheet closes onto the passage it talked about.
     page.locator(".cq-quote", has_text="Paragraph 40").click()
+    # Settled, not merely arrived: the scroll is smooth, so the passage enters the
+    # viewport frames before the animation ends, and a position read then is one the
+    # next frame falsifies. Same top twice in a row is the animation saying it's done.
     page.wait_for_function(
         """() => { const r = document.getElementById('p40').getBoundingClientRect();
-                   return r.top >= 0 && r.top < innerHeight; }"""
+                   const t = document.body.scrollTop;
+                   const settled = window.__testLastTop === t;
+                   window.__testLastTop = t;
+                   return settled && r.top >= 0 && r.top < innerHeight; }"""
     )
     at_mark = page.evaluate("() => document.body.scrollTop")
     assert at_mark != before
+    mark_top = page.evaluate("() => document.getElementById('p40').getBoundingClientRect().top")
 
-    # Closing hands scrolling back, right where navigation left the page.
+    # Closing hands scrolling back, right where navigation left the page — measured on
+    # the passage, not the number: unlocking returns the scrollbar, whose width reflows
+    # the text where scrollbars are classic, and Chrome's scroll anchoring then nudges
+    # scrollTop a pixel to keep the visible content put. The passage staying put is the
+    # promise; the number is one rendering of it.
     page.get_by_role("button", name="Close comments").click()
     page.wait_for_function("() => !document.querySelector('.cq-panel').classList.contains('open')")
-    assert page.evaluate("() => document.body.scrollTop") == at_mark
+    page.wait_for_function(
+        """(top) => Math.abs(document.getElementById('p40').getBoundingClientRect().top - top) < 2""",
+        arg=mark_top,
+    )
     page.mouse.move(120, 300)
     page.mouse.wheel(0, 200)
     page.wait_for_function(f"() => document.body.scrollTop > {at_mark}")
