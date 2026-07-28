@@ -53,6 +53,14 @@ stands alone.
       scores an approximate match over quote, prefix and suffix together) rather than a
       lower bar. Two copies that are identical *and* identically surrounded can't be told
       apart at all, and no page here has a pair.
+- [ ] The two captures stop at different walls. The browser's reads a passage's
+      neighbours straight through a fence, while `comment`'s stops at one — the fence is
+      where the file stops modelling the page, so the file-side capture has nothing to
+      read past it. Beside a widget's seam the same passage therefore stores longer
+      context from the browser than from `comment`, and the norm that both captures
+      write the same text under the same rules is false by exactly that margin. The only
+      alignment on offer is the browser stopping at fences too, since the file cannot
+      learn to read through one; the cost is context the browser could legitimately use.
 - [ ] A tab's name can't be commented on. Every other word a widget renders from an
       authored attribute is text a reviewer can select (`x-says`), but `cq-tab`'s
       `label` renders into the strip button the upgrade builds, and a control's label
@@ -67,6 +75,14 @@ stands alone.
       collapsing the card itself, so the decision is quotable only once the group is
       opened. Worth doing when someone actually wants to comment on a tab's name or a
       settled line; until then the asymmetry is small and stated rather than hidden.
+- [ ] A move's awaiting mark is visual only: `data-cq-awaiting` outlines the card, and a
+      screen reader hears the move announced when it is made but nothing durable after.
+      The grip's label (the board module's names pass) is the natural place to say it,
+      and the board module is that label's one writer.
+- [ ] The toast steps aside for the panel (`right:` panel width + 18px), which beside a
+      covering sheet on a very narrow window puts it off-canvas. The covering layout
+      wants its own answer here, as it got for scrolling, rather than the wide
+      layout's offset.
 - [ ] Re-record `docs/demo.gif`: its step 2 is a select-and-comment, which now lights
       the passage while the composer is open and no longer repeats it inside the box, so
       the hero image shows the old behavior twice over.
@@ -83,6 +99,19 @@ stands alone.
       assert the PDF paginates); keyboard bindings (assert colloquy leaves the
       browser's scroll keys alone, not that Chrome scrolls); and the narrow
       viewport's box dump (its scroll ownership is asserted in the suite).
+- [ ] What the runtime writes onto the page's own elements is a hand-list. `shallowSigs`
+      looks away from `class`, `aria-describedby`, and `data-cq-*` so the replay gate
+      and the awaiting marker don't read the runtime's paint as disagreement — a list a
+      future runtime-written attribute must join, or both start seeing ghosts. One
+      declaration beside the writers would give the list an owner.
+- [ ] An overlaid registry can name an `x-retired-when` the runtime's `DECIDED_VERB`
+      doesn't know, and the generated selector then matches nothing — a retired slot
+      silently quotable again. Unreachable in the shipped registry; the vendored-registry
+      loop in `cmd_check` already reports keys a page can't honor, and this one belongs
+      with them.
+- [ ] `@scope` can't contain `@keyframes` names, so `cq-pulse` and `cq-flash` stay
+      document-global — the one pinhole in the chrome's scoping, live only if a widget
+      both coins the name and animates with it.
 - [ ] Widget-aware Δ: the version diff is additions-only by text key, so a card that
       moved columns isn't marked. The changelog line carries it today; marking cards
       whose column changed would need the diff to understand board structure.
