@@ -93,9 +93,6 @@ stands alone.
       assert the PDF paginates); keyboard bindings (assert colloquy leaves the
       browser's scroll keys alone, not that Chrome scrolls); and the narrow
       viewport's box dump (its scroll ownership is asserted in the suite).
-- [ ] Pending-state marker for board moves: after the toast fades, nothing shows
-      which moves await the honoring version (choose has its mark; move has
-      nothing). Toasts also coalesce — rapid moves show only the last.
 - [ ] Widget-aware Δ: the version diff is additions-only by text key, so a card that
       moved columns isn't marked. The changelog line carries it today; marking cards
       whose column changed would need the diff to understand board structure.

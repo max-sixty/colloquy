@@ -1090,6 +1090,53 @@ def test_render_reports_markup_the_log_replays_over(browser, serve):
     assert any("id=work" in f and "card-importer" in f for f in failures), failures
 
 
+def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
+    """A move outlives its toast: the card the reviewer moved stays marked as
+    recorded-but-unwritten, in the tab that moved it and in a fresh replay
+    alike, because the runtime compares the page's state against the version's
+    own snapshot rather than remembering who wrote what. The card the move
+    displaced stays unmarked — the log named one card, not its neighbours. The
+    honoring version says the state itself, so on it the disagreement and the
+    mark are gone."""
+    url = serve(REPLAYED_PAGE)
+    page, errors = open_page(browser, url)
+
+    # The keyboard gesture takes the same #send path as a drag. The sender's own
+    # replay is a no-op, which is exactly the case the version snapshot covers.
+    page.get_by_role("button", name="Move: Wire the importer — Doing").focus()
+    page.keyboard.press("Enter")
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("Enter")
+    expect(page.locator("#card-importer")).to_have_attribute("data-cq-awaiting", "")
+    expect(page.locator("#card-notes")).not_to_have_attribute("data-cq-awaiting", "")
+
+    # A fresh tab reads the same fact from replay alone, and paints it.
+    second, second_errors = open_page(browser, url)
+    expect(second.locator("#card-importer")).to_have_attribute("data-cq-awaiting", "")
+    assert (
+        second.locator("#card-importer").evaluate("el => getComputedStyle(el).outlineStyle")
+        == "dashed"
+    )
+
+    # The honoring version authors the card where the reviewer put it; replay
+    # no-ops against it and the mark has nothing left to say.
+    d = serve.page_dir
+    honored = REPLAYED_PAGE.replace(IMPORTER_CARD, "").replace(
+        'label="Done">', f'label="Done">{IMPORTER_CARD}'
+    )
+    (d / "versions" / "v002.html").write_text(honored)
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "t"})
+    third, third_errors = open_page(browser, url.replace("v001", "v002"))
+    expect(third.locator("#col-done #card-importer")).to_be_visible()
+    # Absence only counts once replay has decided every action.
+    third.wait_for_function("() => document.body.dataset.cqApplied === '1'")
+    expect(third.locator("#card-importer")).not_to_have_attribute("data-cq-awaiting", "")
+
+    assert errors == [] and second_errors == [] and third_errors == []
+    for tab in (page, second, third):
+        tab.close()
+
+
 def test_a_pending_suggestion_can_be_discussed_instead_of_decided(browser, serve):
     """✓ and ✗ are the visible affordances, but a proposal a reviewer half-agrees
     with wants a sentence, not a verdict: the proposed words are ordinary page

@@ -2012,20 +2012,46 @@ function restsOn(e, widget) {
 // An id-bearing element's state as markup can say it: tag, attributes, and
 // place among its id-bearing kin. Text is deliberately absent — words are the
 // static gate's subject (restatement_errors); this is the rest, the state no
-// version file can speak. Diffed around each applyAction call to record what
-// replay wrote, and imported by check --render to read the version files with
-// the same eyes, so the two readings cannot drift.
+// version file can speak. What the runtime itself paints onto page elements —
+// its marks' classes, a block's description, its data-cq bookkeeping — is
+// absent too: no version can assert those, and looking away from them keeps a
+// reading taken from the live DOM equal to one taken from the file. Diffed
+// around each applyAction call to record what replay wrote, and imported by
+// check --render to read the version files with the same eyes, so the two
+// readings cannot drift.
 export function shallowSigs(root) {
   const sigs = new Map();
   for (const el of [root, ...root.querySelectorAll("[id]")]) {
     if (!el.id) continue;
-    const attrs = [...el.attributes].map((a) => `${a.name}=${a.value}`).sort().join(" ");
+    const attrs = [...el.attributes]
+      .filter((a) => a.name !== "class" && a.name !== "aria-describedby" && !a.name.startsWith("data-cq-"))
+      .map((a) => `${a.name}=${a.value}`).sort().join(" ");
     const kin = [...(el.parentElement?.children ?? [])].filter((c) => c.id);
     sigs.set(el.id, `${el.tagName} [${attrs}] in=${el.parentElement?.id ?? ""}#${kin.indexOf(el)}`);
   }
   return sigs;
 }
+// What the reviewer has done that this version's markup doesn't say — a moved
+// card, until the honoring version arrives. One comparison owns the answer: the
+// page's state now against `versionSigs`, its state before the first replay, on
+// the ids the log's actions name. The snapshot predates the sender's own
+// gesture, so their tab and a replayed one read the same; and a move taken back
+// clears, because the comparison is of ends rather than of writes. The theme
+// decides what wears it: a card outlines, while a picked option already carries
+// its state as `chosen`.
+let versionSigs = null;
+const actedOn = new Set();
+function markAwaiting() {
+  const now = shallowSigs(document.body);
+  for (const id of actedOn)
+    document
+      .getElementById(id)
+      ?.toggleAttribute("data-cq-awaiting", now.get(id) !== versionSigs.get(id));
+}
 function applyActions() {
+  // Before anything can have moved — including past the gate below, where a
+  // live drag's own drop would otherwise beat the snapshot to the DOM.
+  versionSigs ??= shallowSigs(document.body);
   // Never mutate the page under a live gesture — a replayed foreign action could
   // move the nodes a drag preview is holding. Retry next poll.
   if (document.querySelector(".cq-dragging")) return;
@@ -2078,6 +2104,8 @@ function applyActions() {
     // already held the state; only a page widget can contradict its version,
     // so a reply's widget (.cq-ui, no version) goes unrecorded.
     const before = el.closest(".cq-ui") ? null : shallowSigs(el);
+    // Its parts, not the widget: a board is never awaiting, its card is.
+    if (before) for (const id of restsOn(e, el).slice(1)) actedOn.add(id);
     el.applyAction(e.action, e.detail);
     if (before) {
       const after = shallowSigs(el);
@@ -2095,7 +2123,10 @@ function applyActions() {
   // settled slot — so the marks are repainted where they now belong. Said here rather
   // than left to the caller's order: a pass held off by a live drag lands on a poll
   // that has nothing else to re-render.
-  if (applied) paintAnchors();
+  if (applied) {
+    paintAnchors();
+    markAwaiting();
+  }
   // Every action in the log is now decided (applied, skipped, or retired), and
   // the stamp says so — it is what check --render awaits before reading the
   // replay's record, so the gate never reads a page mid-replay.
