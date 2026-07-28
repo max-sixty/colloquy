@@ -27,7 +27,7 @@
     "additionalProperties": false,
     "x-parent": "cq-options",
     "x-content": "prose",
-    "x-chips": ["effort", "risk"],
+    "x-says": {"effort": "before", "risk": "after"},
     "x-upgrade": false
   },
   "cq-plan": {
@@ -66,7 +66,6 @@
     "additionalProperties": false,
     "x-parent": "cq-milestones",
     "x-content": "prose",
-    "x-chips": ["when", "tags"],
     "x-upgrade": true
   },
   "cq-timeline": {
@@ -92,6 +91,7 @@
     "additionalProperties": false,
     "x-parent": "cq-timeline",
     "x-content": "prose",
+    "x-says": {"at": "before"},
     "x-upgrade": false
   },
   "cq-compare": {
@@ -141,6 +141,7 @@
     "additionalProperties": false,
     "x-parent": "cq-metrics",
     "x-content": "prose",
+    "x-says": {"value": "before", "delta": "after"},
     "x-upgrade": false
   },
   "cq-ref": {
@@ -337,6 +338,7 @@
     "required": ["id"],
     "additionalProperties": false,
     "x-content": "prose",
+    "x-says": {"label": "before"},
     "x-upgrade": false,
     "x-example": "<cq-specimen id=\"spec-gear\" label=\"next season's kit\">\n  <cq-options>\n    <cq-option id=\"sp-paper\" effort=\"low\" risk=\"high\"><strong>Paper maps</strong> Nothing to charge.</cq-option>\n    <cq-option id=\"sp-gps\" effort=\"med\" risk=\"low\" recommended><strong>Dedicated GPS</strong> Offline maps, week-long battery.</cq-option>\n  </cq-options>\n</cq-specimen>"
   },

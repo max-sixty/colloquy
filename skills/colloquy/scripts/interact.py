@@ -71,7 +71,11 @@ Schema has no vocabulary for rides in x- keywords:
                 body in the notation the description names), "none" (empty).
                 Children that declare this tag as x-parent are admissible under
                 any model — that is what x-parent means.
-    x-chips     attributes the theme renders as chips (documentation for CSS)
+    x-says      attributes whose values are words the reader sees, mapped to the
+                edge they render at ("before" = first child, "after" = last).
+                The runtime renders them as real text there, because a reviewer
+                can only quote what a text node holds — the theme's matching
+                `content: attr()` is the same words for a page with no script.
     x-upgrade   true when the runtime imports /widgets/<tag>.js for it
     x-example   one authored example, printed by `catalog`
 
@@ -763,8 +767,9 @@ CATALOG_PREAMBLE = """\
 # required parent, x-content the content model (prose | items | data | none).
 # A "data" body is text in the notation the description names, < > escaped.
 # x-upgrade marks tags a JS module enhances in the browser — the interactive
-# widgets and the data-body renderers; x-chips names attributes the theme
-# renders as chips.
+# widgets and the data-body renderers; x-says names the attributes whose values
+# the reader sees as words, and the edge each renders at, so the reviewer can
+# select and comment on them like any other text on the page.
 """
 
 
@@ -1357,12 +1362,58 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
 RENDER_VIEWPORT = {"width": 1200, "height": 900}
 
 
+# Words the page shows that no reviewer can select, and so no comment can be
+# anchored on. A widget has two ways to leave them there, neither of which a
+# static lint can see, and a page-local widget is where both keep happening.
+#
+# It can paint them: `content: attr(label)` puts a heading on screen and in no
+# text node, so a selection can't cover it. The runtime says the attributes the
+# registry marks x-says, and a widget's module says the rest (a chip row, a
+# heading that doubles as a list's accessible name); either way, none of an
+# element's own attribute values should still be reaching the reader as
+# generated content.
+#
+# Or it can mark them .cq-ui, which the anchor pass skips. That marker means
+# "the runtime's own words" — its layer, and the labels it invents for controls
+# — and reaching for it as a general "this is chrome" marker is how a reviewer
+# ends up unable to comment on a heading they can see. So inside a widget, every
+# word under .cq-ui has to be a control's own label. The comment panel is out of
+# scope: a widget in a reply is markup frozen in the event log, not the document.
+UNREACHABLE_WORDS = """() => {
+    const found = [];
+    const at = el => `<${el.tagName.toLowerCase()}${el.id ? ' id=' + el.id : ''}>`;
+    for (const el of document.querySelectorAll('*')) {
+        if (!el.tagName.startsWith('CQ-')) continue;
+        const shown = ['::before', '::after']
+            .map(w => getComputedStyle(el, w).content)
+            .filter(c => c && c.startsWith('"'));
+        for (const { name, value } of el.attributes)
+            if (value.length > 1 && shown.some(c => c.includes(value)))
+                found.push(`${at(el)} paints ${name}="${value}" rather than saying it`);
+    }
+    // A widget's chrome is the .cq-ui inside a cq-* element; the runtime's own
+    // layer is appended to body and sits inside none of them.
+    const widget = el => { for (let a = el; a; a = a.parentElement)
+                               if (a.tagName.startsWith('CQ-')) return a; };
+    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const el = n.parentElement;
+        if (!n.data.trim() || !el.closest('.cq-ui') || !widget(el)) continue;
+        if (!el.closest('button, textarea, input, select'))
+            found.push(`${at(widget(el))} puts ${JSON.stringify(n.data.trim().slice(0, 40))} `
+                       + `under .cq-ui, where no comment can reach it`);
+    }
+    return [...new Set(found)];
+}"""
+
+
 def render_version(browser, url: str) -> list:
     """Everything wrong with a served version that only a browser can see: a
     console or page error, a request that 404s, a fail-soft error box, a widget
-    upgraded into a box of no usable size, the page scrolling sideways — each in
-    both color schemes, because the dark theme is real CSS nobody otherwise
-    renders. Returns human-readable failures; [] is a pass.
+    upgraded into a box of no usable size, the page scrolling sideways, words the
+    reviewer can read and can't select — each in both color schemes, because the
+    dark theme is real CSS nobody otherwise renders. Returns human-readable
+    failures; [] is a pass.
 
     One implementation with two callers — `check --render` on the page an agent
     just wrote, and the render suite on the shipped examples
@@ -1407,6 +1458,7 @@ def render_version(browser, url: str) -> list:
                           h: Math.round(el.getBoundingClientRect().height) }))
             .filter(box => box.w < 40 || box.h < 10)""")
         overflow = page.evaluate("document.body.scrollWidth - document.body.clientWidth")
+        unreachable = page.evaluate(UNREACHABLE_WORDS)
         page.close()
         found = [f"[{scheme}] console: {e}" for e in errors]
         found += [f"[{scheme}] a widget failed soft: {t}" for t in failsoft]
@@ -1414,6 +1466,7 @@ def render_version(browser, url: str) -> list:
             found.append(f"[{scheme}] widgets rendered with no usable size: {json.dumps(tiny)}")
         if overflow > 0:
             found.append(f"[{scheme}] the page scrolls sideways by {overflow}px")
+        found += [f"[{scheme}] {w}" for w in unreachable]
         return found
 
     return [*in_scheme("light"), *in_scheme("dark")]

@@ -115,9 +115,20 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0;
 
 /* ---------- element-widgets ---------- */
 
+/* Every attribute the registry marks x-says is written twice here. The runtime
+ * renders the value as real text (renderSaid, in a span carrying data-cq-said),
+ * because a pseudo-element paints glyphs that live in no text node — a reviewer
+ * can read them and can never select or comment on them. The pseudo-element
+ * stays as the same words for a page carrying no script at all
+ * (docs/how-it-works.html renders the whole vocabulary that way) and stands down
+ * where the runtime got there, asked by :has() and placed later in the cascade,
+ * so the two are never both on. The word in front of a value stays a pseudo
+ * either way ("effort", "specimen ·"): that one is the theme's word about the
+ * page's, and only the page's is worth quoting. */
+
 /* cq-options / cq-option: this is the widget's whole definition — no JS.
- * Chips are pseudo-elements reading the attributes: effort top-left,
- * risk top-right (tinted per value); `recommended` is the accent ring. */
+ * Chips read the attributes: effort top-left, risk top-right (tinted per
+ * value); `recommended` is the accent ring. */
 cq-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
              gap: var(--sp-3); margin: 14px 0; }
 cq-option { display: block; position: relative; border: 1px solid var(--rule);
@@ -127,14 +138,24 @@ cq-option[effort], cq-option[risk] { padding-top: 40px; }
 cq-option > strong { display: block; margin: 0 0 4px; font-size: 15px; }
 cq-option[recommended] { border-color: var(--accent);
                          box-shadow: 0 0 0 1px var(--accent); }
-cq-option::before, cq-option::after { position: absolute; top: 12px;
+cq-option::before, cq-option::after,
+cq-option > [data-cq-said] { position: absolute; top: 12px;
     font-size: var(--t-6); line-height: 1.6; padding: 0 8px; border-radius: 999px;
     background: var(--chip); color: var(--ink-2); }
-cq-option[effort]::before { content: "effort " attr(effort); left: 12px; }
-cq-option[risk]::after { content: "risk " attr(risk); right: 12px; }
-cq-option[risk="high"]::after { background: var(--danger-tint); color: var(--danger-ink); }
-cq-option[risk="med"]::after  { background: var(--warn-tint); color: var(--warn-ink); }
-cq-option[risk="low"]::after  { background: var(--ok-tint); color: var(--ok-ink); }
+cq-option[effort]::before, cq-option > [data-cq-said="effort"] { left: 12px; }
+cq-option[risk]::after, cq-option > [data-cq-said="risk"] { right: 12px; }
+cq-option[effort]::before { content: "effort " attr(effort); }
+cq-option[risk]::after { content: "risk " attr(risk); }
+cq-option > [data-cq-said="effort"]::before { content: "effort "; }
+cq-option > [data-cq-said="risk"]::before { content: "risk "; }
+cq-option:has(> [data-cq-said="effort"])::before { content: none; }
+cq-option:has(> [data-cq-said="risk"])::after { content: none; }
+cq-option[risk="high"]::after, cq-option[risk="high"] > [data-cq-said="risk"]
+                              { background: var(--danger-tint); color: var(--danger-ink); }
+cq-option[risk="med"]::after, cq-option[risk="med"] > [data-cq-said="risk"]
+                              { background: var(--warn-tint); color: var(--warn-ink); }
+cq-option[risk="low"]::after, cq-option[risk="low"] > [data-cq-said="risk"]
+                              { background: var(--ok-tint); color: var(--ok-ink); }
 /* With `choose`, the group takes the reader's pick by click: hover lifts a card
  * and warms its mark, and the pick wears the ok ring. `chosen` reads after
  * `recommended`, so the reader's pick wins the border. */
@@ -239,9 +260,8 @@ cq-milestone[status="done"] > strong { color: var(--muted); }
 .cq-chips span { font-size: var(--t-6); line-height: 1.6; padding: 0 8px;
                  border-radius: 999px; background: var(--chip); color: var(--ink-2); }
 
-/* cq-timeline / cq-event: an event log on a rail. The dot (::after, absolute,
- * colored by kind) and the time label (::before, from the at attribute) spend
- * exactly the CSS pseudo budget — no JS. */
+/* cq-timeline / cq-event: an event log on a rail. The dot is ::after, absolute,
+ * colored by kind; the time label is the `at` attribute, said above the title. */
 cq-timeline { display: block; margin: 14px 0 14px 8px; }
 cq-event { display: block; position: relative; padding: 0 0 16px 26px;
            border-left: 2px solid var(--rule); }
@@ -253,8 +273,11 @@ cq-event[kind="info"]::after    { background: var(--muted); }
 cq-event[kind="action"]::after  { background: var(--accent); border-color: var(--accent); }
 cq-event[kind="warning"]::after { background: var(--warn); border-color: var(--warn); }
 cq-event[kind="failure"]::after { background: var(--danger); border-color: var(--danger); }
-cq-event[at]::before { content: attr(at); display: block; font-family: var(--mono);
+cq-event[at]::before,
+cq-event > [data-cq-said="at"] { display: block; font-family: var(--mono);
                        font-size: var(--t-6); color: var(--muted); margin-bottom: 1px; }
+cq-event[at]::before { content: attr(at); }
+cq-event:has(> [data-cq-said="at"])::before { content: none; }
 cq-event > strong { margin-right: 6px; }
 
 /* cq-compare / cq-variant: labeled columns; exhibition, not decision. */
@@ -264,24 +287,36 @@ cq-variant { display: block; border: 1px solid var(--rule); border-radius: var(-
              padding: var(--sp-3); background: var(--card); font-size: 14px; }
 cq-variant > strong { display: block; margin: 0 0 4px; font-size: 15px; }
 
-/* cq-metrics / cq-metric: a KPI row. Value is ::before from the attribute, the
- * delta ::after colors by sign × direction — honest coloring, still no JS. */
+/* cq-metrics / cq-metric: a KPI row. The value leads, said from the attribute;
+ * the delta trails and colors by sign × direction — honest coloring, no JS. */
 cq-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
              gap: var(--sp-3); margin: 14px 0; }
 cq-metric { display: block; border: 1px solid var(--rule); border-radius: var(--r);
             padding: 10px 14px; background: var(--card); font-size: var(--t-6);
             text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-cq-metric::before { content: attr(value); display: block; font-size: 24px;
+cq-metric::before,
+cq-metric > [data-cq-said="value"] { display: block; font-size: 24px;
                     font-weight: 600; line-height: 1.3; letter-spacing: -0.01em;
                     text-transform: none; color: var(--ink); }
-cq-metric[delta]::after { content: attr(delta); display: inline-block; margin-left: 6px;
+cq-metric::before { content: attr(value); }
+cq-metric:has(> [data-cq-said="value"])::before { content: none; }
+cq-metric[delta]::after,
+cq-metric > [data-cq-said="delta"] { display: inline-block; margin-left: 6px;
                           padding: 0 7px; border-radius: 999px; letter-spacing: 0;
                           text-transform: none; font-size: var(--t-6); line-height: 1.6;
                           background: var(--chip); color: var(--ink-2); }
+cq-metric[delta]::after { content: attr(delta); }
+cq-metric:has(> [data-cq-said="delta"])::after { content: none; }
 cq-metric[direction="up-good"][delta^="+"]::after,
-cq-metric[direction="up-bad"][delta^="-"]::after  { background: var(--ok-tint); color: var(--ok-ink); }
+cq-metric[direction="up-bad"][delta^="-"]::after,
+cq-metric[direction="up-good"][delta^="+"] > [data-cq-said="delta"],
+cq-metric[direction="up-bad"][delta^="-"] > [data-cq-said="delta"]
+                    { background: var(--ok-tint); color: var(--ok-ink); }
 cq-metric[direction="up-good"][delta^="-"]::after,
-cq-metric[direction="up-bad"][delta^="+"]::after  { background: var(--danger-tint); color: var(--danger-ink); }
+cq-metric[direction="up-bad"][delta^="+"]::after,
+cq-metric[direction="up-good"][delta^="-"] > [data-cq-said="delta"],
+cq-metric[direction="up-bad"][delta^="+"] > [data-cq-said="delta"]
+                    { background: var(--danger-tint); color: var(--danger-ink); }
 
 /* cq-board / cq-column / cq-card: the one widget the reviewer edits directly.
  * All presentation is CSS; the cq-board upgrade only wires dragging (grips,
@@ -291,11 +326,18 @@ cq-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(10re
            gap: var(--sp-2); margin: 14px 0; align-items: stretch; overflow-x: auto; }
 cq-column { display: block; background: var(--field); border: 1px solid var(--rule);
             border-radius: var(--r); padding: 8px; min-height: 64px; }
-/* Empty alt text: the upgrade puts this label on the column as the accessible
-   name of a list, so the generated copy would be the same words a second time. */
-cq-column::before { content: attr(label) / ""; display: block; font-size: var(--t-6);
+/* The heading is written by cq-board.js rather than by the x-says pass, because
+   it is the list's accessible name as well as its visible words and the pass
+   knows nothing about names. Where the upgrade ran, the column carries those
+   words as its name and the span is aria-hidden, so they reach the tree once;
+   where no script runs at all there is no name either, and the generated copy
+   is the whole rendering, audible as well as visible. */
+cq-column::before,
+cq-column > [data-cq-said="label"] { display: block; font-size: var(--t-6);
             text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
             padding: 2px 4px 8px; }
+cq-column::before { content: attr(label); }
+cq-column:has(> [data-cq-said="label"])::before { content: none; }
 cq-column.cq-dropping { border-color: var(--accent); }
 cq-card { display: block; position: relative; background: var(--card);
           border: 1px solid var(--rule); border-radius: var(--r);
@@ -411,10 +453,14 @@ cq-suggestion[data-cq-state="rejected"]:not(:has(cq-old)) { display: none; }
  * renders. */
 cq-specimen { display: block; margin: 18px 0; padding: 2px 0 2px 16px;
               border-left: 2px solid var(--border-2); }
-cq-specimen::before { content: "specimen"; display: block; font-size: var(--t-6);
+cq-specimen::before,
+cq-specimen > [data-cq-said="label"] { display: block; font-size: var(--t-6);
               letter-spacing: .08em; text-transform: uppercase;
               color: var(--muted); }
+cq-specimen::before { content: "specimen"; }
 cq-specimen[label]::before { content: "specimen · " attr(label); }
+cq-specimen:has(> [data-cq-said="label"])::before { content: none; }
+cq-specimen > [data-cq-said="label"]::before { content: "specimen · "; }
 /* A quoted choose group renders as one that never declared `choose`, and these
  * are that promise in CSS: no pointer cursor, no hover lift, and no room held
  * for a mark strip nothing will fill — each card at the height it would have

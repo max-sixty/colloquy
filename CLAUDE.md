@@ -96,14 +96,46 @@ the gap and the way out.
 
 ### Assume the browser it already assumes
 
-The runtime requires ES modules, custom elements, `field-sizing`, `color-mix`, and the
-highlight registry. Guarding one of those while assuming the rest buys nothing and reads as
-if the others were checked. Add a feature guard only where there is a real fallback to take.
+The runtime requires ES modules, custom elements, `field-sizing`, `color-mix`, `:has()`,
+and the highlight registry. Guarding one of those while assuming the rest buys nothing and
+reads as if the others were checked. Add a feature guard only where there is a real
+fallback to take.
 
 A stale entry is the same mistake as a stray guard, so cut one the moment nothing uses it.
 And the list promises support, not uniform rendering: `::highlight()` takes a narrow,
 deliberately layout-free property set that engines implement unevenly, so a mark's tint
 carries its meaning and the underline is a bonus.
+
+### Everything the page says, the reviewer can point at
+
+A reviewer selected a draft's text and commented on it, then tried the same on the label
+naming that draft and got nothing back. He read the asymmetry as a bug, and it is one: a
+label saying which draft you are looking at is exactly the thing to hang "this one's
+wrong" on. It was a `<strong>` in a row marked `.cq-ui`, which the anchor pass skips. Its
+author reached for that class meaning "this is chrome". What it means is "these are the
+runtime's words, not the page's".
+
+Chrome is a look, not a permission, and the reviewer has no such category. `.cq-ui`
+belongs on the runtime's own layer and on the controls a widget injects — a control is a
+thing to work rather than a thing to say, which is why its label is usually the name of
+an action ("Save", "choose", the drag grip). A widget's own label, note, heading, or badge
+wears `data-cq-gen` alone: the version diff looks away from it, the anchor pass does not,
+and those two questions were never the same question.
+
+The rule has a second edge, and that one had every shipped widget: `content: attr(label)`
+paints glyphs into no text node, so a metric's headline number, a column's heading and an
+option's risk could be read and not selected — no `.cq-ui` anywhere near them. Hence
+`x-says` in the registry, and one runtime pass rendering what it names. Leaving it to each
+widget would be leaving it to be forgotten, which is how it was forgotten the first time.
+A widget writes its own only where the pass can't reach: one run of words at the element's
+first or last child is all a pseudo-element could ever have been, so a chip row placed
+after a title (`cq-milestone`) or a heading that doubles as a list's accessible name
+(`cq-column`) is a module's job. Same span, same markers.
+
+What stays out of reach is what a control says. State the cost where that leaves a word
+with nowhere else to be said: after upgrade a `cq-tabs` strip button is a tab's only
+label, and a settled `cq-options` row names the chosen card while collapsing it. Neither
+is quotable, and both are in `TODO.md` rather than quietly absent.
 
 ### Widgets declare, the runtime decides
 

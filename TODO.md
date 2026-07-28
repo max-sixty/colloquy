@@ -81,6 +81,20 @@ stands alone.
       eat a click), so the fix is to carry the fact on the block rather than the passage:
       `aria-describedby` from the block a thread anchors in to that thread in the panel,
       coarser than the mark but saying the same thing.
+- [ ] A tab's name can't be commented on. Every other word a widget renders from an
+      authored attribute is text a reviewer can select (`x-says`), but `cq-tab`'s
+      `label` renders into the strip button the upgrade builds, and a control's label
+      is `.cq-ui` — the anchor pass skips it, and rightly, since "Save" and "choose"
+      are the runtime's words. The panel heading it also renders as (`cq-tab::before`)
+      is switched off the moment the strip exists, so after upgrade the name is
+      nowhere quotable. Making the button's label a non-`.cq-ui` span would let a drag
+      inside it select — and switch tabs on the mouseup, since the button is still a
+      button; `cq-options` already carries the guard for that shape ("a click that
+      lands inside a selection is that selection's"), so the pieces exist. A settled
+      `cq-options` row is the same shape — it names the chosen card in a button while
+      collapsing the card itself, so the decision is quotable only once the group is
+      opened. Worth doing when someone actually wants to comment on a tab's name or a
+      settled line; until then the asymmetry is small and stated rather than hidden.
 - [ ] Re-record `docs/demo.gif`: its step 2 is a select-and-comment, which now lights
       the passage while the composer is open, so the hero image shows the old behavior.
       `scripts/record-demo.sh` prints a shot list for a human to drive.
