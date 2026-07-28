@@ -551,6 +551,23 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     page.close()
 
 
+def test_the_specimen_gutter_is_painted_in_both_schemes(browser, serve):
+    """The gutter is the whole marking, and it is the one part of a specimen with
+    a color of its own: a token the dark block forgot would leave the bar
+    transparent and the quoting silently gone. Nothing else catches that. No
+    shipped example carries a specimen, so the sweep that drives the examples
+    through render_version in both palettes never reaches one — and render_version
+    would not object anyway, since a transparent border is not an error, resizes
+    no box, and leaves every word selectable."""
+    url = serve(SPECIMEN_PAGE)
+    for scheme in ("light", "dark"):
+        page = browser.new_page(color_scheme=scheme)
+        page.goto(url, wait_until="networkidle")
+        gutter = page.locator("#spec").evaluate("el => getComputedStyle(el).borderLeftColor")
+        assert gutter not in ("rgba(0, 0, 0, 0)", "transparent"), f"[{scheme}] {gutter}"
+        page.close()
+
+
 def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
     """The panel is where a live question actually gets put — Claude's replies
     carry widget markup — so it is also where a quoted one has to stay quoted.
