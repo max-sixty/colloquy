@@ -116,12 +116,12 @@ What wrapping gave for free — knowing which thread the pointer is over, and th
 cursor — comes back as a geometric hit-test (`markAt`) over the pass's own record of what
 it drew.
 
-One thing does not come back: a painted range builds no accessibility node, where a
-`<mark>` was a `mark` node, so a screen reader no longer hears that a passage carries a
-comment — the panel, which lists every thread with its quote, is what says so now. Paint is
-still right, because a mark nobody can click is worse than one nobody hears. State the cost
-anyway: a norm that hides what it costs gets applied where it shouldn't be. `TODO.md` holds
-the gap and the way out.
+One thing comes back coarser: a painted range builds no accessibility node, where a
+`<mark>` was a `mark` node, so the passage itself can't say it carries a comment. The
+block it lands in says it instead — `aria-describedby` from that block to the comment's
+own words in the panel, written by the same pass that paints, the author's own attribute
+restored when the last thread leaves. A mark nobody can click is still worse than one
+nobody hears; the trade stands, at a block's coarseness rather than in silence.
 
 ### Assume the browser it already assumes
 

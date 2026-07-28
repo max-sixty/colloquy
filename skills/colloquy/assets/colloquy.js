@@ -677,7 +677,12 @@ function msgNode(m) {
       renderSaid(body); // custom elements upgrade themselves on insertion; this doesn't
     } else body.textContent = m.text || "";
     if (m.suggestion) body.classList.add("cq-suggest-body");
-    if (m.id) msgBodies.set(m.id, body);
+    if (m.id) {
+      // The node a commented block points its aria-describedby at, so the id has to
+      // hold the comment's words and none of the thread's controls.
+      body.id = "cq-msg-" + m.id;
+      msgBodies.set(m.id, body);
+    }
   }
   div.append(head);
   if (m.suggestion) div.append(el("div", "cq-suggest-label", "suggested replacement"));
@@ -1134,6 +1139,7 @@ function resolveAnchor(anchor) {
 const MARK = "cq-mark";
 const PENDING = "cq-pending";
 const marked = new Map(); // thread id -> (Range | Element)[]: the pass's record of what it drew
+const described = new Map(); // block -> {authored, written}: the descriptions the pass has set
 let pendingMarks = []; // the same record for the open composer's own passage
 let pendingOutline = null; // the element the open composer outlines, owned by nobody else
 const pointer = { x: -1, y: -1 }; // last seen, so a repaint can re-answer the hover
@@ -1149,6 +1155,11 @@ function paintAnchors() {
   pendingOutline = null;
 
   const posted = [];
+  const descriptions = new Map(); // block -> panel ids of the comments on it, this pass
+  const describe = (block, id) => {
+    if (!descriptions.has(block)) descriptions.set(block, []);
+    descriptions.get(block).push("cq-msg-" + id);
+  };
   for (const t of buildThreads()) {
     if (t.resolved || !t.root.anchor) continue;
     const found = resolveAnchor(t.root.anchor);
@@ -1156,11 +1167,32 @@ function paintAnchors() {
     if (found.element) {
       found.element.classList.add("cq-mark-el");
       marked.set(t.root.id, [found.element]);
+      describe(found.element, t.root.id);
     } else {
       const ranges = found.segments.map((seg) => rangeOf([seg]));
       marked.set(t.root.id, ranges);
       posted.push(...ranges);
+      for (const block of new Set(found.segments.map((seg) => blockOf(seg.node))))
+        describe(block, t.root.id);
     }
+  }
+
+  // A painted range builds no accessibility node, so the block a comment lands in
+  // carries the fact instead: aria-describedby to the comment's own words in the
+  // panel — coarser than the mark, the same fact. The authored attribute is the
+  // initial condition, kept in the record so the last thread leaving restores it.
+  for (const [block, rec] of described)
+    if (!descriptions.has(block)) {
+      described.delete(block);
+      if (rec.authored) block.setAttribute("aria-describedby", rec.authored);
+      else block.removeAttribute("aria-describedby");
+    }
+  for (const [block, ids] of descriptions) {
+    let rec = described.get(block);
+    if (!rec)
+      described.set(block, (rec = { authored: block.getAttribute("aria-describedby"), written: null }));
+    const value = [rec.authored, ...ids].filter(Boolean).join(" ");
+    if (value !== rec.written) block.setAttribute("aria-describedby", (rec.written = value));
   }
 
   // The composer's own passage, in the accent rather than the marker amber, so a draft

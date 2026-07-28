@@ -1123,6 +1123,82 @@ def test_composer_marks_the_passage_instead_of_quoting_it(browser, serve):
     page.close()
 
 
+DESCRIBE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>describe</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Describe</h1>
+<p id="p1" aria-describedby="legend">The first passage under discussion, with words
+enough for two separate comments to land in it.</p>
+<p id="legend">A note the author already attached to that paragraph.</p>
+<p id="p2">A short second passage.</p>
+<figure id="fig"><svg viewBox="0 0 120 40" width="120" height="40" role="img"
+aria-label="specimen"><rect x="2" y="2" width="116" height="36" fill="none"
+stroke="currentColor"></rect></svg><figcaption>A figure, for element anchors.</figcaption></figure>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_commented_block_describes_itself_by_the_comments_words(browser, serve):
+    """A mark is painted, not wrapped, so nothing in the accessibility tree says a
+    passage carries a comment. The block it lands in says so instead: aria-describedby
+    to the comment's own words in the panel — joining the author's own description,
+    accumulating one id per thread, arriving with a sent comment's round trip, and
+    leaving with its thread, restoring what the author wrote."""
+    url = serve(DESCRIBE_PAGE)
+    d = serve.page_dir
+
+    def comment(anchor, text):
+        return interact.append_event(
+            d, {"kind": "comment", "author": "user", "version": 1, "text": text,
+                "anchor": anchor})["id"]
+
+    c1 = comment({"quote": "first passage"}, "Sharpen this.")
+    c2 = comment({"quote": "two separate comments"}, "Second thought.")
+    c3 = comment({"section": "fig"}, "The figure too.")
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    described = "() => document.getElementById('{0}').getAttribute('aria-describedby')"
+    assert page.evaluate(described.format("p1")) == f"legend cq-msg-{c1} cq-msg-{c2}"
+    assert page.evaluate(described.format("fig")) == f"cq-msg-{c3}"
+    assert page.evaluate(f"() => document.getElementById('cq-msg-{c1}').textContent") == (
+        "Sharpen this."
+    ), "the description does not read as the comment's own words"
+
+    # The gesture's comment reaches the same attribute once the send's round trip lands.
+    box = page.locator("#p2").bounding_box()
+    page.mouse.move(box["x"] + 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] - 2, box["y"] + box["height"] / 2, steps=8)
+    page.mouse.up()
+    page.locator(".cq-fab").click()
+    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+    page.locator(".cq-composer textarea").fill("Too short.")
+    page.get_by_role("button", name="Comment", exact=True).click()
+    page.wait_for_function(
+        "() => /cq-msg-/.test(document.getElementById('p2').getAttribute('aria-describedby') ?? '')"
+    )
+    c4 = [e for e in interact.read_events(d) if e.get("kind") == "comment"][-1]["id"]
+    assert page.evaluate(described.format("p2")) == f"cq-msg-{c4}"
+
+    # Resolving a thread takes its description with it; the author's own stays put.
+    interact.append_event(d, {"kind": "resolve", "author": "user", "parent": c4})
+    page.wait_for_function(
+        "() => document.getElementById('p2').getAttribute('aria-describedby') === null"
+    )
+    assert page.evaluate(described.format("p1")) == f"legend cq-msg-{c1} cq-msg-{c2}"
+    assert errors == []
+    page.close()
+
+
 def test_the_composer_never_stands_on_its_own_mark(browser, serve):
     """The mark is the only thing naming the passage the box is about, so a box covering
     all of it is a box about nothing. That is not hypothetical: a restored draft reappears

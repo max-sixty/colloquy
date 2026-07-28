@@ -91,17 +91,6 @@ stands alone.
       function decides what the button is on. Not a one-liner — the click runs before the
       queued update, so the merged decider needs the click's find as an input rather than
       an output — which is why it is here rather than done.
-- [ ] A commented passage is no longer announced. Marks are painted through the highlight
-      registry rather than wrapped in `<mark>`, and a highlight has no accessibility
-      exposure — Chrome's tree shows a `mark` node for the wrapper and nothing at all for
-      the paint. The spec's own answer, `Highlight.type`, doesn't help: it sets cleanly and
-      Chrome 150 still exposes nothing, and its enum has no value meaning "a comment" in
-      any case. The comment itself is still reachable — the panel lists every thread with
-      its quote, and j/k walks them — so what's gone is the correspondence while reading
-      the page. Wrapping can't come back (it splits text nodes, which is what let a redraw
-      eat a click), so the fix is to carry the fact on the block rather than the passage:
-      `aria-describedby` from the block a thread anchors in to that thread in the panel,
-      coarser than the mark but saying the same thing.
 - [ ] A tab's name can't be commented on. Every other word a widget renders from an
       authored attribute is text a reviewer can select (`x-says`), but `cq-tab`'s
       `label` renders into the strip button the upgrade builds, and a control's label
