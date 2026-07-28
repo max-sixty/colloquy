@@ -681,6 +681,18 @@ def version_ids(page_dir: Path) -> set:
     return ids
 
 
+def reserved_ids_error(ids: list) -> str:
+    """The one sentence for an authored id in the runtime's own namespace, shared by the
+    version lint and the thread-markup one — page ids and a reply's are one universe, so
+    what keeps both clear of the runtime's is one rule. colloquy.js coins document ids
+    under `cq-` (`cq-msg-<event id>` for a message body, `cq-composer-quote`) and points
+    ARIA at them, so an authored id there redirects the reference to the page."""
+    return (
+        "ids in the runtime's own cq- namespace (it coins cq-msg-… and cq-composer-quote "
+        f"there, and points ARIA at them): {ids}"
+    )
+
+
 def check_thread_markup(page_dir: Path, kind: str, body: str) -> None:
     """A comment or reply of Claude's carrying widget markup renders live in the panel, so
     it validates against the vendored registry at post time — the discussion-side `check`.
@@ -703,6 +715,8 @@ def check_thread_markup(page_dir: Path, kind: str, body: str) -> None:
         )
     if frag.duplicate_ids:
         sys.exit(f"{kind} widget markup reuses an id within itself: {frag.duplicate_ids}")
+    if frag.reserved_ids:
+        sys.exit(f"{kind} widget markup takes " + reserved_ids_error(frag.reserved_ids))
     clash = sorted(frag.ids & (version_ids(page_dir) | thread_widget_ids(page_dir)))
     if clash:
         sys.exit(f"{kind} widget ids already taken by the page or an earlier message: {clash}")
@@ -1051,6 +1065,11 @@ class _StructParser(HTMLParser):
             (dupes if i in seen else seen).add(i)
         return sorted(dupes)
 
+    @property
+    def reserved_ids(self) -> list:
+        """Ids that trespass on the runtime's own namespace (see reserved_ids_error)."""
+        return sorted({i for i in self.all_ids if i.startswith("cq-")})
+
     def _implicit_close(self, tag):
         for _ in range(implicit_closes([t for t, _, _ in self.stack], tag)):
             self.stack.pop()
@@ -1191,8 +1210,9 @@ class _StructParser(HTMLParser):
 #               opaque: a mermaid body is a picture by the time it is read, a cq-ref
 #               with no body at all renders a link's text.
 #   x-retired-when  the outcome under which this element leaves the page: a decided
-#               suggestion's losing slot is skipped by the browser's anchor pass
-#               (RETIRED), so a reading given the log's outcomes skips it here too.
+#               suggestion's losing slot. The browser builds its anchor pass's skip
+#               list from this key too (unquotable in colloquy.js), so a reading given
+#               the log's outcomes drops here exactly what drops there.
 #
 # A module writes between the children of the element it upgrades — a column's heading, a
 # milestone's chips, a diff's gutters — so an opaque element and each of its children is
@@ -1226,9 +1246,9 @@ class _PassageParser(HTMLParser):
 
     `decided` is the accept/reject each suggestion stands under (`suggestion_outcomes`).
     A decision retires a slot — the registry's `x-retired-when` names which outcome —
-    and the browser's anchor pass drops the retired subtree (RETIRED in colloquy.js),
-    so this reading drops it the same way. Without `decided`, the reading is the
-    version as authored, every slot still pending."""
+    and the browser's anchor pass builds its skip list from the same key (unquotable in
+    colloquy.js), so this reading drops it the same way. Without `decided`, the reading
+    is the version as authored, every slot still pending."""
 
     def __init__(self, registry=None, decided=None):
         super().__init__(convert_charrefs=True)
@@ -1943,6 +1963,8 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
 
     if parser.duplicate_ids:
         errors.append(f"duplicate ids (anchors need unique targets): {parser.duplicate_ids}")
+    if parser.reserved_ids:
+        errors.append(reserved_ids_error(parser.reserved_ids))
 
     registry = load_registry(page_dir)
     if registry is not None:

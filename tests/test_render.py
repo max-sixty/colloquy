@@ -1174,6 +1174,31 @@ def test_a_pending_suggestion_can_be_discussed_instead_of_decided(browser, serve
     page.close()
 
 
+def test_a_decision_already_in_the_log_retires_its_slot_at_load(browser, serve):
+    """The test above takes the decision in front of the reviewer, on a page that has
+    been up long enough for everything to have arrived. Here the log holds it before
+    the page opens, which is what puts the anchor pass's skip list on the clock: the
+    registry names the slot a decision retires (x-retired-when), and the registry
+    arrives over the network, after the module that reads it has evaluated. Replay
+    settles the suggestion on the first poll, so the pass that runs with it has to be
+    skipping cq-old already — or the page opens with a live mark on words the reviewer
+    accepted away."""
+    url = serve(SUGGESTION_PAGE, anchored=[("replace", "Refill every feeder each morning.")])
+    interact.append_event(serve.page_dir, {"kind": "action", "author": "user", "version": 1,
+                                           "widget": "sug-refill", "action": "accept",
+                                           "detail": {}})
+    page, errors = open_page(browser, url)
+    expect(page.locator("#sug-refill cq-old")).to_be_hidden()
+    expect(page.locator(".cq-thread .cq-quote").first).to_have_class(
+        re.compile(r"\bdetached\b")
+    )
+    assert painted(page, "cq-mark") == "", (
+        "the first pass anchored inside a slot the reviewer's decision had retired"
+    )
+    assert errors == []
+    page.close()
+
+
 def test_a_reply_widget_replays_its_action_when_the_page_loads(browser, serve):
     """A widget inside a reply exists only once the panel has rendered the log,
     which is later than everything on the page — so the replay runs at the end of

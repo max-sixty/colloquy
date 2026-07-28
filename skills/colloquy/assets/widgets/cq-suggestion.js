@@ -22,7 +22,7 @@
  * controls at all (a narrow window, or the comment panel squeezing the page),
  * where it isn't they dock into flow; and whether two rows land on top of each
  * other, which a translate nudges apart without touching layout. */
-import { once, quoted, sendAction, toast } from "/colloquy.js";
+import { DECIDED_VERB, once, quoted, sendAction, toast } from "/colloquy.js";
 
 // Every row on the page, so one observer serves all of them.
 const rows = new Set();
@@ -162,7 +162,7 @@ customElements.define(
     }
 
     #settle(outcome) {
-      if (outcome) this.dataset.cqState = `${outcome}ed`;
+      if (outcome) this.dataset.cqState = DECIDED_VERB[outcome];
       else delete this.dataset.cqState;
       if (this.#row) this.#row.hidden = Boolean(outcome); // a quoted one grew none
       schedule(); // one row fewer: the rows below it may no longer need a nudge

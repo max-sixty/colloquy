@@ -106,7 +106,8 @@ prerequisite.
 - Give every section, major block, and widget item a stable, meaningful `id`: comments
   anchor to the nearest `id`, and an anchor survives into a new version only where its
   id does. The reader's place on the page falls back to those same ids when the text
-  around it was rewritten. Keep ids stable across versions so neither detaches.
+  around it was rewritten. Keep ids stable across versions so neither detaches, and out
+  of the `cq-` prefix, which the runtime coins its own ARIA targets in.
 - **Edits to reviewed content ship as suggestions.** Changing a passage the reader
   has already seen — a rewrite, a deletion, above all the fix a comment asked for —
   goes in a `cq-suggestion`: `cq-old` carries the current markup verbatim (its ids

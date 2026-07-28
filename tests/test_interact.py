@@ -1138,6 +1138,28 @@ def test_widget_ids_are_one_universe_across_page_and_replies(page_dir):
     assert "taken by widget markup in a reply" in result.output and "q1" in result.output
 
 
+def test_the_runtimes_cq_id_namespace_is_off_limits(page_dir):
+    """colloquy.js coins document ids under cq- for its own chrome — cq-msg-<event> on a
+    message body, cq-composer-quote — and points ARIA at them. An authored id there would
+    aim those references at the page instead, silently. One rule over both places an id
+    can be authored: a version, and the widget markup in Claude's reply."""
+    (page_dir / "versions" / "v002.html").write_text(
+        PAGE.replace('<section id="plan">', '<section id="plan"><p id="cq-msg-7">mine</p>')
+    )
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "cq- namespace" in result.output and "cq-msg-7" in result.output
+
+    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    reply = CliRunner().invoke(
+        interact.cli,
+        ["reply", str(page_dir), "--to", "c1", "--text",
+         '<cq-options id="cq-pick" choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>'],
+    )
+    assert reply.exit_code != 0
+    assert "cq- namespace" in reply.output and "cq-pick" in reply.output
+
+
 def test_export_prints_threads_and_versions(page_dir):
     CliRunner().invoke(interact.cli, ["note", str(page_dir), "--version", "1", "--text", "first cut"])
     interact.append_event(
@@ -1319,8 +1341,8 @@ def suggested(page_dir):
 
 
 def test_a_decision_retires_its_losing_slot_from_comments_reach(page_dir):
-    """The reviewer's accept removes cq-old from the page (RETIRED skips it in the
-    browser), so a quote into it is refused naming the decision — posted, it would
+    """The reviewer's accept removes cq-old from the page (the browser's anchor pass
+    skips it), so a quote into it is refused naming the decision — posted, it would
     detach in front of them. The surviving slot quotes as ever, and a re-decision
     moves the line: the reading follows the log the way replay does, last word
     standing."""

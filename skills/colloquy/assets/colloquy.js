@@ -8,8 +8,8 @@
  * reviewer can select. Upgrades flush before the first anchor pass, so comment quotes
  * always search the enhanced DOM. Widget modules import the helper surface exported here
  * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `quoted`, `toast`,
- * `announce`, `keyHelp`, `reveal`, `pageScroller`, `REDUCED`, `SCROLL`); it stays
- * minimal until a real widget needs more.
+ * `announce`, `keyHelp`, `reveal`, `pageScroller`, `REDUCED`, `SCROLL`,
+ * `DECIDED_VERB`); it stays minimal until a real widget needs more.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
  * through it as an `action` event — sendAction posts it, `wait` delivers it. The live
@@ -152,6 +152,15 @@ export const pageScroller = document.body;
 export function sendAction(el, action, detail) {
   return post({ kind: "action", version: VNUM, widget: el.id, action, detail });
 }
+
+// A decision is a verb everywhere it travels — the action a widget sends, the outcome
+// the registry's x-retired-when names — and the element it settled wears the past
+// participle, which the theme's rules, the anchor pass's skip list, and the widget
+// writing the attribute all match on. One table for the crossing, spelled out rather
+// than suffixed: the -ed is English and not a rule, and a string three places each
+// arrive at alone is one they can drift apart on. interact.py's DECIDED_VERB is the
+// same map, for the prose of a refusal.
+export const DECIDED_VERB = { accept: "accepted", reject: "rejected" };
 
 // Transient confirmation ("Moved to Doing — sent to Claude"), styled and placed by
 // the comment layer. Announced too: toast routes through the live region.
@@ -844,9 +853,23 @@ function renderPanel() {
 // see is text nobody can mean: without this a comment made on a passage then accepted
 // away kept reading as attached in the panel and jumped nowhere, and a quote from
 // elsewhere could match inside the invisible half of a replacement.
-const RETIRED =
-  'cq-suggestion[data-cq-state="accepted"] > cq-old, cq-suggestion[data-cq-state="rejected"] > cq-new';
-const UNQUOTABLE = `.cq-ui, script, style, ${RETIRED}`;
+//
+// Which slots retire is the registry's to say, so this and interact.py's reading of the
+// same page follow one declaration: x-retired-when names the decision that removes the
+// element, x-parent the wrapper the decision is recorded on. Read per call rather than
+// built once when the registry lands, which leaves that async arrival nothing to get
+// wrong — before it, nothing has upgraded and so no element carries a decision, and the
+// bare list is already the whole answer. On a page that vendored no registry it stays
+// the whole answer, since nothing there ever upgrades.
+function unquotable() {
+  const retired = Object.entries(registry ?? {})
+    .filter(([, entry]) => entry["x-retired-when"])
+    .map(
+      ([tag, entry]) =>
+        `${entry["x-parent"]}[data-cq-state="${DECIDED_VERB[entry["x-retired-when"]]}"] > ${tag}`,
+    );
+  return [".cq-ui", "script", "style", ...retired].join(", ");
+}
 const GENERATED = ".cq-ui, [data-cq-gen]";
 // The same question one node at a time: is this the runtime's own chrome rather than the
 // document? Every affordance asks it before acting on where the pointer or the caret is.
@@ -854,7 +877,7 @@ const inUi = (node) =>
   Boolean((node?.nodeType === 1 ? node : node?.parentElement)?.closest(".cq-ui"));
 const TEXT_BLOCK = "p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dd,dt,figcaption,summary";
 // ownerDocument, not document: the diff walks a base version parsed into its own document.
-function textNodesUnder(rootEl, skip = UNQUOTABLE) {
+function textNodesUnder(rootEl, skip = unquotable()) {
   const walker = rootEl.ownerDocument.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, {
     acceptNode: (n) =>
       n.parentElement?.closest(skip) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
@@ -1770,7 +1793,7 @@ function syncSuggestions() {
   acceptAllBtn.textContent = `✓ Accept all (${n})`;
 }
 // A decision also changes what text the page has — the retired slot leaves it
-// (UNQUOTABLE) — so the marks are repainted from the same signal, and a comment
+// (unquotable) — so the marks are repainted from the same signal, and a comment
 // on text the reviewer just removed says so at once rather than at the next poll.
 document.addEventListener("cq-suggestions", () => {
   syncSuggestions();
