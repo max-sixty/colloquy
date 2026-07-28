@@ -7,6 +7,8 @@ description:
   "explain this in HTML", "write it up as a page", "write up the findings", "I want to
   see the options", or reaching for plan mode on something intricate.'
 argument-hint: "[concept or decision to explain]"
+allowed-tools:
+  - Bash(colloquy:*)
 ---
 
 Explain a concept, decision, or findings as an HTML page the user opens in a browser and
@@ -14,7 +16,9 @@ reviews in place: they select text and comment, you reply in-thread and ship rev
 versions, and a banner shows whether you're working or listening. Reach for it instead
 of a wall-of-text plan or a `.md` report handed over by path, when a complex change
 needs shared understanding or a decision before code, or when a diagnosis or review is
-itself the deliverable.
+itself the deliverable. With nothing named below, the subject is whatever the session is
+about — the plan you were about to give, the design under discussion, or the findings you
+just gathered.
 
 $ARGUMENTS
 
