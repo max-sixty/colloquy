@@ -74,6 +74,29 @@ A second representation earns its place only when the two things are genuinely d
 (an element anchor has no text to paint, so it wears an outline). Not when they are the
 same thing reached by different code.
 
+### The file's reading never claims more than the page's
+
+An anchor is captured in two places and resolved in one. `selectionAnchor` captures from
+the DOM, `comment` captures from the version file, and `resolveAnchor` is still the only
+thing that searches. Two captures are not two answers to "what does the page say here":
+both write the same collapsed text under the same rules, so what the file's reading holds
+the page holds too — where a module replaces what the file holds, the reading skips it,
+and everywhere else a module only adds.
+
+Keeping that true is not free, and the first draft wasn't. A board's module prepends each
+column's heading, so a quote running from the lede into the first card matched a file the
+page no longer resembled and anchored on nothing; a milestone's chips do the same
+mid-element, where no edge keyword can reach. And a prefix captured one character wider
+than the DOM's — a leading space the runtime's own collapse trims — is context no
+occurrence can ever confirm, which silently costs the comment its copy.
+
+So where the file can't model what a module writes, the reading stops rather than guesses:
+`x-says` and `x-verbatim` cover what the registry can declare, a fence covers the rest, and
+a quote across a fence is refused when it is written instead of detaching later in front of
+the reviewer. A widget that writes words of its own declares them or stays fenced. Never
+teach the passage reader about a widget by name — that is the drift the registry exists to
+prevent, and this would be the fourth place to forget.
+
 ### Paint; don't wrap
 
 Marking text by wrapping it in an element splits text nodes, and a redraw that lands

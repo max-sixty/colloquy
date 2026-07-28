@@ -60,8 +60,9 @@ then the user layer (~/.config/colloquy/), then the project layer
 so an approved version can't change under its reviewer; re-running `init` is the
 explicit re-vendor, noted in the next version's changelog.
 
-The registry drives three consumers — the JS runtime (which tags upgrade), this
-file's `check` and `reply` validation, and the `catalog` the agent reads. Each
+The registry drives four consumers — the JS runtime (which tags upgrade), this
+file's `check` and thread-markup validation, the passage reader `comment` anchors
+through, and the `catalog` the agent reads. Each
 entry is JSON Schema over the instance built from the element's attributes
 (values as strings, flag attributes as True). What JSON
 Schema has no vocabulary for rides in x- keywords:
@@ -77,9 +78,12 @@ Schema has no vocabulary for rides in x- keywords:
                 can only quote what a text node holds — the theme's matching
                 `content: attr()` is the same words for a page with no script.
     x-upgrade   true when the runtime imports /widgets/<tag>.js for it
+    x-verbatim  true when an upgraded element's body reaches the reader as its own
+                words. Otherwise a module may render anything in place of them, so
+                `comment` treats the element as opaque and won't quote through it.
     x-example   one authored example, printed by `catalog`
 
-Event kinds: comment (user; optional anchor {section, quote, and the neighbouring
+Event kinds: comment (optional anchor {section, quote, and the neighbouring
 text as prefix/suffix where there is any, which is what tells two identical
 passages apart), reply (parent=id),
 resolve (parent=id), done (user sign-off; the banner offers it only on a page
@@ -87,12 +91,21 @@ declaring <meta name="cq-review" content="sign-off">), action (user; a widget re
 user editing the document through it — widget=element id, action=verb, detail
 per widget, version the edit was made against), note (claude; per-version
 changelog). The server stamps every browser-posted event author=user;
-`reply`/`note` stamp author=claude. A Claude reply may carry widget markup — `reply` validates it
-against the vendored registry, the discussion-side analog of `check`; user
-comments stay plain text.
+`comment`/`reply`/`note` stamp author=claude. A Claude comment or reply may carry widget
+markup — both validate it against the vendored registry, the discussion-side analog of
+`check`; user comments stay plain text.
+
+Either side can open a thread, and `author` is the whole difference between them. The
+reviewer selects a passage and the browser writes the anchor from the selection;
+`comment` writes the same anchor from a quote, reading the version the way the anchor
+pass reads the DOM (see "passages" below). Everything downstream already turns on
+`author`: `wait` delivers user events and the banner counts them, so Claude's own
+comment neither wakes its watcher nor reads as unanswered. What Claude cannot do is
+`resolve` — a note's purpose is discharged by being read, and only the reader knows
+that happened; closing one from this side would file it away unread.
 
 Commands:
-    init serve status wait reply note events stop check catalog export
+    init serve status wait comment reply note events stop check catalog export
 
 `check` is a deterministic pre-handover lint (no browser, near-free — `note`
 re-runs it on every version): the HTML parses with balanced tags; the page
@@ -113,6 +126,18 @@ against it — no console or page errors, no fail-soft error box, every visible
 widget occupies real space, no sideways scroll, in both color schemes.
 The invariants live in render_version, which tests/test_render.py drives over
 the shipped examples, so the gate and the suite cannot drift apart.
+
+Passages: an anchor is resolved in the browser and written down here, so `comment`
+reads a version the way the anchor pass reads the DOM — text in document order, minus
+the runtime's own words, plus the words a widget says through an x-says attribute, one
+space wherever the enclosing text block changes, whitespace collapsed. What the file
+cannot know is what a widget's module will write, so the reading stops where the
+registry stops telling it: an upgraded element is opaque unless x-verbatim says its
+body reaches the reader as its own words, and an opaque element and each of its
+children is fenced. A quote never spans a fence, so "the page has words here that the
+file doesn't" is a refusal when the comment is written rather than an anchor that
+detaches later in the reviewer's browser. Element-anchor an opaque widget instead
+(`--section`), which is the anchor a click on a diagram makes.
 """
 
 import errno
@@ -130,6 +155,7 @@ from datetime import datetime
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import NamedTuple
 
 import click
 from jsonschema import Draft202012Validator
@@ -626,17 +652,17 @@ def read_text_arg(text) -> str:
     return body.strip()
 
 
-def reply_widget_ids(page_dir: Path) -> set:
-    """Ids claimed by widget markup in logged replies. Reply markup is frozen in
-    the log and rendered into the thread panel, so its ids share one universe
-    with page ids — the runtime resolves actions document-wide by id, and a
-    collision would silently redirect a thread widget's replay to the page."""
+def thread_widget_ids(page_dir: Path) -> set:
+    """Ids claimed by widget markup in Claude's logged messages. Thread markup is frozen
+    in the log and rendered into the panel, so its ids share one universe with page ids —
+    the runtime resolves actions document-wide by id, and a collision would silently
+    redirect a thread widget's replay to the page."""
     ids = set()
     for e in read_events(page_dir):
-        # author gate mirrors the renderer: only Claude's replies inject HTML — a
-        # user reply merely quoting markup renders as text and claims nothing.
+        # author gate mirrors the renderer: only Claude's messages inject HTML — a user
+        # comment or reply merely quoting markup renders as text and claims nothing.
         if (
-            e.get("kind") == "reply"
+            e.get("kind") in ("comment", "reply")
             and e.get("author") == "claude"
             and "<cq-" in (e.get("text") or "")
         ):
@@ -655,33 +681,63 @@ def version_ids(page_dir: Path) -> set:
     return ids
 
 
+def check_thread_markup(page_dir: Path, kind: str, body: str) -> None:
+    """A comment or reply of Claude's carrying widget markup renders live in the panel, so
+    it validates against the vendored registry at post time — the discussion-side `check`.
+    Exits with what's wrong; returns on plain text, which is most of them."""
+    if "<cq-" not in body:
+        return
+    registry = load_registry(page_dir)
+    if registry is None:
+        sys.exit(f"{kind} carries widget markup but the page has no registry.json; run `init`")
+    errs = fragment_errors(body, registry)
+    if errs:
+        sys.exit(f"{kind} widget markup doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs))
+    frag = _StructParser()
+    frag.feed(body)
+    if frag.suggestions:
+        sys.exit(
+            f"a {kind} can't carry <cq-suggestion>: thread markup is frozen in the "
+            "log, so no version could ever settle it — put the change in the next "
+            "version instead"
+        )
+    if frag.duplicate_ids:
+        sys.exit(f"{kind} widget markup reuses an id within itself: {frag.duplicate_ids}")
+    clash = sorted(frag.ids & (version_ids(page_dir) | thread_widget_ids(page_dir)))
+    if clash:
+        sys.exit(f"{kind} widget ids already taken by the page or an earlier message: {clash}")
+
+
+def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
+    """Open a thread on a passage, as the reviewer's own selection does. The anchor is
+    captured against the version they are looking at — the newest published one, since a
+    version no `note` has released is a passage nobody can be pointed at."""
+    if not quote and not section:
+        sys.exit("a comment points at something: pass --quote, --section, or both")
+    published = published_versions(page_dir)
+    if not published:
+        sys.exit("no published version to anchor in; `note` one first")
+    version = int(published[-1][1:4])
+    html = (page_dir / "versions" / published[-1]).read_text(encoding="utf-8")
+    try:
+        anchor = capture_anchor(html, load_registry(page_dir), quote, section)
+    except ValueError as err:
+        sys.exit(f"can't anchor in v{version:03d}: {err}")
+    body = read_text_arg(text)
+    check_thread_markup(page_dir, "comment", body)
+    event = append_event(
+        page_dir,
+        {"kind": "comment", "author": "claude", "version": version, "anchor": anchor, "text": body},
+    )
+    print(json.dumps(event, ensure_ascii=False))
+
+
 def cmd_reply(page_dir: Path, to: str, text) -> None:
     known = {e["id"] for e in read_events(page_dir) if e.get("kind") in {"comment", "reply"}}
     if to not in known:
         sys.exit(f"unknown comment id {to!r}; known: {sorted(known)}")
     body = read_text_arg(text)
-    # A reply carrying widget markup renders live in the thread, so it validates
-    # against the vendored registry at post time — the discussion-side `check`.
-    if "<cq-" in body:
-        registry = load_registry(page_dir)
-        if registry is None:
-            sys.exit("reply carries widget markup but the page has no registry.json; run `init`")
-        errs = fragment_errors(body, registry)
-        if errs:
-            sys.exit("reply widget markup doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs))
-        frag = _StructParser()
-        frag.feed(body)
-        if frag.suggestions:
-            sys.exit(
-                "a reply can't carry <cq-suggestion>: reply markup is frozen in the "
-                "log, so no version could ever settle it — put the change in the next "
-                "version instead"
-            )
-        if frag.duplicate_ids:
-            sys.exit(f"reply widget markup reuses an id within itself: {frag.duplicate_ids}")
-        clash = sorted(frag.ids & (version_ids(page_dir) | reply_widget_ids(page_dir)))
-        if clash:
-            sys.exit(f"reply widget ids already taken by the page or an earlier reply: {clash}")
+    check_thread_markup(page_dir, "reply", body)
     event = append_event(page_dir, {"kind": "reply", "author": "claude", "parent": to, "text": body})
     print(json.dumps(event, ensure_ascii=False))
 
@@ -769,7 +825,9 @@ CATALOG_PREAMBLE = """\
 # x-upgrade marks tags a JS module enhances in the browser — the interactive
 # widgets and the data-body renderers; x-says names the attributes whose values
 # the reader sees as words, and the edge each renders at, so the reviewer can
-# select and comment on them like any other text on the page.
+# select and comment on them like any other text on the page. x-verbatim marks
+# an upgraded element whose body reaches the reader as its own words, which is
+# what makes it quotable — a body without it is source the widget renders.
 """
 
 
@@ -880,6 +938,22 @@ P_CLOSERS = {
     "h4", "h5", "h6", "header", "hgroup", "hr", "main", "menu", "nav", "ol",
     "p", "pre", "section", "table", "ul",
 }
+# …and closes its own kind: a start tag ends the open siblings it can't nest inside.
+SIBLING_CLOSERS = {
+    "li": ("li",),
+    "dt": ("dt", "dd"),
+    "dd": ("dt", "dd"),
+    "td": ("td", "th"),
+    "th": ("td", "th"),
+    "tr": ("td", "th", "tr"),
+    "thead": ("td", "th", "tr", "thead", "tbody", "tfoot"),
+    "tbody": ("td", "th", "tr", "thead", "tbody", "tfoot"),
+    "tfoot": ("td", "th", "tr", "thead", "tbody", "tfoot"),
+    "option": ("option",),
+    "optgroup": ("option", "optgroup"),
+}
+
+
 # Container selectors whose max-width defines the readable column.
 COLUMN_SELECTORS = ("main", "body", "article", ".container", ".wrap", ".content", ".page")
 COLUMN_FALLBACK = 780
@@ -890,6 +964,22 @@ PIXEL_WIDTH_TAGS = {"img", "svg", "table", "canvas", "iframe", "video", "object"
 # would silently declare nothing in the browser, so `check` owns this vocabulary
 # the way the registry owns cq-* elements.
 CQ_META = {"cq-base": None, "cq-review": frozenset({"sign-off"})}
+
+
+def implicit_closes(open_tags: list, tag: str) -> int:
+    """How many elements at the top of an open-element stack this start tag closes,
+    under HTML's optional-end-tag rules. Two parsers walk the same documents — the
+    structure lint and the passage reader — and `check` accepts an omitted </p>, so a
+    tree they disagreed about would be a passage one of them puts in the wrong section."""
+    closed = 0
+    top = lambda: open_tags[-1 - closed] if closed < len(open_tags) else None
+    if tag in P_CLOSERS:
+        while top() == "p":
+            closed += 1
+    siblings = SIBLING_CLOSERS.get(tag, ())
+    while top() in siblings:
+        closed += 1
+    return closed
 
 
 class _StructParser(HTMLParser):
@@ -926,33 +1016,8 @@ class _StructParser(HTMLParser):
         return sorted(dupes)
 
     def _implicit_close(self, tag):
-        """Pop open elements that this start tag implicitly closes (HTML's
-        optional-end-tag rules for p / list items / table cells)."""
-        top = lambda: self.stack[-1][0] if self.stack else None
-        if tag in P_CLOSERS:
-            while top() == "p":
-                self.stack.pop()
-        if tag == "li":
-            while top() == "li":
-                self.stack.pop()
-        elif tag in ("dt", "dd"):
-            while top() in ("dt", "dd"):
-                self.stack.pop()
-        elif tag in ("td", "th"):
-            while top() in ("td", "th"):
-                self.stack.pop()
-        elif tag == "tr":
-            while top() in ("td", "th", "tr"):
-                self.stack.pop()
-        elif tag in ("thead", "tbody", "tfoot"):
-            while top() in ("td", "th", "tr", "thead", "tbody", "tfoot"):
-                self.stack.pop()
-        elif tag == "option":
-            while top() == "option":
-                self.stack.pop()
-        elif tag == "optgroup":
-            while top() in ("option", "optgroup"):
-                self.stack.pop()
+        for _ in range(implicit_closes([t for t, _, _ in self.stack], tag)):
+            self.stack.pop()
 
     def _open_suggestion(self):
         """The innermost cq-suggestion still open and which of its slots we are
@@ -997,11 +1062,13 @@ class _StructParser(HTMLParser):
             return
         if self._svg_depth:  # don't tag-balance inside SVG
             return
+        # Before the void check: <hr> is void and closes an open <p>, and a void tag
+        # left inside a paragraph it ended puts the rest of the section in it.
+        self._implicit_close(tag)
         if tag in VOID_TAGS:
             if self.stack and self.stack[-1][2] is not None:
                 self.stack[-1][2]["children"].append(tag)
             return
-        self._implicit_close(tag)
         if self.stack and self.stack[-1][2] is not None:
             self.stack[-1][2]["children"].append(tag)
         record = None
@@ -1068,6 +1135,289 @@ class _StructParser(HTMLParser):
                 return
         if tag not in OPTIONAL_END:
             self.errors.append(f"stray </{tag}> at line {self.getpos()[0]} with no matching open tag")
+
+
+# ---------- passages: the text an anchor points at ----------
+# The runtime resolves an anchor against the DOM; `comment` writes one down against the
+# file. The two have to read the same page or the anchor lands somewhere it was never
+# made, so this mirrors colloquy.js's capture rather than approximating it: the same
+# skip list, the same block-boundary space, the same collapse, the same caps.
+#
+# What the file cannot know is what a widget's module will write, and the registry is
+# where that is declared rather than guessed at per widget. Two keywords carry what can
+# be declared, and a fence carries the rest:
+#
+#   x-says      attribute values the reader sees. renderSaid puts them in the DOM, so
+#               they go in here too, at the edge the registry names.
+#   x-verbatim  an upgraded element whose body reaches the reader as its own words
+#               (cq-draft renders the authored text into a plain div, deliberately
+#               unmarked so anchoring can see it). Without it, an upgraded element is
+#               opaque: a mermaid body is a picture by the time it is read, a cq-ref
+#               with no body at all renders a link's text.
+#
+# A module writes between the children of the element it upgrades — a column's heading, a
+# milestone's chips, a diff's gutters — so an opaque element and each of its children is
+# fenced. A quote never spans a fence, which turns "the page has words here that the file
+# doesn't" from an anchor that silently detaches in the reviewer's browser into a refusal
+# at the moment it is written, addressed to the one party who can still fix it.
+
+# What a text node's "block" resolves to, matching the runtime's TEXT_BLOCK: one space
+# goes wherever two runs of text sit in different blocks, and none where they share one,
+# so `<p>a</p><p>b</p>` reads "a b" and `set<em>up</em>` reads "setup".
+TEXT_BLOCK_TAGS = {
+    "p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "td", "th", "pre",
+    "blockquote", "dd", "dt", "figcaption", "summary",
+}
+# Text no anchor can reach. script/style are the anchor pass's own skip list; head is
+# outside the tree it searches at all, the runtime rooting a section-less anchor at
+# document.body — without it a page's <title> would be quotable and land nowhere.
+UNQUOTABLE_TAGS = {"script", "style", "head"}
+# The caps colloquy.js captures at: how much quote an anchor stores, and how much of the
+# surrounding text it stores to tell two identical passages apart.
+QUOTE_CAP = 400
+CONTEXT = 24
+
+
+class _PassageParser(HTMLParser):
+    """A version's prose as the anchor pass reads it. `text` is the whole page collapsed
+    the way a captured quote is; `owner[i]` is the ids enclosing text[i], outermost
+    first, so a match can name the section it fell in and be re-read within it."""
+
+    def __init__(self, registry=None):
+        super().__init__(convert_charrefs=True)
+        self.registry = registry or {}
+        self.text = ""
+        self.owner = []  # per character: the tuple of enclosing ids
+        self.fences = set()  # indices a quote may not span
+        self.stack = []  # [{"tag", "ids", "skip", "opaque", "fenced", "tb", "block", "tail"}]
+        self._uid = 0
+        self._block = None  # the block the last character came from
+        self._space = False  # a separator waiting for a character to follow it
+
+    def _fresh(self) -> int:
+        self._uid += 1
+        return self._uid
+
+    def _write(self, data: str, block: int, ids: tuple) -> None:
+        """Text into the collapsed run, one space per whitespace run and none leading."""
+        if self.text and block != self._block:
+            self._space = True
+        self._block = block
+        for ch in data:
+            if ch.isspace():
+                self._space = bool(self.text)
+                continue
+            if self._space:
+                self.text += " "
+                self.owner.append(ids)
+                self._space = False
+            self.text += ch
+            self.owner.append(ids)
+
+    def _fence(self) -> None:
+        """Words may stand here that this reading knows nothing about. Recorded as a
+        position rather than written into the text, so `text` stays the page's own words
+        and no quote can be built out of one."""
+        self.fences.add(len(self.text))
+
+    def _said(self, frame: dict, values: list) -> None:
+        # renderSaid puts each value in its own <span>, so each is its own block wherever
+        # the widget sits outside a text block — the same rule, applied to the span.
+        for value in values:
+            self._write(value, frame["tb"] if frame["tb"] else self._fresh(), frame["ids"])
+
+    def _close(self, frame: dict) -> None:
+        """Everything an element's end does, whether it was written or inferred — an
+        omitted </p> inside a widget still ends what the element was saying."""
+        if not frame["skip"]:
+            self._said(frame, frame["tail"])
+        if frame["fenced"]:
+            self._fence()
+
+    def handle_starttag(self, tag, attrs):
+        attrs_d = dict(attrs)
+        # Before the void check, unlike the structure lint's: <hr> is both void and a
+        # paragraph closer, and text after it is in a different block.
+        for _ in range(implicit_closes([f["tag"] for f in self.stack], tag)):
+            self._close(self.stack.pop())
+        if tag in VOID_TAGS:
+            return
+        parent = self.stack[-1] if self.stack else None
+        entry = self.registry.get(tag) or {}
+        # The innermost open text block, if any: the runtime's `closest(TEXT_BLOCK)`.
+        tb = self._fresh() if tag in TEXT_BLOCK_TAGS else (parent["tb"] if parent else None)
+        # A module may write anywhere inside the element it upgrades, unless the registry
+        # says the body reaches the reader as its own words.
+        opaque = bool(entry.get("x-upgrade") and not entry.get("x-verbatim"))
+        frame = {
+            "tag": tag,
+            "ids": (parent["ids"] if parent else ()) + ((attrs_d["id"],) if attrs_d.get("id") else ()),
+            "skip": bool(
+                (parent and parent["skip"])
+                or tag in UNQUOTABLE_TAGS
+                or "cq-ui" in (attrs_d.get("class") or "").split()
+                or (opaque and entry.get("x-content") == "data")
+            ),
+            "opaque": opaque,
+            "fenced": opaque or bool(parent and parent["opaque"]),
+            "tb": tb,
+            # …and where there is none, the element is its own text node's parent, which
+            # is what the runtime falls back to. Fresh per element, so `a<em>b</em>c`
+            # under a <div> reads as three blocks and under a <p> as one.
+            "block": tb if tb else self._fresh(),
+            "tail": [],
+        }
+        # Each x-says value at the edge its pseudo-element occupied. renderSaid prepends,
+        # so the last "before" attribute in registry order ends up first in the DOM.
+        head = []
+        for attr, edge in (entry.get("x-says") or {}).items():
+            value = attrs_d.get(attr)
+            if value is None:
+                continue
+            if edge == "before":
+                head.insert(0, value)
+            else:
+                frame["tail"].append(value)
+        if frame["fenced"]:
+            self._fence()
+        self.stack.append(frame)
+        if not frame["skip"]:
+            self._said(frame, head)
+
+    def handle_data(self, data):
+        frame = self.stack[-1] if self.stack else None
+        if frame and not frame["skip"]:
+            self._write(data, frame["block"], frame["ids"])
+
+    def handle_endtag(self, tag):
+        if tag in VOID_TAGS:
+            return
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i]["tag"] == tag:
+                # Innermost first, so an element closing over unclosed children ends them
+                # in the order they were opened in.
+                while len(self.stack) > i:
+                    self._close(self.stack.pop())
+                return
+
+
+class Passages(NamedTuple):
+    """A version's words, and what a search over them needs to know."""
+
+    text: str  # collapsed the way a captured quote is
+    owner: list  # per character: the tuple of enclosing ids, outermost first
+    fences: set  # indices a quote may not span: where a module may write
+
+
+def page_passages(html: str, registry=None) -> Passages:
+    parser = _PassageParser(registry)
+    parser.feed(html)
+    parser.close()
+    return Passages(parser.text, parser.owner, parser.fences)
+
+
+def section_span(owner: list, section: str):
+    """The half-open range of characters inside `section`, or None when the version has
+    no such element with text in it. An element is contiguous in document order, so its
+    characters are too — which is what lets a search be scoped by slicing."""
+    inside = [i for i, ids in enumerate(owner) if section in ids]
+    return (inside[0], inside[-1] + 1) if inside else None
+
+
+def enclosing_section(owner: list, lo: int, hi: int):
+    """The innermost id enclosing every character of [lo, hi) — the runtime's
+    `closest("[id]")` on the passage's common ancestor."""
+    first, last = owner[lo], owner[hi - 1]
+    shared = 0
+    while shared < min(len(first), len(last)) and first[shared] == last[shared]:
+        shared += 1
+    return first[shared - 1] if shared else None
+
+
+def occurrences(text: str, quote: str, lo: int, hi: int, fences=frozenset()) -> list:
+    """Where `quote` sits in text[lo:hi], as absolute indices. A match that runs across a
+    fence is not one: the page has words there that this text doesn't."""
+    found = []
+    at = text.find(quote, lo, hi)
+    while at != -1:
+        if not any(at < f < at + len(quote) for f in fences):
+            found.append(at)
+        at = text.find(quote, at + len(quote), hi)
+    return found
+
+
+def capture_anchor(html: str, registry, quote: str, section: str) -> dict:
+    """The anchor a quote makes, written the way a selection's is. Raises ValueError with
+    what to do about it — a quote the file doesn't hold, or holds twice, is a question
+    with an answer, and asking now beats posting a comment that lands nowhere."""
+    text, owner, fences = page_passages(html, registry)
+    if section:
+        # Against the structure, not the text: an element anchor is the one a click makes
+        # on a diagram or an image, and those hold no text to look for.
+        structure = _StructParser()
+        structure.feed(html)
+        if section not in structure.ids:
+            raise ValueError(f"no element id {section!r} in this version")
+    if not quote:
+        return {"section": section}
+
+    wanted = " ".join(quote.split())
+    lo_bound, hi_bound = 0, len(text)
+    if section:
+        span = section_span(owner, section)
+        if span is None:
+            raise ValueError(
+                f"§ {section} holds no quotable text — a widget's data body is its source, "
+                "not its words. Drop --quote to anchor on the element itself."
+            )
+        lo_bound, hi_bound = span
+    where = "the page" if not section else f"§ {section}"
+    hits = occurrences(text, wanted, lo_bound, hi_bound, fences)
+    if not hits:
+        if occurrences(text, wanted, lo_bound, hi_bound):
+            raise ValueError(
+                f"{wanted!r} runs across a widget's parts, and a widget writes words of "
+                "its own between them — a column's heading, a milestone's chips, a "
+                "diagram in place of its source. Quote within one part, or --section the "
+                "widget to point at the whole of it."
+            )
+        raise ValueError(
+            f"{where} doesn't say {wanted!r} — quote it as the version file holds it. A "
+            "widget's data body is the widget's source, not its words (a diagram's body "
+            "is a picture by the time it is read), so --section the element instead."
+        )
+    if len(hits) > 1:
+        shown = [f"  - …{text[max(lo_bound, at - 30):at + len(wanted) + 30]}…" for at in hits[:4]]
+        if len(hits) > len(shown):
+            shown.append(f"  - …and {len(hits) - len(shown)} more")
+        raise ValueError(
+            f"{where} says {wanted!r} {len(hits)} times, so this quote names no one "
+            "passage. Extend it, or scope it with --section:\n" + "\n".join(shown)
+        )
+
+    lo = hits[0]
+    hi = lo + len(wanted)
+    # The section the anchor names scopes the search, so the neighbours have to be read
+    # out of that same subtree — a context captured from anywhere else can't be matched.
+    section = section or enclosing_section(owner, lo, hi)
+    if section:
+        lo_bound, hi_bound = section_span(owner, section)
+    stored = wanted[:QUOTE_CAP]
+    tail = lo + len(stored)  # a quote cut to the cap ends inside itself
+    # Each side reaches back only to the nearest fence, because past one the page holds
+    # words this doesn't: context the runtime can never confirm leaves every copy equally
+    # unconfirmed, which is where an anchor carrying none starts anyway.
+    # Both are trimmed before they are cut, since the runtime reads its side back through
+    # the same collapse, which trims — a stored space no occurrence produces fails at the
+    # first comparison.
+    prefix = text[max([lo_bound] + [f for f in fences if f <= lo]):lo].strip()[-CONTEXT:]
+    suffix = text[tail:min([hi_bound] + [f for f in fences if f >= tail])].strip()[:CONTEXT]
+    return {
+        "section": section,
+        "quote": stored,
+        **({"prefix": prefix} if prefix else {}),
+        **({"suffix": suffix} if suffix else {}),
+    }
 
 
 def _column_width(html: str, theme_css: str = "") -> int:
@@ -1333,9 +1683,9 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
                 f"(anchors on them will break): {dropped}"
             )
 
-    # Reply markup is frozen in the log and rendered into the panel; a page id
-    # colliding with one would steal its action replays (see reply_widget_ids).
-    taken = sorted(parser.ids & reply_widget_ids(page_dir))
+    # Thread markup is frozen in the log and rendered into the panel; a page id
+    # colliding with one would steal its action replays (see thread_widget_ids).
+    taken = sorted(parser.ids & thread_widget_ids(page_dir))
     if taken:
         errors.append(f"ids already taken by widget markup in a reply: {taken}")
 
@@ -1581,6 +1931,20 @@ def status(dir: str, state: str, detail: str) -> None:
 def wait(dir: str) -> None:
     """Block until new user events arrive, print them as JSON lines, exit."""
     sys.exit(cmd_wait(resolve_dir(dir)))
+
+
+@cli.command()
+@click.argument("dir")
+@click.option("--quote", help="the passage to anchor on, as the version file holds it")
+@click.option("--section", help="element id: scopes --quote, or anchors on the element alone")
+@click.option("--text")
+def comment(dir: str, quote: str, section: str, text: str) -> None:
+    """Open a thread on a passage as Claude (--text or stdin).
+
+    The reviewer answers it in the browser and resolves it there. Refuses a quote the
+    published version doesn't hold, or holds more than once — extend it or scope it.
+    """
+    cmd_comment(resolve_dir(dir), quote, section, text)
 
 
 @cli.command()

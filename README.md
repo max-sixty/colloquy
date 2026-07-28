@@ -2,7 +2,8 @@
 
 A Claude Code plugin: Claude presents plans and write-ups as a web page instead of a
 wall of terminal text. Select any line to comment on it like a shared doc; your comment
-wakes the session, and Claude ships a revised version.
+wakes the session, and Claude ships a revised version. It comments back the same way —
+in the margin, on the passage in question, rather than in the terminal.
 
 ![colloquy demo](docs/demo.gif)
 
@@ -49,7 +50,8 @@ uv run skills/colloquy/scripts/interact.py serve /tmp/demo
 ## Developing
 
 The suite is integration tests over the real thing. `test_interact.py` exercises the
-lint, vendoring, publishing, catalog, export, and reply validation. `test_render.py`
+lint, vendoring, publishing, catalog, export, thread-markup validation, and the anchors
+`comment` writes by reading a version file. `test_render.py`
 loads the shipped examples in a real browser (both color schemes) and asserts what a
 static lint can't reach: every widget upgrades into a box with usable size, the document
 and the comment panel scroll in separate regions, and the comment box grows without any

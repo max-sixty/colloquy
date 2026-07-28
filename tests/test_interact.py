@@ -965,3 +965,156 @@ def test_note_refuses_a_version_that_fails_check(page_dir):
     assert result.exit_code != 0
     assert "refusing to publish" in result.output
     assert interact.published_versions(page_dir) == []
+
+
+# ---------- comment: the anchor written without a browser ----------
+
+
+def published(page_dir):
+    assert CliRunner().invoke(
+        interact.cli, ["note", str(page_dir), "--version", "1", "--text", "first"]
+    ).exit_code == 0
+    return page_dir
+
+
+def comment(page_dir, *args):
+    return CliRunner().invoke(interact.cli, ["comment", str(page_dir), *args])
+
+
+def test_comment_anchors_on_a_quote_and_posts_as_claude(page_dir):
+    result = comment(published(page_dir), "--quote", "Ship dark", "--text", "dark for how long?")
+    assert result.exit_code == 0, result.output
+    event = json.loads(result.output)
+    assert event["kind"] == "comment" and event["author"] == "claude" and event["version"] == 1
+    assert event["anchor"]["quote"] == "Ship dark"
+    # The section is derived the way the browser derives it — the nearest enclosing id.
+    assert event["anchor"]["section"] == "flag-first"
+    assert event["text"] == "dark for how long?"
+
+
+def test_a_comment_carries_the_neighbours_that_tell_two_copies_apart(page_dir):
+    """The context is the whole reason a later version can't hand the comment to another
+    copy of the same words, so a written anchor stores it exactly as a selection does."""
+    event = json.loads(comment(published(page_dir), "--quote", "Verify, then flip", "--text", "ok").output)
+    anchor = event["anchor"]
+    # Read out of the section the anchor names, and out of the collapsed text: the
+    # runtime reads its side back the same way, and only a full match counts.
+    assert anchor["prefix"] == "med Backfill first"
+    assert anchor["suffix"] == ". low"  # the option's risk, said at its trailing edge
+
+
+def test_a_comment_refuses_a_quote_the_version_does_not_hold(page_dir):
+    result = comment(published(page_dir), "--quote", "ship it on Friday", "--text", "x")
+    assert result.exit_code != 0
+    assert "doesn't say" in result.output
+
+
+def test_a_comment_refuses_a_quote_the_version_holds_twice(page_dir):
+    """Which copy was meant is a question with an answer, and there is someone to ask.
+    The browser has to guess because the reviewer has already gone; this doesn't."""
+    twice = PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>\n  <p>Ship dark.</p>")
+    (page_dir / "versions" / "v001.html").write_text(twice)
+    result = comment(published(page_dir), "--quote", "Ship dark", "--text", "x")
+    assert result.exit_code != 0
+    assert "2 times" in result.output
+    # Scoping it to one of them is the way out the message offers.
+    scoped = comment(page_dir, "--quote", "Ship dark", "--section", "flag-first", "--text", "x")
+    assert scoped.exit_code == 0, scoped.output
+    assert json.loads(scoped.output)["anchor"]["section"] == "flag-first"
+
+
+def test_a_widgets_data_body_is_not_quotable_but_the_widget_is(page_dir):
+    """A diagram's source is a picture by the time the reader sees it, so quoting the
+    source anchors on text no search will find. Pointing at the element is what a click
+    on that diagram does in the browser, and that is the anchor offered instead."""
+    body = comment(published(page_dir), "--quote", "graph LR", "--text", "x")
+    assert body.exit_code != 0 and "--section" in body.output
+    element = comment(page_dir, "--section", "flow", "--text", "the retry edge is missing")
+    assert element.exit_code == 0, element.output
+    assert json.loads(element.output)["anchor"] == {"section": "flow"}
+
+
+def test_a_quote_may_not_run_across_a_widgets_parts(page_dir):
+    """A module writes words of its own where the file has none — a cq-ref is empty in the
+    source and renders the reference it links to, a column gets a heading, a milestone a
+    row of chips. A quote spanning one of those joins would resolve to nothing in the
+    reviewer's browser, so it's refused here, where someone can still do something about
+    it. Either side of the join quotes fine."""
+    published(page_dir)
+    across = comment(page_dir, "--quote", "The cutoff lives in .", "--text", "x")
+    assert across.exit_code != 0
+    assert "across a widget's parts" in across.output
+    assert comment(page_dir, "--quote", "The cutoff lives in", "--text", "x").exit_code == 0
+
+
+def test_a_verbatim_body_is_quotable_where_a_source_body_is_not(page_dir):
+    """The registry draws the line: cq-draft renders the authored text into a plain div
+    the anchor pass can see (x-verbatim), and cq-diagram renders a picture instead."""
+    drafted = PAGE.replace(
+        "</cq-options>",
+        "</cq-options>\n  <cq-draft id=\"note\">\nAdds --dry-run to every mutating command.\n  </cq-draft>",
+    )
+    (page_dir / "versions" / "v001.html").write_text(drafted)
+    result = comment(published(page_dir), "--quote", "every mutating command", "--text", "which ones?")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["anchor"]["section"] == "note"
+
+
+def test_a_widgets_x_says_attribute_is_quotable_like_any_other_passage(page_dir):
+    """renderSaid puts these words in the DOM, so the anchor pass can find them and this
+    has to offer them — otherwise a metric's own number is the one thing on the page
+    Claude can't point at. Each lands at the edge the registry gives it: this option's
+    effort ("med") opens it and its risk ("low") closes it."""
+    published(page_dir)
+    for quote in ("med Backfill first", "then flip. low"):
+        result = comment(page_dir, "--quote", quote, "--text", "x")
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)["anchor"]["section"] == "backfill-first"
+
+
+def test_what_the_reader_never_sees_is_not_quotable(page_dir):
+    """The runtime roots a section-less anchor at document.body, so a <title> is text no
+    anchor can reach — and a page's title is often a sentence from the page as well."""
+    (page_dir / "versions" / "v001.html").write_text(
+        PAGE.replace("<title>t</title>", "<title>Backfill cutover plan</title>")
+    )
+    result = comment(published(page_dir), "--quote", "Backfill cutover plan", "--text", "x")
+    assert result.exit_code != 0
+    assert "doesn't say" in result.output
+
+
+def test_a_comment_needs_a_published_version_to_point_at(page_dir):
+    result = comment(page_dir, "--quote", "Ship dark", "--text", "x")
+    assert result.exit_code != 0
+    assert "no published version" in result.output
+
+
+def test_a_comment_points_at_something(page_dir):
+    result = comment(published(page_dir), "--text", "just a thought")
+    assert result.exit_code != 0
+    assert "--quote" in result.output
+
+
+def test_claudes_own_comment_is_not_delivered_back_to_it(page_dir):
+    """`wait` and the banner's unread count both turn on author, so a note Claude leaves
+    can't wake its own watcher or read as a comment nobody answered."""
+    published(page_dir)
+    assert comment(page_dir, "--quote", "Ship dark", "--text", "x").exit_code == 0
+    assert interact.full_state(page_dir)["pending"] == 0
+    assert interact.unattended_pages("") == []
+
+
+def test_a_comments_widget_markup_shares_one_id_universe_with_replies(page_dir):
+    """A Claude comment renders as HTML in the panel exactly as a reply does, so it
+    validates the same way and claims ids from the same pool."""
+    published(page_dir)
+    assert comment(
+        page_dir, "--quote", "Ship dark", "--text",
+        '<cq-options id="q1" choose><cq-option id="q1-a"><strong>A</strong></cq-option></cq-options>',
+    ).exit_code == 0
+    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    clash = CliRunner().invoke(
+        interact.cli,
+        ["reply", str(page_dir), "--to", "c1", "--text", '<cq-diagram id="q1">\ngraph LR\n  A --> B\n</cq-diagram>'],
+    )
+    assert clash.exit_code != 0 and "q1" in clash.output

@@ -242,7 +242,8 @@
     "additionalProperties": false,
     "x-parent": "cq-board",
     "x-content": "items",
-    "x-upgrade": false
+    "x-upgrade": false,
+    "x-says": {"label": "before"}
   },
   "cq-card": {
     "description": "One card on a board. Lead with a <strong> title; prose follows. The reviewer drags it by its grip; the id names it in `move` actions and keeps comment anchors stable across moves.",
@@ -326,6 +327,7 @@
     "additionalProperties": false,
     "x-content": "data",
     "x-upgrade": true,
+    "x-verbatim": true,
     "x-example": "<cq-draft id=\"note-cli\">\nAdds --dry-run to every mutating command.\n</cq-draft>"
   },
   "cq-specimen": {

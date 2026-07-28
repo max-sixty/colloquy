@@ -1915,3 +1915,153 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
     declare("idle")
     expect(text).to_have_text("Review closed")
     page.close()
+
+
+# ---------- anchors written without a browser ----------
+# `comment` writes an anchor by reading the version file; the runtime resolves it against
+# the DOM that file becomes. Nothing static can check that those two readings agree, and
+# every way they can come apart — a widget's upgrade, an attribute rendered as text, the
+# space a block boundary stands for — only exists once the page is loaded.
+
+
+def written_anchors(page_dir, html, limit=40):
+    """Anchors `comment` would write for windows over a page's own prose. A window the
+    page says twice, or one crossing a fence, is refused on purpose — skipping those here
+    is that refusal, and what survives is exactly what the command promises to place."""
+    registry = interact.load_registry(page_dir)
+    text, _, _ = interact.page_passages(html, registry)
+    words = text.split(" ")
+    anchors = []
+    for start in range(0, len(words), 3):
+        quote = " ".join(words[start:start + 8])
+        if len(quote) < 20:
+            continue
+        try:
+            anchors.append((quote, interact.capture_anchor(html, registry, quote, None)))
+        except ValueError:
+            continue
+        if len(anchors) == limit:
+            break
+    return anchors
+
+
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
+def test_an_anchor_written_from_the_file_lands_on_the_page(browser, serve, example):
+    """The claim `comment` makes is that a quote read out of the version file names the
+    same passage in the browser. Checked on the pages people actually write, because the
+    ways it can fail are all theirs: a diagram that renders to a picture, an attribute the
+    runtime turns into text, two paragraphs whose join is a space in one reading and
+    nothing in the other."""
+    html = example.read_text()
+    url = serve(html)
+    d = serve.page_dir
+    anchors = written_anchors(d, html)
+    assert len(anchors) >= 10, f"only {len(anchors)} anchors over {example.stem}; sweep too thin"
+    for i, (_, anchor) in enumerate(anchors):
+        interact.append_event(d, {"kind": "comment", "author": "claude", "version": 1,
+                                  "id": f"written{i}", "anchor": anchor, "text": f"note {i}"})
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+
+    # The runtime's own record of which threads it found a home for.
+    detached = page.eval_on_selector_all(
+        ".cq-thread .cq-quote.detached", "els => els.map(e => e.textContent)"
+    )
+    assert detached == [], f"{len(detached)} anchors resolved to nothing in {example.stem}: {detached}"
+    # And that the homes are the right ones. Painted in thread order, one range per
+    # segment, so the passages concatenate: whitespace aside, because a quote's is
+    # elastic to the search by design — a block boundary is a space in the file's
+    # reading and no character at all in the page's.
+    painted = re.sub(r"\s", "", page.evaluate(
+        "() => [...CSS.highlights.get('cq-mark')].map(r => r.toString()).join('')"
+    ))
+    wanted = re.sub(r"\s", "", "".join(quote for quote, _ in anchors))
+    assert painted == wanted, f"anchors in {example.stem} painted text they don't name"
+    assert errors == []
+    page.close()
+
+
+TWIN_V1 = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>twin</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Twin</h1>
+<section id="twin">
+<p id="p-original">Cache warmup runs first. The version stamp never lands. Retries are capped at three.</p>
+</section>
+</main>
+</body>
+</html>
+"""
+# A copy the anchor was not made on, added above it — so first-match now finds the wrong
+# one, and only the neighbours the capture stored say which was meant.
+TWIN_V2 = TWIN_V1.replace(
+    '<p id="p-original">',
+    '<p id="p-added">Queue drain runs first. The version stamp never lands. Retries are capped at four.</p>\n'
+    '<p id="p-original">',
+)
+
+
+def test_a_written_anchor_keeps_its_copy_when_the_page_grows_another(browser, serve):
+    """A quote unique when it was written is not unique forever. The neighbours a written
+    anchor stores are what hold it on the passage it was made about — without them the
+    search takes the first copy, and a comment ends up on words nobody wrote it about."""
+    url = serve(TWIN_V1)
+    d = serve.page_dir
+    result = CliRunner().invoke(
+        interact.cli,
+        ["comment", str(d), "--quote", "The version stamp never lands", "--text", "capped where?"],
+    )
+    assert result.exit_code == 0, result.output
+    anchor = json.loads(result.output)["anchor"]
+    assert anchor["prefix"] and anchor["suffix"], f"nothing stored to tell copies apart: {anchor}"
+
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    (d / "versions" / "v002.html").write_text(TWIN_V2)
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "a twin"})
+    page.wait_for_url("**/v002.html", timeout=15000)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    where = page.evaluate(
+        "() => [...CSS.highlights.get('cq-mark')][0].startContainer.parentElement.id"
+    )
+    assert where == "p-original", f"the new copy took the comment ({where})"
+    assert errors == []
+    page.close()
+
+
+def test_a_written_comment_opens_a_thread_the_reviewer_answers(browser, serve):
+    """Claude's side of a thread is the reviewer's side with the author flipped: the panel
+    names it, counts it as open, and offers the reply box and Resolve that close it."""
+    url = serve(TWIN_V1)
+    d = serve.page_dir
+    assert CliRunner().invoke(
+        interact.cli,
+        ["comment", str(d), "--quote", "Retries are capped at three", "--text", "is three right?"],
+    ).exit_code == 0
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    toggle = page.locator("button[aria-expanded]")
+    expect(toggle).to_have_text("Comments (1)")  # counted as open, like any other thread
+    toggle.click()
+    thread = page.locator(".cq-thread").first
+    expect(thread.locator(".cq-msg.claude .cq-msg-head b")).to_have_text("Claude")
+    expect(thread.locator(".cq-quote")).to_have_text("“Retries are capped at three”")
+
+    thread.locator("textarea").fill("three is the retry budget, not a guess")
+    thread.get_by_role("button", name="Reply").click()
+    expect(page.locator(".cq-msg.user")).to_have_count(1)
+    page.locator(".cq-thread").first.get_by_role("button", name="Resolve").click()
+    expect(page.locator(".cq-details summary")).to_have_text("Resolved (1)")
+
+    kinds = [(e["kind"], e.get("author")) for e in interact.read_events(d)]
+    assert ("comment", "claude") in kinds
+    assert ("reply", "user") in kinds and ("resolve", "user") in kinds
+    assert errors == []
+    page.close()

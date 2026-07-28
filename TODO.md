@@ -25,6 +25,16 @@ stands alone.
       session `serve`-ing an old page is the case that says yes.
 - [ ] Opt-in tunnel for remote sessions (`cloudflared`/`tailscale` when present),
       gated behind an auth token added to the server first.
+- [ ] A written anchor can't quote across a widget's parts. `comment` reads the version
+      file, so it can't know the words a module writes between an element's children — a
+      milestone's chips sit after its title, and no registry keyword can say where a
+      mid-element row lands (x-says reaches an element's first and last child, which is
+      all a pseudo-element could ever have been). Fences make that a refusal rather than
+      an anchor that detaches in the reviewer's browser, so the cost is a quote Claude
+      has to shorten. Closing it properly means either a placement vocabulary richer than
+      two edges, or resolving the anchor in the browser at post time, which `comment`
+      can't afford — it runs every round of the loop, and the browser is `check --render`'s
+      once-per-page budget.
 - [ ] Plan-mode integration hardening: remove the auto-approve workaround in
       `/colloquy-plans` and settle the default UX before promoting it from
       experimental.

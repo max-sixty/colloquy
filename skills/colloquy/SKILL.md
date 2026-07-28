@@ -38,6 +38,7 @@ colloquy catalog <dir>                       # the page's vocabulary: widgets + 
 colloquy serve <dir>                         # background task; prints the URL
 colloquy status <dir> working "<detail>"     # or: waiting, idle
 colloquy wait <dir>                          # background task; exits on new user events
+colloquy comment <dir> --quote "<passage>" --text "…"   # open a thread on a passage
 colloquy reply <dir> --to <id> --text "…"
 colloquy note <dir> --version 1 --text "<one-line changelog>"   # lints, then publishes vNNN.html
 colloquy check --render <dir>                # the browser gate, once per page (see below)
@@ -170,7 +171,7 @@ arrives as an `action` event), printing the new events as JSON. `wait` delivers
 everything no previous `wait` has delivered — including events posted while you were
 working, so comments never get lost between rounds; reading the log another way
 (`events`) doesn't count as delivery. User comments exist only through the browser —
-there is no CLI that posts as the user.
+`comment` posts as you, never as them.
 
 On wake:
 
@@ -233,6 +234,34 @@ so refuses while events sit unread: pick them up first with `wait`, which return
 once when events are already there. `wait`
 also restarts a server that died under it and reports the restart on stderr; exit 2
 means it couldn't, and the page stays down until `serve`.
+
+## Pointing at a passage yourself
+
+`comment` opens a thread the way the reviewer's selection does — same anchor, same panel,
+same reply box, labelled Claude instead of You. Reach for it when what you have to say is
+about one passage and you can't settle it yourself: a sentence that reads two ways, an
+assumption the paragraph rests on, a line only they have the fact to fix. Anything you
+can settle, settle — ship the fix. In chat, the reader has to find the passage again;
+in the margin it is already beside them.
+
+```bash
+colloquy comment <dir> --quote "<the passage, as the version file holds it>" --text "…"
+colloquy comment <dir> --section <element id> --text "…"    # a diagram, an image
+```
+
+It anchors in the newest published version, deriving the section the way the browser
+does. Quote the words the file holds, not what the page renders, and stay inside one part
+of a widget — a module writes words of its own between an element's children (a column's
+heading, a milestone's chips, a `cq-ref`'s link text), and a quote spanning that join
+names nothing. A quote the version doesn't hold, holds twice, or that runs across such a
+join is refused with what to do about it, rather than posted as a comment that lands
+nowhere.
+
+A comment asks; a `cq-suggestion` proposes. Where you have the better sentence, ship it
+as a suggestion in the next version and let them accept it — a comment is for the
+question you can't answer yourself. The reviewer resolves either. There is no CLI that
+resolves a thread: a note's purpose is discharged by being read, and only the reader
+knows that happened.
 
 ## Customizing the widget layer
 
