@@ -15,7 +15,8 @@
  * ARIA option/radio roles, whose presentational children would silence links
  * inside an option's prose; `aria-pressed` carries the state alongside the
  * label, a promise the toggle keeps. Outside a `choose` group the same mark
- * renders as a span — the document's state, with nothing to press.
+ * renders as a span — the document's state, with nothing to press, and so a
+ * passage a reviewer can quote rather than a label anchoring skips.
  *
  * `settled` retires the decision once it has been made and acted on: the group
  * collapses to one line naming the chosen option, with every card — the chosen
@@ -108,8 +109,13 @@ customElements.define(
     #mark(option, label, pressable) {
       const mark = document.createElement(pressable ? "button" : "span");
       if (pressable) mark.type = "button";
-      mark.className = "cq-pick cq-ui"; // UI, not content: anchoring skips it
-      mark.dataset.cqGen = "1"; // and the version diff ignores it
+      // .cq-ui reaches exactly as far as the control does: a button's label is a
+      // word for working the thing and anchoring skips it, while the span is the
+      // page saying which option it carries, and the obvious thing to hang "not
+      // this one" on. data-cq-gen either way — the diff parses the base version
+      // unupgraded and would read any mark as text that version lacked.
+      mark.className = pressable ? "cq-pick cq-ui" : "cq-pick";
+      mark.dataset.cqGen = "1";
       option.append(mark);
       this.#relabel(option, label);
     }

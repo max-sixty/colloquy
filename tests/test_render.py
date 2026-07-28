@@ -138,6 +138,34 @@ SETTLED_PAGE = """<!doctype html>
 """
 
 
+# A decision the page reports rather than offers: no `choose`, so there is nothing to
+# press, and the mark the upgrade puts on the carried option is the page saying which
+# one the document holds. The paragraph above it is the control — a passage nobody has
+# ever doubted was quotable.
+CARRIED_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>carried</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Session transport</h1>
+<p id="lede">Where the decision stands, for the record.</p>
+<cq-options id="carried">
+  <cq-option id="c-lax" chosen><strong>Lax cookie</strong> Host-only, set by the auth
+  origin, nothing for a script to read.</cq-option>
+  <cq-option id="c-bearer"><strong>Bearer header</strong> Suits the mobile client;
+  puts the id where every script can read it.</cq-option>
+</cq-options>
+</main>
+</body>
+</html>
+"""
+
+
 # The words a widget renders from an attribute — a column's heading, a metric's number —
 # with room around them, so a drag across one is an ordinary drag and not a two-pixel
 # feat. Both column labels differ, so a quote can only anchor where it was picked.
@@ -633,6 +661,66 @@ def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     assert page.locator("#opt-strict").is_visible(), (
         "clicking a thread's quote must open the group holding it"
     )
+    page.close()
+
+
+def test_a_pick_the_page_only_reports_can_still_be_pointed_at(browser, serve):
+    """A group with no `choose` still says which option the document carries, and
+    that word is a thing to say rather than a thing to work. So it goes the way
+    every other word the page says goes: past the gate that hunts words on screen
+    no selection can reach, and under a drag that raises the Comment button.
+
+    It shipped the other way round. The mark is one element in two shapes — a
+    button where there is a pick to make, a span where there isn't — and the span
+    wore the button's `.cq-ui`, which anchoring skips, so a reviewer could read
+    "chosen" and not point at it. Every shipped example declares `choose`, so the
+    render suite never rendered the span and nothing said so.
+
+    Quotable is half a pair, so the other half is here too: the diff parses the
+    base version unupgraded, where no mark exists at all, and must not read this
+    one as a change nobody wrote."""
+    url = serve(CARRIED_PAGE)
+    assert interact.render_version(browser, url) == []
+
+    page, errors = open_page(browser, url)
+    mark = page.locator("#c-lax .cq-pick")
+    assert mark.evaluate("el => el.tagName") == "SPAN", "nothing to press means no button"
+    box = mark.bounding_box()
+    page.mouse.move(box["x"] + 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] - 2, box["y"] + box["height"] / 2, steps=8)
+    page.mouse.up()
+    assert page.evaluate("() => getSelection().toString()").strip() == "chosen", (
+        "a drag across the mark selected nothing — the state is painted, not said"
+    )
+
+    page.locator(".cq-fab").click()
+    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+    assert composer_quote(page)["text"].strip("“”") == "chosen"
+    page.locator(".cq-composer textarea").fill("say which version chose it")
+    page.get_by_role("button", name="Comment", exact=True).click()
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    assert painted(page, "cq-mark") == "chosen"
+
+    # A second version rewording the option nobody picked. The mark is written by
+    # the runtime and stands in no version file, so the anchor on it has to be
+    # found again in the page the reviewer now has — and read as no change,
+    # since the base version this diff loads has no mark in it at all.
+    d = serve.page_dir
+    (d / "versions" / "v002.html").write_text(
+        CARRIED_PAGE.replace("Suits the mobile client", "Suits the mobile client best")
+    )
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    page.wait_for_url("**/v002.html", timeout=10_000)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(0)
+
+    page.locator(".cq-banner button", has_text="Δ").click()
+    page.wait_for_function("() => document.querySelectorAll('.cq-ins-block').length > 0")
+    assert page.evaluate(
+        "() => [...document.querySelectorAll('.cq-ins-block')].map(e => e.id)"
+    ) == ["c-bearer"], "the diff read the mark as text the base version lacked"
+    assert errors == []
     page.close()
 
 
