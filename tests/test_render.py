@@ -192,6 +192,11 @@ SPECIMEN_PAGE = """<!doctype html>
     <cq-option id="q-lax" chosen><strong>Lax cookie</strong> Host-only.</cq-option>
     <cq-option id="q-bearer"><strong>Bearer header</strong> Suits mobile.</cq-option>
   </cq-options>
+  <p id="q-prose">Refill rules:
+    <cq-suggestion id="quoted-suggestion">
+      <cq-old>Refill every feeder each morning.</cq-old>
+      <cq-new>Refill when the camera shows it half-empty.</cq-new>
+    </cq-suggestion></p>
 </cq-specimen>
 <cq-options id="live-group" choose>
   <cq-option id="l-shim"><strong>Shim the old schema</strong> Fastest to ship.</cq-option>
@@ -202,6 +207,11 @@ SPECIMEN_PAGE = """<!doctype html>
     <cq-card id="l-card"><strong>Wire the importer</strong></cq-card>
   </cq-column>
 </cq-board>
+<p id="l-prose">Refill rules:
+  <cq-suggestion id="live-suggestion">
+    <cq-old>Refill every feeder each morning.</cq-old>
+    <cq-new>Refill when the camera shows it half-empty.</cq-new>
+  </cq-suggestion></p>
 </main>
 </body>
 </html>
@@ -477,9 +487,17 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     # wears its mark, as a span.
     assert page.locator("#quoted-settled span.cq-pick").count() == 1
 
+    # A quoted suggestion shows what a pending change looks like — both slots
+    # marked — and grows nothing to settle it with, so it is also not the
+    # banner's to count or Accept all's to decide.
+    assert page.locator("#quoted-suggestion cq-old").is_visible()
+    assert page.locator("#quoted-suggestion .cq-sug-actions").count() == 0
+    expect(page.get_by_role("button", name="Accept all (1)")).to_be_visible()
+
     # The control: the same markup unquoted wires all of it.
     assert page.locator("#live-group button.cq-pick").count() == 2
     assert page.locator("#live-board .cq-grip").count() == 1
+    assert page.locator("#live-suggestion .cq-sug-actions").count() == 1
 
     # Nor the room for one. A quoted card stands at the height of a card in a
     # group that never declared `choose`, because that is what it is; reserving
@@ -630,6 +648,117 @@ def test_composer_grows_with_its_text_without_script(browser, serve):
     page.close()
 
 
+# Two pending changes a line apart, and a third inside a widget that positions
+# its own contents — the case where `left: 100%` would resolve against the card
+# rather than the column and drop the controls back into the text.
+SUGGESTION_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>suggestions</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Feeder notes</h1>
+<p id="replace">The camera survey found two dead zones.
+  <cq-suggestion id="sug-refill">
+    <cq-old>Refill every feeder each morning.</cq-old>
+    <cq-new>Refill a feeder when its camera shows it half-empty.</cq-new>
+  </cq-suggestion></p>
+<p id="insert">Seed mix stays through the migration.
+  <cq-suggestion id="sug-thistle">
+    <cq-new>Switch the north feeder to thistle in autumn.</cq-new>
+  </cq-suggestion></p>
+<cq-board id="feeders">
+  <cq-column id="col-todo" label="To do">
+    <cq-card id="card-heater"><strong>Heated perch</strong>
+      <cq-suggestion id="sug-in-card">
+        <cq-old>Wire the south feeder.</cq-old>
+        <cq-new>Wire the south feeder to the porch circuit.</cq-new>
+      </cq-suggestion></cq-card>
+  </cq-column>
+  <cq-column id="col-done" label="Done"></cq-column>
+</cq-board>
+</main>
+</body>
+</html>
+"""
+
+
+def test_suggestion_controls_stay_out_of_the_column(browser, serve):
+    """Review chrome hangs in the page margin, so the prose keeps the full column
+    and reads as it will once the change is settled. Two things can pull the
+    controls back into the text and neither is visible to the lint: a positioned
+    ancestor, which `left: 100%` resolves against instead of the column, and a
+    window too narrow to have a margin at all. Both must dock the row into flow
+    rather than leave it overlapping the page."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    assert errors == []
+    column = page.locator("main").evaluate("el => el.getBoundingClientRect().right")
+    box = "el => el.getBoundingClientRect()"
+
+    margin_rows = page.locator("#sug-refill .cq-sug-actions, #sug-thistle .cq-sug-actions")
+    assert margin_rows.count() == 2
+    for i in range(2):
+        assert margin_rows.nth(i).evaluate(box)["left"] > column, (
+            "a control row overlapping the column re-wraps the prose it reviews"
+        )
+    # Two changes a line apart, so the rows would collide at their natural offsets.
+    first, second = (margin_rows.nth(i).evaluate(box) for i in range(2))
+    assert first["bottom"] <= second["top"], "control rows must not stack on each other"
+
+    # Inside the card the row has no margin to hang in: it docks into flow, which
+    # keeps it inside the card rather than over the column beside it.
+    docked = page.locator("#sug-in-card .cq-sug-actions")
+    assert docked.evaluate("el => el.classList.contains('cq-docked')")
+    card = page.locator("#card-heater").evaluate(box)
+    assert docked.evaluate(box)["right"] <= card["right"] + 1
+
+    # No margin anywhere: every row docks, and nothing spills sideways.
+    page.set_viewport_size({"width": 820, "height": 900})
+    page.wait_for_function(
+        "() => [...document.querySelectorAll('.cq-sug-actions')]"
+        ".every(r => r.classList.contains('cq-docked'))"
+    )
+    assert page.evaluate("() => document.body.scrollWidth <= document.body.clientWidth")
+    page.close()
+
+
+def test_accepting_a_suggestion_settles_it_and_reaches_claude(browser, serve):
+    """Accepting collapses the change to the proposal as ordinary prose — no
+    tint, no strike, no leftover chrome — because the live view is the version
+    plus the reviewer's actions, and the honoring version only has to catch up.
+    The outcome has to reach the log too: what the reviewer sees settle and what
+    Claude is told must be the same event."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    accept = page.locator("#sug-refill .cq-sug-accept")
+    assert accept.get_attribute("aria-label").startswith(
+        "Accept the suggested change: Refill a feeder when"
+    ), "the button names the proposal, not the text being replaced"
+
+    accept.click()
+    expect(page.locator("#sug-refill cq-old")).to_be_hidden()
+    expect(page.locator("#sug-refill cq-new")).to_be_visible()
+    assert page.locator("#sug-refill .cq-sug-actions").is_hidden()
+    settled = page.locator("#sug-refill cq-new").evaluate(
+        "el => getComputedStyle(el).textDecorationLine + ' ' + getComputedStyle(el).backgroundColor"
+    )
+    assert "line-through" not in settled and "rgba(0, 0, 0, 0)" in settled, (
+        f"settled text still wears a pending mark: {settled}"
+    )
+    # The banner's count follows the page: three pending, one decided.
+    expect(page.get_by_role("button", name="Accept all (2)")).to_be_visible()
+
+    page.wait_for_function(
+        "() => fetch('/api/state').then(r => r.json())"
+        ".then(s => s.events.some(e => e.kind === 'action' && e.action === 'accept'))"
+    )
+    logged = [e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"]
+    assert [(e["widget"], e["action"], e["author"]) for e in logged] == [
+        ("sug-refill", "accept", "user")
+    ]
 def painted(page, name):
     """What the page is painting under a highlight name, whitespace-flattened. Marks are
     ranges in the highlight registry, not elements, so this is where a test looks."""

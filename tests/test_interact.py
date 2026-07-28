@@ -211,6 +211,172 @@ def test_tabs_reject_structural_violations(page_dir):
     assert "loose text" in result.output
 
 
+SUGGESTION = """<cq-suggestion id="sug-refill">
+  <cq-old><p id="refill-rule">Refill every feeder each morning.</p></cq-old>
+  <cq-new><p id="refill-camera">Refill when the camera shows it half-empty.</p></cq-new>
+</cq-suggestion>
+<cq-options>"""
+
+
+def suggest(page_dir, version=2, markup=SUGGESTION):
+    """Write v001 carrying a suggestion and an unchanged v002 to check against."""
+    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("<cq-options>", markup))
+    (page_dir / "versions" / f"v{version:03d}.html").write_text(PAGE.replace("<cq-options>", markup))
+
+
+def decide(page_dir, outcome, widget="sug-refill"):
+    interact.append_event(
+        page_dir,
+        {"kind": "action", "author": "user", "version": 1, "widget": widget,
+         "action": outcome, "detail": {}},
+    )
+
+
+def test_suggestion_validates(page_dir):
+    suggest(page_dir)
+    assert check(page_dir, version=1).exit_code == 0, check(page_dir, version=1).output
+
+
+def test_suggestion_rejects_malformed_shapes(page_dir):
+    for markup, expected in [
+        ('<cq-suggestion id="sug-a"></cq-suggestion><cq-options>', "needs a <cq-old>"),
+        (
+            '<cq-suggestion id="sug-a"><cq-new><p>x</p></cq-new>'
+            '<cq-new><p>y</p></cq-new></cq-suggestion><cq-options>',
+            "one at most",
+        ),
+        (
+            '<cq-suggestion id="sug-a"><cq-new>'
+            '<cq-suggestion id="sug-b"><cq-new>x</cq-new></cq-suggestion>'
+            "</cq-new></cq-suggestion><cq-options>",
+            "don't nest",
+        ),
+        ('<cq-old><p>orphan</p></cq-old><cq-options>', "must be a direct child of <cq-suggestion>"),
+        (
+            '<cq-suggestion id="sug-a" resolves="nosuch"><cq-new><p>x</p></cq-new>'
+            "</cq-suggestion><cq-options>",
+            "names no comment in the log",
+        ),
+    ]:
+        (page_dir / "versions" / "v001.html").write_text(PAGE.replace("<cq-options>", markup))
+        result = check(page_dir, version=1)
+        assert result.exit_code == 1, markup
+        assert expected in result.output, f"{markup}\n{result.output}"
+
+
+def test_suggestion_resolves_accepts_a_real_comment(page_dir):
+    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    markup = '<cq-suggestion id="sug-a" resolves="c1"><cq-new><p>x</p></cq-new></cq-suggestion><cq-options>'
+    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("<cq-options>", markup))
+    assert check(page_dir, version=1).exit_code == 0
+
+
+def test_accepting_licenses_retiring_the_replaced_markup(page_dir):
+    # v002 honors the accept: the old paragraph and the wrapper are gone, the
+    # proposal inlined. Nothing but a logged accept makes that legal.
+    suggest(page_dir)
+    honored = PAGE.replace(
+        "<cq-options>", '<p id="refill-camera">Refill when the camera shows it half-empty.</p><cq-options>'
+    )
+    (page_dir / "versions" / "v002.html").write_text(honored)
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "refill-rule" in result.output
+
+    decide(page_dir, "accept")
+    assert check(page_dir, version=2).exit_code == 0, check(page_dir, version=2).output
+
+
+def test_an_unanswered_proposal_cant_be_kept_as_settled_content(page_dir):
+    # Self-accepting: the wrapper goes but its proposal stays, presented as
+    # ordinary prose the reviewer never agreed to. Withdrawal is whole or not.
+    insert = """<cq-suggestion id="sug-thistle">
+  <cq-new><p id="thistle-plan">Switch the north feeder to thistle in autumn.</p></cq-new>
+</cq-suggestion>
+<cq-options>"""
+    suggest(page_dir, markup=insert)
+    (page_dir / "versions" / "v002.html").write_text(
+        PAGE.replace("<cq-options>", '<p id="thistle-plan">Switch the north feeder to thistle in autumn.</p><cq-options>')
+    )
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "sug-thistle" in result.output
+    # Withdrawing it whole is fine, and so is honoring a logged accept.
+    (page_dir / "versions" / "v003.html").write_text(PAGE)
+    assert check(page_dir, version=3).exit_code == 1  # v003's base is v002, still self-accepted
+    decide(page_dir, "accept", widget="sug-thistle")
+    assert check(page_dir, version=2).exit_code == 0
+
+
+def test_rejecting_licenses_retiring_the_proposal(page_dir):
+    # A reject is consent to drop the proposal, so it retires even while a
+    # thread about it is open — the reviewer has already answered.
+    suggest(page_dir)
+    (page_dir / "versions" / "v002.html").write_text(
+        PAGE.replace("<cq-options>", '<p id="refill-rule">Refill every feeder each morning.</p><cq-options>')
+    )
+    interact.append_event(
+        page_dir,
+        {"kind": "comment", "id": "c1", "author": "user",
+         "anchor": {"section": "refill-camera"}, "text": "cameras aren't reliable yet"},
+    )
+    assert check(page_dir, version=2).exit_code == 1
+    decide(page_dir, "reject")
+    assert check(page_dir, version=2).exit_code == 0
+    # The other slot is not licensed: dropping the markup a reject kept is refused.
+    (page_dir / "versions" / "v003.html").write_text(PAGE)
+    result = check(page_dir, version=3)
+    assert result.exit_code == 1
+    assert "refill-rule" in result.output
+
+
+def test_an_unanswered_deletion_cant_delete(page_dir):
+    # The mirror of self-accepting an insertion: dropping the markup a pending
+    # deletion wraps, without the accept that consents to losing it.
+    delete = """<cq-suggestion id="sug-drop">
+  <cq-old><p id="hand-log">The manual sightings log.</p></cq-old>
+</cq-suggestion>
+<cq-options>"""
+    suggest(page_dir, markup=delete)
+    (page_dir / "versions" / "v002.html").write_text(PAGE)
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "hand-log" in result.output
+    decide(page_dir, "accept", widget="sug-drop")
+    assert check(page_dir, version=2).exit_code == 0
+
+
+def test_withdrawing_an_unanswered_suggestion_needs_no_consent(page_dir):
+    # Nothing was decided, so Claude may take the proposal back — but not while
+    # an unresolved thread is anchored in it.
+    suggest(page_dir)
+    (page_dir / "versions" / "v002.html").write_text(
+        PAGE.replace("<cq-options>", '<p id="refill-rule">Refill every feeder each morning.</p><cq-options>')
+    )
+    assert check(page_dir, version=2).exit_code == 0
+    interact.append_event(
+        page_dir,
+        {"kind": "comment", "id": "c1", "author": "user",
+         "anchor": {"section": "refill-camera"}, "text": "why the camera?"},
+    )
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "refill-camera" in result.output
+    interact.append_event(page_dir, {"kind": "resolve", "author": "user", "parent": "c1"})
+    assert check(page_dir, version=2).exit_code == 0
+
+
+def test_reply_refuses_a_suggestion(page_dir):
+    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    result = CliRunner().invoke(
+        interact.cli,
+        ["reply", str(page_dir), "--to", "c1", "--text",
+         '<cq-suggestion id="sug-x"><cq-new><p>fixed</p></cq-new></cq-suggestion>'],
+    )
+    assert result.exit_code != 0
+    assert "frozen in the log" in result.output
+
+
 def test_check_rejects_wrong_scaffold(page_dir):
     html = PAGE.replace('<script type="module" src="/colloquy.js"></script>', "").replace(
         '<link rel="stylesheet" href="/theme.css">', ""

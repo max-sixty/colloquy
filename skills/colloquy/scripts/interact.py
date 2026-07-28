@@ -95,9 +95,11 @@ re-runs it on every version): the HTML parses with balanced tags; the page
 carries exactly one external script (<script type="module" src="/colloquy.js">)
 and one stylesheet link (/theme.css); every cq-* element validates against the
 vendored registry (schema, nesting, no self-closing form); every cq-* meta is a
-known page declaration with an allowed value; ids are unique and every anchor id
-from the previous version survives; no fixed-pixel-width element is wider than
-the readable column.
+known page declaration with an allowed value; each cq-suggestion is well formed
+(at most one of each slot, at least one of them, no nesting, `resolves` naming a
+real comment); ids are unique and every id from the previous version survives
+unless the log settled the suggestion holding it; no fixed-pixel-width element
+is wider than the readable column.
 
 `check --render` adds the browser half, run once before a page's URL is first
 handed over: the version loads in the machine's installed Chrome (Playwright
@@ -208,6 +210,43 @@ def read_events(page_dir: Path) -> list:
         event["seq"] = i + 1
         events.append(event)
     return events
+
+
+def build_threads(events: list) -> dict:
+    """Comment threads by root id: {"root", "msgs", "resolved"}. A reply or
+    resolve names its parent, which may itself be a reply, so each walks up to
+    the comment that roots it."""
+    threads = {
+        e["id"]: {"root": e, "msgs": [e], "resolved": False}
+        for e in events
+        if e.get("kind") == "comment"
+    }
+    index = {e["id"]: e for e in events if "id" in e}
+    for e in events:
+        if e.get("kind") not in ("reply", "resolve"):
+            continue
+        cur = e
+        for _ in range(50):
+            cur = index.get(cur.get("parent"))
+            if cur is None or cur.get("kind") == "comment":
+                break
+        thread = cur and threads.get(cur["id"])
+        if not thread:
+            continue
+        if e["kind"] == "reply":
+            thread["msgs"].append(e)
+        else:
+            thread["resolved"] = True
+    return threads
+
+
+def anchored_ids(events: list) -> set:
+    """Element ids an unresolved thread still points at."""
+    return {
+        (t["root"].get("anchor") or {}).get("section")
+        for t in build_threads(events).values()
+        if not t["resolved"]
+    } - {None}
 
 
 def list_versions(page_dir: Path) -> list:
@@ -628,6 +667,12 @@ def cmd_reply(page_dir: Path, to: str, text) -> None:
             sys.exit("reply widget markup doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs))
         frag = _StructParser()
         frag.feed(body)
+        if frag.suggestions:
+            sys.exit(
+                "a reply can't carry <cq-suggestion>: reply markup is frozen in the "
+                "log, so no version could ever settle it — put the change in the next "
+                "version instead"
+            )
         if frag.duplicate_ids:
             sys.exit(f"reply widget markup reuses an id within itself: {frag.duplicate_ids}")
         clash = sorted(frag.ids & (version_ids(page_dir) | reply_widget_ids(page_dir)))
@@ -681,29 +726,10 @@ def cmd_export(page_dir: Path) -> None:
         print("\n### Edits\n")
         for e in actions:
             detail = " ".join(f"{k}={v}" for k, v in (e.get("detail") or {}).items())
-            print(f"- `{e.get('widget')}`: {e.get('action')} {detail} (on v{e.get('version')})")
+            verb = f"{e.get('action')} {detail}".strip()  # accept/reject carry no detail
+            print(f"- `{e.get('widget')}`: {verb} (on v{e.get('version')})")
 
-    threads = {}
-    for e in events:
-        if e.get("kind") == "comment":
-            threads[e["id"]] = {"root": e, "msgs": [e], "resolved": False}
-    index = {e["id"]: e for e in events if "id" in e}
-    for e in events:
-        if e.get("kind") not in ("reply", "resolve"):
-            continue
-        cur = e
-        for _ in range(50):
-            cur = index.get(cur.get("parent"))
-            if cur is None or cur.get("kind") == "comment":
-                break
-        thread = cur and threads.get(cur["id"])
-        if not thread:
-            continue
-        if e["kind"] == "reply":
-            thread["msgs"].append(e)
-        else:
-            thread["resolved"] = True
-
+    threads = build_threads(events)
     if threads:
         print("\n### Threads\n")
     for t in threads.values():
@@ -877,6 +903,10 @@ class _StructParser(HTMLParser):
         self.stylesheets = []  # hrefs of rel=stylesheet links
         self.cq_metas = []  # {"name", "content", "line"} for <meta name="cq-*">
         self.cq_elements = []  # {"tag", "line", "attrs", "parent", "children", "text"}
+        # {"id", "resolves", "line", "slots", "old_ids", "new_ids", "nested"} per
+        # cq-suggestion: which slots it carries and which ids live in each, so a
+        # version's outcome can license retiring exactly the ids it settles.
+        self.suggestions = []
         self._svg_depth = 0
 
     @property
@@ -919,9 +949,25 @@ class _StructParser(HTMLParser):
             while top() in ("option", "optgroup"):
                 self.stack.pop()
 
+    def _open_suggestion(self):
+        """The innermost cq-suggestion still open and which of its slots we are
+        in: (record, "cq-old" | "cq-new" | None), or (None, None) outside one."""
+        slot = None
+        for tag, _, record in reversed(self.stack):
+            if tag in ("cq-old", "cq-new"):
+                slot = tag
+            elif tag == "cq-suggestion":
+                return record, slot
+        return None, None
+
     def _harvest(self, tag, attrs_d):
         if attrs_d.get("id"):
             self.all_ids.append(attrs_d["id"])
+            suggestion, slot = self._open_suggestion()
+            if tag in ("cq-old", "cq-new"):
+                slot = tag  # the slot's own id belongs to the slot
+            if suggestion and slot:
+                suggestion["old_ids" if slot == "cq-old" else "new_ids"].add(attrs_d["id"])
         if tag == "script" and attrs_d.get("src"):
             self.external_scripts.append((attrs_d["src"], attrs_d.get("type")))
         if tag == "link" and "stylesheet" in (attrs_d.get("rel") or ""):
@@ -933,6 +979,12 @@ class _StructParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs_d = dict(attrs)
+        # Before _harvest, whose id attribution reads the open suggestion: a
+        # slot's contents belong to the suggestion that encloses them.
+        if tag in ("cq-old", "cq-new"):
+            suggestion, _ = self._open_suggestion()
+            if suggestion:
+                suggestion["slots"].append(tag)
         self._harvest(tag, attrs_d)
         if tag == "svg":
             self._svg_depth += 1
@@ -958,6 +1010,17 @@ class _StructParser(HTMLParser):
                 "text": False,
             }
             self.cq_elements.append(record)
+            if tag == "cq-suggestion":
+                enclosing, _ = self._open_suggestion()
+                record.update(
+                    id=attrs_d.get("id"),
+                    resolves=attrs_d.get("resolves"),
+                    slots=[],
+                    old_ids=set(),
+                    new_ids=set(),
+                    nested=enclosing is not None,
+                )
+                self.suggestions.append(record)
         self.stack.append((tag, self.getpos()[0], record))
 
     def handle_startendtag(self, tag, attrs):
@@ -1114,6 +1177,56 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
     return errors
 
 
+def suggestion_errors(suggestions: list, comment_ids: set) -> list:
+    """What the registry's schema can't say about a suggestion: it holds at most
+    one of each slot and at least one of them, it doesn't nest, and `resolves`
+    names a comment that exists."""
+    errors = []
+    for s in suggestions:
+        where = f"<cq-suggestion id={s['id']!r}> (line {s['line']})"
+        if s["nested"]:
+            errors.append(f"{where}: suggestions don't nest")
+        if not s["slots"]:
+            errors.append(
+                f"{where}: needs a <cq-old> (what it replaces), a <cq-new> "
+                f"(what it proposes), or both"
+            )
+        for slot in ("cq-old", "cq-new"):
+            if s["slots"].count(slot) > 1:
+                errors.append(f"{where}: carries {s['slots'].count(slot)} <{slot}> children, one at most")
+        if s["resolves"] and s["resolves"] not in comment_ids:
+            errors.append(
+                f"{where}: resolves={s['resolves']!r} names no comment in the log"
+            )
+    return errors
+
+
+def retirable_ids(suggestions: list, events: list, dropped: set) -> set:
+    """Ids the previous version's suggestions let the next one drop, given what
+    it actually dropped. A logged outcome settles a suggestion: accepting
+    retires the markup it replaced, rejecting retires the proposal, and either
+    retires the wrapper. A proposal no one has answered can still be withdrawn —
+    nothing reviewed was kept — but only whole: the wrapper goes with the
+    proposal inside it, so a version can't quietly keep an unanswered proposal
+    as settled content, and not while an unresolved thread is anchored in it."""
+    outcomes = {
+        e.get("widget"): e["action"]
+        for e in events
+        if e.get("kind") == "action" and e.get("action") in ("accept", "reject")
+    }
+    anchored = anchored_ids(events)
+    licensed = set()
+    for s in suggestions:
+        if not s["id"]:
+            continue
+        outcome = outcomes.get(s["id"])
+        retires = {s["id"]} | (s["old_ids"] if outcome == "accept" else s["new_ids"])
+        if outcome is None and (retires & anchored or not s["new_ids"] <= dropped):
+            continue
+        licensed |= retires
+    return licensed
+
+
 def fragment_errors(html: str, registry: dict) -> list:
     """Structural + registry validation of a markup fragment (a Claude reply
     carrying widgets): the discussion-side analog of `check`."""
@@ -1192,13 +1305,23 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
                     f"isn't vendored — run `init`"
                 )
 
+    events = read_events(page_dir)
+    errors.extend(
+        suggestion_errors(
+            parser.suggestions, {e["id"] for e in events if e.get("kind") == "comment"}
+        )
+    )
+
     idx = versions.index(name)
     if idx > 0:
         prev_name = versions[idx - 1]
         prev = _StructParser()
         prev.feed((page_dir / "versions" / prev_name).read_text(encoding="utf-8"))
         prev.close()
-        dropped = sorted(prev.ids - parser.ids)
+        # An id may retire when the log has settled what holds it; everything
+        # else must survive, or the anchors on it break.
+        gone = prev.ids - parser.ids
+        dropped = sorted(gone - retirable_ids(prev.suggestions, events, gone))
         if dropped:
             errors.append(
                 f"ids present in {prev_name} but dropped in {name} "

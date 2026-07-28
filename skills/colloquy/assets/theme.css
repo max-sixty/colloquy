@@ -52,7 +52,10 @@
 
 body { margin: 0; background: var(--paper); color: var(--ink);
        font: var(--t-4)/1.55 system-ui, -apple-system, sans-serif; }
-main { max-width: 760px; margin: 0 auto; padding: 64px 24px 96px; }
+/* Positioned so it is the containing block for anything a widget hangs in the
+ * page margin (cq-suggestion's controls): `left: 100%` then means the column's
+ * right edge, whatever the element's own depth in the document. */
+main { max-width: 760px; margin: 0 auto; padding: 64px 24px 96px; position: relative; }
 h1 { font-size: 27px; line-height: 1.2; letter-spacing: -0.01em; margin: 0 0 10px; }
 h2 { font-size: var(--t-3); margin: 44px 0 10px; }
 h3 { font-size: var(--t-4); margin: 28px 0 8px; }
@@ -354,6 +357,47 @@ cq-tabs.cq-rendered > cq-tab[hidden]:not([hidden="until-found"]) { display: none
   cq-tabs.cq-rendered > cq-tab::before { content: attr(label); }
 }
 
+/* cq-suggestion / cq-old / cq-new: a proposed change to reviewed content. The
+ * wrapper generates no box, so a suggestion sits inline mid-sentence or wraps
+ * whole sections without disturbing either flow; the slots carry the marks,
+ * inline by default and block when they hold block content. A decision is the
+ * end of the matter visually: the settled slot loses every mark and reads as
+ * ordinary prose, and a suggestion with nothing left to show disappears. */
+cq-suggestion { display: contents; }
+cq-old, cq-new { border-radius: 3px; padding: 0 3px; }
+cq-old { background: var(--del-tint); color: var(--muted);
+         text-decoration: line-through; text-decoration-color: var(--danger); }
+cq-new { background: var(--add-tint); }
+:is(cq-old, cq-new):has(> :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
+    blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
+    cq-code, cq-tree, cq-board, cq-options, cq-plan, cq-milestones, cq-timeline,
+    cq-compare, cq-metrics, cq-tabs)) {
+  display: block; padding: 2px 10px; margin: 10px 0; }
+/* Decided: the surviving slot is plain prose, the other one gone. */
+cq-suggestion[data-cq-state] > :is(cq-old, cq-new) {
+  background: none; color: inherit; text-decoration: none; padding: 0; }
+cq-suggestion[data-cq-state="accepted"] > cq-old,
+cq-suggestion[data-cq-state="rejected"] > cq-new { display: none; }
+cq-suggestion[data-cq-state="accepted"]:not(:has(cq-new)),
+cq-suggestion[data-cq-state="rejected"]:not(:has(cq-old)) { display: none; }
+/* The controls hang in the page margin: absolute against <main> for the
+ * horizontal edge, and — inline-flex, so the box they would have occupied in
+ * flow is inline-level — the line the change starts on for the vertical. A
+ * block-level box would take its static position from the line *after* the
+ * change. One line tall and laid along it, so two changes a line apart don't
+ * collide; the widget nudges the pair that still would, and docks the row into
+ * flow wherever it can't hang clear of the column. */
+.cq-sug-actions { position: absolute; left: 100%; margin-left: 22px;
+    display: inline-flex; gap: 4px; white-space: nowrap; }
+.cq-sug-actions[hidden] { display: none; } /* outranks the flex above, unlike the UA rule */
+.cq-sug-actions.cq-docked { position: static; margin-left: 6px; vertical-align: baseline; }
+.cq-sug-actions button { font: inherit; font-size: var(--t-6); line-height: 1.7;
+    padding: 0 8px; border: 1px solid var(--border-2); border-radius: 999px;
+    background: var(--card); color: var(--ink-2); cursor: pointer; }
+.cq-sug-actions button:hover { background: var(--chip); }
+.cq-sug-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cq-sug-actions .cq-sug-accept:hover { border-color: var(--ok); color: var(--ok-ink); }
+.cq-sug-actions .cq-sug-reject:hover { border-color: var(--danger); color: var(--danger-ink); }
 /* cq-specimen: quoted material — a widget or section the page exhibits rather
  * than speaks (a sample decision, a demo board). It wears the quotation idiom,
  * blockquote's muted hairline gutter opened by a small-caps label — not the

@@ -340,6 +340,9 @@ const latestChip = el("button", "cq-ui cq-btn cq-latest-chip", "");
 latestChip.style.display = "none";
 const diffBtn = el("button", "cq-btn", "Δ");
 diffBtn.style.display = "none";
+const acceptAllBtn = el("button", "cq-btn", "");
+acceptAllBtn.style.display = "none";
+acceptAllBtn.title = "Accept every suggested change still pending";
 const versionSelect = document.createElement("select");
 versionSelect.title = "Version";
 versionSelect.setAttribute("aria-label", "Version");
@@ -353,6 +356,7 @@ banner.append(
   statusText,
   el("span", "cq-spacer"),
   latestChip,
+  acceptAllBtn,
   diffBtn,
   versionSelect,
   toggleBtn,
@@ -1547,6 +1551,40 @@ function toggleHelp() {
   helpEl.focus({ preventScroll: true });
 }
 
+// ---------- suggestions ----------
+// A cq-suggestion is Claude's edit to reviewed content, offered rather than
+// shipped. The widget owns one suggestion and marks its own state in the DOM;
+// the banner owns the page's total, derived from that and refreshed whenever a
+// widget says it changed. Accept all decides each suggestion individually, so
+// the log records exactly what was consented to — accepting the rest after
+// rejecting one stays honest.
+// Quoted ones are exhibits: they carry no controls, so they are not the
+// banner's to count nor Accept all's to decide.
+const pendingSuggestions = () =>
+  [...document.querySelectorAll("cq-suggestion:not([data-cq-state])")].filter(
+    (suggestion) => !quoted(suggestion),
+  );
+function syncSuggestions() {
+  const n = pendingSuggestions().length;
+  acceptAllBtn.style.display = n ? "" : "none";
+  acceptAllBtn.textContent = `✓ Accept all (${n})`;
+}
+document.addEventListener("cq-suggestions", syncSuggestions);
+acceptAllBtn.onclick = async () => {
+  acceptAllBtn.disabled = true;
+  try {
+    for (const suggestion of pendingSuggestions()) await suggestion.accept?.();
+  } finally {
+    acceptAllBtn.disabled = false;
+    syncSuggestions();
+  }
+};
+// Accepting the fix a comment asked for answers that comment, so the same
+// gesture closes its thread: the widget names the thread, this layer owns the log.
+document.addEventListener("cq-resolve", (ev) =>
+  post({ kind: "resolve", parent: ev.detail.comment }),
+);
+
 // ---------- version diff ----------
 // "Changes since vN": blocks (paragraphs, list items, widget items) whose text
 // isn't present in the base version get a tinted marker, so re-reviewing a
@@ -1555,7 +1593,9 @@ function toggleHelp() {
 // it. The base is the previous published version.
 const DIFF_BLOCK =
   TEXT_BLOCK + ",aside,cq-option,cq-milestone,cq-event,cq-variant,cq-metric,cq-card";
-const DIFF_OPAQUE = "cq-diagram,cq-diff,cq-tree,cq-code,svg";
+// A suggestion is already its own mark, and its slots hold two versions of the
+// same passage — so the diff treats the whole element as one opaque unit.
+const DIFF_OPAQUE = "cq-diagram,cq-diff,cq-tree,cq-code,cq-suggestion,svg";
 let diffBase = ""; // previous version's file name, set by renderVersions
 let diffOn = false;
 const diffMarked = [];
@@ -1850,6 +1890,7 @@ const savedComposer = loadDraft("composer");
 // their import at top level would deadlock the cycle (their evaluation waits on this
 // module's async evaluation completing).
 upgradeWidgets().then(() => {
+  syncSuggestions();
   if (savedView) {
     restoreView(savedView);
     if (savedView.v < VNUM) showToast(`Updated to v${VNUM}`);

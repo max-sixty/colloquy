@@ -108,12 +108,14 @@ stands alone.
 - [ ] Widget-aware Δ: the version diff is additions-only by text key, so a card that
       moved columns isn't marked. The changelog line carries it today; marking cards
       whose column changed would need the diff to understand board structure.
-- [ ] Element deletion vs. anchor survival: `check` requires every id from the
-      previous version to survive, which forbids ever deleting a card the reviewer
-      dragged to "Done". When users ask for deletion, widen the frame (e.g., an id
-      retires once no unresolved thread anchors it) rather than exempting boards.
-      Settled options took the other route — keep every id, collapse the height —
-      which is right where the alternatives are the record of why the pick won, and
-      leaves this open for the case where the content itself is spent: a "Done" card
-      is not a record anyone rereads. Whichever way that lands, retirement is the
-      author's declaration, never a side effect of the reviewer's action.
+- [ ] Widget-aware suggestions: `cq-suggestion` proposes markup, so a change to a
+      widget's own state (a card moved between columns, an option marked `chosen`)
+      has no form yet — proposing it means re-stating the whole widget in both
+      slots. Whether that wants a per-widget proposal shape or nothing at all
+      waits for a page that needs it.
+- [ ] Un-decide a suggestion: a pick can be cleared by clicking its mark again,
+      but an accept or reject is final until the next version, because settling
+      collapses the suggestion to ordinary prose and leaves nothing to click.
+      Reversing it would mean keeping some mark on settled text, which is exactly
+      what settling is for — so the two widgets diverge here on purpose. Revisit
+      if a reviewer actually misclicks one.
