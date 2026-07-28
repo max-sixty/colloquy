@@ -1235,6 +1235,24 @@ def test_composer_marks_the_passage_instead_of_quoting_it(browser, serve):
     assert page.locator("#fig.cq-mark-el").count() == 0, (
         "the figure kept a thread's outline over no thread"
     )
+
+    # A drag across the caption ends with the click's target inside the figure, but the
+    # selection is what the reader picked: the one decider ranks the quote above the
+    # element anchor, so the composer carries the caption's words rather than § fig.
+    cap = page.locator("#fig figcaption").bounding_box()
+    page.mouse.move(cap["x"] + 2, cap["y"] + cap["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(cap["x"] + cap["width"] - 2, cap["y"] + cap["height"] / 2, steps=8)
+    page.mouse.up()
+    page.locator(".cq-fab").click()
+    page.wait_for_function("() => CSS.highlights.get('cq-pending')")
+    assert "specimen" in pending_text(page), (
+        "the click's visual find outranked the selection the drag made"
+    )
+    assert page.locator("#fig.cq-pending").count() == 0, (
+        "the figure got the element outline over a live selection"
+    )
+    page.get_by_role("button", name="Cancel").click()
     assert errors == []
     page.close()
 

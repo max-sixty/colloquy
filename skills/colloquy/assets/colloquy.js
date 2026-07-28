@@ -1439,14 +1439,19 @@ function showFab(anchor, left, top) {
 // quote through behind a rendered three-character selection — a quote short enough to match
 // almost anywhere.
 const MIN_QUOTE = 3;
-function updateFab() {
+// What the button is on, decided here alone. The selection is read fresh; a visual find —
+// a clicked diagram or image, which has no text to select — comes in from the click that
+// found it, and a qualifying selection outranks it. The last branch is why order between
+// that click and the update queued behind its mouseup never matters: no selection speaks
+// for an element anchor, so the selection's absence takes down only a quote, and the
+// queued re-decide lands on the same outcome.
+function updateFab(visual) {
   const sel = getSelection();
   const anchor =
     sel && !sel.isCollapsed && !inUi(sel.anchorNode) ? selectionAnchor(sel) : null;
   if (anchor?.quote.length >= MIN_QUOTE)
     showFab(anchor, ...beside(sel.getRangeAt(0).getBoundingClientRect()));
-  // A visual click may have just raised the button on an element anchor (its handler runs
-  // before this queued update), and an element anchor has no selection to lose.
+  else if (visual) showFab({ section: visual.id }, visual.x + 6, visual.y - 40);
   else if (fabAnchor?.quote) showFab(null);
 }
 document.addEventListener("mouseup", (ev) => {
@@ -1470,8 +1475,9 @@ document.addEventListener("mousedown", (ev) => {
 });
 
 // What a click on the page means, decided once. A mark under the pointer opens its thread;
-// otherwise a diagram or image — which has no text to select — raises the same 💬 button on
-// an element anchor, the id the visual lives under, instead of a quote.
+// otherwise a diagram or image is a find handed to updateFab, which raises the same 💬
+// button on an element anchor — the id the visual lives under — unless a selection
+// outranks it.
 //
 // Once, because the hit-test reads layout and opening the panel rewrites it. Two handlers
 // each asking `markAt` looked independent and were not: the first one's setPanel() reflowed
@@ -1496,14 +1502,13 @@ document.addEventListener("click", (ev) => {
   }
   if (ev.target.closest?.("a")) return;
   let visual = ev.target.closest?.(VISUAL);
-  const sel = getSelection();
-  if (!visual || (sel && !sel.isCollapsed)) return; // mousedown already took the button down
+  if (!visual) return;
   // Outermost visual: a rendered diagram's inner svg carries a generated id;
   // the anchor belongs to the widget (or figure) that holds it.
   while (visual.parentElement?.closest(VISUAL)) visual = visual.parentElement.closest(VISUAL);
   const id = visual.closest("[id]:not(.cq-ui)")?.id;
   if (!id) return;
-  showFab({ section: id }, ev.clientX + 6, ev.clientY - 40);
+  updateFab({ id, x: ev.clientX, y: ev.clientY });
 });
 
 const saveComposerDraft = () =>

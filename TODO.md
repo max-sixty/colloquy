@@ -63,16 +63,6 @@ stands alone.
       candidates to those inside the section element, and every passage gets two full sides
       except at the very ends of the document. That wants a containment test per candidate,
       so it is a real change rather than a small one.
-- [ ] The 💬 button has two writers. `updateFab` decides it from the selection, and the
-      click handler that spots a diagram or image writes it directly — so `updateFab` needs
-      `else if (fabAnchor?.quote)` to avoid clobbering what the click just set, across an
-      ordering constraint ("its handler runs before this queued update") stated only in a
-      comment. That is the shape the file's first norm names, thirty lines below where it
-      names it: a guard reading state another function wrote means the two are one
-      function. The fix is to route the visual path through `updateFab` as well, so one
-      function decides what the button is on. Not a one-liner — the click runs before the
-      queued update, so the merged decider needs the click's find as an input rather than
-      an output — which is why it is here rather than done.
 - [ ] A tab's name can't be commented on. Every other word a widget renders from an
       authored attribute is text a reviewer can select (`x-says`), but `cq-tab`'s
       `label` renders into the strip button the upgrade builds, and a control's label
