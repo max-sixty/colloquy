@@ -910,7 +910,7 @@ def test_a_pending_suggestion_can_be_discussed_instead_of_decided(browser, serve
     page.wait_for_selector(".cq-fab", state="visible")
     page.locator(".cq-fab").click()
     page.wait_for_selector(".cq-composer", state="visible")
-    quoted = page.evaluate("() => document.querySelector('.cq-composer-quote').textContent")
+    quoted = composer_quote(page)["text"]
     assert quoted.strip("“”") == "Refill a feeder when its camera shows it half-empty."
     page.locator(".cq-composer textarea").fill("Half-empty by whose reading?")
     page.locator(".cq-composer").get_by_role("button", name="Comment").click()
@@ -1360,7 +1360,7 @@ def test_a_widgets_attribute_takes_a_comment_like_any_other_passage(browser, ser
     )
     page.locator(".cq-fab").click()
     page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
-    quoted = page.evaluate("() => document.querySelector('.cq-composer-quote').textContent")
+    quoted = composer_quote(page)["text"]
     assert quoted.strip("“”") == "In flight"
     page.locator(".cq-composer textarea").fill("this column's name is wrong")
     page.get_by_role("button", name="Comment", exact=True).click()
