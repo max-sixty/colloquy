@@ -142,7 +142,14 @@ customElements.define(
     #decide(outcome) {
       if (this.dataset.cqState) return Promise.resolve(true);
       this.#settle(outcome);
-      return sendAction(this, outcome, {}).then((ok) => {
+      // Accepting the fix answers the thread it was written for, so the same
+      // event carries it: the mapping is snapshotted into the action, because
+      // the honoring version retires this wrapper — attribute and all — and a
+      // second POST could fail alone, leaving the outcome and the resolution
+      // disagreeing with no repair path.
+      const comment = this.getAttribute("resolves");
+      const detail = outcome === "accept" && comment ? { resolves: comment } : {};
+      return sendAction(this, outcome, detail).then((ok) => {
         if (!ok) {
           this.#settle(null); // unsent means unrecorded: back to pending
           return false;
@@ -150,13 +157,6 @@ customElements.define(
         toast(
           `${outcome === "accept" ? "Accepted" : "Rejected"} “${this.#label()}” — sent to Claude`,
         );
-        // Accepting the fix answers the thread it was written for, so the same
-        // gesture closes it. The comment layer owns the log; this only asks.
-        const comment = this.getAttribute("resolves");
-        if (outcome === "accept" && comment)
-          document.dispatchEvent(
-            new CustomEvent("cq-resolve", { detail: { comment } }),
-          );
         return true;
       });
     }

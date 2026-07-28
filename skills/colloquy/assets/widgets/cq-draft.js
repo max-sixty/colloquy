@@ -23,7 +23,9 @@
  * 2. applyAction states absolute values — the whole body, never a patch — so replay is
  *    idempotent, two tabs converge on the last write, and an edit no version has
  *    honored yet re-applies to each new version instead of visibly reverting. Until
- *    one does, the element wears data-cq-edited and the theme tints its border.
+ *    one does, the runtime's pending pass marks the element data-cq-pending — the
+ *    same mark every decided-and-unhonored widget wears, driven by the registry's
+ *    x-state rather than remembered here.
  *
  * Editing has two doors: double-click the text (the fast path — it wins over the
  * word-selection it makes, so no comment button flashes), or the ✎ button (the door
@@ -166,9 +168,7 @@ customElements.define(
         return;
       }
       const previous = this.#body.textContent;
-      const wasEdited = "cqEdited" in this.dataset;
       this.#body.textContent = text;
-      this.dataset.cqEdited = "1";
       this.#close(false);
       sendAction(this, "edit", { text }).then((ok) => {
         if (ok) {
@@ -178,19 +178,19 @@ customElements.define(
           // Unsent means unrecorded. Put the words back on screen and keep the
           // reviewer's text in storage so nothing they typed is lost.
           this.#body.textContent = previous;
-          if (!wasEdited) delete this.dataset.cqEdited;
           saveDraft(ctx(this.id), text);
         }
       });
     }
 
     // An absolute value, so replaying this tab's own edit is a no-op and a second
-    // tab converges rather than drifting.
+    // tab converges rather than drifting. The edited-but-unhonored tint is the
+    // runtime's, not this widget's: the pending pass compares the fold against
+    // the authored text and marks data-cq-pending for every widget alike.
     applyAction(action, detail) {
       if (action !== "edit" || typeof detail?.text !== "string") return;
       if (this.#ta) return; // never yank the words out from under a live edit
       this.#body.textContent = detail.text;
-      this.dataset.cqEdited = "1";
     }
   },
 );

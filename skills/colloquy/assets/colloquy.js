@@ -686,6 +686,14 @@ function buildThreads() {
       threads.set(e.id, { root: e, msgs: [e], resolved: false });
   }
   for (const e of events) {
+    // An accept snapshots the thread its suggestion answered into the action
+    // (the honoring version retires the wrapper that held the mapping, and one
+    // atomic event can't half-arrive the way a second POST could).
+    if (e.kind === "action" && e.action === "accept") {
+      const answered = threads.get(e.detail?.resolves);
+      if (answered) answered.resolved = true;
+      continue;
+    }
     const rootId =
       e.kind === "reply" || e.kind === "resolve" ? rootOf(e, index) : null;
     const thread = rootId && threads.get(rootId);
@@ -1482,7 +1490,9 @@ function showFab(anchor, left, top) {
   fabAnchor = anchor;
   fabAt = anchor ? [left, top] : null;
   fab.style.display = anchor ? "block" : "none";
-  if (anchor) place(fab, left, top);
+  if (anchor) {
+    place(fab, left, top);
+  }
 }
 // The button follows the selection. What counts as one is measured on the quote it would
 // store, not on the selection's own toString(): those are different strings, and gating on
@@ -1522,7 +1532,7 @@ document.addEventListener("mousedown", (ev) => {
     // composer that is up, so an ordinary press in the page repaints nothing.
     if (composerOpen && !composerInput.value) hideComposer();
   }
-  if (!ev.target.closest?.(".cq-help")) helpEl.classList.remove("open");
+  if (helpOpen && !ev.target.closest?.(".cq-help")) showHelp(false);
 });
 
 // What a click on the page means, decided once. A mark under the pointer opens its thread;
@@ -1629,8 +1639,8 @@ function openComposer(anchor, text, left, top, suggest = false) {
   seededQuote = "";
   composerInput.value = text || composerInput.value;
   suggestCheck.checked = suggest;
-  suggestRow.style.display = anchor?.quote ? "flex" : "none";
   syncSuggestMode();
+  suggestRow.style.display = anchor?.quote ? "flex" : "none";
   // before placing: a hidden box has no height to fit, and the pass inside this call is
   // both what decides whether the quote takes up some of that height and what records
   // where the passage is that the box has to stay off.
@@ -1720,7 +1730,7 @@ document.addEventListener("keydown", (ev) => {
 // Escape's ladder, top layer first. Backing out of a reply returns focus to its
 // thread, so Esc then Enter round-trips; drafts are kept at every rung.
 function escapeKey() {
-  if (helpEl.classList.contains("open")) helpEl.classList.remove("open");
+  if (helpOpen) showHelp(false);
   else if (composerOpen) {
     hideComposer();
     showFab(null);
@@ -1778,28 +1788,37 @@ function stepVersion(dir) {
   if (next) goVersion(next);
 }
 
+// Whether the overlay is up, and the only thing that decides it: the class is
+// a rendering of this, never read back — the same contract composerOpen keeps,
+// which this overlay used to break with three writers and two classList reads.
+let helpOpen = false;
+function showHelp(open) {
+  helpOpen = open;
+  if (open) {
+    helpEl.textContent = "";
+    helpEl.append(el("div", "cq-help-title", "Keyboard reference"));
+    const table = (rows) => {
+      const t = document.createElement("table");
+      for (const [key, does] of rows) {
+        const tr = document.createElement("tr");
+        const kbd = document.createElement("kbd");
+        kbd.textContent = key;
+        const keyCell = document.createElement("td");
+        keyCell.append(kbd);
+        tr.append(keyCell, el("td", "", does));
+        t.append(tr);
+      }
+      return t;
+    };
+    helpEl.append(table(KEYS.filter((b) => b.does).map((b) => [b.label, b.does])));
+    for (const section of helpSections)
+      helpEl.append(el("h3", "", section.title), table(section.rows));
+  }
+  helpEl.classList.toggle("open", open);
+  if (open) helpEl.focus({ preventScroll: true });
+}
 function toggleHelp() {
-  if (helpEl.classList.contains("open")) return helpEl.classList.remove("open");
-  helpEl.textContent = "";
-  helpEl.append(el("div", "cq-help-title", "Keyboard reference"));
-  const table = (rows) => {
-    const t = document.createElement("table");
-    for (const [key, does] of rows) {
-      const tr = document.createElement("tr");
-      const kbd = document.createElement("kbd");
-      kbd.textContent = key;
-      const keyCell = document.createElement("td");
-      keyCell.append(kbd);
-      tr.append(keyCell, el("td", "", does));
-      t.append(tr);
-    }
-    return t;
-  };
-  helpEl.append(table(KEYS.filter((b) => b.does).map((b) => [b.label, b.does])));
-  for (const section of helpSections)
-    helpEl.append(el("h3", "", section.title), table(section.rows));
-  helpEl.classList.add("open");
-  helpEl.focus({ preventScroll: true });
+  showHelp(!helpOpen);
 }
 
 // ---------- suggestions ----------
@@ -1835,11 +1854,6 @@ acceptAllBtn.onclick = async () => {
     acceptAllBtn.disabled = false;
   }
 };
-// Accepting the fix a comment asked for answers that comment, so the same
-// gesture closes its thread: the widget names the thread, this layer owns the log.
-document.addEventListener("cq-resolve", (ev) =>
-  post({ kind: "resolve", parent: ev.detail.comment }),
-);
 
 // ---------- version diff ----------
 // "Changes since vN": blocks (paragraphs, list items, widget items) whose text
@@ -1890,23 +1904,63 @@ async function applyDiff(baseName) {
       diffMarked.push(b);
     }
   }
+  // The state half: block keys catch words, and a pure state change — a card
+  // in a different column, a pick on a different option — has no text of its
+  // own. Compare declared facets instead: the base version's state (its markup
+  // plus the fold as of it) against the live DOM, which already wears the
+  // current fold. Body facets are words and the block keys above own them.
+  const baseNum = vnum(baseName);
+  const baseFold = stateFold(baseNum);
+  for (const [tag, spec] of stateSpecs()) {
+    if (!spec.record || spec.record.kind === "body") continue;
+    for (const widget of document.body.querySelectorAll(tag)) {
+      if (widget.closest(".cq-ui") || quoted(widget)) continue;
+      const units =
+        spec.unit === "widget" || !spec.unit
+          ? widget.id
+            ? [widget]
+            : []
+          : [...widget.querySelectorAll(`${spec.record.within} > [id]`)];
+      for (const el of units) {
+        const baseEl = doc.getElementById(el.id);
+        if (!baseEl) continue; // new to this version: the content half marks it
+        const before = baseFold.has(el.id)
+          ? foldedFacet(baseFold.get(el.id).e, spec.record)
+          : domFacet(baseEl, spec.record);
+        const now = domFacet(el, spec.record);
+        if (before === now) continue;
+        // The element the change reads on: the option now picked, or the moved
+        // card itself.
+        const target =
+          (spec.record.kind === "attribute" && now && document.getElementById(now)) || el;
+        if (!target.classList.contains("cq-ins-block")) {
+          target.classList.add("cq-ins-block");
+          diffMarked.push(target);
+        }
+      }
+    }
+  }
   // Container widgets surface marks their panels hide (cq-tabs badges each tab).
   document.dispatchEvent(new CustomEvent("cq-diff"));
   return diffMarked.length;
 }
-function clearDiff() {
-  for (const b of diffMarked) b.classList.remove("cq-ins-block");
-  diffMarked.length = 0;
-  diffOn = false;
-  diffBtn.classList.remove("on");
-  document.dispatchEvent(new CustomEvent("cq-diff"));
+// Whether the diff is showing, and the only thing that decides it: the button's
+// class and the page's marks are renderings of diffOn, not a second and third
+// copy of it.
+function setDiff(on) {
+  diffOn = on;
+  diffBtn.classList.toggle("on", on);
+  if (!on) {
+    for (const b of diffMarked) b.classList.remove("cq-ins-block");
+    diffMarked.length = 0;
+    document.dispatchEvent(new CustomEvent("cq-diff"));
+  }
 }
 diffBtn.onclick = async () => {
-  if (diffOn) return clearDiff();
+  if (diffOn) return setDiff(false);
   try {
     const n = await applyDiff(diffBase);
-    diffOn = true;
-    diffBtn.classList.add("on");
+    setDiff(true);
     const baseLabel = `v${vnum(diffBase)}`;
     showToast(n ? `${n} changed passage${n === 1 ? "" : "s"} since ${baseLabel}` : `No text changes since ${baseLabel}`);
   } catch {
@@ -1923,6 +1977,13 @@ diffBtn.onclick = async () => {
 const HANDOFF_GRACE_MS = 2 * 60 * 1000;
 const WORKING_GRACE_MS = 15 * 60 * 1000;
 function renderStatus(state) {
+  // One writer for the dot and the text, offline included: null is the poll
+  // saying it couldn't reach the server, not a second function's own rendering.
+  if (state === null) {
+    dot.className = "cq-dot offline";
+    statusText.textContent = "Server offline — comments won't send";
+    return;
+  }
   const { status, listening, pending, session_alive } = state;
   // The one hard fact here is the owning process. Unknown counts as alive: a page
   // nothing claimed (interact.py run outside Claude Code) isn't an abandoned one.
@@ -1984,6 +2045,7 @@ const goVersion = (name) => {
   location.href = name === latestName ? `/versions/${name}` : `/versions/${name}?pin`;
 };
 function renderVersions(state) {
+  versionNames = state.versions;
   const notes = {};
   for (const e of events) if (e.kind === "note") notes[e.version] = e.text;
   const key = JSON.stringify([state.versions, notes]);
@@ -2065,6 +2127,19 @@ function restsOn(e, widget) {
     .map((el) => el.id);
   return [e.widget, ...parts];
 }
+// Retractions: a version that rewrote the words or state under a decision says
+// so with `restated`, and publishing records it on the note that released it.
+// Reading it from the log rather than from the markup is what makes it last —
+// the version *after* the rewrite declares nothing, and its silence would
+// otherwise hand the reviewer's retracted state straight back.
+function retractionFloors(upto) {
+  const floors = new Map();
+  for (const e of events)
+    if (e.kind === "note" && e.version <= upto)
+      for (const id of e.restated || [])
+        floors.set(id, Math.max(floors.get(id) ?? 0, e.version));
+  return floors;
+}
 // An id-bearing element's state as markup can say it: tag, attributes, and
 // place among its id-bearing kin. Text is deliberately absent — words are the
 // static gate's subject (restatement_errors); this is the rest, the state no
@@ -2087,33 +2162,11 @@ export function shallowSigs(root) {
   }
   return sigs;
 }
-// What the reviewer has done that this version's markup doesn't say — a moved
-// card, until the honoring version arrives. One comparison owns the answer: the
-// page's state now against `versionSigs`, its state before the first replay, on
-// the ids the log's actions name. The snapshot predates the sender's own
-// gesture, so their tab and a replayed one read the same; and a move taken back
-// clears, because the comparison is of ends rather than of writes. The theme
-// decides what wears it: a card outlines, while a picked option already carries
-// its state as `chosen`.
-let versionSigs = null;
-const actedOn = new Set();
 function applyActions() {
-  // Before anything can have moved — including past the gate below, where a
-  // live drag's own drop would otherwise beat the snapshot to the DOM.
-  versionSigs ??= shallowSigs(document.body);
   // Never mutate the page under a live gesture — a replayed foreign action could
   // move the nodes a drag preview is holding. Retry next poll.
   if (document.querySelector(".cq-dragging")) return;
-  // Retractions: a version that rewrote the words under a decision says so with
-  // `restated`, and publishing records it here with the version on it. Reading
-  // it from the log rather than from the markup is what makes it last — the
-  // version *after* the rewrite declares nothing, and its silence would
-  // otherwise hand the reviewer's retracted state straight back.
-  const takenBack = new Map();
-  for (const e of events)
-    if (e.kind === "restate" && e.version <= VNUM)
-      for (const id of e.widgets || [])
-        takenBack.set(id, Math.max(takenBack.get(id) ?? 0, e.version));
+  const takenBack = retractionFloors(VNUM);
   // One snapshot brackets the batch: the loop below is synchronous, so between
   // these two readings nothing but its applyAction calls — no gesture, no widget
   // rendering itself — can touch the page, and the diff of the ends is exactly
@@ -2155,9 +2208,6 @@ function applyActions() {
     // order; the log stays canonical either way.
     if (e.seq < (lastActionByWidget.get(e.widget) ?? 0)) continue;
     lastActionByWidget.set(e.widget, e.seq);
-    // Its parts, not the widget: a board is never awaiting, its card is. A
-    // reply's widget (.cq-ui) has no version to await.
-    if (!el.closest(".cq-ui")) for (const id of restsOn(e, el).slice(1)) actedOn.add(id);
     el.applyAction(e.action, e.detail);
     applied = true;
   }
@@ -2176,28 +2226,115 @@ function applyActions() {
       const prior = document.body.dataset.cqReplayWrote?.split(" ") ?? [];
       document.body.dataset.cqReplayWrote = [...new Set([...prior, ...wrote])].join(" ");
     }
-    for (const id of actedOn)
-      document
-        .getElementById(id)
-        ?.toggleAttribute("data-cq-awaiting", now.get(id) !== versionSigs.get(id));
     // A replay moves the page's text — a card to another column, a suggestion to its
     // settled slot — so the marks are repainted where they now belong. Said here rather
     // than left to the caller's order: a pass held off by a live drag lands on a poll
     // that has nothing else to re-render.
     paintAnchors();
   }
+  paintPending();
   // Every action in the log is now decided (applied, skipped, or retired), and
   // the stamp says so — it is what check --render awaits before reading the
   // replay's record, so the gate never reads a page mid-replay.
   document.body.dataset.cqApplied = String(appliedActions.size);
+}
+
+// ---------- decided, awaiting the honoring version ----------
+// The registry's x-state names each verb's fold unit and record form, so one
+// pass renders "the reviewer decided this and no version has carried it yet"
+// for every widget alike — choose had its mark, edit its tint, move nothing,
+// and the asymmetry was each widget remembering (or not) on its own. The
+// authored facets are captured once per page load, after upgrades and before
+// the first replay: the markup's initial condition, which replay then
+// overwrites in the DOM.
+const authoredFacets = new Map(); // unit id -> the facet this version arrived showing
+
+function stateSpecs() {
+  const specs = [];
+  for (const [tag, entry] of Object.entries(registry ?? {}))
+    for (const spec of Object.values(entry["x-state"] ?? {})) specs.push([tag, spec]);
+  return specs;
+}
+
+// What the page shows for one unit's declared record form, asked of the live
+// DOM or of the diff's parsed base document alike.
+function domFacet(el, record) {
+  if (record.kind === "attribute") return el.querySelector(`[${record.attr}]`)?.id ?? null;
+  if (record.kind === "position") return el.closest(record.within)?.id ?? null;
+  return quoteFrom(textNodesUnder(el)); // "body": the words, read the way a quote is
+}
+
+// The state the folded action left, from the detail field the record declares,
+// collapsed the way the DOM reading collapses where it is words.
+function foldedFacet(e, record) {
+  const value = e.detail?.[record.value];
+  if (record.kind === "body") return [...String(value ?? "").replace(/\s+/g, " ").trim()].join("");
+  return value ?? null;
+}
+
+function captureAuthoredFacets() {
+  for (const [tag, spec] of stateSpecs()) {
+    if (!spec.record) continue;
+    for (const widget of document.querySelectorAll(tag)) {
+      if (spec.unit === "widget" || !spec.unit) {
+        if (widget.id) authoredFacets.set(widget.id, domFacet(widget, spec.record));
+      } else
+        // Per-part units, at the record form's own key: a position facet is
+        // carried by the container's direct children (a column's cards), and
+        // an id'd element nested inside one — a draft in a card — is not a
+        // unit, just a passenger whose `closest()` would echo its carrier's.
+        for (const part of widget.querySelectorAll(`${spec.record.within} > [id]`))
+          authoredFacets.set(part.id, domFacet(part, spec.record));
+    }
+  }
+}
+
+// The reviewer's standing state as of `upto`: the last surviving action per
+// declared unit. Every applyAction is absolute, which is what makes this a
+// fold — one linear scan, no replay simulation. Surviving means not under a
+// retraction floor keyed on what the action rests on — the same containment
+// set replay skips by, so the two can't disagree about what a `restated` took
+// back.
+function stateFold(upto) {
+  const floors = retractionFloors(upto);
+  const fold = new Map();
+  for (const e of events) {
+    if (e.kind !== "action" || e.version > upto) continue;
+    const el = document.getElementById(e.widget);
+    if (!el?.applyAction || el.closest(".cq-ui")) continue;
+    const spec = registry?.[el.tagName.toLowerCase()]?.["x-state"]?.[e.action];
+    if (!spec) continue;
+    if (restsOn(e, el).some((id) => (floors.get(id) ?? 0) > e.version)) continue;
+    const unit = spec.unit === "widget" || !spec.unit ? e.widget : e.detail?.[spec.unit];
+    if (typeof unit === "string") fold.set(unit, { e, spec });
+  }
+  return fold;
+}
+
+// data-cq-pending: this element's decided state differs from what the version's
+// markup arrived showing — the record is behind the log. It clears when a
+// version carries the decision (the two agree again) or a retraction hands the
+// state back to the author. A decided suggestion has no record form to agree
+// with (honoring retires the wrapper), so it stays marked while the wrapper
+// stands.
+function paintPending() {
+  for (const el of document.querySelectorAll("[data-cq-pending]"))
+    delete el.dataset.cqPending;
+  for (const [unit, { e, spec }] of stateFold(VNUM)) {
+    const el = document.getElementById(unit);
+    if (!el) continue;
+    const behind = spec.record
+      ? foldedFacet(e, spec.record) !== authoredFacets.get(unit)
+      : true;
+    if (behind) el.dataset.cqPending = "1";
+  }
 }
 async function poll() {
   let state;
   try {
     state = await (await fetch("/api/state")).json();
   } catch {
-    dot.className = "cq-dot offline";
-    statusText.textContent = "Server offline — comments won't send";
+    renderStatus(null);
     return;
   }
   events = state.events;
@@ -2267,6 +2404,9 @@ const savedComposer = loadDraft("composer");
 // their import at top level would deadlock the cycle (their evaluation waits on this
 // module's async evaluation completing).
 upgradeWidgets().then(() => {
+  // Before the first poll's replay: the authored facets are the markup's
+  // initial condition, and replay is about to overwrite them in the DOM.
+  captureAuthoredFacets();
   syncSuggestions();
   if (savedView) {
     restoreView(savedView);

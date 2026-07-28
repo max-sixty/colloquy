@@ -101,8 +101,8 @@ stands alone.
       ownership is asserted in the suite).
 - [ ] What the runtime writes onto the page's own elements is a hand-list. `shallowSigs`
       looks away from `class`, `aria-describedby`, and `data-cq-*` so the replay gate
-      and the awaiting marker don't read the runtime's paint as disagreement — a list a
-      future runtime-written attribute must join, or both start seeing ghosts. One
+      doesn't read the runtime's paint as disagreement — a list a future
+      runtime-written attribute must join, or it starts seeing ghosts. One
       declaration beside the writers would give the list an owner.
 - [ ] An overlaid registry can name an `x-retired-when` the runtime's `DECIDED_VERB`
       doesn't know, and the generated selector then matches nothing — a retired slot
@@ -112,9 +112,23 @@ stands alone.
 - [ ] `@scope` can't contain `@keyframes` names, so `cq-pulse` and `cq-flash` stay
       document-global — the one pinhole in the chrome's scoping, live only if a widget
       both coins the name and animates with it.
-- [ ] Widget-aware Δ: the version diff is additions-only by text key, so a card that
-      moved columns isn't marked. The changelog line carries it today; marking cards
-      whose column changed would need the diff to understand board structure.
+- [ ] Within-column reorders are invisible to the state layer: the fold compares
+      position at column granularity (indexes compose across cards, so a finer
+      comparison would blame innocent versions), which leaves a pure reorder
+      unmarked by the pending pass and the diff's state half, and outside the
+      restatement gate. A stated degradation rather than a bug; closing it wants a
+      per-column sequence facet with its own composition rules.
+- [ ] The x-state detail schemas document the payload half of the log's
+      forever-contract but nothing enforces them: `do_POST` validates an action's
+      shape generically, not against the sending widget's declared schema. The
+      structural fix is validation at the POST edge — the server would need the
+      version's markup to map widget id → tag, which is why it is here rather
+      than done.
+- [ ] `retirable_ids` keeps its unwindowed read of accept/reject outcomes beside
+      the state fold's retraction-floored one — sharing the fold would mean a
+      restated suggestion's accept stops licensing retirement, probably correctly,
+      but that is a behavior change to heavily-tested suggestion rules, not a
+      refactor. Decide when the corner actually arises.
 - [ ] Widget-aware suggestions: `cq-suggestion` proposes markup, so a change to a
       widget's own state (a card moved between columns, an option marked `chosen`)
       has no form yet — proposing it means re-stating the whole widget in both

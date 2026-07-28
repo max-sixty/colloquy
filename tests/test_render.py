@@ -1254,15 +1254,15 @@ def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
     page.keyboard.press("Enter")
     page.keyboard.press("ArrowRight")
     page.keyboard.press("Enter")
-    expect(page.locator("#card-importer")).to_have_attribute("data-cq-awaiting", "")
-    expect(page.locator("#card-notes")).not_to_have_attribute("data-cq-awaiting", "")
+    expect(page.locator("#card-importer")).to_have_attribute("data-cq-pending", "1")
+    expect(page.locator("#card-notes")).not_to_have_attribute("data-cq-pending", "1")
 
     # A fresh tab reads the same fact from replay alone, and paints it.
     second, second_errors = open_page(browser, url)
-    expect(second.locator("#card-importer")).to_have_attribute("data-cq-awaiting", "")
+    expect(second.locator("#card-importer")).to_have_attribute("data-cq-pending", "1")
     assert (
         second.locator("#card-importer").evaluate("el => getComputedStyle(el).outlineStyle")
-        == "dashed"
+        == "solid"
     )
 
     # The honoring version authors the card where the reviewer put it; replay
@@ -1277,7 +1277,7 @@ def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
     expect(third.locator("#col-done #card-importer")).to_be_visible()
     # Absence only counts once replay has decided every action.
     third.wait_for_function("() => document.body.dataset.cqApplied === '1'")
-    expect(third.locator("#card-importer")).not_to_have_attribute("data-cq-awaiting", "")
+    expect(third.locator("#card-importer")).not_to_have_attribute("data-cq-pending", "1")
 
     assert errors == [] and second_errors == [] and third_errors == []
     for tab in (page, second, third):
@@ -2915,6 +2915,140 @@ def test_a_retraction_outlives_the_version_that_made_it(browser, serve):
     )
     assert result.exit_code != 0
     assert "v2 already took that back" in result.output
+
+
+_CARD = '<cq-card id="card-x"><strong>Guard the session delete</strong> One line.</cq-card>'
+
+
+def _card_done(html):
+    """The journey page with its card written in Done — the honoring of a
+    recorded drag, or the author's own relocation."""
+    return html.replace(
+        f'    {_CARD}\n  </cq-column>\n  <cq-column id="col-done" label="Done"></cq-column>',
+        f'  </cq-column>\n  <cq-column id="col-done" label="Done">{_CARD}</cq-column>',
+    )
+
+
+def test_a_decision_not_yet_honored_wears_the_pending_mark(browser, serve):
+    """One pass, every widget alike: a decided-and-unhonored state wears
+    data-cq-pending, driven by the registry's x-state rather than remembered per
+    widget — choose had its mark, edit its tint, and move had nothing, which is
+    how a dragged card's fate stayed invisible once the toast faded. The mark
+    clears the moment a version carries the decision, and the diff stays quiet
+    about an honored move: the reviewer's own drag is not news to them."""
+    page, errors = open_page(browser, serve(JOURNEY_V1))
+
+    # A real drag — the pointer path, where the gesture gate and the poll meet.
+    grip = page.locator("#card-x .cq-grip").bounding_box()
+    dest = page.locator("#col-done").bounding_box()
+    page.mouse.move(grip["x"] + grip["width"] / 2, grip["y"] + grip["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(dest["x"] + dest["width"] / 2, dest["y"] + dest["height"] / 2, steps=15)
+    page.mouse.up()
+    expect(page.locator("#card-x[data-cq-pending]")).to_have_count(1)
+
+    draft = page.locator("#draft-ops")
+    draft.locator(".cq-draft-body").dblclick()
+    draft.locator("textarea").fill(DRAFT_EDITED)
+    draft.get_by_role("button", name="Save").click()
+    expect(page.locator("#draft-ops[data-cq-pending]")).to_have_count(1)
+
+    # Both actions must be in the log before the honoring version publishes.
+    d = serve.page_dir
+    deadline = time.time() + 5
+    while (d / "comments.jsonl").read_text().count('"kind": "action"') < 2:
+        assert time.time() < deadline, "the actions never reached the log"
+        time.sleep(0.05)
+
+    _publish(d, 2, _card_done(_draft_says(JOURNEY_V2, DRAFT_EDITED)), "honors the move and the edit")
+    page.wait_for_url("**/v2.html", timeout=15000)
+    page.wait_for_function("() => document.querySelector('.cq-banner') !== null")
+    # A poll has run once the status text resolves, so the pending pass has too.
+    page.wait_for_function(
+        "() => !document.querySelector('.cq-status-text').textContent.startsWith('Connecting')"
+    )
+    expect(page.locator("[data-cq-pending]")).to_have_count(0)
+
+    # The diff's state half is quiet about the honored move: base state is the
+    # base markup plus the fold as of it, which already has the card in Done.
+    page.get_by_role("button", name=re.compile("Δ")).click()
+    page.wait_for_function("() => document.querySelector('.cq-banner .cq-btn.on') !== null")
+    assert not page.evaluate(
+        "document.getElementById('card-x').classList.contains('cq-ins-block')"
+    ), "the reviewer's own honored drag marked as a change"
+    assert errors == []
+    page.close()
+
+
+def test_the_diff_marks_a_card_the_author_relocated(browser, serve):
+    """A pure state change has no text of its own, so the content diff was blind
+    to it: a card in a new column read as nothing changed. The state half
+    compares declared facets, so the author moving a card between versions —
+    with no reviewer action behind it — marks the card itself. The card alone:
+    an id'd element nested inside it rode along rather than changing columns,
+    and marking it too would double-tint one move."""
+    noted = _CARD.replace("</cq-card>", '<p id="card-x-note">A nested aside.</p></cq-card>')
+    v1 = JOURNEY_V1.replace(_CARD, noted)
+    url = serve(v1)
+    d = serve.page_dir
+    _publish(d, 2, _card_done(JOURNEY_V1).replace(_CARD, noted), "moved the card to Done")
+    page, errors = open_page(browser, url.replace("v1.html", "v2.html"))
+    page.get_by_role("button", name=re.compile("Δ")).click()
+    page.wait_for_function(
+        "() => document.getElementById('card-x').classList.contains('cq-ins-block')"
+    )
+    assert not page.evaluate(
+        "document.getElementById('card-x-note').classList.contains('cq-ins-block')"
+    ), "the card's passenger marked as its own move"
+    assert errors == []
+    page.close()
+
+
+SUGGEST_BLOCK = (
+    '<cq-suggestion id="sug-fix" resolves="c1">'
+    '<cq-old><p id="old-claim">It is not online.</p></cq-old>'
+    "<cq-new><p>It takes a minute of downtime.</p></cq-new>"
+    "</cq-suggestion>"
+)
+
+
+def test_accepting_a_suggestion_resolves_its_thread_in_one_event(browser, serve):
+    """Accepting answers the thread the change was written for, and the answer
+    rides the accept itself — the wrapper holding the `resolves` mapping is
+    retired by the honoring version, and a second POST could fail alone, leaving
+    the outcome and the resolution disagreeing with no repair path. One event,
+    read by both thread builders."""
+    url = serve(JOURNEY_V1.replace('<h2 id="notes">', SUGGEST_BLOCK + '<h2 id="notes">'))
+    d = serve.page_dir
+    interact.append_event(d, {"kind": "comment", "id": "c1", "author": "user", "version": 1,
+                              "text": "does this take downtime?"})
+    page, errors = open_page(browser, url)
+    page.get_by_role("button", name=re.compile("^Accept the suggested change")).click()
+    page.get_by_role("button", name=re.compile("^Comments")).click()
+    expect(page.locator(".cq-details summary")).to_have_text("Resolved (1)")
+    events = [json.loads(line) for line in (d / "comments.jsonl").read_text().splitlines()]
+    accept = next(e for e in events if e.get("kind") == "action")
+    assert accept["action"] == "accept" and accept["detail"] == {"resolves": "c1"}
+    assert not any(e.get("kind") == "resolve" for e in events)
+    assert errors == []
+    page.close()
+
+
+def test_the_help_overlay_answers_to_one_owner(browser, serve):
+    """Open or closed is state with one writer now — it was three writers and
+    two classList read-backs, the exact shape the first norm forbids. Driven by
+    real keys and a real outside click, the gestures those writers served."""
+    page, errors = open_page(browser, serve(JOURNEY_V1))
+    page.keyboard.press("?")
+    expect(page.locator(".cq-help")).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(page.locator(".cq-help")).to_be_hidden()
+    page.keyboard.press("?")
+    expect(page.locator(".cq-help")).to_be_visible()
+    page.mouse.click(300, 600)
+    expect(page.locator(".cq-help")).to_be_hidden()
+    assert errors == []
+    page.close()
 
 
 @pytest.fixture(scope="module")

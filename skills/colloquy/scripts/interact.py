@@ -19,7 +19,9 @@ A page directory holds:
                          browser.
     colloquy.js          the runtime (widget layer + comment layer), served at /colloquy.js
     theme.css            tokens, element styles, class idioms, element-widget CSS
-    registry.json        the widget vocabulary: JSON Schema per cq-* tag, plus $idioms
+    registry.json        the widget vocabulary: JSON Schema per cq-* tag, plus $idioms —
+                         and the page's vocabulary stamp ($events, x-state): the one
+                         statement of what this page's vendored runtime speaks
     widgets/             one ES module per upgraded widget (cq-ref.js, cq-diagram.js)
     vendor/              vendored third-party assets (mermaid.min.js, sortable.esm.js)
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
@@ -81,6 +83,13 @@ Schema has no vocabulary for rides in x- keywords:
     x-verbatim  true when an upgraded element's body reaches the reader as its own
                 words. Otherwise a module may render anything in place of them, so
                 `comment` treats the element as opaque and won't quote through it.
+    x-state     the widget's action verbs: each verb's detail schema, its fold
+                unit, and the record form its state takes in markup. Every
+                applyAction is absolute, so the reviewer's standing state is a
+                fold — the last surviving action per unit — and one declaration
+                drives check's state gate, the record-lag report, the runtime's
+                pending mark, and the diff's state half (see $state in the
+                registry).
     x-example   one authored example, printed by `catalog`
 
 Event kinds: comment (optional anchor {section, quote, and the neighbouring
@@ -90,7 +99,8 @@ resolve (parent=id), done (user sign-off; the banner offers it only on a page
 declaring <meta name="cq-review" content="sign-off">), action (user; a widget reporting the
 user editing the document through it — widget=element id, action=verb, detail
 per widget, version the edit was made against), note (claude; per-version
-changelog). The server stamps every browser-posted event author=user;
+changelog, carrying `restated`: the element ids whose decisions the publishing
+version took back). The server stamps every browser-posted event author=user;
 `comment`/`reply`/`note` stamp author=claude. A Claude comment or reply may carry widget
 markup — both validate it against the vendored registry, the discussion-side analog of
 `check`; user comments stay plain text.
@@ -251,7 +261,10 @@ def read_events(page_dir: Path) -> list:
 def build_threads(events: list) -> dict:
     """Comment threads by root id: {"root", "msgs", "resolved"}. A reply or
     resolve names its parent, which may itself be a reply, so each walks up to
-    the comment that roots it."""
+    the comment that roots it. An `accept` action carrying `resolves` settles
+    the thread its suggestion answered — snapshotted into the action at decision
+    time, because the honoring version retires the wrapper that held the
+    mapping, and one atomic event can't half-arrive the way a second POST can."""
     threads = {
         e["id"]: {"root": e, "msgs": [e], "resolved": False}
         for e in events
@@ -259,6 +272,11 @@ def build_threads(events: list) -> dict:
     }
     index = {e["id"]: e for e in events if "id" in e}
     for e in events:
+        if e.get("kind") == "action" and e.get("action") == "accept":
+            answered = threads.get((e.get("detail") or {}).get("resolves"))
+            if answered:
+                answered["resolved"] = True
+            continue
         if e.get("kind") not in ("reply", "resolve"):
             continue
         cur = e
@@ -544,7 +562,22 @@ def layer_dirs() -> list:
     return [ASSETS, config_home(), Path.cwd() / ".claude" / "colloquy"]
 
 
-def cmd_init(page_dir: Path) -> None:
+def cmd_init(page_dir: Path, retire_vocabulary: bool = False) -> None:
+    # Re-vendoring is the one moment a page's vocabulary changes hands, so it is
+    # where drift has to be caught: an applyAction ignores a verb it doesn't
+    # know, silently, on the first reload — the lost-decision bug reintroduced
+    # through vocabulary drift instead of version-scoping. The log can't be
+    # migrated (it is append-only, seq is the line number, and a retired verb
+    # has no successor to map to), so the choice is the human's: keep the page
+    # on the layer that speaks its log, or retire that vocabulary explicitly.
+    gaps = vocabulary_gaps(page_dir)
+    if gaps and not retire_vocabulary:
+        sys.exit(
+            "this page's log holds vocabulary the incoming layer no longer speaks:\n"
+            + "\n".join(f"  - {g}" for g in gaps)
+            + "\nre-vendoring would silently stop these replaying — the reviewer's"
+            " recorded decisions among them. Pass --retire-vocabulary to proceed anyway."
+        )
     (page_dir / "versions").mkdir(parents=True, exist_ok=True)
     for stray in page_dir.glob("*.tmp"):  # a killed writer's write_json leftovers
         stray.unlink()
@@ -802,18 +835,27 @@ def cmd_note(page_dir: Path, version: int, text) -> None:
     # attribute is how the author says it while writing the version — beside the
     # words they rewrote, where it can't be forgotten — and the log is where it
     # has to live, because the retraction outlives the version declaring it and
-    # no later version should have to repeat it (see retractions).
+    # no later version should have to repeat it (see retractions). It rides the
+    # note itself rather than a second event: `note` is one act, and two appends
+    # can be torn by a crash into a retraction for a version that never published.
     parser = _StructParser()
     parser.feed((page_dir / "versions" / name).read_text(encoding="utf-8"))
     parser.close()
     retracts = sorted(parser.restated)
+    if retracts and "restated" not in vendored_event_fields(page_dir).get("note", ()):
+        # The page's vendored runtime reads retractions off the note's `restated`
+        # field; a layer that doesn't declare the field would drop it silently and
+        # replay the retracted decision back over the rewrite, in front of the
+        # reviewer. The bin shim always runs the newest CLI against pages vendored
+        # at any age, so the write site is the one place this can be caught.
+        sys.exit(
+            "this page's vendored layer predates `restated` on notes, so its runtime "
+            "would silently drop the retraction — run `init` to re-vendor, then note again"
+        )
+    event = {"kind": "note", "author": "claude", "version": version, "text": read_text_arg(text)}
     if retracts:
-        append_event(page_dir, {"kind": "restate", "author": "claude",
-                                "version": version, "widgets": retracts})
-    event = append_event(
-        page_dir, {"kind": "note", "author": "claude", "version": version, "text": read_text_arg(text)}
-    )
-    print(json.dumps(event, ensure_ascii=False))
+        event["restated"] = retracts
+    print(json.dumps(append_event(page_dir, event), ensure_ascii=False))
 
 
 def cmd_events(page_dir: Path, after: int) -> None:
@@ -843,16 +885,19 @@ def cmd_export(page_dir: Path) -> None:
     # is a version taking one back, which is the same understatement the other
     # way round — an edit shown as final that a later version overruled.
     # Widget-agnostic rendering: verb + detail pairs, against the version edited.
-    edits = [e for e in events if e.get("kind") in ("action", "restate")]
+    edits = [
+        e for e in events
+        if e.get("kind") == "action" or (e.get("kind") == "note" and e.get("restated"))
+    ]
     if edits:
         print("\n### Edits\n")
         for e in edits:
-            if e.get("kind") == "restate":
-                for wid in e.get("widgets", []):
+            if e.get("kind") == "note":
+                for wid in e.get("restated", []):
                     print(f"- `{wid}`: rewritten by v{e.get('version')}, retracting what was decided on it")
                 continue
             detail = " ".join(f"{k}={v}" for k, v in (e.get("detail") or {}).items())
-            verb = f"{e.get('action')} {detail}".strip()  # accept/reject carry no detail
+            verb = f"{e.get('action')} {detail}".strip()  # a bare reject carries no detail
             print(f"- `{e.get('widget')}`: {verb} (on v{e.get('version')})")
 
     threads = build_threads(events)
@@ -876,6 +921,15 @@ def cmd_export(page_dir: Path) -> None:
         if e.get("kind") == "done":
             print(f"Approved at {e.get('ts', '?')}.")
             break
+
+    # To stderr — stdout is the artifact. Export is a review's closing act, and
+    # the record debt it reports here is about to stop being fixable.
+    published = published_versions(page_dir)
+    registry = load_registry(page_dir)
+    if published and registry:
+        html = (page_dir / "versions" / published[-1]).read_text(encoding="utf-8")
+        for line in record_lag(html, events, registry):
+            print(f"record behind the log — {line}", file=sys.stderr)
 
 
 CATALOG_PREAMBLE = """\
@@ -907,6 +961,10 @@ def cmd_catalog(page_dir: Path) -> None:
     if restated:
         print("\n# `restated` — the one attribute that spans widgets; read it before revising one.\n")
         print(json.dumps(restated, indent=2, ensure_ascii=False))
+    state = reg.get("$state")
+    if state:
+        print("\n# x-state — how a widget's action verbs and their record forms are declared.\n")
+        print(json.dumps(state, indent=2, ensure_ascii=False))
     idioms = reg.get("$idioms")
     if idioms:
         print("\n# Theme idioms — shapes the theme styles directly; no registry entry, no JS.\n")
@@ -1666,6 +1724,71 @@ def load_registry(page_dir: Path):
     return {tag: entry for tag, entry in reg.items() if tag.startswith("cq-")}
 
 
+# ---------- the vocabulary stamp ----------
+# The registry vendored into a page is also that page's statement of what its
+# runtime speaks: $events names the event kinds and the fields each carries,
+# x-state (per widget) the action verbs. Nothing else on disk says so, and the
+# two drift directions are both silent without it — a new CLI writing a shape an
+# old runtime drops (`note` guards that at the write site), and a re-vendor
+# retiring a verb the log still holds, which would no-op the reviewer's recorded
+# decisions on the next reload (`init` guards that). A registry with no $events
+# at all *is* a statement too: it predates the stamp, and the pre-stamp
+# vocabulary is exactly what such a layer reads.
+
+
+def vendored_event_fields(page_dir: Path) -> dict:
+    """kind → the fields the page's vendored runtime reads on it. A stampless
+    registry is the pre-stamp vocabulary: plain notes, no `restated` field."""
+    reg = read_json(page_dir / "registry.json") or {}
+    return (reg.get("$events") or {}).get("kinds") or {}
+
+
+def declared_verbs(registry: dict) -> set:
+    """Every action verb the layer's widgets declare (x-state), across tags."""
+    return {
+        verb
+        for entry in (registry or {}).values()
+        if isinstance(entry, dict)
+        for verb in (entry.get("x-state") or {})
+    }
+
+
+def vocabulary_gaps(page_dir: Path) -> list:
+    """What the page's log says that the *incoming* layer no longer speaks:
+    event kinds with no $events entry, action verbs with no x-state declaration.
+    Empty for a fresh page. Counted, because the number is the cost — each is a
+    recorded event that would never replay again."""
+    events = read_events(page_dir)
+    if not events:
+        return []
+    incoming = {}
+    for layer in layer_dirs():
+        reg = read_json(layer / "registry.json")
+        if reg is not None:
+            incoming = reg
+    # A stampless incoming registry (a user or project overlay predating the
+    # stamp) is the pre-stamp vocabulary, exactly as the note-side bootstrap
+    # reads a stampless page — not an empty one, which would count every plain
+    # comment as a gap and refuse with nonsense.
+    if "$events" in incoming:
+        kinds = set((incoming.get("$events") or {}).get("kinds") or {})
+        verbs = declared_verbs(incoming)
+    else:
+        kinds = {"comment", "reply", "resolve", "done", "action", "note", "restate"}
+        verbs = {"choose", "move", "edit", "accept", "reject"}
+    missing = {}
+    for e in events:
+        kind = e.get("kind")
+        if kind not in kinds:
+            key = f"kind `{kind}`"
+        elif kind == "action" and e.get("action") not in verbs:
+            key = f"verb `{e.get('action')}`"
+        else:
+            continue
+        missing[key] = missing.get(key, 0) + 1
+    return [f"{n} event{'s' if n != 1 else ''} of {key}" for key, n in sorted(missing.items())]
+
+
 def widget_errors(cq_elements: list, registry: dict) -> list:
     """Validate parsed cq-* elements against the registry: schema over the
     attribute instance, x-parent nesting, and the x-content model."""
@@ -1802,21 +1925,142 @@ def action_subjects(event: dict, byid: dict, now: dict, registry: dict) -> list:
     return leaves or [widget]
 
 
-def retractions(events: list) -> dict:
+def retractions(events: list, upto=None) -> dict:
     """id → the version that last took back what was recorded on it.
 
     A version declares a rewrite with `restated` in its markup and `note` records
-    it here, because the declaration belongs to the one version that rewrote the
-    words and a retraction has to outlive it. Left in the markup, the version
-    after would have to repeat the attribute to keep the retraction standing —
-    the hand-copying this whole design exists to remove, and silently
-    resurrecting a decision the moment someone forgot."""
+    it here, on the note event itself, because the declaration belongs to the one
+    version that rewrote the words and a retraction has to outlive it. Left in
+    the markup, the version after would have to repeat the attribute to keep the
+    retraction standing — the hand-copying this whole design exists to remove,
+    and silently resurrecting a decision the moment someone forgot.
+    `upto` windows the reading the way the JS twin's retractionFloors(upto)
+    does — filter, then max — so an id retracted both early and late keeps its
+    early floor inside the window instead of vanishing with the late one."""
     at = {}
     for e in events:
-        if e.get("kind") == "restate":
-            for wid in e.get("widgets", []):
+        if e.get("kind") == "note" and (upto is None or e.get("version", 0) <= upto):
+            for wid in e.get("restated", []):
                 at[wid] = max(at.get(wid, 0), e.get("version", 0))
     return at
+
+
+def action_rests_on(event: dict, spk: dict) -> list:
+    """The runtime's restsOn, read the same way here: the sending widget plus
+    every detail id it contains. This is the one key space for liveness — fold
+    survival, retraction floors, and the earning of `restated` all go through
+    it, in both runtimes — while `action_subjects` stays the words gate's finer,
+    leaf-keyed view of the same containment. Two views, one containment test;
+    a third keying would fork the JS/Python twin a third way."""
+    widget = event.get("widget")
+    parts = [
+        v for v in (event.get("detail") or {}).values()
+        if isinstance(v, str) and widget in spk.get(v, EMPTY).within
+    ]
+    return [widget, *parts]
+
+
+# A verb with no declared record form (accept/reject — the honoring version
+# retires the wrapper, so there is no state attribute to compare) has no facet.
+NO_RECORD = object()
+
+
+def state_fold(events: list, byid: dict, spk: dict, registry: dict, upto, floors: dict) -> dict:
+    """unit id → (action, spec): the last surviving action per declared unit.
+
+    The registry's x-state names each verb's fold unit — the widget itself for
+    a verb absolute across the group (`choose` toggles every sibling, so
+    per-option folding would double-count superseded picks), the detail-named
+    element for one absolute per part (`move` places one card). Absolute
+    placements are what make this a fold at all: the last surviving action per
+    unit *is* the state, one linear scan, no replay simulation. Surviving means
+    not under a retraction floor keyed on what the action rests on. `upto` is
+    the consumer's window — the gate folds to the last published version (an
+    action made later belongs to no comparison of these two files), a lag
+    report to everything recorded (None)."""
+    fold = {}
+    for e in events:
+        if e.get("kind") != "action":
+            continue
+        if upto is not None and e.get("version", 0) > upto:
+            continue
+        rec = byid.get(e.get("widget"))
+        spec = (registry.get(rec["tag"], {}).get("x-state") or {}).get(e.get("action")) if rec else None
+        if not spec:
+            continue
+        if any(floors.get(i, 0) > e.get("version", 0) for i in action_rests_on(e, spk)):
+            continue
+        unit = (
+            e.get("widget")
+            if spec.get("unit", "widget") == "widget"
+            else (e.get("detail") or {}).get(spec["unit"])
+        )
+        if isinstance(unit, str):
+            fold[unit] = (e, spec)
+    return fold
+
+
+def markup_facet(unit: str, spec: dict, byid: dict, spk: dict):
+    """What one version's markup shows for a unit's declared record form: the
+    element inside it carrying the attribute, the declared container enclosing
+    it, or its body's words — None where the markup shows nothing (no pick)."""
+    record = spec.get("record")
+    if not record:
+        return NO_RECORD
+    if record["kind"] == "attribute":
+        hits = [
+            oid for oid, orec in byid.items()
+            if record["attr"] in orec["attrs"] and unit in spk.get(oid, EMPTY).within[:-1]
+        ]
+        return hits[0] if hits else None
+    if record["kind"] == "position":
+        enclosing = [
+            i for i in spk.get(unit, EMPTY).within[:-1]
+            if byid.get(i, {}).get("tag") == record["within"]
+        ]
+        return enclosing[-1] if enclosing else None
+    return " ".join(spk.get(unit, EMPTY).words.split())  # "body"
+
+
+def folded_facet(e: dict, spec: dict):
+    """The state the folded action left: the detail field the record declares,
+    collapsed the way `spoken` collapses where it compares against words."""
+    record = spec.get("record")
+    if not record:
+        return NO_RECORD
+    value = (e.get("detail") or {}).get(record["value"])
+    if record["kind"] == "body":
+        return " ".join(str(value).split())
+    return value
+
+
+def record_lag(html: str, events: list, registry: dict) -> list:
+    """Units whose markup lags the reviewer's standing state — the record debt a
+    log-less reader would miss. Advice, never errors: a version is free to stay
+    silent (replay resolves it), but SKILL.md's record obligation needs a
+    feedback loop, and a finished review's final version is the page that has
+    to read right without the log."""
+    if not registry:
+        return []
+    parser = _StructParser()
+    parser.feed(html)
+    parser.close()
+    byid = {r["attrs"]["id"]: r for r in parser.cq_elements if r["attrs"].get("id")}
+    spk = spoken(html, registry)
+    fold = state_fold(events, byid, spk, registry, None, retractions(events))
+    lag = []
+    for unit in sorted(fold):
+        e, spec = fold[unit]
+        if unit not in byid:
+            continue
+        f_cur = markup_facet(unit, spec, byid, spk)
+        if f_cur is NO_RECORD or f_cur == folded_facet(e, spec):
+            continue
+        lag.append(
+            f"`{unit}`: the log records {e['action']} → {folded_facet(e, spec)!r}; "
+            f"the markup still shows {f_cur!r}"
+        )
+    return lag
 
 
 def suggestion_outcomes(events: list, version=None) -> dict:
@@ -1835,7 +2079,7 @@ def suggestion_outcomes(events: list, version=None) -> dict:
     }
 
 
-def restatement_errors(cur, was: dict, now: dict, events: list, prev_num: int, registry: dict) -> list:
+def restatement_errors(cur, prev, was: dict, now: dict, events: list, prev_num: int, registry: dict) -> list:
     """The other half of the id-survival rule. That one keeps a republish from
     dropping the anchors a reviewer hung on the page; this one keeps it from
     dropping the decisions they recorded on it. CLAUDE.md carries why the log
@@ -1853,27 +2097,71 @@ def restatement_errors(cur, was: dict, now: dict, events: list, prev_num: int, r
     what a decision is about. Re-indenting a draft, marking the picked option
     `chosen`, or relocating a card the reviewer already moved is not a revision,
     and neither is writing their own edit back — a version that says what they
-    said is agreeing with them."""
+    said is agreeing with them.
+
+    Words are one divergence kind; declared state is the other. For each verb
+    the registry declares (x-state), the fold gives the reviewer's standing
+    state per unit, and a version whose markup actively changes that unit's
+    record away from both the previous version's and the fold is refused the
+    same way a silent rewrite of words is. Writing the folded state is the
+    state-level echo (honoring); re-emitting the previous version's state is
+    blessed silence, which replay resolves; a unit with no surviving folded
+    action is exempt — never decided, or retracted back to the author. And
+    `restated` is earned by either divergence kind: a words-unchanged
+    relocation earns it at the unit even though no leaf's words moved."""
     errors = []
     declared = cur.restated
     # Retractions up to prev — never this version's own, which is what it is
     # here to declare, so re-checking a published version reaches the same
     # verdict as checking it did.
-    taken_back = {
-        wid: v for wid, v in retractions(events).items() if v <= prev_num
-    }
+    taken_back = retractions(events, prev_num)
     byid = {r["attrs"]["id"]: r for r in cur.cq_elements if r["attrs"].get("id")}
 
     decided = {}  # subject id → the actions resting on it
     for e in events:
         if e.get("kind") != "action" or not e.get("widget"):
             continue
+        # One key space for liveness: an action is dead when any id it rests on
+        # was floored — replay skips it by this same containment, so a finer,
+        # leaf-keyed floor here would keep alive a decision the browser has
+        # already dropped (a group-level retraction never names the option the
+        # pick rested on, and the pick must die with the group all the same).
+        if any(taken_back.get(i, 0) > e.get("version", 0) for i in action_rests_on(e, now)):
+            continue
         for subject in action_subjects(e, byid, now, registry):
             # Only what the reviewer had recorded by the time they were looking
-            # at prev, and only what no earlier version has already taken back.
-            floor = taken_back.get(subject, 0)
-            if subject in was and floor <= e.get("version", 0) <= prev_num:
+            # at prev.
+            if subject in was and e.get("version", 0) <= prev_num:
                 decided.setdefault(subject, []).append(e)
+
+    # The state gate, beside the words gate: one gate, two divergence kinds.
+    prev_byid = {r["attrs"]["id"]: r for r in prev.cq_elements if r["attrs"].get("id")}
+    fold = state_fold(events, byid, now, registry, prev_num, taken_back)
+    facet_earned = set()
+    for unit in sorted(fold):
+        e, spec = fold[unit]
+        rec = byid.get(unit)
+        # A unit either version lacks is id-survival's business, not this gate's.
+        if rec is None or unit not in prev_byid:
+            continue
+        f_cur = markup_facet(unit, spec, byid, now)
+        f_prev = markup_facet(unit, spec, prev_byid, was)
+        if f_cur is NO_RECORD or f_cur == f_prev:
+            continue  # no record form, or no active change — replay resolves silence
+        f_fold = folded_facet(e, spec)
+        if f_cur == f_fold:
+            continue  # writing the folded state is honoring: the state-level echo
+        if unit in declared:
+            facet_earned.add(unit)
+            continue
+        where = f"<{rec['tag']} id={unit!r}> (line {rec['line']})"
+        errors.append(
+            f"{where}: its state changed under the reviewer's decision — the markup "
+            f"shows {f_cur!r} where their {e['action']} (on v{e.get('version', 0)}) "
+            f"left {f_fold!r}. Their decision is what the page shows, so this state "
+            f"would never reach them — add `restated` to retract it and ask again, "
+            f"or leave it as v{prev_num} had it."
+        )
 
     for sid, rec in sorted(byid.items()):
         live, restated = decided.get(sid, []), sid in declared
@@ -1893,7 +2181,10 @@ def restatement_errors(cur, was: dict, now: dict, events: list, prev_num: int, r
         said = now.get(sid, EMPTY).words
         changed = sid in was and said != was[sid].words and said not in echoed
         where = f"<{rec['tag']} id={sid!r}> (line {rec['line']})"
-        if restated and not (live and changed):
+        # `restated` is earned by either divergence kind — words on the leaf, or
+        # declared state at the unit — else a words-unchanged relocation would
+        # be refused both with the attribute and without it.
+        if restated and not ((live and changed) or sid in facet_earned):
             # An already-retracted widget is the case an author lands on by being
             # careful — carrying the attribute forward the way state used to have
             # to be carried — so it gets its own answer rather than the
@@ -2014,14 +2305,20 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
         )
     )
 
-    idx = versions.index(name)
-    # The first version has no predecessor, so it stands against an empty one:
-    # nothing of its can have been dropped and nothing decided, which is exactly
-    # what makes a `restated` on it an error like any other unearned one.
+    # "Previous" is the last *published* version before this one — the page the
+    # reviewer was actually looking at, which is what `comment` anchors against
+    # and what the browser diffs against. The file before it on disk may be an
+    # abandoned draft no note ever released: ids nobody saw, words nobody could
+    # have decided on. The first published version has no predecessor, so it
+    # stands against an empty one: nothing of its can have been dropped and
+    # nothing decided, which is exactly what makes a `restated` on it an error
+    # like any other unearned one.
+    noted = {e.get("version") for e in events if e.get("kind") == "note"}
+    earlier = [v for v in versions if version_num(v) < version_num(name) and version_num(v) in noted]
     prev, prev_num, was = _StructParser(), 0, {}
     prev.close()
-    if idx > 0:
-        prev_name = versions[idx - 1]
+    if earlier:
+        prev_name = earlier[-1]
         prev_html = (page_dir / "versions" / prev_name).read_text(encoding="utf-8")
         prev, prev_num = _StructParser(), version_num(prev_name)
         prev.feed(prev_html)
@@ -2039,7 +2336,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     # And the decisions recorded on the ids that stayed.
     errors.extend(
         restatement_errors(
-            parser, was, spoken(html, registry or {}), events, prev_num, registry or {}
+            parser, prev, was, spoken(html, registry or {}), events, prev_num, registry or {}
         )
     )
 
@@ -2062,6 +2359,12 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
         f"✓ {name}: parses, widgets validate, one module script + theme link, "
         f"ids and decisions carried over, nothing overflows the {column}px column"
     )
+    # Advice, never a gate: silence is blessed and replay resolves it, but a
+    # log-less reader (a printout, the export's audience) sees only the markup,
+    # so say where it lags the log. Loudest at the end of a review — the final
+    # version is the page that must read right without the log.
+    for line in record_lag(html, events, registry or {}):
+        print(f"  · record behind the log — {line}")
     # Render only what passed the static half: an unparseable page would drown
     # the browser's report in consequences of what the lint already named.
     return render_check(page_dir, name) if render else 0
@@ -2315,12 +2618,20 @@ def cli() -> None:
 
 @cli.command()
 @click.argument("dir")
-def init(dir: str) -> None:
+@click.option(
+    "--retire-vocabulary",
+    is_flag=True,
+    help="re-vendor even though the log holds event kinds or verbs the incoming "
+    "layer no longer speaks; those events will never replay again",
+)
+def init(dir: str, retire_vocabulary: bool) -> None:
     """Create the page directory layout and vendor the widget layer into it.
 
     Re-running it is the explicit re-vendor for a live page; note the re-vendor
-    in the next version's changelog."""
-    cmd_init(resolve_dir(dir, must_exist=False))
+    in the next version's changelog. Refuses when the page's log was recorded in
+    a vocabulary the incoming layer no longer speaks (--retire-vocabulary
+    overrides, discarding those events' replay for good)."""
+    cmd_init(resolve_dir(dir, must_exist=False), retire_vocabulary)
 
 
 @cli.command()

@@ -184,7 +184,19 @@ belong to the focused control, and the global table (`KEYS`) is also the source 
 overlay, so help can't drift from behaviour.
 
 An `applyAction` implementation states an absolute placement, never a relative mutation,
-because the poll replays it and the sender's own action must be a no-op.
+because the poll replays it and the sender's own action must be a no-op. The verb, its
+detail schema, its fold unit, and its record form are declared in the registry
+(`x-state`), not known privately to the module: absoluteness is what makes the
+reviewer's standing state a fold over the log, and the declaration is what lets four
+consumers read it — check's state gate, the record-lag report, the runtime's uniform
+decided-but-unhonored mark, and the diff's state half — without any of them being
+taught a widget by name. The registry doubles as the page's vocabulary stamp
+(`$events`): the log is append-only and its verbs are a forever-contract, so `note`
+refuses to write a shape the page's vendored layer doesn't read, and `init` refuses to
+re-vendor over a log recorded in vocabulary the incoming layer no longer speaks — the
+lost-decision bug's third door, after version-scoping and hand-copying: fifteen of
+this page's own `decide` events fell silent when the verb was retired, and only the
+stamp makes that a refusal instead of a quiet no-op.
 
 ### The chrome's rules stay inside the chrome
 
@@ -217,14 +229,22 @@ it. A version that says nothing about a decision leaves it standing. The cost la
 where the old design hid it — a version can't quietly revise what a reviewer acted on,
 because replay would paint their state back over the revision — so `restated` on the
 rewritten element retracts what rested on it, and `check` refuses a bare rewrite and an
-unearned `restated` alike (`restatement_errors`). What a text diff can't see — `chosen`,
-a card's column, the state attributes that say nothing — the browser compares instead:
+unearned `restated` alike (`restatement_errors`). Divergence comes in two kinds and the
+gate reads both: words, through `spoken`, and declared state, through the fold — every
+`applyAction` is absolute, so the reviewer's standing state is the last surviving
+action per unit the registry's `x-state` declares, one linear scan and no replay
+simulation. Writing the folded state is honoring; re-emitting the previous version's is
+blessed silence; a unit with no surviving action is the author's again. And liveness
+has one key space — the sending widget plus the detail ids it contains, in both
+runtimes — or a group-level retraction floors differently in Python than in the
+browser. State the registry doesn't declare gets the browser's backstop instead:
 replay records the ids it wrote (`data-cq-replay-wrote`), and `check --render` reports
 the ones the author also changed since the previous version, so a markup assertion the
 log overrides is heard rather than silently repainted.
 
-That attribute is a declaration, not state: `note` records it as a `restate` event and
-the log carries it onward. Left in the markup it would hold for exactly one version,
+That attribute is a declaration, not state: `note` records it on the note event it
+publishes (one append — a second event could be torn from its note by a crash) and the
+log carries it onward. Left in the markup it would hold for exactly one version,
 because the version *after* a rewrite has nothing to declare, and its silence would hand
 the retracted decision straight back — the same bug, one version later.
 

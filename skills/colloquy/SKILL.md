@@ -219,7 +219,9 @@ On wake:
      (and `settled` once the decision has stopped being live), replace an accepted
      suggestion with its `cq-new` markup and a rejected one with its `cq-old`,
      keeping the old id where the passage survives — so the page reads right to
-     someone who never saw the log.
+     someone who never saw the log. `check` says where the record is behind
+     ("record behind the log", advice on a passing run), and until a version
+     carries a decision the page marks that widget as decided-and-unhonored.
 
      Declining means putting different words there — yours, or the originals
      back — and that takes `restated` on the element plus the reason in the note
@@ -244,7 +246,9 @@ On wake:
 A `done` event is sign-off — it arrives only from a page declaring it (see the
 conventions): `status <dir> idle`, don't restart `wait`, and carry the approval back
 into the main task — `export` prints the whole review as Markdown when a PR
-description wants it. A comments-only page has no terminal event; when the discussion
+description wants it. A review ending with record debt publishes one final honoring
+version first — the final version is the page that has to read right without the
+log, and `export` lists what still lags on stderr. A comments-only page has no terminal event; when the discussion
 has served its purpose, set `status idle` yourself. Either way, `stop` the server once
 the page won't be revisited.
 
@@ -299,7 +303,11 @@ shipped defaults, then the user's `~/.config/colloquy/`, then the project's
 or add widget modules, and `catalog` always reflects what this page actually has. The
 page directory is self-contained: an approved version can't change under its reviewer.
 Re-running `init` on a live page is the explicit re-vendor; note it in the next
-version's changelog.
+version's changelog. It refuses when the page's log holds event kinds or action verbs
+the incoming layer no longer speaks — those events would silently never replay again —
+and `--retire-vocabulary` is the explicit override. The same stamp guards the other
+direction: `note` refuses to write a shape the page's vendored layer doesn't read,
+and says to re-vendor first.
 
 ## When the browser can't reach the server
 

@@ -76,6 +76,15 @@ def check(d, version=None):
     return CliRunner().invoke(interact.cli, args)
 
 
+def publish(d, version=1):
+    """The note that makes a version the reviewer-seen baseline: `check`
+    compares against the last *published* version, and an action can only ever
+    be made against one the server exposed."""
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": version, "text": "published"}
+    )
+
+
 def test_init_vendors_the_layer(page_dir):
     for name in ["colloquy.js", "theme.css", "registry.json"]:
         assert (page_dir / name).is_file()
@@ -216,8 +225,10 @@ SUGGESTION = """<cq-suggestion id="sug-refill">
 
 
 def suggest(page_dir, version=2, markup=SUGGESTION):
-    """Write v1 carrying a suggestion and an unchanged v2 to check against."""
+    """Write and publish v1 carrying a suggestion, and an unchanged v2 to
+    check against."""
     (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<cq-options>", markup))
+    publish(page_dir)
     (page_dir / "versions" / f"v{version}.html").write_text(PAGE.replace("<cq-options>", markup))
 
 
@@ -298,9 +309,11 @@ def test_an_unanswered_proposal_cant_be_kept_as_settled_content(page_dir):
     result = check(page_dir, version=2)
     assert result.exit_code == 1
     assert "sug-thistle" in result.output
-    # Withdrawing it whole is fine, and so is honoring a logged accept.
+    # A refused version never published, so it is nobody's baseline: v3 stands
+    # against v1 — the page the reviewer was actually looking at — and there a
+    # whole withdrawal is fine. So is honoring a logged accept.
     (page_dir / "versions" / "v3.html").write_text(PAGE)
-    assert check(page_dir, version=3).exit_code == 1  # v3's base is v2, still self-accepted
+    assert check(page_dir, version=3).exit_code == 0
     decide(page_dir, "accept", widget="sug-thistle")
     assert check(page_dir, version=2).exit_code == 0
 
@@ -409,6 +422,7 @@ def test_check_owns_the_cq_meta_vocabulary(page_dir):
 def test_check_rejects_duplicate_ids_and_dropped_ids(page_dir):
     result = check(page_dir)
     assert result.exit_code == 0, result.output
+    publish(page_dir)
     (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace('id="backfill-first"', 'id="flag-first"')
     )
@@ -425,6 +439,7 @@ def _decided(page_dir, words):
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<h2>Plan</h2>", f'<h2>Plan</h2><cq-draft id="d1">{words}</cq-draft>')
     )
+    publish(page_dir)
     interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
                                      "widget": "d1", "action": "edit",
                                      "detail": {"text": "Cut the flag; backfill first."}})
@@ -522,6 +537,7 @@ def test_the_gate_asks_about_the_card_that_was_moved_and_not_the_board(page_dir)
         )
 
     write(1, [X, Y], [])
+    publish(page_dir)
     interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
                                      "widget": "b1", "action": "move",
                                      "detail": {"card": "card-x", "to": "c-done", "index": 0}})
@@ -584,6 +600,7 @@ def test_the_gate_reads_a_pick_the_same_way_it_reads_an_edit(page_dir):
         )
 
     write(1)
+    publish(page_dir)
     interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
                                      "widget": "g1", "action": "choose",
                                      "detail": {"option": "o-shim"}})
@@ -632,6 +649,7 @@ def test_a_cleared_pick_rests_on_the_group_that_holds_it(page_dir):
         )
 
     write(1)
+    publish(page_dir)
     interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
                                      "widget": "g1", "action": "choose",
                                      "detail": {"option": None}})
@@ -644,12 +662,182 @@ def test_a_cleared_pick_rests_on_the_group_that_holds_it(page_dir):
     assert check(page_dir, version=2).exit_code == 0
 
 
+def test_a_version_may_not_quietly_move_the_pick(page_dir):
+    """The words gate can't see `chosen` — the attribute says nothing — so this
+    is the state gate's own case: a version marking a different option than the
+    reviewer picked is overruling them as surely as a rewrite is, and says so
+    with the group's `restated` or not at all. After the retraction the state is
+    the author's again: the next version moves the pick freely, because a unit
+    with no surviving folded action is exempt — that exemption is what keeps
+    the retract-and-ask-again flow from deadlocking one version later."""
+    def write(version, a="", b="", attrs="", shim="Fastest to ship."):
+        opts = OPTIONS.format(a=a, b=b, shim=shim, stage="Table by table.")
+        (page_dir / "versions" / f"v{version}.html").write_text(
+            PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts.replace(
+                '<cq-options id="g1" choose>', f'<cq-options id="g1" choose{attrs}>'))
+        )
+
+    write(1)
+    publish(page_dir)
+    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
+                                     "widget": "g1", "action": "choose",
+                                     "detail": {"option": "o-shim"}})
+
+    # The author's markup contradicting the recorded pick, words untouched.
+    write(2, b=" chosen")
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "its state changed" in result.output
+    assert "'o-stage'" in result.output and "'o-shim'" in result.output
+
+    # Said out loud — on the group, the unit the fold keys the pick by.
+    write(2, b=" chosen", attrs=" restated")
+    assert check(page_dir, version=2).exit_code == 0, check(page_dir, version=2).output
+    result = CliRunner().invoke(
+        interact.cli, ["note", str(page_dir), "--version", "2", "--text", "moved the default"]
+    )
+    assert result.exit_code == 0, result.output
+
+    # The retraction handed the state back: v3 owns it, no ritual to repeat.
+    write(3, a=" chosen")
+    assert check(page_dir, version=3).exit_code == 0, check(page_dir, version=3).output
+
+    # And the words gate agrees the pick is dead: the group's retraction floors
+    # everything resting inside it, so rewriting the once-picked option's words
+    # is free — one key space for liveness, or the gate would demand a second
+    # `restated` for a decision the browser already dropped.
+    publish(page_dir, 3)
+    write(4, a=" chosen", shim="Fastest to ship, and the shim is ours to keep.")
+    assert check(page_dir, version=4).exit_code == 0, check(page_dir, version=4).output
+
+
+def test_check_reports_record_lag_without_erroring(page_dir):
+    """Silence is blessed — replay resolves it — but a log-less reader sees only
+    the markup, so `check` says where it lags the log, as advice on a passing
+    run. `export` says the same to stderr, where the debt stops being fixable."""
+    def write(version, a=""):
+        opts = OPTIONS.format(a=a, b="", shim="Fastest to ship.", stage="Table by table.")
+        (page_dir / "versions" / f"v{version}.html").write_text(
+            PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts)
+        )
+
+    write(1)
+    publish(page_dir)
+    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
+                                     "widget": "g1", "action": "choose",
+                                     "detail": {"option": "o-shim"}})
+    write(2)
+    result = check(page_dir, version=2)
+    assert result.exit_code == 0
+    assert "record behind the log" in result.output
+    assert "g1" in result.output and "o-shim" in result.output
+
+    # Honored, the debt is gone and so is the advice.
+    write(2, a=" chosen")
+    result = check(page_dir, version=2)
+    assert result.exit_code == 0
+    assert "record behind the log" not in result.output
+
+    result = CliRunner().invoke(interact.cli, ["export", str(page_dir)])
+    assert "record behind the log" in result.output  # CliRunner folds stderr in
+
+
+def test_an_accept_carries_its_thread_resolution(page_dir):
+    """One atomic event: the accept snapshots the thread it answers, because the
+    honoring version retires the wrapper that held the `resolves` mapping and a
+    second POST could fail alone. A reject answers nothing."""
+    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user",
+                                     "text": "cameras are flaky"})
+    interact.append_event(page_dir, {"kind": "comment", "id": "c2", "author": "user",
+                                     "text": "and the other thing"})
+    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
+                                     "widget": "sug-a", "action": "accept",
+                                     "detail": {"resolves": "c1"}})
+    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
+                                     "widget": "sug-b", "action": "reject", "detail": {}})
+    threads = interact.build_threads(interact.read_events(page_dir))
+    assert threads["c1"]["resolved"] is True
+    assert threads["c2"]["resolved"] is False
+
+
+def test_init_refuses_a_log_the_incoming_layer_no_longer_speaks(page_dir):
+    """The log is append-only and a retired verb has no successor to map to, so
+    re-vendoring over one is how recorded decisions fall silent — annabels-drafts
+    holds fifteen `decide` events today's widgets would drop on the first reload.
+    The choice is the human's, made loudly."""
+    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
+                                     "widget": "d1", "action": "decide",
+                                     "detail": {"decision": "approved"}})
+    result = CliRunner().invoke(interact.cli, ["init", str(page_dir)])
+    assert result.exit_code != 0
+    assert "no longer speaks" in result.output
+    assert "decide" in result.output
+    result = CliRunner().invoke(interact.cli, ["init", str(page_dir), "--retire-vocabulary"])
+    assert result.exit_code == 0, result.output
+
+
+def test_a_stampless_overlay_reads_as_the_pre_stamp_vocabulary(page_dir, tmp_path):
+    """A user or project overlay predating the stamp replaces registry.json
+    wholesale, so the incoming layer arrives with no $events — which means the
+    pre-stamp vocabulary, not an empty one. Plain comments pass; only genuinely
+    retired vocabulary refuses."""
+    overlay = tmp_path / ".claude" / "colloquy"
+    overlay.mkdir(parents=True)
+    reg = json.loads((page_dir / "registry.json").read_text())
+    del reg["$events"]
+    for entry in reg.values():
+        if isinstance(entry, dict):
+            entry.pop("x-state", None)
+    (overlay / "registry.json").write_text(json.dumps(reg))
+
+    interact.append_event(page_dir, {"kind": "comment", "author": "user", "text": "hm"})
+    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
+                                     "widget": "g1", "action": "choose",
+                                     "detail": {"option": "o-shim"}})
+    result = CliRunner().invoke(interact.cli, ["init", str(page_dir)])
+    assert result.exit_code == 0, result.output
+
+    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
+                                     "widget": "d1", "action": "decide",
+                                     "detail": {"decision": "approved"}})
+    result = CliRunner().invoke(interact.cli, ["init", str(page_dir)])
+    assert result.exit_code != 0
+    assert "decide" in result.output and "comment" not in result.output
+
+
+def test_note_refuses_a_restated_shape_an_old_layer_would_drop(page_dir):
+    """The bin shim runs the newest CLI against pages vendored at any age, and an
+    old runtime keys retractions off a shape it doesn't read — so the write site
+    is where the drift is caught. A stampless registry predates the stamp, and
+    the pre-stamp vocabulary is exactly what it reads: plain notes pass, a
+    retraction-carrying one is refused until `init` re-vendors."""
+    v2 = _decided(page_dir, "Ship the flag dark, then backfill.")
+    v2("Ship the flag dark, then backfill. Roll back with one flag.", attrs=" restated")
+
+    reg = json.loads((page_dir / "registry.json").read_text())
+    stamped = dict(reg)
+    del reg["$events"]
+    (page_dir / "registry.json").write_text(json.dumps(reg))
+    result = CliRunner().invoke(
+        interact.cli, ["note", str(page_dir), "--version", "2", "--text", "rewrote it"]
+    )
+    assert result.exit_code != 0
+    assert "predates" in result.output
+
+    (page_dir / "registry.json").write_text(json.dumps(stamped))
+    result = CliRunner().invoke(
+        interact.cli, ["note", str(page_dir), "--version", "2", "--text", "rewrote it"]
+    )
+    assert result.exit_code == 0, result.output
+
+
 def test_a_widget_nobody_has_touched_is_not_the_gate_s_business(page_dir):
     """The gate is about decisions, so it holds nothing against a version that
     rewrites a widget the reviewer never acted on."""
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">First words.</cq-draft>')
     )
+    publish(page_dir)
     (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">Quite different words.</cq-draft>')
     )
@@ -1045,6 +1233,7 @@ def test_settling_a_decision_drops_no_ids(page_dir):
     group = '<cq-options id="pick" choose{}><cq-option id="opt-a"{}><strong>A</strong></cq-option>'
     group += '<cq-option id="opt-b"><strong>B</strong></cq-option></cq-options>'
     (page_dir / "versions" / "v1.html").write_text(PAGE.replace("</main>", group.format("", "") + "</main>"))
+    publish(page_dir)
     (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace("</main>", group.format(" settled", " chosen") + "</main>")
     )

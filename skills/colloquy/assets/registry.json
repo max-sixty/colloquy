@@ -12,6 +12,13 @@
     "additionalProperties": false,
     "x-content": "items",
     "x-upgrade": true,
+    "x-state": {
+      "choose": {
+        "detail": {"type": "object", "properties": {"option": {"type": ["string", "null"]}}, "required": ["option"], "additionalProperties": false},
+        "unit": "widget",
+        "record": {"kind": "attribute", "attr": "chosen", "value": "option"}
+      }
+    },
     "x-example": "<cq-options id=\"nav-gear\" choose>\n  <cq-option id=\"paper-maps\" effort=\"low\" risk=\"high\">\n    <strong>Paper maps</strong> Print the route ahead of time; nothing to charge.\n  </cq-option>\n  <cq-option id=\"gps-unit\" effort=\"med\" risk=\"low\" recommended>\n    <strong>Dedicated GPS</strong> Offline maps, week-long battery, reversible choice.\n  </cq-option>\n</cq-options>"
   },
   "cq-option": {
@@ -219,6 +226,13 @@
     "additionalProperties": false,
     "x-content": "items",
     "x-upgrade": true,
+    "x-state": {
+      "move": {
+        "detail": {"type": "object", "properties": {"card": {"type": "string"}, "to": {"type": "string"}, "index": {"type": "integer", "minimum": 0}}, "required": ["card", "to", "index"], "additionalProperties": false},
+        "unit": "card",
+        "record": {"kind": "position", "within": "cq-column", "value": "to"}
+      }
+    },
     "x-example": "<cq-board id=\"feeder-board\">\n  <cq-column id=\"col-todo\" label=\"To do\">\n    <cq-card id=\"card-heater\"><strong>Heated perch</strong> Wire the south feeder.</cq-card>\n    <cq-card id=\"card-baffle\"><strong>Squirrel baffle</strong></cq-card>\n  </cq-column>\n  <cq-column id=\"col-doing\" label=\"Doing\">\n    <cq-card id=\"card-camera\"><strong>Camera mount</strong></cq-card>\n  </cq-column>\n  <cq-column id=\"col-done\" label=\"Done\"></cq-column>\n</cq-board>"
   },
   "cq-column": {
@@ -285,6 +299,16 @@
     "additionalProperties": false,
     "x-content": "items",
     "x-upgrade": true,
+    "x-state": {
+      "accept": {
+        "detail": {"type": "object", "properties": {"resolves": {"type": "string"}}, "additionalProperties": false},
+        "unit": "widget"
+      },
+      "reject": {
+        "detail": {"type": "object", "additionalProperties": false},
+        "unit": "widget"
+      }
+    },
     "x-example": "<p>Refill rules for the season:</p>\n<cq-suggestion id=\"sug-refill\">\n  <cq-old><p id=\"refill-rule\">Refill every feeder each morning.</p></cq-old>\n  <cq-new><p>Refill a feeder when its camera shows it half-empty.</p></cq-new>\n</cq-suggestion>"
   },
   "cq-old": {
@@ -323,6 +347,13 @@
     "x-content": "data",
     "x-upgrade": true,
     "x-verbatim": true,
+    "x-state": {
+      "edit": {
+        "detail": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"], "additionalProperties": false},
+        "unit": "widget",
+        "record": {"kind": "body", "value": "text"}
+      }
+    },
     "x-example": "<cq-draft id=\"note-cli\">\nAdds --dry-run to every mutating command.\n</cq-draft>"
   },
   "cq-specimen": {
@@ -338,6 +369,22 @@
     "x-says": {"label": "before"},
     "x-upgrade": false,
     "x-example": "<cq-specimen id=\"spec-gear\" label=\"next season's kit\">\n  <cq-options>\n    <cq-option id=\"sp-paper\" effort=\"low\" risk=\"high\"><strong>Paper maps</strong> Nothing to charge.</cq-option>\n    <cq-option id=\"sp-gps\" effort=\"med\" risk=\"low\" recommended><strong>Dedicated GPS</strong> Offline maps, week-long battery.</cq-option>\n  </cq-options>\n</cq-specimen>"
+  },
+  "$events": {
+    "description": "The vocabulary stamp: the event kinds this layer's runtime and CLI read, and the fields each carries beyond id/ts/author/kind/seq. Vendored with the page, it is the one statement of what that page's runtime speaks — `note` refuses to write a shape the page's vendored copy doesn't declare (an old runtime drops unknown shapes silently), and `init` refuses to re-vendor over a log recorded in kinds or verbs (x-state, per widget) the incoming layer no longer speaks, because those events would never replay again. A registry with no $events predates the stamp and is read as exactly the pre-stamp vocabulary.",
+    "kinds": {
+      "comment": ["version", "text", "anchor", "suggestion"],
+      "reply": ["parent", "version", "text"],
+      "resolve": ["parent"],
+      "done": ["version", "text"],
+      "action": ["widget", "action", "detail", "version"],
+      "note": ["version", "text", "restated"]
+    }
+  },
+  "$state": {
+    "description": "What x-state declares, once per widget with an action channel: each verb's detail schema (the payload half of the log's forever-contract), its fold unit, and the record form its state takes in markup. Every applyAction is absolute, so the reviewer's standing state is a fold — the last surviving action per unit — and one declaration drives four readers: `check`'s state gate (a version whose markup actively contradicts the fold without `restated` is refused; writing the folded state is honoring; re-emitting the previous version's state is blessed silence), the record-lag report, the runtime's decided-but-unhonored mark, and the version diff's state half.",
+    "unit": "\"widget\" for a verb absolute across the group (choose toggles every sibling), or the detail field naming the element the verb is absolute per (move's \"card\").",
+    "record": "How the state reads in markup: {kind: \"attribute\", attr, value} — the element inside the unit carrying attr, vs the detail field `value`; {kind: \"position\", within, value} — the enclosing `within` element, compared at that granularity (indexes compose across cards, so column is the whole comparison); {kind: \"body\", value} — the unit's own words. A verb with no record (accept/reject) folds for the runtime's pending mark, and retirement stays retirable_ids' business."
   },
   "$restated": {
     "description": "A boolean attribute saying this version has rewritten words a reviewer already decided on, so what they decided no longer applies and they are being asked again. It goes on the element the decision rests on — a cq-draft or cq-suggestion, or the cq-card or cq-option inside a board or group — and retracts what rested on that element alone: one rewritten card drops the moves of that card, leaving the rest of the board arranged as the reviewer left it.",
