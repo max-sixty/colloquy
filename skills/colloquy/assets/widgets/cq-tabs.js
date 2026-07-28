@@ -11,7 +11,7 @@
  * a Δ count, so a change can't hide behind an inactive tab. Unupgraded,
  * panels stack as labeled sections; authored content is never replaced, so
  * there is no failSoft. */
-import { once, keyHelp, HIDDEN } from "/colloquy.js";
+import { once, keyHelp, offer, HIDDEN } from "/colloquy.js";
 
 const TAB_KEY = "cq-tabs:";
 // Registered on first upgrade, not at import: the "?" overlay should list tab
@@ -35,9 +35,9 @@ customElements.define(
           ["Home/End", "first / last tab"],
         ]);
       }
-      const strip = document.createElement("div");
-      strip.className = "cq-tabstrip cq-ui"; // UI, not content: anchoring skips it
-      strip.dataset.cqGen = "1"; // and the version diff ignores it
+      // The strip is a thing to work, and its buttons ride inside it: what each says
+      // is a panel's own label, which the theme puts back on the panel in print.
+      const strip = offer("div", "cq-tabstrip");
       strip.setAttribute("role", "tablist");
       for (const panel of panels) {
         const btn = document.createElement("button");

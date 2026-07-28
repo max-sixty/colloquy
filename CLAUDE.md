@@ -183,12 +183,27 @@ with nowhere else to be said: after upgrade a `cq-tabs` strip button is a tab's 
 label, and a settled `cq-options` row names the chosen card while collapsing it. Neither
 is quotable, and both are in `TODO.md` rather than quietly absent.
 
-Paper asks the same question and answers it harder: nothing there can be pressed, so
-`.cq-ui` doesn't print at all. Where a control's label is also the page's only statement
-of a state, the widget owes paper that statement — `cq-tabs` hides its strip and each
-panel's own label comes back, and a `cq-options` pick prints the mark on the card
-carrying it. Skip that half and a printed decision rests on a border colour greyscale
-drops, or, for a settled group whose summary row is UI too, on nothing at all.
+Paper asks a different question, so it reads a different marker. Print's question is "is
+this a thing to work?", because nothing on paper can be pressed; `.cq-ui`'s answer is
+"these are the runtime's words", which is anchoring's question. Keying print on the class
+cost a printed decision the only words that stated it: a pick mark is a control and a
+statement at once, and the settled row naming the chosen card is chrome too, so a printed
+group said which option won only in a border colour greyscale drops, and a settled one
+said it nowhere at all. So a control says which it is where its label is written — `offer` marks the
+chrome a widget injects, `relabel` takes the mark off a label that turns out to be the
+page speaking — print hides the declaration rather than the class, and the runtime's own
+layer hides as one thing at its `@scope` root. No print rule anywhere has to remember a
+control's label now: what `cq-tabs` still restores on paper is each panel's own authored
+label, painted back on the panel because the strip that carried it is gone.
+
+`render_version` reads the page in both media and reports what the second drops — the
+whole page, not the widgets in it, because a printout losing a paragraph is no better
+than losing a widget's word. A label written without saying which kind it is throws
+where the widget upgrades, and the console error is a finding of that same gate. What no
+pass can catch is a wrong answer, since a statement declared an offer is exempt by
+construction; that mistake is now made where the label is written, in front of whoever
+wrote the word, rather than in a print rule three files away that nobody thought to
+write.
 
 ### Widgets declare, the runtime decides
 

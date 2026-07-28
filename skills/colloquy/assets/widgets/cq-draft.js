@@ -34,12 +34,13 @@
  * discipline: written on input, cleared only by a successful send, so reload, version
  * switch, and server death all recover.
  *
- * Chrome is injected as .cq-ui so anchoring skips it and data-cq-gen so the diff
- * ignores it; the class also earns the edit box the runtime's one textarea rule.
+ * Chrome is injected through the runtime's `offer`, which marks it .cq-ui so anchoring
+ * skips it, data-cq-gen so the diff ignores it, and data-cq-offer so it leaves the
+ * printed page; the class also earns the edit box the runtime's one textarea rule.
  * Presentation is theme CSS; authored content is never discarded, so there is no
  * failSoft.
  */
-import { once, quoted, sendAction, toast, keyHelp, saveDraft, loadDraft } from "/colloquy.js";
+import { once, offer, quoted, sendAction, toast, keyHelp, saveDraft, loadDraft } from "/colloquy.js";
 
 // Registered on first upgrade, not at import: the "?" overlay should list edit
 // keys only where a draft is.
@@ -112,20 +113,14 @@ customElements.define(
     }
 
     #button(text, onClick, variant) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "cq-btn cq-ui" + (variant ? " " + variant : "");
-      b.dataset.cqGen = "1";
-      b.textContent = text;
+      const b = offer("button", "cq-btn" + (variant ? " " + variant : ""), text);
       b.addEventListener("click", onClick);
       return b;
     }
 
     #open(seed) {
       if (this.#ta) return;
-      const ta = document.createElement("textarea");
-      ta.className = "cq-draft-edit cq-ui";
-      ta.dataset.cqGen = "1";
+      const ta = offer("textarea", "cq-draft-edit");
       ta.value = seed ?? this.#body.textContent;
       ta.setAttribute("aria-label", `Edit ${this.id}`);
       ta.addEventListener("input", () => saveDraft(ctx(this.id), ta.value));
@@ -134,9 +129,7 @@ customElements.define(
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) this.#commit();
         else if (e.key === "Escape") this.#close(true);
       });
-      this.#row = document.createElement("div");
-      this.#row.className = "cq-draft-editrow cq-ui";
-      this.#row.dataset.cqGen = "1";
+      this.#row = offer("div", "cq-draft-editrow");
       this.#row.append(
         this.#button("Cancel", () => this.#close(true)),
         this.#button("Save", () => this.#commit(), "primary"),

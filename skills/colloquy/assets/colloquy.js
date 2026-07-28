@@ -7,8 +7,8 @@
  * (renderSaid), for every widget alike: a word the page says has to be a word the
  * reviewer can select. Upgrades flush before the first anchor pass, so comment quotes
  * always search the enhanced DOM. Widget modules import the helper surface exported here
- * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `quoted`, `toast`,
- * `announce`, `keyHelp`, `pageScroller`, `HIDDEN`, `REDUCED`, `SCROLL`,
+ * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `quoted`, `offer`, `relabel`,
+ * `toast`, `announce`, `keyHelp`, `pageScroller`, `HIDDEN`, `REDUCED`, `SCROLL`,
  * `DECIDED_VERB`); it stays minimal until a real widget needs more.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
@@ -28,10 +28,18 @@
  * styles itself from the theme's tokens so it themes with the page.
  *
  * .cq-ui marks the runtime's own words: its layer, and the controls a widget injects.
- * Anchoring skips it, print hides it, and it carries the system-ui face that says "this
- * is not the document" — which is why it is not the marker for "chrome". A widget's own
- * label or heading is the page's word in a chrome look, and wears data-cq-gen alone: the
- * diff looks away from it, the anchor pass does not. CLAUDE.md carries why.
+ * Anchoring skips it, and it carries the system-ui face that says "this is not the
+ * document" — which is why it is not the marker for "chrome". A widget's own label or
+ * heading is the page's word in a chrome look, and wears data-cq-gen alone: the diff
+ * looks away from it, the anchor pass does not. CLAUDE.md carries why.
+ *
+ * Paper asks a different question, so it reads a different marker. data-cq-offer says
+ * this is a thing to work, which a printed page has nothing to do with; `offer` sets it
+ * on every control a widget injects and `relabel` takes it off a label that turns out
+ * to be the page speaking. Keying print on .cq-ui instead cost a printed decision the
+ * only words that stated it (see CLAUDE.md), because a pick mark is a control and a
+ * statement at once. render_version compares the two media and reports what a page says
+ * on screen and not on paper.
  *
  * Passages and anchors: a comment points at an anchor (a section id, a quote, and the
  * neighbouring words where there are any). resolveAnchor is the only place the page is
@@ -134,6 +142,39 @@ export const SCROLL = REDUCED ? "instant" : "smooth";
 // group still collapses.
 export function quoted(el) {
   return el.closest("cq-specimen") !== null;
+}
+
+// The chrome a widget injects: a control, or the box that holds controls. Three
+// markers, one per question asked of it — `cq-ui` for the runtime's look, which
+// anchoring skips; `data-cq-gen` so the version diff looks away; `data-cq-offer`
+// for a thing to work, which paper drops because there is nothing there to press.
+// A widget writes none of the three by hand: they are what make an element chrome,
+// and one of them going missing is invisible until something breaks.
+export function offer(tag, cls, label) {
+  const node = document.createElement(tag);
+  if (tag === "button") node.type = "button";
+  node.className = cls ? `${cls} cq-ui` : "cq-ui";
+  node.dataset.cqGen = "1";
+  node.dataset.cqOffer = "";
+  if (label !== undefined) node.textContent = label;
+  return node;
+}
+
+// A control's label, and which kind of word it is. Most are things to do — "Save",
+// "choose", a grip — and go with the rest of the UI on paper. Some are the page
+// speaking: a pick mark reading "chosen" is the only place the page says which
+// option it carries, so paper keeps it. One element wears both over its life, so
+// the kind is restated on every write rather than settled at birth.
+//
+// `says` has no default, because the answer a caller doesn't give is the one that
+// costs a printed page its words, and silently. Refusing throws where the widget
+// upgrades, which the console reports and the render gate reads back as a finding
+// — the loud direction, in front of whoever wrote the label.
+export function relabel(node, label, { says } = {}) {
+  if (typeof says !== "boolean")
+    throw new TypeError(`relabel(${label}): say whether this label is the page speaking`);
+  node.textContent = label;
+  node.toggleAttribute("data-cq-offer", !says);
 }
 
 // The element the document scrolls: body, not the viewport (see the stylesheet below,
@@ -326,7 +367,13 @@ style.textContent = `
   .cq-mark-el { outline: 2px solid var(--quote-bar); outline-offset: 3px; border-radius: 2px; cursor: pointer; }
   .cq-mark-el.cq-pending { outline-color: var(--accent); cursor: auto; }
   .cq-ins-block { background: var(--add-tint); box-shadow: 0 0 0 4px var(--add-tint); border-radius: 2px; }
-  @media print { .cq-ui { display: none !important; } }
+  /* Paper takes no input, so what a widget injects to be worked goes: the control,
+     and the box that holds controls. What stays is a control whose label is one of
+     the page's own words — a pick mark reading "chosen" is the only place the page
+     says which option it carries — which is why this keys on the declaration each
+     label makes (see relabel) rather than on .cq-ui, whose question is anchoring's.
+     The runtime's own layer hides as one thing, in the @scope block below. */
+  @media print { [data-cq-offer] { display: none !important; } }
   @keyframes cq-pulse { 50% { opacity: .35; } }
   @keyframes cq-flash { 0% { background: var(--hi-tint); } 100% { background: var(--card); } }
   /* Everything below is private to the chrome, scoped to the runtime's own container:
@@ -334,6 +381,11 @@ style.textContent = `
      marked itself cq-live — this block's name for the visually-hidden live region —
      and every tabbed page clipped to a pixel.) */
   @scope (.cq-chrome) {
+    /* The layer is the runtime's, not the document's, so it never prints — one rule
+       for all of it, rather than each piece remembering. :scope is the container
+       itself, which is why this can't be written at document level without widening
+       the shared vocabulary by a class only the runtime ever wears. */
+    @media print { :scope { display: none; } }
     .cq-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 9000; height: 42px;
       display: flex; align-items: center; gap: 10px; padding: 0 14px;
       background: var(--veil); backdrop-filter: blur(6px); border-bottom: 1px solid var(--rule); }

@@ -40,7 +40,7 @@
  * channel and not presentation.
  *
  * Authored content is never replaced, so there is no failSoft. */
-import { once, quoted, sendAction, toast, HIDDEN } from "/colloquy.js";
+import { HIDDEN, offer, once, quoted, relabel, sendAction, toast } from "/colloquy.js";
 
 const OPEN = "choose"; // the card is pickable
 const PICKED = "your pick"; // this reader picked it, this session
@@ -102,17 +102,18 @@ customElements.define(
     // click bubbles into the group's pick handler where there's a pick to make,
     // and the same mark as a span where there isn't.
     #mark(option, label, pressable) {
-      const mark = document.createElement(pressable ? "button" : "span");
-      if (pressable) mark.type = "button";
-      // .cq-ui reaches exactly as far as the control does: a button's label is a
-      // word for working the thing and anchoring skips it, while the span is the
-      // page saying which option it carries, and the obvious thing to hang "not
-      // this one" on. data-cq-gen either way — the diff parses the base version
-      // unupgraded and would read any mark as text that version lacked.
-      mark.className = pressable ? "cq-pick cq-ui" : "cq-pick";
-      mark.dataset.cqGen = "1";
+      // A button is chrome, and .cq-ui reaches exactly as far as the control does:
+      // anchoring skips a word for working the thing. The span holds no control at
+      // all — it is the page saying which option it carries, and the obvious thing
+      // to hang "not this one" on. data-cq-gen either way, since the diff parses the
+      // base version unupgraded and would read any mark as text that version lacked.
+      const mark = pressable ? offer("button", "cq-pick") : document.createElement("span");
+      if (!pressable) {
+        mark.className = "cq-pick";
+        mark.dataset.cqGen = "1";
+      }
       option.append(mark);
-      this.#relabel(option, label);
+      this.#label(option, label);
     }
 
     #honored = null; // the authored-chosen option, so a rollback rewords it honestly
@@ -120,19 +121,26 @@ customElements.define(
     #choose(option, label = PICKED) {
       for (const o of this.querySelectorAll(":scope > cq-option")) {
         o.toggleAttribute("chosen", o === option);
-        this.#relabel(o, o === option ? label : OPEN);
+        this.#label(o, o === option ? label : OPEN);
       }
       this.#retitle();
     }
 
     // A button's accessible name has to say which card it picks, and to contain
     // the visible word — so it tracks the label rather than staying "choose".
-    // Pressed reads off the card, which #choose sets before relabelling.
-    #relabel(option, label) {
+    // Pressed reads off the card, which #choose sets before relabelling. Which
+    // kind of word the label is travels with it: "choose" is a thing to do and
+    // leaves the printed page, while a picked card's mark is the only place the
+    // page says where the pick sits, so paper keeps that one. The span is the
+    // page's own words already, and says so by being no control at all.
+    #label(option, label) {
       const mark = option.querySelector(":scope > .cq-pick");
       if (!mark) return;
-      mark.textContent = label;
-      if (mark.tagName !== "BUTTON") return;
+      if (mark.tagName !== "BUTTON") {
+        mark.textContent = label;
+        return;
+      }
+      relabel(mark, label, { says: label !== OPEN });
       const title = option.querySelector(":scope > strong")?.textContent || option.id;
       mark.setAttribute("aria-label", `${label}: ${title}`);
       mark.setAttribute("aria-pressed", String(option.hasAttribute("chosen")));
@@ -144,10 +152,9 @@ customElements.define(
     #title = null; // the part of it naming the chosen option
 
     #settle() {
-      this.#row = document.createElement("button");
-      this.#row.type = "button";
-      this.#row.className = "cq-settled cq-ui"; // UI, not content: anchoring skips it
-      this.#row.dataset.cqGen = "1"; // and the version diff ignores it
+      // A disclosure is a thing to work, and what it names — the chosen card — the
+      // cards themselves say once paper opens the group.
+      this.#row = offer("button", "cq-settled");
       this.#title = document.createElement("span");
       const options = [...this.querySelectorAll(":scope > cq-option")];
       const count = document.createElement("span");

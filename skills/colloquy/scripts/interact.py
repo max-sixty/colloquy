@@ -2465,13 +2465,41 @@ REPLAY_OVERRIDES = """async () => {
 }"""
 
 
+# What the page says, and whether each run of it is showing. Read once in each medium
+# and compared by walk order: media change what is displayed, never the DOM, so the nth
+# run on screen is the nth run on paper. What a page says has to survive being printed,
+# and the ways it can fail to are all silent — a widget's control that is a statement as
+# well as a thing to press (the pick mark, which took the only words naming the option a
+# group carried), a rule of the page's own that hides its content in print. The whole
+# page rather than the widgets in it, because a reviewer's printout losing a paragraph is
+# no better than losing a widget's word. Declared offers are excluded because paper has
+# nothing to press; the runtime's own layer is excluded because it was never the
+# document, and a widget rendered inside it (a reply's markup) is the panel's, not the
+# page's.
+PAPER_WORDS = """() => {
+    const out = [];
+    const at = el => { const named = el.closest('[id]');
+                       return named ? `<${named.tagName.toLowerCase()} id=${named.id}>`
+                                    : `<${el.tagName.toLowerCase()}>`; };
+    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const el = n.parentElement;
+        if (!n.data.trim() || el.closest('.cq-chrome, [data-cq-offer]')) continue;
+        out.push({ at: at(el), text: n.data.trim().slice(0, 40),
+                   shown: el.checkVisibility() });
+    }
+    return out;
+}"""
+
+
 def render_version(browser, url: str) -> list:
     """Everything wrong with a served version that only a browser can see: a
     console or page error, a request that 404s, a fail-soft error box, a widget
     upgraded into a box of no usable size, the page scrolling sideways, words the
     reviewer can read and can't select — each in both color schemes, because the
-    dark theme is real CSS nobody otherwise renders — and a version that authors
-    widget state the log replays over, in one scheme, because replay isn't CSS.
+    dark theme is real CSS nobody otherwise renders — plus, in one scheme, a
+    version that authors widget state the log replays over (replay isn't CSS) and
+    words the page says on screen and not on paper (print is scheme-blind).
     Returns human-readable failures; [] is a pass.
 
     One implementation with two callers — `check --render` on the page an agent
@@ -2537,6 +2565,23 @@ def render_version(browser, url: str) -> list:
                     conflicts = [
                         f"the runtime never finished replaying the log ({n_actions} action(s))"
                     ]
+        # Last, and in one scheme: paper has no color scheme, and the medium has to be
+        # put back before anything else reads a box.
+        lost = []
+        if scheme == "light":
+            screen = page.evaluate(PAPER_WORDS)
+            page.emulate_media(media="print")
+            paper = page.evaluate(PAPER_WORDS)
+            page.emulate_media(media="screen")
+            # Paired on the words as well as the position: the page is live, and a poll
+            # landing between the two readings would otherwise shift one against the
+            # other and report whatever happened to line up. A pair that disagrees says
+            # nothing, which is the right way round — the next run reads it again.
+            lost = [
+                f"[print] {s['at']} drops {json.dumps(s['text'])}, which it says on screen"
+                for s, p in zip(screen, paper)
+                if s["text"] == p["text"] and s["shown"] and not p["shown"]
+            ]
         page.close()
         found = [f"[{scheme}] console: {e}" for e in errors]
         found += [f"[{scheme}] a widget failed soft: {t}" for t in failsoft]
@@ -2546,6 +2591,7 @@ def render_version(browser, url: str) -> list:
             found.append(f"[{scheme}] the page scrolls sideways by {overflow}px")
         found += [f"[{scheme}] {w}" for w in unreachable]
         found += [f"[{scheme}] {c}" for c in conflicts]
+        found += lost
         return found
 
     return [*in_scheme("light"), *in_scheme("dark")]

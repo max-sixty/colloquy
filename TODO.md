@@ -94,11 +94,11 @@ stands alone.
       (`aria_snapshot()`, which caught cq-board announcing itself flat — one
       board's tree is pinned in the render suite now, the corpus's is not);
       an axe-core pass (`axe-core-python` ships the JS in the wheel, no npm);
-      print output (the @media print rules are load-bearing and near-unguarded —
-      one printed group's pick is asserted, the pagination they exist for is not);
-      keyboard bindings (assert colloquy leaves the browser's scroll keys alone,
-      not that Chrome scrolls); and the narrow viewport's box dump (its scroll
-      ownership is asserted in the suite).
+      print output (the gate now reports words a printed page drops, so what is
+      left unguarded is pagination — assert the PDF paginates); keyboard bindings
+      (assert colloquy leaves the browser's scroll keys alone, not that Chrome
+      scrolls); and the narrow viewport's box dump (its scroll ownership is
+      asserted in the suite).
 - [ ] What the runtime writes onto the page's own elements is a hand-list. `shallowSigs`
       looks away from `class`, `aria-describedby`, and `data-cq-*` so the replay gate
       doesn't read the runtime's paint as disagreement — a list a future

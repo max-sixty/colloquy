@@ -23,6 +23,7 @@
 import Sortable from "/vendor/sortable.esm.js";
 import {
   once,
+  offer,
   quoted,
   sendAction,
   toast,
@@ -135,11 +136,7 @@ customElements.define(
     }
 
     #grip(card) {
-      const grip = document.createElement("button");
-      grip.type = "button";
-      grip.className = "cq-grip cq-ui"; // UI, not content: anchoring skips it
-      grip.dataset.cqGen = "1"; // and the version diff ignores it
-      grip.textContent = "⠿";
+      const grip = offer("button", "cq-grip", "⠿");
       grip.title = "Drag to move — or Enter, then arrows"; // the name is #names'
       grip.addEventListener("keydown", (ev) => this.#key(ev, card, grip));
       // Leaving the grip drops the grab: restore the origin. Arrow moves reparent

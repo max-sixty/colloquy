@@ -438,6 +438,38 @@ def test_check_render_refuses_what_only_a_browser_can_see(serve):
     assert "scrolls sideways" in broken.stderr
 
 
+# A page that says one of its words on screen only. The rule is the page's own, which is
+# the point: the gate asks what the printed page still says, not who took the words away.
+PRINT_LOSS_PAGE = CARRIED_PAGE.replace(
+    "</head>",
+    "<style>@media print { #lede, #c-bearer { display: none } }</style></head>",
+)
+
+
+def test_render_reports_a_word_the_printed_page_loses(browser, serve):
+    """A reviewer prints the page, or saves it to PDF for someone who wasn't in the
+    loop, and whatever the screen said had better still be there. Ways it isn't, all
+    silent: a control that is a statement as well as a thing to press (the pick mark,
+    which is the only place a group says which option it carries) and a rule that
+    hides page content in print, inside a widget or in plain prose. The gate reads
+    the page in both media and reports what the second one drops.
+
+    A control declared an offer is exempt, since paper has nothing to press: the same
+    page's pick mark reads "chosen" and goes unreported either way."""
+    assert interact.render_version(browser, serve(CARRIED_PAGE)) == [], (
+        "a page whose print rendering keeps its words has nothing to report"
+    )
+
+    lost = interact.render_version(browser, serve(PRINT_LOSS_PAGE))
+    assert [f for f in lost if f.startswith("[print]")] == [
+        '[print] <p id=lede> drops "Where the decision stands, for the recor", '
+        "which it says on screen",
+        '[print] <cq-option id=c-bearer> drops "Bearer header", which it says on screen',
+        '[print] <cq-option id=c-bearer> drops "Suits the mobile client;\\n  '
+        'puts the id w", which it says on screen',
+    ], lost
+
+
 UNPARSEABLE_DIAGRAM = LONG_PAGE.replace(
     "</main>",
     "<cq-diagram id='d-broken'>\nflowchart LR\n  A[Start --&gt; B{{{ ]]] broken\n</cq-diagram>\n</main>",
@@ -668,20 +700,22 @@ def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
 
 
 def test_a_printed_page_says_which_option_carries_the_pick(browser, serve):
-    """Print drops the runtime's layer, and the controls a widget injects go with
-    it: on paper there is nothing to press. The pick's mark is a control and a
-    statement at once, though, so dropping it takes the statement too — and a
+    """Print drops the runtime's own layer as one thing, and the controls a widget
+    injects with it: on paper there is nothing to press. The pick's mark is a control
+    and a statement at once, though, so dropping it takes the statement too — and a
     settled group loses its summary row the same way, leaving a printed decision
     stated in the ok ring alone, a colour greyscale drops.
 
     So on paper a choose group renders as one that was never choosable: the marks
     offering a pick go, the one on the card carrying it stays and says so, and the
     strip of room the marks need is reserved where a mark shows rather than on
-    every card. It is what cq-tabs already does when its strip hides and each
-    panel's own label comes back."""
+    every card. Which of the two a mark is saying is the label's own declaration
+    (relabel), so paper needs no rule naming this widget — the same reason a tab
+    strip goes while each panel's label comes back."""
     page, errors = open_page(browser, serve(SETTLED_PAGE))
     row = page.locator("#transport .cq-settled")
     expect(row).to_contain_text("Settled: Lax cookie")
+    expect(page.locator(".cq-banner")).to_be_visible()
 
     # The strip the mark sits in: what the card's bottom padding holds over its own
     # base, so the measure follows the theme's spacing instead of pinning a number.
@@ -689,6 +723,7 @@ def test_a_printed_page_says_which_option_carries_the_pick(browser, serve):
                      parseFloat(getComputedStyle(el).paddingLeft)"""
     pick = page.locator("#opt-lax .cq-pick")
     page.emulate_media(media="print")
+    expect(page.locator(".cq-banner")).to_be_hidden()  # the whole layer, by its own root
     expect(row).to_be_hidden()  # the disclosure is a screen affordance; paper has the cards
     expect(pick).to_be_visible()
     expect(pick).to_have_text("chosen")

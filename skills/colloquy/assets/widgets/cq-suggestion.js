@@ -22,7 +22,7 @@
  * controls at all (a narrow window, or the comment panel squeezing the page),
  * where it isn't they dock into flow; and whether two rows land on top of each
  * other, which a translate nudges apart without touching layout. */
-import { DECIDED_VERB, once, quoted, sendAction, toast } from "/colloquy.js";
+import { DECIDED_VERB, offer, once, quoted, sendAction, toast } from "/colloquy.js";
 
 // Every row on the page, so one observer serves all of them.
 const rows = new Set();
@@ -83,9 +83,7 @@ customElements.define(
       // <cq-specimen> shows what a pending change looks like, so it keeps the
       // marks the theme draws and never grows controls to decide it with.
       if (quoted(this)) return;
-      this.#row = document.createElement("span");
-      this.#row.className = "cq-sug-actions cq-ui"; // UI, not content: anchoring skips it
-      this.#row.dataset.cqGen = "1"; // and the version diff ignores it
+      this.#row = offer("span", "cq-sug-actions");
       this.#row.append(
         this.#button("accept", "✓ Accept"),
         this.#button("reject", "✗ Reject"),
