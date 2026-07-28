@@ -92,13 +92,7 @@ stands alone.
       print output (the @media print rule is load-bearing and unguarded —
       assert the PDF paginates); keyboard bindings (assert colloquy leaves the
       browser's scroll keys alone, not that Chrome scrolls); and the narrow
-      viewport, once the covering-layout scrollbar item above is settled.
-- [ ] Narrow viewports still stack the two scrollbars. Under 720px the panel
-      covers the page rather than squeezing it, so `body` keeps its full width
-      and its scrollbar shares the window's right edge with the thread list's.
-      The wide layout fixed this by giving each region its own column; the
-      covering layout needs its own answer (the page behind a sheet arguably
-      shouldn't scroll at all).
+      viewport's box dump (its scroll ownership is asserted in the suite).
 - [ ] Pending-state marker for board moves: after the toast fades, nothing shows
       which moves await the honoring version (choose has its mark; move has
       nothing). Toasts also coalesce — rapid moves show only the last.

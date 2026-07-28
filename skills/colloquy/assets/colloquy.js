@@ -535,10 +535,15 @@ const PANEL_KEY = "cq-panel-open";
 function syncLayout() {
   // A margin, not padding: body is the document's scroll container, so this is what
   // ends its box — and its scrollbar — at the panel's edge instead of under it.
-  // Below the breakpoint the panel covers the page rather than squeezing it, so
-  // there's nothing to reserve room for.
-  document.body.style.marginRight =
-    panelOpen && innerWidth > 720 ? panel.offsetWidth + "px" : "";
+  // Below the breakpoint there is no room to reserve, so the panel covers the page
+  // and the page hands over scrolling with it: one wheel gesture moves one region,
+  // and while the sheet is up that region is its thread list. The page holds its
+  // place for when the sheet closes — a hidden-overflow scroller keeps its position,
+  // and still moves for a j/k walk or a version switch restoring where the reviewer
+  // was, so the passage behind the sheet is the one the panel is talking about.
+  const covering = panelOpen && innerWidth <= 720;
+  document.body.style.marginRight = panelOpen && !covering ? panel.offsetWidth + "px" : "";
+  document.body.style.overflowY = covering ? "hidden" : "";
   // The toast lives in the same corner as the panel's Send button; step it aside so a
   // "couldn't send" message never covers the button it's talking about.
   toastEl.style.right = (panelOpen ? panel.offsetWidth + 18 : 18) + "px";

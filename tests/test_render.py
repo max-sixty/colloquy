@@ -473,6 +473,71 @@ def test_page_and_panel_scroll_in_separate_regions(browser, serve):
     page.close()
 
 
+def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
+    """Under 720px the panel covers the page instead of squeezing it, and the
+    covered page gives up scrolling with its width: a wheel moves the sheet's
+    thread list and never the page behind it. The page still follows navigation —
+    a quote click positions it behind the sheet — and closing hands scrolling
+    back right there. The resize path reaches the same states, since the layout's
+    one writer runs from resize too."""
+    page, _ = open_page(
+        browser, serve(LONG_PAGE, comments=12, anchored=[("p40", "Paragraph 40.")])
+    )
+    page.set_viewport_size({"width": 500, "height": 600})
+
+    # A reading position first, so surviving the sheet is observable.
+    page.mouse.move(120, 300)
+    page.mouse.wheel(0, 600)
+    page.wait_for_function("() => document.body.scrollTop > 0")
+    before = page.evaluate("() => document.body.scrollTop")
+
+    page.locator("button[aria-expanded]").click()
+    page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
+
+    # One wheel over the page's visible sliver, one over the sheet. Waiting on the
+    # second proves both were processed — input stays in order — so the first
+    # having moved nothing is a real outcome rather than a race.
+    page.mouse.move(60, 300)
+    page.mouse.wheel(0, 400)
+    page.mouse.move(400, 300)
+    page.mouse.wheel(0, 400)
+    page.wait_for_function("() => document.querySelector('.cq-threads').scrollTop > 0")
+    assert page.evaluate("() => document.body.scrollTop") == before, (
+        "the page scrolled behind the covering sheet"
+    )
+
+    # Navigation still positions the page: a quote click scrolls its passage into
+    # view under the lock, so the sheet closes onto the passage it talked about.
+    page.locator(".cq-quote", has_text="Paragraph 40").click()
+    page.wait_for_function(
+        """() => { const r = document.getElementById('p40').getBoundingClientRect();
+                   return r.top >= 0 && r.top < innerHeight; }"""
+    )
+    at_mark = page.evaluate("() => document.body.scrollTop")
+    assert at_mark != before
+
+    # Closing hands scrolling back, right where navigation left the page.
+    page.get_by_role("button", name="Close comments").click()
+    page.wait_for_function("() => !document.querySelector('.cq-panel').classList.contains('open')")
+    assert page.evaluate("() => document.body.scrollTop") == at_mark
+    page.mouse.move(120, 300)
+    page.mouse.wheel(0, 200)
+    page.wait_for_function(f"() => document.body.scrollTop > {at_mark}")
+
+    # The resize path: narrowing onto an open panel locks, widening unlocks.
+    page.locator("button[aria-expanded]").click()
+    page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
+    page.set_viewport_size({"width": 1000, "height": 600})
+    page.wait_for_function(
+        "() => getComputedStyle(document.body).overflowY !== 'hidden' && document.body.style.marginRight !== ''"
+    )
+    page.set_viewport_size({"width": 500, "height": 600})
+    page.wait_for_function(
+        "() => getComputedStyle(document.body).overflowY === 'hidden' && document.body.style.marginRight === ''"
+    )
+    page.close()
+
+
 def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
     """The chrome's private rules live in one @scope block rooted at the runtime's
     own container, so whatever name a widget or a page coins, it matches none of
