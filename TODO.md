@@ -35,6 +35,17 @@ stands alone.
       two edges, or resolving the anchor in the browser at post time, which `comment`
       can't afford — it runs every round of the loop, and the browser is `check --render`'s
       once-per-page budget.
+- [ ] `comment` can quote a slot the reviewer has already decided away. Its anchor is
+      captured against the version file, and a decision lives in the log — `data-cq-state`
+      reaches the element only at replay — so a quote into an accepted suggestion's
+      `cq-old` or a rejected one's `cq-new` succeeds at write time and detaches in the
+      reviewer's browser, where the anchor pass skips a retired slot. The file's reading
+      claims more than the page's, which the fences exist to refuse; this pair drifted
+      because retirement changed the page's reading and nothing told the file's.
+      `comment` has the page directory, so it can know: the log names each decision, and
+      the restatement gate already maps an outcome to the ids it retires. Subtract the
+      retired slots from the version's reading and refuse the quote the way a fence is
+      refused.
 - [ ] Plan-mode integration hardening: remove the auto-approve workaround in
       `/colloquy-plans` and settle the default UX before promoting it from
       experimental.
