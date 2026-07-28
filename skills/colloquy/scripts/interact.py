@@ -12,7 +12,7 @@ plugin ships `bin/colloquy`, which Claude Code puts on PATH, so the skill can
 hand an agent a command that resolves nothing and expands nothing.
 
 A page directory holds:
-    versions/v001.html…  immutable page versions (Claude writes them). The server
+    versions/v1.html…    immutable page versions (Claude writes them). The server
                          exposes a version only once its `note` lands, and `note`
                          itself runs `check` and refuses a failing version — so a
                          half-written or broken file is never live to an open
@@ -279,11 +279,34 @@ def anchored_ids(events: list) -> set:
     } - {None}
 
 
+VERSION_FILE = re.compile(r"v(\d+)\.html")
+
+
+def version_num(name: str) -> int:
+    """A version's number is its identity; its file name only renders it. So
+    everything that orders or addresses versions parses the number out rather
+    than working on the name, and the names carry no zero padding — padding is
+    what you add to make a string comparison come out right, and nothing here
+    compares names. `v10.html` precedes `v9.html` in every ordering a string
+    has, and follows it in the only one that means anything."""
+    return int(VERSION_FILE.fullmatch(name).group(1))
+
+
 def list_versions(page_dir: Path) -> list:
     versions_dir = page_dir / "versions"
     if not versions_dir.exists():
         return []
-    return sorted(p.name for p in versions_dir.glob("v[0-9]*.html"))
+    return sorted(
+        (p.name for p in versions_dir.iterdir() if VERSION_FILE.fullmatch(p.name)),
+        key=version_num,
+    )
+
+
+def version_file(page_dir: Path, version: int):
+    """The file holding a version, or None if the page has no such version. Found
+    by the number that identifies it rather than by rebuilding a name to match:
+    asking "is version N here?" is a question about a number."""
+    return next((n for n in list_versions(page_dir) if version_num(n) == version), None)
 
 
 def published_versions(page_dir: Path) -> list:
@@ -291,11 +314,7 @@ def published_versions(page_dir: Path) -> list:
     passing `check`, so a half-written or failing version is never live to an open
     browser — the file existing is not enough."""
     noted = {e.get("version") for e in read_events(page_dir) if e.get("kind") == "note"}
-    return [
-        name
-        for name in list_versions(page_dir)
-        if int(re.search(r"v0*(\d+)", name).group(1)) in noted
-    ]
+    return [name for name in list_versions(page_dir) if version_num(name) in noted]
 
 
 def pid_alive(pid: int) -> bool:
@@ -404,8 +423,8 @@ def full_state(page_dir: Path) -> dict:
 class Handler(BaseHTTPRequestHandler):
     page_dir = None  # set before serving
     # The render gate previews a version before its `note` publishes it —
-    # refusing the note is the gate's whole job. Set to that version's name, the
-    # handler exposes on-disk versions up to it, previewed one included as
+    # refusing the note is the gate's whole job. Set to that version's number,
+    # the handler exposes on-disk versions up to it, previewed one included as
     # latest, so the runtime neither 404s the preview nor follows the published
     # latest away from it mid-check. None — every server a reviewer reaches —
     # exposes noted versions only.
@@ -414,7 +433,7 @@ class Handler(BaseHTTPRequestHandler):
     def versions_live(self):
         if self.preview_upto is None:
             return published_versions(self.page_dir)
-        return [n for n in list_versions(self.page_dir) if n <= self.preview_upto]
+        return [n for n in list_versions(self.page_dir) if version_num(n) <= self.preview_upto]
 
     def log_message(self, *args):
         pass
@@ -733,13 +752,13 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
     published = published_versions(page_dir)
     if not published:
         sys.exit("no published version to anchor in; `note` one first")
-    version = int(published[-1][1:4])
+    version = version_num(published[-1])
     html = (page_dir / "versions" / published[-1]).read_text(encoding="utf-8")
     decided = suggestion_outcomes(read_events(page_dir), version)
     try:
         anchor = capture_anchor(html, load_registry(page_dir), quote, section, decided)
     except ValueError as err:
-        sys.exit(f"can't anchor in v{version:03d}: {err}")
+        sys.exit(f"can't anchor in v{version}: {err}")
     body = read_text_arg(text)
     check_thread_markup(page_dir, "comment", body)
     event = append_event(
@@ -760,9 +779,9 @@ def cmd_reply(page_dir: Path, to: str, text) -> None:
 
 
 def cmd_note(page_dir: Path, version: int, text) -> None:
-    name = f"v{version:03d}.html"
-    if name not in list_versions(page_dir):
-        sys.exit(f"no {name} in {page_dir / 'versions'}; write the version file first")
+    name = version_file(page_dir, version)
+    if name is None:
+        sys.exit(f"no v{version}.html in {page_dir / 'versions'}; write the version file first")
     # `note` publishes (the server exposes only noted versions), so it is the one
     # gate: a version that fails `check` can't go live.
     if cmd_check(page_dir, version) != 0:
@@ -1870,13 +1889,13 @@ def restatement_errors(cur, was: dict, now: dict, events: list, prev_num: int, r
             # nothing.
             if sid in taken_back:
                 errors.append(
-                    f"{where}: restated, but v{taken_back[sid]:03d} already took that "
+                    f"{where}: restated, but v{taken_back[sid]} already took that "
                     f"back — a retraction is recorded when it is published and holds "
                     f"without being repeated. Drop the attribute."
                 )
             else:
                 why = (
-                    f"its words are unchanged since v{prev_num:03d}"
+                    f"its words are unchanged since v{prev_num}"
                     if live
                     else "the reviewer has recorded nothing on it"
                 )
@@ -1885,12 +1904,12 @@ def restatement_errors(cur, was: dict, now: dict, events: list, prev_num: int, r
                     f"Drop the attribute; `restated` discards their decision."
                 )
         elif changed and live and not restated:
-            did = ", ".join(f"{e['action']} on v{e.get('version'):03d}" for e in live[-3:])
+            did = ", ".join(f"{e['action']} on v{e.get('version')}" for e in live[-3:])
             errors.append(
                 f"{where}: its words changed, and the reviewer has already acted "
                 f"on it ({did}). Their decision is what the page shows, so these "
                 f"words would never reach them — add `restated` to retract it and "
-                f"ask again, or leave the text as v{prev_num:03d} had it."
+                f"ask again, or leave the text as v{prev_num} had it."
             )
     return errors
 
@@ -1912,10 +1931,10 @@ def fragment_errors(html: str, registry: dict) -> list:
 def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     versions = list_versions(page_dir)
     if not versions:
-        sys.exit(f"no versions in {page_dir / 'versions'}; write versions/v001.html first")
-    name = f"v{version:03d}.html" if version is not None else versions[-1]
-    if name not in versions:
-        sys.exit(f"no {name} in {page_dir / 'versions'}")
+        sys.exit(f"no versions in {page_dir / 'versions'}; write versions/v1.html first")
+    name = version_file(page_dir, version) if version is not None else versions[-1]
+    if name is None:
+        sys.exit(f"no v{version}.html in {page_dir / 'versions'}")
     html = (page_dir / "versions" / name).read_text(encoding="utf-8")
 
     errors = []
@@ -1991,7 +2010,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     if idx > 0:
         prev_name = versions[idx - 1]
         prev_html = (page_dir / "versions" / prev_name).read_text(encoding="utf-8")
-        prev, prev_num = _StructParser(), int(prev_name[1:4])
+        prev, prev_num = _StructParser(), version_num(prev_name)
         prev.feed(prev_html)
         prev.close()
         was = spoken(prev_html, registry or {})
@@ -2229,7 +2248,9 @@ def render_check(page_dir: Path, name: str) -> int:
             file=sys.stderr,
         )
         return 1
-    handler = type("PreviewHandler", (Handler,), {"page_dir": page_dir, "preview_upto": name})
+    handler = type(
+        "PreviewHandler", (Handler,), {"page_dir": page_dir, "preview_upto": version_num(name)}
+    )
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     try:

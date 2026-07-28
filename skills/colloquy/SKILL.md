@@ -59,7 +59,7 @@ prerequisite.
 
 1. `init`, then read `catalog <dir>` — it prints the vendored registry (widget schemas
    with examples) and the theme's class idioms, which vary per project.
-2. Write the page as `<dir>/versions/v001.html` (conventions below).
+2. Write the page as `<dir>/versions/v1.html` (conventions below).
 3. `serve` as a background task (`run_in_background`). The port is stable per directory
    and a live server is reused, so the URL survives restarts.
 4. `note` the version — the server exposes a version only once its note lands, and
@@ -235,7 +235,7 @@ On wake:
      the user's pick is the answer, so acknowledge it with a reply in the same
      thread. Reply markup is frozen in the log — versions neither carry nor revert
      it, and the picked state stays put on its own.
-3. Page changes go in the next version: Write `versions/v002.html` (incrementing; never
+3. Page changes go in the next version: Write `versions/v2.html` (incrementing; never
    rewrite a version the user has seen — the picker is the history), then `note` its
    changelog — brief, though a decline's why can take a sentence or two — which lints it
    and publishes it; the browser follows automatically.

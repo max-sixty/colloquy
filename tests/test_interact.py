@@ -62,12 +62,12 @@ graph LR
 
 @pytest.fixture
 def page_dir(tmp_path, monkeypatch):
-    """An initialized page directory with a valid v001 written."""
+    """An initialized page directory with a valid v1 written."""
     monkeypatch.chdir(tmp_path)  # keep the project layer out of the overlay
     d = tmp_path / "page"
     result = CliRunner().invoke(interact.cli, ["init", str(d)])
     assert result.exit_code == 0, result.output
-    (d / "versions" / "v001.html").write_text(PAGE)
+    (d / "versions" / "v1.html").write_text(PAGE)
     return d
 
 
@@ -117,7 +117,7 @@ def test_check_accepts_a_valid_page(page_dir):
 
 
 def test_check_rejects_widget_violations(page_dir):
-    (page_dir / "versions" / "v001.html").write_text(
+    (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
             '<cq-ref src="jobs/backfill.py:88"></cq-ref>',
             '<cq-ref src="x.py:1"/>'
@@ -139,7 +139,7 @@ def test_check_rejects_widget_violations(page_dir):
 
 
 def test_check_rejects_loose_content_in_items_container(page_dir):
-    (page_dir / "versions" / "v001.html").write_text(
+    (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<cq-options>", "<cq-options>\nloose text\n<p>stray</p>\n<br/>")
     )
     result = check(page_dir)
@@ -150,9 +150,9 @@ def test_check_rejects_loose_content_in_items_container(page_dir):
 
 
 def test_flag_attribute_accepts_both_html_spellings(page_dir):
-    (page_dir / "versions" / "v001.html").write_text(PAGE.replace(" recommended>", ' recommended="">'))
+    (page_dir / "versions" / "v1.html").write_text(PAGE.replace(" recommended>", ' recommended="">'))
     assert check(page_dir).exit_code == 0
-    (page_dir / "versions" / "v001.html").write_text(PAGE.replace(" recommended>", ' recommended="yes">'))
+    (page_dir / "versions" / "v1.html").write_text(PAGE.replace(" recommended>", ' recommended="yes">'))
     result = check(page_dir)
     assert result.exit_code == 1
     assert "is not of type 'boolean'" in result.output
@@ -167,10 +167,10 @@ def test_plan_and_milestones_compose(page_dir):
   </cq-milestones>
 </cq-plan>
 <cq-options>"""
-    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("<cq-options>", nested))
+    (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<cq-options>", nested))
     result = check(page_dir)
     assert result.exit_code == 0, result.output
-    (page_dir / "versions" / "v001.html").write_text(
+    (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
             "<cq-options>",
             '<cq-milestone id="m-stray" status="done"><strong>X</strong></cq-milestone><cq-options>',
@@ -189,7 +189,7 @@ def test_tabs_validate_and_compose(page_dir):
   </cq-tab>
 </cq-tabs>
 <cq-options>"""
-    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("<cq-options>", tabs))
+    (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<cq-options>", tabs))
     result = check(page_dir)
     assert result.exit_code == 0, result.output
 
@@ -203,7 +203,7 @@ def test_tabs_reject_structural_violations(page_dir):
 </cq-tabs>
 <cq-tab id="ws-stray" label="Stray"><p>y</p></cq-tab>
 <cq-options>"""
-    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("<cq-options>", bad))
+    (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<cq-options>", bad))
     result = check(page_dir)
     assert result.exit_code == 1
     assert "'label' is a required property" in result.output
@@ -219,9 +219,9 @@ SUGGESTION = """<cq-suggestion id="sug-refill">
 
 
 def suggest(page_dir, version=2, markup=SUGGESTION):
-    """Write v001 carrying a suggestion and an unchanged v002 to check against."""
-    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("<cq-options>", markup))
-    (page_dir / "versions" / f"v{version:03d}.html").write_text(PAGE.replace("<cq-options>", markup))
+    """Write v1 carrying a suggestion and an unchanged v2 to check against."""
+    (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<cq-options>", markup))
+    (page_dir / "versions" / f"v{version}.html").write_text(PAGE.replace("<cq-options>", markup))
 
 
 def decide(page_dir, outcome, widget="sug-refill"):
@@ -258,7 +258,7 @@ def test_suggestion_rejects_malformed_shapes(page_dir):
             "names no comment in the log",
         ),
     ]:
-        (page_dir / "versions" / "v001.html").write_text(PAGE.replace("<cq-options>", markup))
+        (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<cq-options>", markup))
         result = check(page_dir, version=1)
         assert result.exit_code == 1, markup
         assert expected in result.output, f"{markup}\n{result.output}"
@@ -267,18 +267,18 @@ def test_suggestion_rejects_malformed_shapes(page_dir):
 def test_suggestion_resolves_accepts_a_real_comment(page_dir):
     interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
     markup = '<cq-suggestion id="sug-a" resolves="c1"><cq-new><p>x</p></cq-new></cq-suggestion><cq-options>'
-    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("<cq-options>", markup))
+    (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<cq-options>", markup))
     assert check(page_dir, version=1).exit_code == 0
 
 
 def test_accepting_licenses_retiring_the_replaced_markup(page_dir):
-    # v002 honors the accept: the old paragraph and the wrapper are gone, the
+    # v2 honors the accept: the old paragraph and the wrapper are gone, the
     # proposal inlined. Nothing but a logged accept makes that legal.
     suggest(page_dir)
     honored = PAGE.replace(
         "<cq-options>", '<p id="refill-camera">Refill when the camera shows it half-empty.</p><cq-options>'
     )
-    (page_dir / "versions" / "v002.html").write_text(honored)
+    (page_dir / "versions" / "v2.html").write_text(honored)
     result = check(page_dir, version=2)
     assert result.exit_code == 1
     assert "refill-rule" in result.output
@@ -295,15 +295,15 @@ def test_an_unanswered_proposal_cant_be_kept_as_settled_content(page_dir):
 </cq-suggestion>
 <cq-options>"""
     suggest(page_dir, markup=insert)
-    (page_dir / "versions" / "v002.html").write_text(
+    (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace("<cq-options>", '<p id="thistle-plan">Switch the north feeder to thistle in autumn.</p><cq-options>')
     )
     result = check(page_dir, version=2)
     assert result.exit_code == 1
     assert "sug-thistle" in result.output
     # Withdrawing it whole is fine, and so is honoring a logged accept.
-    (page_dir / "versions" / "v003.html").write_text(PAGE)
-    assert check(page_dir, version=3).exit_code == 1  # v003's base is v002, still self-accepted
+    (page_dir / "versions" / "v3.html").write_text(PAGE)
+    assert check(page_dir, version=3).exit_code == 1  # v3's base is v2, still self-accepted
     decide(page_dir, "accept", widget="sug-thistle")
     assert check(page_dir, version=2).exit_code == 0
 
@@ -312,7 +312,7 @@ def test_rejecting_licenses_retiring_the_proposal(page_dir):
     # A reject is consent to drop the proposal, so it retires even while a
     # thread about it is open — the reviewer has already answered.
     suggest(page_dir)
-    (page_dir / "versions" / "v002.html").write_text(
+    (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace("<cq-options>", '<p id="refill-rule">Refill every feeder each morning.</p><cq-options>')
     )
     interact.append_event(
@@ -324,7 +324,7 @@ def test_rejecting_licenses_retiring_the_proposal(page_dir):
     decide(page_dir, "reject")
     assert check(page_dir, version=2).exit_code == 0
     # The other slot is not licensed: dropping the markup a reject kept is refused.
-    (page_dir / "versions" / "v003.html").write_text(PAGE)
+    (page_dir / "versions" / "v3.html").write_text(PAGE)
     result = check(page_dir, version=3)
     assert result.exit_code == 1
     assert "refill-rule" in result.output
@@ -338,7 +338,7 @@ def test_an_unanswered_deletion_cant_delete(page_dir):
 </cq-suggestion>
 <cq-options>"""
     suggest(page_dir, markup=delete)
-    (page_dir / "versions" / "v002.html").write_text(PAGE)
+    (page_dir / "versions" / "v2.html").write_text(PAGE)
     result = check(page_dir, version=2)
     assert result.exit_code == 1
     assert "hand-log" in result.output
@@ -350,7 +350,7 @@ def test_withdrawing_an_unanswered_suggestion_needs_no_consent(page_dir):
     # Nothing was decided, so Claude may take the proposal back — but not while
     # an unresolved thread is anchored in it.
     suggest(page_dir)
-    (page_dir / "versions" / "v002.html").write_text(
+    (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace("<cq-options>", '<p id="refill-rule">Refill every feeder each morning.</p><cq-options>')
     )
     assert check(page_dir, version=2).exit_code == 0
@@ -381,7 +381,7 @@ def test_check_rejects_wrong_scaffold(page_dir):
     html = PAGE.replace('<script type="module" src="/colloquy.js"></script>', "").replace(
         '<link rel="stylesheet" href="/theme.css">', ""
     )
-    (page_dir / "versions" / "v001.html").write_text(html)
+    (page_dir / "versions" / "v1.html").write_text(html)
     result = check(page_dir)
     assert result.exit_code == 1
     assert "exactly one external <script src>" in result.output
@@ -394,15 +394,15 @@ def test_check_owns_the_cq_meta_vocabulary(page_dir):
     signoff = PAGE.replace(
         "<title>t</title>", '<title>t</title>\n<meta name="cq-review" content="sign-off">'
     )
-    (page_dir / "versions" / "v001.html").write_text(signoff)
+    (page_dir / "versions" / "v1.html").write_text(signoff)
     assert check(page_dir).exit_code == 0
 
-    (page_dir / "versions" / "v001.html").write_text(signoff.replace("sign-off", "approve"))
+    (page_dir / "versions" / "v1.html").write_text(signoff.replace("sign-off", "approve"))
     result = check(page_dir)
     assert result.exit_code == 1
     assert "content must be one of ['sign-off'], found 'approve'" in result.output
 
-    (page_dir / "versions" / "v001.html").write_text(signoff.replace("cq-review", "cq-signoff"))
+    (page_dir / "versions" / "v1.html").write_text(signoff.replace("cq-review", "cq-signoff"))
     result = check(page_dir)
     assert result.exit_code == 1
     assert "unknown cq- meta" in result.output
@@ -412,40 +412,40 @@ def test_check_owns_the_cq_meta_vocabulary(page_dir):
 def test_check_rejects_duplicate_ids_and_dropped_ids(page_dir):
     result = check(page_dir)
     assert result.exit_code == 0, result.output
-    (page_dir / "versions" / "v002.html").write_text(
+    (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace('id="backfill-first"', 'id="flag-first"')
     )
     result = check(page_dir, version=2)
     assert result.exit_code == 1
     assert "duplicate ids" in result.output
-    assert "dropped in v002.html" in result.output
+    assert "dropped in v2.html" in result.output
     assert "backfill-first" in result.output
 
 
 def _decided(page_dir, words):
-    """v001 carrying a draft the reviewer has since rewritten, and the log that
-    says so. Whatever v002 does about it, `check` is what has to notice."""
-    (page_dir / "versions" / "v001.html").write_text(
+    """v1 carrying a draft the reviewer has since rewritten, and the log that
+    says so. Whatever v2 does about it, `check` is what has to notice."""
+    (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<h2>Plan</h2>", f'<h2>Plan</h2><cq-draft id="d1">{words}</cq-draft>')
     )
     interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
                                      "widget": "d1", "action": "edit",
                                      "detail": {"text": "Cut the flag; backfill first."}})
-    return lambda words, attrs="": (page_dir / "versions" / "v002.html").write_text(
+    return lambda words, attrs="": (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace("<h2>Plan</h2>", f'<h2>Plan</h2><cq-draft id="d1"{attrs}>{words}</cq-draft>')
     )
 
 
 def test_a_version_may_not_quietly_rewrite_what_the_reviewer_decided(page_dir):
     """The runtime replays a recorded action onto every later version, so the
-    reviewer's edit stands over whatever v002's markup says about that widget.
+    reviewer's edit stands over whatever v2's markup says about that widget.
     Which makes a rewritten widget a version talking to nobody — its new words
     could never reach the reader. `restated` is how a version says it means to
     take the decision back, and this is the gate that makes it say so."""
     v2 = _decided(page_dir, "Ship the flag dark, then backfill.")
     assert check(page_dir).exit_code == 0
 
-    # Re-emitting what v001 said is the ordinary republish, and costs nothing:
+    # Re-emitting what v1 said is the ordinary republish, and costs nothing:
     # the reviewer's edit is already on screen over it.
     v2("Ship the flag dark, then backfill.")
     assert check(page_dir, version=2).exit_code == 0, "a republish that changes nothing must pass"
@@ -462,7 +462,7 @@ def test_a_version_may_not_quietly_rewrite_what_the_reviewer_decided(page_dir):
     result = check(page_dir, version=2)
     assert result.exit_code == 1
     assert "its words changed" in result.output
-    assert "edit on v001" in result.output
+    assert "edit on v1" in result.output
     assert "restated" in result.output
 
     # Said out loud, the same version publishes.
@@ -471,10 +471,10 @@ def test_a_version_may_not_quietly_rewrite_what_the_reviewer_decided(page_dir):
 
 
 def test_restating_on_the_first_version_is_refused(page_dir):
-    """There is nothing before v001 to take back, so `restated` there can only be
+    """There is nothing before v1 to take back, so `restated` there can only be
     a misreading of what the word does — and one that would record a retraction
     of nothing into the log."""
-    (page_dir / "versions" / "v001.html").write_text(
+    (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1" restated>Words.</cq-draft>')
     )
     result = check(page_dir)
@@ -492,7 +492,7 @@ def test_restating_a_widget_that_kept_its_words_is_refused(page_dir):
     result = check(page_dir, version=2)
     assert result.exit_code == 1
     assert "nothing to retract" in result.output
-    assert "unchanged since v001" in result.output
+    assert "unchanged since v1" in result.output
 
 
 def _board(todo, done):
@@ -520,7 +520,7 @@ def test_the_gate_asks_about_the_card_that_was_moved_and_not_the_board(page_dir)
     alone. The rest of the board stays where the reviewer put it, which is what
     keeps a typo fix from costing them an afternoon's arrangement."""
     def write(version, todo, done):
-        (page_dir / "versions" / f"v{version:03d}.html").write_text(
+        (page_dir / "versions" / f"v{version}.html").write_text(
             PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + _board(todo, done))
         )
 
@@ -543,7 +543,7 @@ def test_the_gate_asks_about_the_card_that_was_moved_and_not_the_board(page_dir)
     write(2, [("card-x", "", "Guard the delete behind the flag"), Y], [])
     result = check(page_dir, version=2)
     assert result.exit_code == 1
-    assert "card-x" in result.output and "move on v001" in result.output
+    assert "card-x" in result.output and "move on v1" in result.output
     assert "card-y" not in result.output, "the gate named a card nobody had decided about"
 
     write(2, [("card-x", " restated", "Guard the delete behind the flag"), Y], [])
@@ -552,8 +552,8 @@ def test_the_gate_asks_about_the_card_that_was_moved_and_not_the_board(page_dir)
     # And the board itself never takes the attribute: every move names a card, so
     # a board is never what a decision rests on, and offering `restated` there
     # would be a door onto an error message about retracting nothing.
-    (page_dir / "versions" / "v002.html").write_text(
-        (page_dir / "versions" / "v002.html").read_text().replace('<cq-board id="b1">',
+    (page_dir / "versions" / "v2.html").write_text(
+        (page_dir / "versions" / "v2.html").read_text().replace('<cq-board id="b1">',
                                                                   '<cq-board id="b1" restated>')
     )
     result = check(page_dir, version=2)
@@ -582,7 +582,7 @@ def test_the_gate_reads_a_pick_the_same_way_it_reads_an_edit(page_dir):
     def write(version, **kw):
         opts = OPTIONS.format(**{"a": "", "b": "", "shim": "Fastest to ship.",
                                  "stage": "Table by table.", **kw})
-        (page_dir / "versions" / f"v{version:03d}.html").write_text(
+        (page_dir / "versions" / f"v{version}.html").write_text(
             PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts)
         )
 
@@ -604,7 +604,7 @@ def test_the_gate_reads_a_pick_the_same_way_it_reads_an_edit(page_dir):
     write(2, a=" chosen", shim="Fastest to ship, and we own the shim forever.")
     result = check(page_dir, version=2)
     assert result.exit_code == 1
-    assert "o-shim" in result.output and "choose on v001" in result.output
+    assert "o-shim" in result.output and "choose on v1" in result.output
 
     write(2, a=" chosen restated", shim="Fastest to ship, and we own the shim forever.")
     assert check(page_dir, version=2).exit_code == 0
@@ -629,7 +629,7 @@ def test_a_cleared_pick_rests_on_the_group_that_holds_it(page_dir):
     does not."""
     def write(version, shim="Fastest to ship.", attrs=""):
         opts = OPTIONS.format(a="", b="", shim=shim, stage="Table by table.")
-        (page_dir / "versions" / f"v{version:03d}.html").write_text(
+        (page_dir / "versions" / f"v{version}.html").write_text(
             PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts.replace(
                 '<cq-options id="g1" choose>', f'<cq-options id="g1" choose{attrs}>'))
         )
@@ -650,10 +650,10 @@ def test_a_cleared_pick_rests_on_the_group_that_holds_it(page_dir):
 def test_a_widget_nobody_has_touched_is_not_the_gate_s_business(page_dir):
     """The gate is about decisions, so it holds nothing against a version that
     rewrites a widget the reviewer never acted on."""
-    (page_dir / "versions" / "v001.html").write_text(
+    (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">First words.</cq-draft>')
     )
-    (page_dir / "versions" / "v002.html").write_text(
+    (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">Quite different words.</cq-draft>')
     )
     assert check(page_dir, version=2).exit_code == 0
@@ -662,7 +662,7 @@ def test_a_widget_nobody_has_touched_is_not_the_gate_s_business(page_dir):
 def test_check_requires_the_vendored_layer(tmp_path):
     d = tmp_path / "bare"
     (d / "versions").mkdir(parents=True)
-    (d / "versions" / "v001.html").write_text(PAGE)
+    (d / "versions" / "v1.html").write_text(PAGE)
     result = check(d)
     assert result.exit_code == 1
     assert "run `init` to vendor the layer" in result.output
@@ -670,7 +670,7 @@ def test_check_requires_the_vendored_layer(tmp_path):
 
 def test_check_takes_column_width_from_vendored_theme(page_dir):
     # theme.css sets a 760px main column; a wider fixed-width element must fail.
-    (page_dir / "versions" / "v001.html").write_text(
+    (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><svg width="900" height="10"></svg>')
     )
     result = check(page_dir)
@@ -701,7 +701,7 @@ def test_server_round_trip(server, page_dir):
     # Unnoted version: nothing published yet.
     status, _ = fetch(f"{server}/")
     assert status == 404
-    status, _ = fetch(f"{server}/versions/v001.html")
+    status, _ = fetch(f"{server}/versions/v1.html")
     assert status == 404
     CliRunner().invoke(interact.cli, ["note", str(page_dir), "--version", "1", "--text", "cut"])
     status, body = fetch(f"{server}/")  # urllib follows the 302
@@ -722,7 +722,7 @@ def test_server_round_trip(server, page_dir):
     assert posted["author"] == "user" and posted["id"] != "c9"
     status, body = fetch(f"{server}/api/state")
     state = json.loads(body)
-    assert state["versions"] == ["v001.html"]
+    assert state["versions"] == ["v1.html"]
     assert state["cursor"] == 0  # nothing delivered to Claude yet
     assert state["events"][-1]["id"] == posted["id"]
     # A widget action rides the same channel; half-formed ones are refused at the edge.
@@ -983,10 +983,26 @@ def test_versions_publish_only_once_noted(page_dir):
         interact.cli, ["note", str(page_dir), "--version", "1", "--text", "first cut"]
     )
     assert result.exit_code == 0, result.output
-    assert interact.published_versions(page_dir) == ["v001.html"]
+    assert interact.published_versions(page_dir) == ["v1.html"]
     # The next version stays unpublished until its own note lands.
-    (page_dir / "versions" / "v002.html").write_text(PAGE)
-    assert interact.published_versions(page_dir) == ["v001.html"]
+    (page_dir / "versions" / "v2.html").write_text(PAGE)
+    assert interact.published_versions(page_dir) == ["v1.html"]
+
+
+def test_versions_run_in_number_order_past_v9(page_dir):
+    """Everything downstream reads "the latest version" off the end of this list —
+    what `note` lints against, what the server redirects to, what `check` diffs
+    the new version with. Sorted as names, v10 would land before v2 and every one
+    of those would quietly answer with the wrong version."""
+    for n in range(2, 12):
+        (page_dir / "versions" / f"v{n}.html").write_text(PAGE)
+    assert interact.list_versions(page_dir) == [f"v{n}.html" for n in range(1, 12)]
+    for n in range(1, 12):
+        result = CliRunner().invoke(
+            interact.cli, ["note", str(page_dir), "--version", str(n), "--text", f"cut {n}"]
+        )
+        assert result.exit_code == 0, result.output
+    assert interact.published_versions(page_dir) == [f"v{n}.html" for n in range(1, 12)]
 
 
 def test_choose_requires_an_id(page_dir):
@@ -1031,14 +1047,14 @@ def test_settling_a_decision_drops_no_ids(page_dir):
 
     group = '<cq-options id="pick" choose{}><cq-option id="opt-a"{}><strong>A</strong></cq-option>'
     group += '<cq-option id="opt-b"><strong>B</strong></cq-option></cq-options>'
-    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("</main>", group.format("", "") + "</main>"))
-    (page_dir / "versions" / "v002.html").write_text(
+    (page_dir / "versions" / "v1.html").write_text(PAGE.replace("</main>", group.format("", "") + "</main>"))
+    (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace("</main>", group.format(" settled", " chosen") + "</main>")
     )
     assert interact.cmd_check(page_dir, 2) == 0
 
     # Deleting the alternatives instead is what check is there to stop.
-    (page_dir / "versions" / "v002.html").write_text(PAGE)
+    (page_dir / "versions" / "v2.html").write_text(PAGE)
     assert interact.cmd_check(page_dir, 2) == 1
 
 
@@ -1060,7 +1076,7 @@ def test_examples_pass_check(tmp_path, monkeypatch):
     for example in examples:
         d = tmp_path / example.stem
         CliRunner().invoke(interact.cli, ["init", str(d)])
-        (d / "versions" / "v001.html").write_text(example.read_text())
+        (d / "versions" / "v1.html").write_text(example.read_text())
         result = check(d)
         assert result.exit_code == 0, f"{example.name}: {result.output}"
 
@@ -1130,7 +1146,7 @@ def test_widget_ids_are_one_universe_across_page_and_replies(page_dir):
     ok = reply('<cq-options id="quoted" choose><cq-option id="quoted-a"><strong>A</strong></cq-option></cq-options>')
     assert ok.exit_code == 0, ok.output
     # And a new version taking the reply's id fails check.
-    (page_dir / "versions" / "v002.html").write_text(
+    (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace('<section id="plan">', '<section id="plan"><p id="q1">stolen</p>')
     )
     result = check(page_dir, version=2)
@@ -1143,7 +1159,7 @@ def test_the_runtimes_cq_id_namespace_is_off_limits(page_dir):
     message body, cq-composer-quote — and points ARIA at them. An authored id there would
     aim those references at the page instead, silently. One rule over both places an id
     can be authored: a version, and the widget markup in Claude's reply."""
-    (page_dir / "versions" / "v002.html").write_text(
+    (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace('<section id="plan">', '<section id="plan"><p id="cq-msg-7">mine</p>')
     )
     result = check(page_dir, version=2)
@@ -1217,7 +1233,7 @@ def test_widget_reply_requires_a_registry(page_dir):
 
 
 def test_note_refuses_a_version_that_fails_check(page_dir):
-    (page_dir / "versions" / "v001.html").write_text(PAGE.replace("</section>", ""))
+    (page_dir / "versions" / "v1.html").write_text(PAGE.replace("</section>", ""))
     result = CliRunner().invoke(
         interact.cli, ["note", str(page_dir), "--version", "1", "--text", "broken"]
     )
@@ -1275,7 +1291,7 @@ def test_a_quote_closing_its_section_stores_the_next_sections_words(page_dir):
         "</main>",
         '<section id="rollout">\n  <p>The rollout resumes.</p>\n</section>\n</main>',
     )
-    (page_dir / "versions" / "v001.html").write_text(two)
+    (page_dir / "versions" / "v1.html").write_text(two)
     event = json.loads(
         comment(published(page_dir), "--quote", "Deploys pause overnight.", "--text", "x").output
     )
@@ -1293,7 +1309,7 @@ def test_a_comment_refuses_a_quote_the_version_holds_twice(page_dir):
     """Which copy was meant is a question with an answer, and there is someone to ask.
     The browser has to guess because the reviewer has already gone; this doesn't."""
     twice = PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>\n  <p>Ship dark.</p>")
-    (page_dir / "versions" / "v001.html").write_text(twice)
+    (page_dir / "versions" / "v1.html").write_text(twice)
     result = comment(published(page_dir), "--quote", "Ship dark", "--text", "x")
     assert result.exit_code != 0
     assert "2 times" in result.output
@@ -1334,7 +1350,7 @@ def test_a_verbatim_body_is_quotable_where_a_source_body_is_not(page_dir):
         "</cq-options>",
         "</cq-options>\n  <cq-draft id=\"note\">\nAdds --dry-run to every mutating command.\n  </cq-draft>",
     )
-    (page_dir / "versions" / "v001.html").write_text(drafted)
+    (page_dir / "versions" / "v1.html").write_text(drafted)
     result = comment(published(page_dir), "--quote", "every mutating command", "--text", "which ones?")
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["anchor"]["section"] == "note"
@@ -1356,8 +1372,8 @@ SUGGESTED = PAGE.replace("<cq-options>", SUGGESTION)
 
 
 def suggested(page_dir):
-    """A published v001 carrying the sug-refill suggestion, both slots pending."""
-    (page_dir / "versions" / "v001.html").write_text(SUGGESTED)
+    """A published v1 carrying the sug-refill suggestion, both slots pending."""
+    (page_dir / "versions" / "v1.html").write_text(SUGGESTED)
     return published(page_dir)
 
 
@@ -1401,7 +1417,7 @@ def test_a_decision_settles_which_copy_a_quote_names(page_dir):
     twice = SUGGESTED.replace(
         "<h2>Plan</h2>", "<h2>Plan</h2>\n  <p>Refill every feeder each morning.</p>"
     )
-    (page_dir / "versions" / "v001.html").write_text(twice)
+    (page_dir / "versions" / "v1.html").write_text(twice)
     published(page_dir)
     ambiguous = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
     assert ambiguous.exit_code != 0 and "2 times" in ambiguous.output
@@ -1421,7 +1437,7 @@ def test_a_restated_suggestion_hands_its_slot_back(page_dir):
         "Refill when the camera shows it half-empty.",
         "Refill when the camera shows it two-thirds empty.",
     ).replace('<cq-suggestion id="sug-refill">', '<cq-suggestion id="sug-refill" restated>')
-    (page_dir / "versions" / "v002.html").write_text(revised)
+    (page_dir / "versions" / "v2.html").write_text(revised)
     noted = CliRunner().invoke(
         interact.cli, ["note", str(page_dir), "--version", "2", "--text", "revised the proposal"]
     )
@@ -1433,7 +1449,7 @@ def test_a_restated_suggestion_hands_its_slot_back(page_dir):
 def test_what_the_reader_never_sees_is_not_quotable(page_dir):
     """The runtime roots a section-less anchor at document.body, so a <title> is text no
     anchor can reach — and a page's title is often a sentence from the page as well."""
-    (page_dir / "versions" / "v001.html").write_text(
+    (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<title>t</title>", "<title>Backfill cutover plan</title>")
     )
     result = comment(published(page_dir), "--quote", "Backfill cutover plan", "--text", "x")

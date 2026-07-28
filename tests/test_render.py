@@ -350,14 +350,14 @@ def browser():
 
 @pytest.fixture
 def serve(tmp_path, monkeypatch):
-    """Publish HTML as v001 of a fresh page directory and serve it, as the real
+    """Publish HTML as v1 of a fresh page directory and serve it, as the real
     server does — vendoring included, so the assets under test are this repo's."""
 
     def go(html, comments=0, anchored=()):
         monkeypatch.chdir(tmp_path)  # keep the project layer out of the overlay
         d = tmp_path / "page"
         assert CliRunner().invoke(interact.cli, ["init", str(d)]).exit_code == 0
-        (d / "versions" / "v001.html").write_text(html)
+        (d / "versions" / "v1.html").write_text(html)
         interact.append_event(d, {"kind": "note", "author": "claude", "version": 1, "text": "t"})
         for i in range(comments):
             interact.append_event(d, {"kind": "comment", "author": "user", "version": 1,
@@ -373,7 +373,7 @@ def serve(tmp_path, monkeypatch):
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         servers.append(httpd)
         go.page_dir = d  # for tests that publish a v2 or read the event log
-        return f"http://127.0.0.1:{httpd.server_address[1]}/versions/v001.html"
+        return f"http://127.0.0.1:{httpd.server_address[1]}/versions/v1.html"
 
     servers = []
     yield go
@@ -430,7 +430,7 @@ def test_check_render_refuses_what_only_a_browser_can_see(serve):
 
     # A vw width slips the static lint (which counts only px) and overflows only
     # in a layout engine.
-    (d / "versions" / "v002.html").write_text(
+    (d / "versions" / "v2.html").write_text(
         LONG_PAGE.replace("</main>", "<div style='width:150vw'>wide</div>\n</main>")
     )
     broken = gate("--version", "2")
@@ -707,11 +707,11 @@ def test_a_pick_the_page_only_reports_can_still_be_pointed_at(browser, serve):
     # found again in the page the reviewer now has — and read as no change,
     # since the base version this diff loads has no mark in it at all.
     d = serve.page_dir
-    (d / "versions" / "v002.html").write_text(
+    (d / "versions" / "v2.html").write_text(
         CARRIED_PAGE.replace("Suits the mobile client", "Suits the mobile client best")
     )
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
-    page.wait_for_url("**/v002.html", timeout=10_000)
+    page.wait_for_url("**/v2.html", timeout=10_000)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(0)
 
@@ -1169,9 +1169,9 @@ def test_render_reports_markup_the_log_replays_over(browser, serve):
                                   "widget": widget, "action": action, "detail": detail})
 
     def publish(n, html):
-        (d / "versions" / f"v{n:03d}.html").write_text(html)
+        (d / "versions" / f"v{n}.html").write_text(html)
         interact.append_event(d, {"kind": "note", "author": "claude", "version": n, "text": "t"})
-        return url.replace("v001", f"v{n:03d}")
+        return url.replace("v1.html", f"v{n}.html")
 
     # v2 says nothing about either decision; both stand, and nothing is reported.
     assert interact.render_version(browser, publish(2, REPLAYED_PAGE)) == []
@@ -1226,9 +1226,9 @@ def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
     honored = REPLAYED_PAGE.replace(IMPORTER_CARD, "").replace(
         'label="Done">', f'label="Done">{IMPORTER_CARD}'
     )
-    (d / "versions" / "v002.html").write_text(honored)
+    (d / "versions" / "v2.html").write_text(honored)
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "t"})
-    third, third_errors = open_page(browser, url.replace("v001", "v002"))
+    third, third_errors = open_page(browser, url.replace("v1.html", "v2.html"))
     expect(third.locator("#col-done #card-importer")).to_be_visible()
     # Absence only counts once replay has decided every action.
     third.wait_for_function("() => document.body.dataset.cqApplied === '1'")
@@ -1633,7 +1633,7 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
     # draft is mid-composition — and offers the new version as a chip, which the
     # reviewer takes.
     d = serve.page_dir
-    (d / "versions" / "v002.html").write_text(
+    (d / "versions" / "v2.html").write_text(
         INLINE_PAGE.replace(
             "A paragraph carrying <strong>bold text</strong> and <em>emphasis</em> inside it,\n"
             "so that a selection across the middle of it lands in more than one text node.",
@@ -1643,7 +1643,7 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
     expect(page.locator(".cq-latest-chip")).to_be_visible()
     page.get_by_role("button", name="New version available", exact=False).click()
-    page.wait_for_url("**/v002.html", timeout=15000)
+    page.wait_for_url("**/v2.html", timeout=15000)
     page.wait_for_function(
         "() => document.querySelector('.cq-composer').style.display === 'block'"
     )
@@ -1839,11 +1839,11 @@ def test_a_widgets_attribute_takes_a_comment_like_any_other_passage(browser, ser
     # and the anchor is on a word only the runtime puts there, so it has to be found
     # again in the version the reviewer now has.
     d = serve.page_dir
-    (d / "versions" / "v002.html").write_text(
+    (d / "versions" / "v2.html").write_text(
         SAID_PAGE.replace("Waiting on the importer.", "Unblocked; starting Thursday.")
     )
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
-    page.wait_for_url("**/v002.html", timeout=10_000)
+    page.wait_for_url("**/v2.html", timeout=10_000)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     assert page.locator(".cq-thread .cq-quote.detached").count() == 0, (
         "the comment came loose from the heading when the version turned over"
@@ -2045,10 +2045,10 @@ def test_a_click_on_a_mark_decides_once(browser, serve):
 
     # The harm that outlives the stray button: a page mid-composition stays put.
     d = serve.page_dir
-    (d / "versions" / "v002.html").write_text(INLINE_PAGE.replace("<h1 id=\"t\">Inline</h1>",
+    (d / "versions" / "v2.html").write_text(INLINE_PAGE.replace("<h1 id=\"t\">Inline</h1>",
                                                                  "<h1 id=\"t\">Inline II</h1>"))
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
-    page.wait_for_url("**/v002.html", timeout=15000)
+    page.wait_for_url("**/v2.html", timeout=15000)
     assert errors == []
     page.close()
 
@@ -2218,9 +2218,9 @@ def test_a_revised_neighbourhood_does_not_hand_the_comment_to_another_copy(brows
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
 
     d = serve.page_dir
-    (d / "versions" / "v002.html").write_text(DRIFT_V2)
+    (d / "versions" / "v2.html").write_text(DRIFT_V2)
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"})
-    page.wait_for_url("**/v002.html", timeout=15000)
+    page.wait_for_url("**/v2.html", timeout=15000)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     where = page.evaluate("""() => {
         const r = [...CSS.highlights.get('cq-mark')][0];
@@ -2509,9 +2509,9 @@ def test_one_neighbour_is_not_enough_to_move_a_comment(browser, serve):
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
 
     d = serve.page_dir
-    (d / "versions" / "v002.html").write_text(THIN_V2)
+    (d / "versions" / "v2.html").write_text(THIN_V2)
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"})
-    page.wait_for_url("**/v002.html", timeout=15000)
+    page.wait_for_url("**/v2.html", timeout=15000)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     where = page.evaluate("""() => {
         const r = [...CSS.highlights.get('cq-mark')][0];
@@ -2519,6 +2519,40 @@ def test_one_neighbour_is_not_enough_to_move_a_comment(browser, serve):
     }""")
     assert where.startswith("The version stamp never lands. Backoff"), (
         f"one neighbour was enough to move the comment: {where!r}"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_the_picker_runs_in_number_order_past_v9(browser, serve):
+    """A version's number is its identity and its file name only renders it, so the
+    runtime parses the number back out of every name the server hands it. Order a
+    review by those names instead and v10 lands between v1 and v2: the picker reads
+    out of sequence, the diff offers the wrong base, and a reader on the newest
+    version is told a newer one is waiting."""
+    url = serve(INLINE_PAGE)
+    for n in range(2, 11):
+        _publish(serve.page_dir, n, INLINE_PAGE, f"cut {n}")
+    page, errors = open_page(browser, url.replace("v1.html", "v10.html"))
+
+    options = page.locator(".cq-banner select option")
+    expect(options).to_have_count(10)
+    assert [t.split(" ")[0] for t in options.all_text_contents()] == [
+        f"v{n}" for n in range(1, 11)
+    ]
+    expect(options.last).to_contain_text("v10 (latest)")
+    # The base a diff runs against is the version before this one in that order.
+    expect(page.locator(".cq-banner button", has_text="Δ")).to_have_text("Δ v9")
+    # Nothing is newer than v10, so no chip offers one.
+    expect(page.locator(".cq-latest-chip")).to_be_hidden()
+    assert errors == []
+    page.close()
+
+    # Pinned to the oldest, the chip naming the newest is the runtime's one place
+    # that spells a version out in a sentence.
+    page, errors = open_page(browser, url + "?pin")
+    expect(page.locator(".cq-latest-chip")).to_have_text(
+        "New version available → open v10"
     )
     assert errors == []
     page.close()
@@ -2615,7 +2649,7 @@ def _draft_says(html, text, attrs=""):
 def _publish(page_dir, version, html, note):
     """Write a version and publish it the way Claude does — through `note`, which
     lints it and records what it says about the reviewer's decisions."""
-    (page_dir / "versions" / f"v{version:03d}.html").write_text(html)
+    (page_dir / "versions" / f"v{version}.html").write_text(html)
     result = CliRunner().invoke(
         interact.cli,
         ["note", str(page_dir), "--version", str(version), "--text", note],
@@ -2686,9 +2720,9 @@ def test_review_round_trip(browser, serve):
         time.sleep(0.05)
 
     # Claude ships v2 with the passage moved; the page follows on its next poll.
-    (d / "versions" / "v002.html").write_text(JOURNEY_V2)
+    (d / "versions" / "v2.html").write_text(JOURNEY_V2)
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "moved"})
-    page.wait_for_url("**/v002.html", timeout=15000)
+    page.wait_for_url("**/v2.html", timeout=15000)
     # The anchor pass runs at render: a mark now means the quote was re-found in
     # its new position; no mark within the wait means the anchor lost it.
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0", timeout=5000)
@@ -2758,10 +2792,10 @@ def test_a_decision_claude_has_seen_still_survives_the_next_version(browser, ser
     # And Claude answers with a version that carries neither — the page generator
     # emitting its own idea of the board and the draft, as one did for five
     # versions running.
-    (d / "versions" / "v002.html").write_text(JOURNEY_V2)
+    (d / "versions" / "v2.html").write_text(JOURNEY_V2)
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "v2"})
 
-    page, errors = open_page(browser, url.replace("v001", "v002"))
+    page, errors = open_page(browser, url.replace("v1.html", "v2.html"))
     page.wait_for_function(
         "t => document.querySelector('#draft-ops .cq-draft-body').textContent === t",
         arg=DRAFT_EDITED,
@@ -2791,7 +2825,7 @@ def test_restating_a_widget_is_how_a_version_takes_the_pen_back(browser, serve):
     _publish(d, 2, _draft_says(JOURNEY_V2, corrected, " restated"),
              "0041 needs the column; rewrote the draft")
 
-    page, errors = open_page(browser, url.replace("v001", "v002"))
+    page, errors = open_page(browser, url.replace("v1.html", "v2.html"))
     body = page.locator("#draft-ops .cq-draft-body")
     expect(body).to_have_text(corrected)
     # And the reviewer is told, rather than left to notice: their edit is gone,
@@ -2803,9 +2837,9 @@ def test_restating_a_widget_is_how_a_version_takes_the_pen_back(browser, serve):
 
 def test_a_retraction_outlives_the_version_that_made_it(browser, serve):
     """`restated` belongs to the version that rewrote the words, and to no other:
-    v003 has nothing to declare, because it is not the one taking anything back.
+    v3 has nothing to declare, because it is not the one taking anything back.
 
-    So the retraction cannot live in the markup, or v003's silence would read as
+    So the retraction cannot live in the markup, or v3's silence would read as
     "carry the decision" and hand the reviewer's edit straight back — the same
     resurrection the branch removed, one version later and just as quiet.
     Publishing records it in the log instead, where it is a fact with a version
@@ -2817,25 +2851,25 @@ def test_a_retraction_outlives_the_version_that_made_it(browser, serve):
                               "detail": {"text": DRAFT_EDITED}})
     corrected = "Run the migration after deploying — it needs the new column."
     _publish(d, 2, _draft_says(JOURNEY_V2, corrected, " restated"), "rewrote the draft")
-    # v003 keeps v002's words and says nothing about the retraction, because
+    # v3 keeps v2's words and says nothing about the retraction, because
     # saying it again would be claiming to undo a decision already undone.
     _publish(d, 3, _draft_says(JOURNEY_V2, corrected), "unrelated copy edits")
 
-    page, errors = open_page(browser, url.replace("v001", "v003"))
+    page, errors = open_page(browser, url.replace("v1.html", "v3.html"))
     expect(page.locator("#draft-ops .cq-draft-body")).to_have_text(corrected)
     assert errors == []
     page.close()
 
     # And the careful author who carries the attribute forward anyway — the habit
     # this whole design exists to break — is told which version already did it.
-    (d / "versions" / "v004.html").write_text(
+    (d / "versions" / "v4.html").write_text(
         _draft_says(JOURNEY_V2, corrected, " restated")
     )
     result = CliRunner().invoke(
         interact.cli, ["note", str(d), "--version", "4", "--text", "again"]
     )
     assert result.exit_code != 0
-    assert "v002 already took that back" in result.output
+    assert "v2 already took that back" in result.output
 
 
 @pytest.fixture(scope="module")
@@ -3028,9 +3062,9 @@ def test_a_written_anchor_keeps_its_copy_when_the_page_grows_another(browser, se
 
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
-    (d / "versions" / "v002.html").write_text(TWIN_V2)
+    (d / "versions" / "v2.html").write_text(TWIN_V2)
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "a twin"})
-    page.wait_for_url("**/v002.html", timeout=15000)
+    page.wait_for_url("**/v2.html", timeout=15000)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     where = page.evaluate(
         "() => [...CSS.highlights.get('cq-mark')][0].startContainer.parentElement.id"

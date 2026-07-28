@@ -1755,7 +1755,7 @@ threadsBox.addEventListener("keydown", (ev) => {
 // [ and ] step versions with the picker's own pin semantics.
 function stepVersion(dir) {
   const names = [...versionSelect.options].map((o) => o.value);
-  const at = names.indexOf(vname(VNUM));
+  const at = names.findIndex((name) => vnum(name) === VNUM);
   const next = at === -1 ? null : names[at + dir];
   if (next) goVersion(next);
 }
@@ -1890,7 +1890,7 @@ diffBtn.onclick = async () => {
     const n = await applyDiff(diffBase);
     diffOn = true;
     diffBtn.classList.add("on");
-    const baseLabel = diffBase.replace(/\.html$/, "").replace(/^v0*/, "v");
+    const baseLabel = `v${vnum(diffBase)}`;
     showToast(n ? `${n} changed passage${n === 1 ? "" : "s"} since ${baseLabel}` : `No text changes since ${baseLabel}`);
   } catch {
     showToast("Couldn't load the previous version");
@@ -1956,7 +1956,11 @@ function renderStatus(state) {
     );
 }
 
-const vname = (n) => `v${String(n).padStart(3, "0")}.html`;
+// A version's number is its identity; its file name only renders it. So every
+// question about which version something is — is this the newest, where does it
+// sit in the list, what does the button call it — parses the number out rather
+// than rebuilding a name to match against the server's list.
+const vnum = (name) => parseInt(name.match(/^v(\d+)\.html$/)[1], 10);
 // Navigate to a version with the pin semantics every chooser shares: an older
 // version pins the view, the newest unpins it.
 const goVersion = (name) => {
@@ -1966,21 +1970,22 @@ function renderVersions(state) {
   const notes = {};
   for (const e of events) if (e.kind === "note") notes[e.version] = e.text;
   const key = JSON.stringify([state.versions, notes]);
+  const current = state.versions.find((name) => vnum(name) === VNUM);
   if (key !== lastVersionsKey) {
     lastVersionsKey = key;
     versionSelect.textContent = "";
     for (const name of state.versions) {
-      const n = parseInt(name.match(/v(\d+)/)[1], 10);
+      const n = vnum(name);
       const opt = document.createElement("option");
       opt.value = name;
       const isLatest = name === state.versions.at(-1);
       opt.textContent = `v${n}${isLatest ? " (latest)" : ""}${notes[n] ? " · " + notes[n] : ""}`;
       versionSelect.append(opt);
     }
-    versionSelect.value = vname(VNUM);
+    versionSelect.value = current ?? "";
   }
   latestName = state.versions.at(-1) || "";
-  const behind = latestName && VNUM !== null && latestName !== vname(VNUM);
+  const behind = latestName && VNUM !== null && vnum(latestName) !== VNUM;
   // Follow the newest version unless pinned or the user is mid-composition:
   // drafts survive navigation, but an open composer or a live selection
   // doesn't. While deferred, the chip shows instead.
@@ -1990,12 +1995,12 @@ function renderVersions(state) {
   }
   latestChip.style.display = behind ? "" : "none";
   if (behind)
-    latestChip.textContent = `New version available → open ${latestName.replace(".html", "")}`;
-  const idx = state.versions.indexOf(vname(VNUM));
+    latestChip.textContent = `New version available → open v${vnum(latestName)}`;
+  const idx = current ? state.versions.indexOf(current) : -1;
   diffBase = idx > 0 ? state.versions[idx - 1] : "";
   diffBtn.style.display = diffBase ? "" : "none";
   if (diffBase) {
-    const n = parseInt(diffBase.match(/v(\d+)/)[1], 10);
+    const n = vnum(diffBase);
     diffBtn.textContent = `Δ v${n}`;
     diffBtn.title = `Highlight what changed since v${n}`;
   }

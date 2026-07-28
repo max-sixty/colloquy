@@ -42,7 +42,7 @@ edit the examples, not it). Serve one against the shipped layer to try it:
 
 ```
 uv run skills/colloquy/scripts/interact.py init /tmp/demo
-cp examples/triage-board.html /tmp/demo/versions/v001.html
+cp examples/triage-board.html /tmp/demo/versions/v1.html
 uv run skills/colloquy/scripts/interact.py note /tmp/demo --version 1 --text "demo"
 uv run skills/colloquy/scripts/interact.py serve /tmp/demo
 ```

@@ -50,7 +50,7 @@ def main() -> None:
         colloquy("stop", str(PAGE), check=False)
         shutil.rmtree(PAGE)
     colloquy("init", str(PAGE))
-    (PAGE / "versions" / "v001.html").write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    (PAGE / "versions" / "v1.html").write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
     colloquy("note", str(PAGE), "--version", "1", "--text", f"{source.name}, as it stands in the tree")
     colloquy("serve", str(PAGE))
 

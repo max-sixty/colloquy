@@ -12,7 +12,7 @@ DIR="${TMPDIR:-/tmp}/colloquy-demo"
 rm -rf "$DIR"
 $IX init "$DIR" >/dev/null
 
-cat > "$DIR/versions/v001.html" <<'HTML'
+cat > "$DIR/versions/v1.html" <<'HTML'
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Migration plan</title>
@@ -70,9 +70,9 @@ Shot list for docs/demo.gif (~30s, keep it tight):
   1. Open the URL. Let the banner read "Claude is listening".
   2. Select the text "one weekend of downtime" and comment:
        "Can we avoid the downtime window entirely?"
-  3. In another terminal, drive Claude to reply + ship v002:
+  3. In another terminal, drive Claude to reply + ship v2:
        $IX reply "$DIR" --to <id> --text "Yes: phase 3 becomes an online swap."
-       (write versions/v002.html changing phase 3, then:)
+       (write versions/v2.html changing phase 3, then:)
        $IX note "$DIR" --version 2 --text "Phase 3 is now an online swap, no downtime"
   4. Back in the browser: the banner flips to "working", the picker gains v2,
      and the reply lands in the thread.

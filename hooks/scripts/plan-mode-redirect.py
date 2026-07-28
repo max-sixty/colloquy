@@ -28,7 +28,7 @@ REDIRECT = (
     "colloquy-plans is on. Do not start implementing yet. Present the plan you "
     "just finalized as a colloquy review page: follow the colloquy skill — init a "
     "directory under ~/.local/state/colloquy/pages/<slug>/, write the plan as "
-    "versions/v001.html (sections with stable ids; widgets and idioms per the "
+    "versions/v1.html (sections with stable ids; widgets and idioms per the "
     'vendored catalog; <meta name="cq-review" content="sign-off"> in the head — '
     "approval is the point of a plan page), serve it, note the version, "
     "and hand over the URL. Then enter the comment/reply/revise loop. Treat the "
