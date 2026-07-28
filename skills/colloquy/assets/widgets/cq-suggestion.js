@@ -22,7 +22,7 @@
  * controls at all (a narrow window, or the comment panel squeezing the page),
  * where it isn't they dock into flow; and whether two rows land on top of each
  * other, which a translate nudges apart without touching layout. */
-import { DECIDED_VERB, offer, once, quoted, sendAction, toast } from "/colloquy.js";
+import { DECIDED_VERB, offer, once, quoted, says, sendAction, toast } from "/colloquy.js";
 
 // Every row on the page, so one observer serves all of them.
 const rows = new Set();
@@ -129,7 +129,7 @@ customElements.define(
     #label() {
       const slot =
         this.querySelector(":scope > cq-new") || this.querySelector(":scope > cq-old");
-      const text = (slot?.textContent || this.id).replace(/\s+/g, " ").trim();
+      const text = (slot && says(slot)) || this.id;
       return text.length > 48 ? text.slice(0, 48) + "…" : text;
     }
 
@@ -139,6 +139,10 @@ customElements.define(
 
     #decide(outcome) {
       if (this.dataset.cqState) return Promise.resolve(true);
+      // Read before settling: deciding retires a slot, a retired slot leaves the page's
+      // reading, and `says` on what has left the reading answers nothing — the toast
+      // then named the widget's id instead of the words the reviewer just judged.
+      const label = this.#label();
       this.#settle(outcome);
       // Accepting the fix answers the thread it was written for, so the same
       // event carries it: the mapping is snapshotted into the action, because
@@ -153,7 +157,7 @@ customElements.define(
           return false;
         }
         toast(
-          `${outcome === "accept" ? "Accepted" : "Rejected"} “${this.#label()}” — sent to Claude`,
+          `${outcome === "accept" ? "Accepted" : "Rejected"} “${label}” — sent to Claude`,
         );
         return true;
       });

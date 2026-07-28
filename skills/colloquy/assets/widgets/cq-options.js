@@ -40,7 +40,16 @@
  * channel and not presentation.
  *
  * Authored content is never replaced, so there is no failSoft. */
-import { HIDDEN, offer, once, quoted, relabel, sendAction, toast } from "/colloquy.js";
+import { HIDDEN, offer, once, quoted, relabel, says, sendAction, toast } from "/colloquy.js";
+
+// An option's lede, or nothing where it has none — each caller has its own answer to that,
+// and the settled title's is to say "Settled" rather than name an id nobody wrote. Read
+// through `says` rather than textContent: a comment anchored inside the option puts the
+// runtime's own hidden line in there too.
+const optionLede = (option) => {
+  const strong = option.querySelector(":scope > strong");
+  return strong ? says(strong) : "";
+};
 
 const OPEN = "choose"; // the card is pickable
 const PICKED = "your pick"; // this reader picked it, this session
@@ -86,7 +95,7 @@ customElements.define(
         // else to get out of it.
         const next = option === prev ? null : option;
         this.#choose(next);
-        const title = option.querySelector(":scope > strong")?.textContent || option.id;
+        const title = optionLede(option) || option.id;
         const sent = next ? `Chose “${title}” — sent to Claude` : "Cleared your pick — sent to Claude";
         sendAction(this, "choose", { option: next?.id ?? null }).then((ok) => {
           if (ok) toast(sent);
@@ -141,7 +150,7 @@ customElements.define(
         return;
       }
       relabel(mark, label, { says: label !== OPEN });
-      const title = option.querySelector(":scope > strong")?.textContent || option.id;
+      const title = optionLede(option) || option.id;
       mark.setAttribute("aria-label", `${label}: ${title}`);
       mark.setAttribute("aria-pressed", String(option.hasAttribute("chosen")));
     }
@@ -199,7 +208,7 @@ customElements.define(
     #retitle() {
       if (!this.#title) return;
       const chosen = this.querySelector(":scope > cq-option[chosen]");
-      const name = chosen?.querySelector(":scope > strong")?.textContent.trim();
+      const name = chosen && optionLede(chosen);
       this.#title.textContent = name ? `Settled: ${name}` : "Settled";
     }
 

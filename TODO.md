@@ -78,6 +78,12 @@ stands alone.
       screen reader hears the move announced when it is made but nothing durable after.
       The grip's label (the board module's names pass) is the natural place to say it,
       and the board module is that label's one writer.
+- [ ] The hidden line that tells a screen reader a block carries a comment can't be
+      followed to the thread it counts: whoever hears "2 comments" goes to the panel to
+      find which passage each one is on. Making it followable means a focusable element
+      inside the author's prose, which is either a visible affordance on focus or an
+      invisible tab stop, and neither is obviously worth it while j/k walks every thread
+      with its quote.
 - [ ] The toast steps aside for the panel (`right:` panel width + 18px), which beside a
       covering sheet on a very narrow window puts it off-canvas. The covering layout
       wants its own answer here, as it got for scrolling, rather than the wide
@@ -100,10 +106,10 @@ stands alone.
       scrolls); and the narrow viewport's box dump (its scroll ownership is
       asserted in the suite).
 - [ ] What the runtime writes onto the page's own elements is a hand-list. `shallowSigs`
-      looks away from `class`, `aria-describedby`, and `data-cq-*` so the replay gate
-      doesn't read the runtime's paint as disagreement — a list a future
-      runtime-written attribute must join, or it starts seeing ghosts. One
-      declaration beside the writers would give the list an owner.
+      looks away from `class` and `data-cq-*` so the replay gate doesn't read the
+      runtime's paint as disagreement — a list a future runtime-written attribute
+      must join, or it starts seeing ghosts. One declaration beside the writers
+      would give the list an owner.
 - [ ] An overlaid registry can name an `x-retired-when` the runtime's `DECIDED_VERB`
       doesn't know, and the generated selector then matches nothing — a retired slot
       silently quotable again. Unreachable in the shipped registry; the vendored-registry

@@ -133,12 +133,20 @@ What wrapping gave for free — knowing which thread the pointer is over, and th
 cursor — comes back as a geometric hit-test (`markAt`) over the pass's own record of what
 it drew.
 
-One thing comes back coarser: a painted range builds no accessibility node, where a
-`<mark>` was a `mark` node, so the passage itself can't say it carries a comment. The
-block it lands in says it instead — `aria-describedby` from that block to the comment's
-own words in the panel, written by the same pass that paints, the author's own attribute
-restored when the last thread leaves. A mark nobody can click is still worse than one
-nobody hears; the trade stands, at a block's coarseness rather than in silence.
+A painted range builds no accessibility node either, where a `<mark>` was a `mark` node,
+and no ARIA relation puts one back: on a block that isn't focusable, NVDA ignores
+`aria-describedby` in browse mode and reports none of the labelling attributes on a bare
+`<p>` at all, VoiceOver reads it only on an interactive, image or landmark role, and
+`aria-details` is supported unevenly and says only that details exist. What every screen
+reader announces in every mode is text, so the same pass writes one hidden, unselectable
+line per block that holds a mark, saying how many comments are on it. It names the block
+rather than the words, because naming the words is wrapping them again.
+
+State the cost anyway: a norm that hides what it costs gets applied where it shouldn't be.
+Writing text into the author's document is a thing to do carefully rather than freely —
+the line has to stay out of a selection, out of the next quote, out of what a widget reads
+back as its own, and out of the mutation stream a screen reader rebuilds its buffer on.
+Each of those is a rule the pass keeps rather than a property it gets for free.
 
 ### Assume the browser it already assumes
 
@@ -164,9 +172,12 @@ runtime's words, not the page's".
 Chrome is a look, not a permission, and the reviewer has no such category. `.cq-ui`
 belongs on the runtime's own layer and on the controls a widget injects — a control is a
 thing to work rather than a thing to say, which is why its label is usually the name of
-an action ("Save", "choose", the drag grip). A widget's own label, note, heading, or badge
-wears `data-cq-gen` alone: the version diff looks away from it, the anchor pass does not,
-and those two questions were never the same question.
+an action ("Save", "choose", the drag grip). The line counting the comments on a passage
+is the same kind of word for the same reason: it is about the document rather than of it,
+which is why it wears `.cq-ui` even inside a widget, and why the gate names it beside the
+controls rather than as a heading someone hid. A widget's own label, note, heading, or
+badge wears `data-cq-gen` alone: the version diff looks away from it, the anchor pass does
+not, and those two questions were never the same question.
 
 The rule has a second edge, and that one had every shipped widget: `content: attr(label)`
 paints glyphs into no text node, so a metric's headline number, a column's heading and an
@@ -226,6 +237,21 @@ re-vendor over a log recorded in vocabulary the incoming layer no longer speaks 
 lost-decision bug's third door, after version-scoping and hand-copying: fifteen of
 this page's own `decide` events fell silent when the verb was retired, and only the
 stamp makes that a refusal instead of a quiet no-op.
+
+The traffic runs the other way too. A comment can land anywhere the reviewer can select,
+so the hidden line announcing one lands inside widgets — and a widget reading its own light
+DOM back gets the runtime's words along with the author's. `.cq-ui` is no help there: it
+keeps chrome out of everything *the runtime* reads (the quote search, the capture, the
+version diff), and `textContent` honours no markers.
+
+Two rules, because there are two failures. The line goes on a text block or on the element
+an anchor names, never on the inline run or body div between them: `cq-draft` seeds the
+editor a reviewer types into from its body div, and a line left there arrived in the
+textarea and posted with their edit. And a widget asking what its own slot holds calls
+`says`, not `textContent` — a block inside a widget is still a block, so the line lands in
+it legitimately, and `cq-suggestion` labelled itself from the raw text and offered to
+accept "Retry three times. 1 comment". The first rule keeps the line out of a widget's
+content; the second is for where it belongs there anyway.
 
 ### The chrome's rules stay inside the chrome
 

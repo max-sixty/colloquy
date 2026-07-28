@@ -8,7 +8,7 @@
  * reviewer can select. Upgrades flush before the first anchor pass, so comment quotes
  * always search the enhanced DOM. Widget modules import the helper surface exported here
  * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `quoted`, `offer`, `relabel`,
- * `toast`, `announce`, `keyHelp`, `pageScroller`, `HIDDEN`, `REDUCED`, `SCROLL`,
+ * `says`, `toast`, `announce`, `keyHelp`, `pageScroller`, `HIDDEN`, `REDUCED`, `SCROLL`,
  * `DECIDED_VERB`); it stays minimal until a real widget needs more.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
@@ -366,6 +366,12 @@ style.textContent = `
   body.cq-over-mark { cursor: pointer; }
   .cq-mark-el { outline: 2px solid var(--quote-bar); outline-offset: 3px; border-radius: 2px; cursor: pointer; }
   .cq-mark-el.cq-pending { outline-color: var(--accent); cursor: auto; }
+  /* The one runtime word living inside the page's own elements, so its hiding cannot
+     come from the chrome's scoped .cq-unseen — the same recipe, restated at document
+     level. user-select keeps it out of a selection too, so the runtime's own words can
+     never end up inside a quote the reviewer captures. */
+  .cq-mark-note { position: absolute; width: 1px; height: 1px; padding: 0; border: 0;
+    overflow: hidden; clip-path: inset(50%); user-select: none; }
   .cq-ins-block { background: var(--add-tint); box-shadow: 0 0 0 4px var(--add-tint); border-radius: 2px; }
   /* Paper takes no input, so what a widget injects to be worked goes: the control,
      and the box that holds controls. What stays is a control whose label is one of
@@ -777,10 +783,7 @@ function msgNode(m) {
       renderSaid(body); // custom elements upgrade themselves on insertion; this doesn't
     } else body.textContent = m.text;
     if (m.suggestion) body.classList.add("cq-suggest-body");
-    // The node a commented block points its aria-describedby at, so the id has to
-    // hold the comment's words and none of the thread's controls.
-    body.id = "cq-msg-" + m.id; // server-minted, on every event
-    msgBodies.set(m.id, body);
+    msgBodies.set(m.id, body); // the id is server-minted, on every event
   }
   div.append(head);
   if (m.suggestion) div.append(el("div", "cq-suggest-label", "suggested replacement"));
@@ -979,7 +982,10 @@ function segmentsIn(range) {
 // on screen. Sliced by code point, because half a surrogate pair is a character no UTF-8
 // file can hold. Where the spaces landed is cosmetic to the search: a quote's own
 // whitespace is elastic to findQuote, so nothing downstream depends on this.
-const blockOf = (node) => node.parentElement.closest(TEXT_BLOCK) ?? node.parentElement;
+// The block a node reads as part of, and null where it belongs to no block of its own —
+// which is a different answer from "its parent", and the two callers want different ones.
+const blockAt = (node) => node.parentElement.closest(TEXT_BLOCK);
+const blockOf = (node) => blockAt(node) ?? node.parentElement;
 function quoteFrom(segments) {
   let text = "";
   segments.forEach((seg, i) => {
@@ -991,6 +997,13 @@ function quoteFrom(segments) {
 // Cutting one to length is the caller's business and always by code point: half a surrogate
 // pair is a character no UTF-8 file can hold, and a quote is written to one.
 const cut = (text, from, to) => [...text].slice(from, to).join("");
+
+// What an element says, read the way this file reads the page everywhere else. A widget
+// wanting the words in one of its own slots asks for them here rather than through
+// `textContent`, because the two differ: the paint pass writes a hidden line into any text
+// block that carries a comment, including blocks inside a widget, and `textContent` returns
+// it. A suggestion labelled that way offered to accept “Retry three times. 1 comment”.
+export const says = (el) => quoteFrom(textNodesUnder(el));
 
 // A passage as one Range: what paints it, and what measures it for a scroll.
 function rangeOf(segments) {
@@ -1023,7 +1036,7 @@ const EDGE = "\u0000"; // no document holds one, so it can't collide with page t
 // to, and stored that way. Section scoping cannot reach it, because both sides of a diff
 // live under one id. Context rather than an offset: an offset goes stale silently when the
 // page is revised, while neighbours can be checked against the page as it now stands — see
-// `confirms` for what checking them means, and what it deliberately refuses to do.
+// `holds` for what checking them means, and what it deliberately refuses to do.
 // Anchors written before this carry none and resolve as they did.
 // The characters of raw[lo..hi) as segments, so a neighbourhood can be read back with the
 // same function that wrote it down. Edges hold no character and are simply absent.
@@ -1049,17 +1062,25 @@ function spanOf(origin, lo, hi) {
 // Rare, not impossible. The bar is however much was stored, and the capture reads the
 // neighbours out of the whole document — a section is a filter on where a passage may sit,
 // not on what surrounds it — so both sides are full except against the document's own
-// ends, where the search below refuses one-sided context outright. Anchors written before
-// context reached past the section carry a side clipped at its edge; they confirm at that
-// shorter bar, which is the bar they were stored under.
+// ends. Anchors written before context reached past the section carry a side clipped at
+// that edge; they confirm at that shorter bar, which is the bar they were stored under.
 //
 // The bar is what the capture actually produces, not a number picked to fit: across every
 // selection in the shipped examples, an unmodified page confirms its stored context in full.
-const confirms = (a, b, fromEnd) => {
-  let n = 0;
-  const len = Math.min(a.length, b.length);
-  while (n < len && (fromEnd ? a.at(-1 - n) === b.at(-1 - n) : a[n] === b[n])) n++;
-  return n;
+//
+// An empty side is the case worth stating, because reading it as an absent constraint is
+// what sends a comment to a copy it was never made on. The capture reads the whole
+// document, so a side comes out empty only where the passage had nothing at all beside it:
+// the top or bottom of the page, the one place no capture can give two sides to. That is
+// not a missing constraint but the tightest one there is, and it is checkable — a candidate
+// confirms it by also having nothing there, which exactly one occurrence does. Refusing to
+// read it that way handed the last copy's mark to the first.
+const holds = (origin, at, want, before) => {
+  // One character is all it takes to refute an empty side, and asking for none would answer
+  // with none: doubling zero never grows.
+  const there = neighbourhood(origin, at, want.length || 1, before);
+  if (!want) return there === "";
+  return before ? there.endsWith(want) : there.startsWith(want);
 };
 // As much collapsed text as the stored context is long, however much raw text that takes.
 // A fixed raw budget reads less than the capture wrote wherever whitespace runs dense — an
@@ -1073,15 +1094,20 @@ function neighbourhood(origin, at, want, before) {
     const lo = before ? at - raw : at;
     const hi = before ? at : at + raw;
     const text = quoteFrom(spanOf(origin, lo, hi));
-    // >=, not >, so a caller asking for nothing gets an answer: doubling zero never grows.
     if (text.length >= want || (before ? lo <= 0 : hi >= origin.length)) return text;
   }
 }
-const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-function findQuote(segments, quote, anchor, within) {
+// What the page says, once, as one string with a way back to the nodes it came from. Built
+// per pass rather than per anchor: every anchor a pass places is asking about the same
+// document, and the pass is what fixes which document that is — resolving each against its
+// own fresh reading would let two marks in one pass answer for two different pages, since a
+// widget can upgrade between them. Forty threads on a 13k-character page also spent it
+// forty times: 9.3ms of index building per pass, besides the forty tree walks feeding
+// it, against 1.5ms for the one read that replaces them.
+function pageText() {
   let raw = "";
   const origin = []; // origin[i] = {node, offset} for raw[i]; null for an edge
-  for (const seg of segments) {
+  for (const seg of textNodesUnder(document.body)) {
     if (raw) {
       origin.push(null);
       raw += EDGE;
@@ -1091,6 +1117,10 @@ function findQuote(segments, quote, anchor, within) {
       raw += seg.node.data[i];
     }
   }
+  return { raw, origin };
+}
+const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function findQuote({ raw, origin }, quote, anchor, within) {
   const words = quote.trim().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const pattern = new RegExp(
@@ -1113,45 +1143,26 @@ function findQuote(segments, quote, anchor, within) {
   let first = null;
   let found = null;
   for (const at of raw.matchAll(pattern)) {
+    const stop = at.index + at[0].length;
     if (
       within &&
-      !(within.contains(origin[at.index].node) &&
-        within.contains(origin[at.index + at[0].length - 1].node))
+      !(within.contains(origin[at.index].node) && within.contains(origin[stop - 1].node))
     )
       continue;
     first ??= at;
-    // Both sides or nothing. A partial confirmation is evidence the page moved on, and a
-    // missing side — the document's own edge, or an anchor stored before context reached
-    // past the section — is a bar another copy could clear. That failure is silent and
-    // arrives later, when nobody is looking; the failure this costs is the mark painting
-    // on the wrong copy while the reviewer is still composing, in front of them.
-    if (!pre || !post) break;
-    const stop = at.index + at[0].length;
-    const kept =
-      confirms(neighbourhood(origin, at.index, pre.length, true), pre, true) +
-      confirms(neighbourhood(origin, stop, post.length, false), post, false);
-    if (kept === pre.length + post.length) {
+    // Both sides, whole, or this is not the passage. Nothing is weighed against anything: a
+    // side that has moved on is not weak evidence for a copy, it is evidence the page moved
+    // on, and the fallback is where the comment already was.
+    if (holds(origin, at.index, pre, true) && holds(origin, stop, post, false)) {
       found = at;
       break;
     }
   }
   found ??= first;
-  if (!found) return [];
-  // Both ends land on a real character: the pattern opens and closes on one, and an edge
-  // only ever stands between them.
-  const from = origin[found.index];
-  const to = origin[found.index + found[0].length - 1];
-  const hit = [];
-  let started = false;
-  for (const seg of segments) {
-    const start = seg.node === from.node ? from.offset : started ? seg.start : null;
-    if (start === null) continue;
-    started = true;
-    const end = seg.node === to.node ? to.offset + 1 : seg.end;
-    if (end > start) hit.push({ node: seg.node, start, end });
-    if (seg.node === to.node) break;
-  }
-  return hit;
+  // The characters the match covers, cut out of the index the same way a neighbourhood is —
+  // walking the segments a second time to rebuild the span would be a second answer to
+  // "which text is this", and the two disagree wherever an edge falls inside the match.
+  return found ? spanOf(origin, found.index, found.index + found[0].length) : [];
 }
 
 // ---------- view continuity ----------
@@ -1211,13 +1222,14 @@ function captureView() {
 // a mark the reader asked for is the other case, and says so.
 const jumpBy = (dy, behavior = "instant") => pageScroller.scrollBy({ top: dy, behavior });
 function restoreView(view) {
-  const found = view.quote && resolveAnchor(view);
+  const text = pageText();
+  const found = view.quote && resolveAnchor(view, text);
   if (found?.segments) {
     reveal(found.segments[0].node.parentElement); // the passage may sit behind a tab
     jumpBy(rangeOf(found.segments).getBoundingClientRect().top - view.quoteTop);
     return;
   }
-  const section = resolveAnchor({ section: view.section })?.element;
+  const section = resolveAnchor({ section: view.section }, text)?.element;
   if (section) {
     reveal(section);
     jumpBy(section.getBoundingClientRect().top - view.sectionTop);
@@ -1234,15 +1246,19 @@ function restoreView(view) {
 // neighbours from — and the section the anchor names filters where a candidate may sit.
 // A section the page no longer has filters nothing, so the quote is still looked for
 // everywhere, which is all a stale section ever meant.
-function resolveAnchor(anchor) {
+// Which element an anchor names, asked in one place: the element it resolves to when it
+// carries no quote, the subtree a candidate has to sit inside when it does, and the holder
+// of the line saying a passage carries a comment are all this question.
+const sectionOf = (anchor) =>
+  anchor.section ? document.getElementById(anchor.section) : null;
+function resolveAnchor(anchor, text) {
   // An element anchor asks a different question — whether the section exists at all — and
   // the whole page is not an answer to it.
   if (!anchor.quote) {
-    const section = anchor.section && document.getElementById(anchor.section);
+    const section = sectionOf(anchor);
     return section ? { element: section } : null;
   }
-  const within = (anchor.section && document.getElementById(anchor.section)) || null;
-  const segments = findQuote(textNodesUnder(document.body), anchor.quote, anchor, within);
+  const segments = findQuote(text, anchor.quote, anchor, sectionOf(anchor));
   return segments.length ? { segments } : null;
 }
 
@@ -1260,8 +1276,8 @@ function resolveAnchor(anchor) {
 // hit-test asks "where is thread X", and that is now the direction the map runs.
 const MARK = "cq-mark";
 const PENDING = "cq-pending";
+const NOTE = "cq-mark-note";
 const marked = new Map(); // thread id -> (Range | Element)[]: the pass's record of what it drew
-const described = new Map(); // block -> its authored aria-describedby, held while the pass overrides it
 let pendingMarks = []; // the same record for the open composer's own passage
 let pendingOutline = null; // the element the open composer outlines, owned by nobody else
 const pointer = { x: -1, y: -1 }; // last seen, so a repaint can re-answer the hover
@@ -1269,6 +1285,35 @@ let hovering = null;
 let hoverQueued = false;
 const marksOf = (id) => marked.get(id) ?? [];
 const allMarks = () => [...marked.values()].flat();
+// What a reader who cannot see the paint is told. A highlight is glyphs, not an element, so
+// it builds no accessibility node — where a <mark> wrapper was a `mark` node, the paint is
+// nothing at all, and a passage carrying a comment reads exactly like one that doesn't.
+// Neither relation ARIA offers brings it back on something not focusable: NVDA ignores
+// aria-describedby there in browse mode and reports none of the labelling attributes on a
+// bare p or div at all, VoiceOver reads it only on an interactive, image or landmark role,
+// and aria-details is supported unevenly and says only that details exist. What every
+// screen reader announces in every mode is text, so the fact is carried as text — one
+// hidden, unselectable line inside whatever holds the mark, saying how many comments are
+// on it.
+//
+// Coarser than the mark, and deliberately: it names the block a passage sits in rather than
+// the passage, because naming the passage means wrapping it, and wrapping is what a redraw
+// between a mousedown and its mouseup turns into a swallowed click. The panel still carries
+// each thread's own quote. Written only where the text differs from what is already there,
+// because a screen reader rebuilds its buffer on every mutation and this pass runs on every
+// poll.
+function noteMarks(noted) {
+  for (const [holder, n] of noted) {
+    const note =
+      holder.querySelector(`:scope > .${NOTE}`) ??
+      holder.appendChild(el("span", `cq-ui ${NOTE}`));
+    const said = ` ${n} comment${n === 1 ? "" : "s"}`;
+    if (note.textContent !== said) note.textContent = said;
+  }
+  for (const note of document.querySelectorAll(`.${NOTE}`))
+    if (!noted.has(note.parentElement)) note.remove();
+}
+
 function paintAnchors() {
   for (const where of allMarks())
     if (where instanceof Element) where.classList.remove("cq-mark-el");
@@ -1276,51 +1321,38 @@ function paintAnchors() {
   marked.clear();
   pendingOutline = null;
 
+  const text = pageText(); // read once, for every anchor this pass places
   const posted = [];
-  const descriptions = new Map(); // block -> panel ids of the comments on it, this pass
-  const describe = (block, id) => {
-    if (!descriptions.has(block)) descriptions.set(block, []);
-    descriptions.get(block).push("cq-msg-" + id);
-  };
+  const noted = new Map(); // element -> how many threads mark something inside it
   for (const t of buildThreads()) {
     if (t.resolved || !t.root.anchor) continue;
-    const found = resolveAnchor(t.root.anchor);
+    const found = resolveAnchor(t.root.anchor, text);
     if (!found) continue;
     if (found.element) {
       found.element.classList.add("cq-mark-el");
       marked.set(t.root.id, [found.element]);
-      describe(found.element, t.root.id);
     } else {
       const ranges = found.segments.map((seg) => rangeOf([seg]));
       marked.set(t.root.id, ranges);
       posted.push(...ranges);
-      for (const block of new Set(found.segments.map((seg) => blockOf(seg.node))))
-        describe(block, t.root.id);
     }
-  }
-
-  // A painted range builds no accessibility node, so the block a comment lands in
-  // carries the fact instead: aria-describedby to the comment's own words in the
-  // panel — coarser than the mark, the same fact. The authored attribute is the
-  // initial condition, kept in the record so the last thread leaving restores it.
-  for (const [block, authored] of described)
-    if (!descriptions.has(block)) {
-      described.delete(block);
-      if (authored) block.setAttribute("aria-describedby", authored);
-      else block.removeAttribute("aria-describedby");
-    }
-  for (const [block, ids] of descriptions) {
-    if (!described.has(block)) described.set(block, block.getAttribute("aria-describedby"));
-    block.setAttribute(
-      "aria-describedby",
-      [described.get(block), ...ids].filter(Boolean).join(" "),
-    );
+    // Where the line goes: every block the passage crosses, so the reader of any of them
+    // hears it — or, for a passage that sits in no block of its own, the element the
+    // anchor names, which is where the runtime already puts chrome a widget has to live
+    // with (a card's drag grip). Never the inline run or the body div in between, because
+    // a widget reads those back as its own: cq-draft seeds the editor a reviewer types
+    // into from its body div, and a line inside it is chrome in the text they send back.
+    const blocks = found.element
+      ? [found.element]
+      : [...new Set(found.segments.map((seg) => blockAt(seg.node)))].filter(Boolean);
+    for (const holder of blocks.length ? blocks : [sectionOf(t.root.anchor)])
+      if (holder) noted.set(holder, (noted.get(holder) ?? 0) + 1);
   }
 
   // The composer's own passage, in the accent rather than the marker amber, so a draft
   // never reads as a posted comment. An element a thread already outlines keeps the posted
   // colour: there is one outline to give, and the thread's is the clickable one.
-  const draft = composerOpen && pendingAnchor && resolveAnchor(pendingAnchor);
+  const draft = composerOpen && pendingAnchor && resolveAnchor(pendingAnchor, text);
   // Where the draft's passage is, recorded the way the threads' is, because placeComposer
   // has to keep the box off it. An element a thread already outlines belongs in the record
   // too — it is marked, just in the posted colour rather than the accent.
@@ -1360,6 +1392,7 @@ function paintAnchors() {
   // passage under the pointer answers the pointer.
   CSS.highlights.set(MARK, new Highlight(...posted));
   CSS.highlights.set(PENDING, Object.assign(new Highlight(...pending), { priority: 2 }));
+  noteMarks(noted); // and the same fact for a reader who can't see any of it
   refreshHover(); // the ranges moved; whether one is under the pointer may have too
 
   // The panel's side of the same fact, read off the pass's own record so the two views
@@ -2193,18 +2226,17 @@ function retractionFloors(upto) {
 // place among its id-bearing kin. Text is deliberately absent — words are the
 // static gate's subject (restatement_errors); this is the rest, the state no
 // version file can speak. What the runtime itself paints onto page elements —
-// its marks' classes, a block's description, its data-cq bookkeeping — is
-// absent too: no version can assert those, and looking away from them keeps a
-// reading taken from the live DOM equal to one taken from the file. Diffed
-// around each replay batch to record what replay wrote, and imported by
-// check --render to read the version files with the same eyes, so the two
-// readings cannot drift.
+// its marks' classes, its data-cq bookkeeping — is absent too: no version can
+// assert those, and looking away from them keeps a reading taken from the live
+// DOM equal to one taken from the file. Diffed around each replay batch to
+// record what replay wrote, and imported by check --render to read the version
+// files with the same eyes, so the two readings cannot drift.
 export function shallowSigs(root) {
   const sigs = new Map();
   for (const el of [root, ...root.querySelectorAll("[id]")]) {
     if (!el.id) continue;
     const attrs = [...el.attributes]
-      .filter((a) => a.name !== "class" && a.name !== "aria-describedby" && !a.name.startsWith("data-cq-"))
+      .filter((a) => a.name !== "class" && !a.name.startsWith("data-cq-"))
       .map((a) => `${a.name}=${a.value}`).sort().join(" ");
     const kin = [...(el.parentElement?.children ?? [])].filter((c) => c.id);
     sigs.set(el.id, `${el.tagName} [${attrs}] in=${el.parentElement?.id ?? ""}#${kin.indexOf(el)}`);

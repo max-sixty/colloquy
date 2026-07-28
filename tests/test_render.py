@@ -407,6 +407,22 @@ def test_example_renders(browser, serve, example):
     assert interact.render_version(browser, serve(example.read_text())) == []
 
 
+def test_the_gate_passes_a_page_that_carries_a_comment(browser, serve):
+    """The gate refuses words under `.cq-ui` inside a widget, because a widget reaching for
+    that marker is how a reviewer ends up unable to comment on a heading they can see. The
+    line saying how many comments are on a passage wears the same marker and sits wherever
+    the passage does — inside the widget, when that is where the comment was made. Unless
+    the gate knows the difference, one comment on an option is a page nobody can hand over,
+    and every page the sweep above renders is a page with no comments on it."""
+    url = serve(INLINE_PAGE, anchored=[("opt-a", "Keep the store")])
+    page, errors = open_page(browser, url)
+    # Vacuous otherwise: the gate has to be looking at a page that has the line on it.
+    page.wait_for_function("() => document.querySelectorAll('.cq-mark-note').length === 1")
+    assert errors == []
+    page.close()
+    assert interact.render_version(browser, url) == []
+
+
 def test_check_render_refuses_what_only_a_browser_can_see(serve):
     """`check --render` end to end, as the agent runs it: the static lint passes
     both of these versions, and only the one that renders clean may reach a
@@ -656,8 +672,11 @@ def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
     assert surface["moved"] == [], (
         f"scoped chrome rules reached an element in the page: {surface['moved']}"
     )
+    # Every one of these is worn by something the runtime puts inside the page rather than
+    # inside its own container, which is exactly why a scoped rule could not reach it.
     assert {c for c in surface["global"] if c.startswith("cq-")} == {
         "cq-ui", "cq-btn", "cq-over-mark", "cq-mark-el", "cq-pending", "cq-ins-block",
+        "cq-mark-note",
     }, "the document-level class surface changed: widen the shared vocabulary on purpose"
     page.close()
 
@@ -1136,6 +1155,52 @@ def test_accepting_a_suggestion_settles_it_and_reaches_claude(browser, serve):
     page.close()
 
 
+SHORT_SUGGESTION = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>short suggestion</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Short</h1>
+<section id="s">
+<cq-suggestion id="sug">
+  <cq-old><p id="was">Retry twice.</p></cq-old>
+  <cq-new><p id="now">Retry three times.</p></cq-new>
+</cq-suggestion>
+</section>
+</main>
+</body>
+</html>
+"""
+
+
+@pytest.mark.parametrize("outcome,verb", [("accept", "Accepted"), ("reject", "Rejected")])
+def test_a_widget_naming_its_own_words_does_not_read_the_runtimes(browser, serve, outcome, verb):
+    """The line saying a block carries a comment goes in the block, and a block inside a
+    widget is still a block — so `textContent` on a widget's own slot now returns the
+    author's words with the runtime's appended. A suggestion labels itself from that slot,
+    and offered to accept “Retry three times. 1 comment”. It reads the slot the way the
+    page is read instead, which is what `says` is for — read before deciding, because a
+    reject retires the very slot the label comes from, and a retired slot says nothing:
+    the toast then named the widget's id instead of the words the reviewer judged. Short
+    on purpose: the label cuts at 48 characters, which hid this on every shipped example."""
+    url = serve(SHORT_SUGGESTION, anchored=[("now", "Retry three times")])
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    # Vacuous otherwise: the line has to be inside the slot the label is read from.
+    assert page.locator("cq-new #now > .cq-mark-note").count() == 1
+    page.locator(f"#sug .cq-sug-{outcome}").click()
+    expect(page.locator(".cq-toast")).to_have_text(
+        f"{verb} “Retry three times.” — sent to Claude"
+    )
+    assert errors == []
+    page.close()
+
+
 def test_accept_all_decides_every_pending_suggestion(browser, serve):
     """The banner's button is a shortcut for the reviewer who has read the page
     and wants all of it, so it has to reach the ones their eye didn't: the
@@ -1576,20 +1641,19 @@ def test_composer_marks_the_passage_instead_of_quoting_it(browser, serve):
     page.close()
 
 
-DESCRIBE_PAGE = """<!doctype html>
+NOTED_PAGE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>describe</title>
+<title>noted</title>
 <link rel="stylesheet" href="/theme.css">
 <script type="module" src="/colloquy.js"></script>
 </head>
 <body>
 <main>
-<h1 id="t">Describe</h1>
-<p id="p1" aria-describedby="legend">The first passage under discussion, with words
-enough for two separate comments to land in it.</p>
-<p id="legend">A note the author already attached to that paragraph.</p>
+<h1 id="t">Noted</h1>
+<p id="p1">The first passage under discussion, with words
+enough for two separate remarks to land in it.</p>
 <p id="p2">A short second passage.</p>
 <figure id="fig"><svg viewBox="0 0 120 40" width="120" height="40" role="img"
 aria-label="specimen"><rect x="2" y="2" width="116" height="36" fill="none"
@@ -1600,13 +1664,15 @@ stroke="currentColor"></rect></svg><figcaption>A figure, for element anchors.</f
 """
 
 
-def test_a_commented_block_describes_itself_by_the_comments_words(browser, serve):
-    """A mark is painted, not wrapped, so nothing in the accessibility tree says a
-    passage carries a comment. The block it lands in says so instead: aria-describedby
-    to the comment's own words in the panel — joining the author's own description,
-    accumulating one id per thread, arriving with a sent comment's round trip, and
-    leaving with its thread, restoring what the author wrote."""
-    url = serve(DESCRIBE_PAGE)
+def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
+    """A mark is painted, not wrapped, so it builds no accessibility node and a passage
+    carrying a comment reads exactly like one that doesn't. No ARIA relation reaches a
+    block that isn't focusable, so the pass says it in the one thing every screen reader
+    announces — text — counting up per block, riding in on a sent comment's round trip,
+    and leaving with its thread. Having put words on the page, it then has to keep them
+    out of the document's own: out of a selection, out of the next quote, and out of the
+    mutations a screen reader rebuilds its buffer on."""
+    url = serve(NOTED_PAGE)
     d = serve.page_dir
 
     def comment(anchor, text):
@@ -1614,19 +1680,52 @@ def test_a_commented_block_describes_itself_by_the_comments_words(browser, serve
             d, {"kind": "comment", "author": "user", "version": 1, "text": text,
                 "anchor": anchor})["id"]
 
-    c1 = comment({"quote": "first passage"}, "Sharpen this.")
-    c2 = comment({"quote": "two separate comments"}, "Second thought.")
-    c3 = comment({"section": "fig"}, "The figure too.")
+    comment({"quote": "first passage"}, "Sharpen this.")
+    comment({"quote": "two separate remarks"}, "Second thought.")
+    comment({"section": "fig"}, "The figure too.")
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
-    described = "() => document.getElementById('{0}').getAttribute('aria-describedby')"
-    assert page.evaluate(described.format("p1")) == f"legend cq-msg-{c1} cq-msg-{c2}"
-    assert page.evaluate(described.format("fig")) == f"cq-msg-{c3}"
-    assert page.evaluate(f"() => document.getElementById('cq-msg-{c1}').textContent") == (
-        "Sharpen this."
-    ), "the description does not read as the comment's own words"
+    # Two threads on one block count up, and leave one line rather than two.
+    assert "2 comments" in page.locator("#p1").aria_snapshot(), (
+        "a screen reader reading the block hears nothing about the comments on it"
+    )
+    assert page.locator("#p1 .cq-mark-note").count() == 1, "one block, one line"
+    # Hidden means hidden from the eye, not the tree: a line that paints is the runtime
+    # writing visible prose into the author's paragraph.
+    assert page.locator("#p1 .cq-mark-note").evaluate(
+        "el => { const r = el.getBoundingClientRect(); return r.width <= 1 && r.height <= 1; }"
+    ), "the hidden line is painting on screen"
+    # An element anchor has no text to paint, and the element it names holds the line.
+    assert "1 comment" in page.locator("#fig").aria_snapshot()
 
-    # The gesture's comment reaches the same attribute once the send's round trip lands.
+    # A pass that finds nothing to change must change nothing: a screen reader rebuilds
+    # its buffer on every mutation, and this pass runs on every poll. A comment on no
+    # passage at all is what proves a pass ran without touching the block's count.
+    page.evaluate("""() => {
+        window.__churn = 0;
+        new MutationObserver(rs => (window.__churn += rs.length))
+            .observe(document.getElementById('p1'),
+                     {childList: true, characterData: true, subtree: true});
+    }""")
+    comment({}, "On the page as a whole.")
+    page.wait_for_function("() => document.querySelectorAll('.cq-thread').length === 4")
+    assert page.evaluate("() => window.__churn") == 0, (
+        "a poll that changed nothing still rewrote the block, so a screen reader re-reads it"
+    )
+
+    # The line belongs to the runtime, not the document: a reviewer dragging across it
+    # neither copies it nor quotes it.
+    page.locator("#p1").click(click_count=3)
+    assert "comment" not in page.evaluate("() => getSelection().toString()"), (
+        "the hidden line came along in the reviewer's own selection"
+    )
+    page.locator(".cq-fab").click()
+    assert "comment" not in composer_quote(page)["text"], (
+        "the hidden line came along in the quote the comment would store"
+    )
+    page.get_by_role("button", name="Cancel").click()
+
+    # The gesture's own comment reaches the line once the send's round trip lands.
     box = page.locator("#p2").bounding_box()
     page.mouse.move(box["x"] + 2, box["y"] + box["height"] / 2)
     page.mouse.down()
@@ -1636,18 +1735,20 @@ def test_a_commented_block_describes_itself_by_the_comments_words(browser, serve
     page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
     page.locator(".cq-composer textarea").fill("Too short.")
     page.get_by_role("button", name="Comment", exact=True).click()
-    page.wait_for_function(
-        "() => /cq-msg-/.test(document.getElementById('p2').getAttribute('aria-describedby') ?? '')"
-    )
+    expect(page.locator("#p2 .cq-mark-note")).to_have_count(1)
     c4 = [e for e in interact.read_events(d) if e.get("kind") == "comment"][-1]["id"]
-    assert page.evaluate(described.format("p2")) == f"cq-msg-{c4}"
 
-    # Resolving a thread takes its description with it; the author's own stays put.
+    # A resolved thread takes its line with it: the pass owns what it wrote.
     interact.append_event(d, {"kind": "resolve", "author": "user", "parent": c4})
-    page.wait_for_function(
-        "() => document.getElementById('p2').getAttribute('aria-describedby') === null"
-    )
-    assert page.evaluate(described.format("p1")) == f"legend cq-msg-{c1} cq-msg-{c2}"
+    expect(page.locator("#p2 .cq-mark-note")).to_have_count(0)
+    assert "2 comments" in page.locator("#p1").aria_snapshot()
+
+    # A passage crossing two blocks says so in both: a reader landing on either block
+    # hears about the comment, the way the paint reaches both.
+    comment({"quote": "to land in it. A short second"}, "Crosses the boundary.")
+    expect(page.locator("#p2 .cq-mark-note")).to_have_count(1)
+    assert "3 comments" in page.locator("#p1").aria_snapshot()
+    assert "1 comment" in page.locator("#p2").aria_snapshot()
     assert errors == []
     page.close()
 
@@ -2418,17 +2519,41 @@ EDGE_PAGE = """<!doctype html>
 """
 
 
-def test_a_passage_closing_its_section_anchors_to_its_own_copy(browser, serve):
+# The same page with nothing after the section, so the closing copy ends the document —
+# the one place no capture can supply a second side. What it stores there is an empty
+# suffix, which says the passage had nothing after it anywhere on the page, and only one
+# occurrence can be somewhere that is still true of.
+TAIL_PAGE = EDGE_PAGE.replace(
+    """<section id="tail">
+<p>Rollout resumes once the queue drains completely.</p>
+</section>
+""",
+    "",
+)
+assert TAIL_PAGE != EDGE_PAGE, "the section this removes has moved; the contrast is gone"
+
+
+@pytest.mark.parametrize(
+    "html", [EDGE_PAGE, TAIL_PAGE], ids=["closes-its-section", "ends-the-document"]
+)
+def test_a_repeated_passage_at_an_edge_anchors_where_it_was_picked(browser, serve, html):
     """A passage closing its section used to store a suffix clipped at the section's
     edge — one character, a bar the identical copy above it also cleared, so the mark
     painted there while the reviewer was still composing. The neighbours now come from
     the whole document and the section only filters where the search may land, so the
-    closing copy is told apart by the words of the section after it."""
-    page, errors = open_page(browser, serve(EDGE_PAGE))
+    closing copy is told apart by the words of the section after it.
+
+    Where the document itself ends there is no second side to store, and an empty one is
+    not an absent constraint: it says nothing followed the passage anywhere, which is true
+    of exactly one occurrence. Refusing to read it that way left the same wrong mark."""
+    page, errors = open_page(browser, serve(html))
     landed = page.evaluate("""async () => {
         const p = document.querySelectorAll('#edge p')[1];
-        const phrase = 'the run is retried until it lands';
+        // Through the full stop, so that with the section below removed the passage is the
+        // last thing the document says and its stored suffix comes out empty.
+        const phrase = 'the run is retried until it lands.';
         const at = p.firstChild.data.indexOf(phrase);
+        if (at === -1) return 'phrase missing';
         const want = document.createRange();
         want.setStart(p.firstChild, at); want.setEnd(p.firstChild, at + phrase.length);
         const sel = getSelection(); sel.removeAllRanges(); sel.addRange(want);
@@ -2440,7 +2565,8 @@ def test_a_passage_closing_its_section_anchors_to_its_own_copy(browser, serve):
         await new Promise(r => setTimeout(r, 60));
         const painted = [...(CSS.highlights.get('cq-pending') ?? [])][0];
         if (!painted) return 'no mark';
-        return painted.compareBoundaryPoints(Range.START_TO_START, want) === 0;
+        if (painted.compareBoundaryPoints(Range.START_TO_START, want) === 0) return true;
+        return painted.startContainer.parentElement.textContent.slice(0, 40);
     }""")
     assert landed is True, f"the closing copy was picked, the mark went elsewhere ({landed})"
     assert errors == []
@@ -2465,6 +2591,32 @@ def test_an_anchor_stored_under_the_section_clipped_capture_still_resolves(brows
     }""")
     assert where == "First pass:", (
         f"an old anchor's thin bar changed where it lands: {where!r}"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_a_one_sided_anchor_from_an_older_capture_falls_back(browser, serve):
+    """A capture that stopped at the section root wrote no prefix at all for a passage
+    opening its section. Read the way the search now reads an empty side — nothing preceded
+    this passage anywhere on the page — that claim is false wherever the section wasn't
+    first, so no occurrence confirms it and the comment stays where it always went, on the
+    first copy in its section. Taking the one side it does carry as enough would instead
+    hand the comment to whichever copy that side happens to fit."""
+    url = serve(EDGE_PAGE)
+    # A suffix that fits the second copy and nothing else, stored with no prefix beside it.
+    interact.append_event(serve.page_dir, {
+        "kind": "comment", "author": "claude", "version": 1, "text": "older anchor",
+        "anchor": {"section": "edge", "quote": "the run is retried until it lands",
+                   "suffix": ". Rollout resumes"}})
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    where = page.evaluate("""() => {
+        const r = [...CSS.highlights.get('cq-mark')][0];
+        return r.startContainer.parentElement.textContent.slice(0, 11);
+    }""")
+    assert where == "First pass:", (
+        f"one side was taken as enough, and the comment went to the copy it fits: {where!r}"
     )
     assert errors == []
     page.close()
@@ -2844,6 +2996,26 @@ def test_review_round_trip(browser, serve):
         "action": "edit",
         "detail": {"text": DRAFT_EDITED},
     }
+    page.close()
+
+
+def test_a_comment_inside_a_widget_stays_out_of_what_the_widget_reads(browser, serve):
+    """The line that tells a screen reader a block carries a comment is chrome, and chrome
+    inside a widget's own content is chrome in the reviewer's text: cq-draft seeds the
+    editor they type into from its body div, so a line left in there arrives in the
+    textarea and posts with the edit. It goes on the block the passage sits in, or on the
+    element the anchor names — never on the inline run or body div in between."""
+    url = serve(JOURNEY_V1, anchored=[("draft-ops", "Run the migration before deploying.")])
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    assert page.locator("#draft-ops > .cq-mark-note").count() == 1, (
+        "the line landed inside the draft's body rather than beside it"
+    )
+    page.locator("#draft-ops .cq-draft-body").dblclick()
+    assert page.locator("#draft-ops textarea").input_value() == DRAFT_TEXT, (
+        "the reviewer's editor opened on text the runtime had written into"
+    )
+    assert errors == []
     page.close()
 
 

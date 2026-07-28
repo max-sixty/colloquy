@@ -25,6 +25,7 @@ import {
   once,
   offer,
   quoted,
+  says,
   sendAction,
   toast,
   announce,
@@ -129,7 +130,8 @@ customElements.define(
     }
 
     #title(card) {
-      return card.querySelector(":scope > strong")?.textContent || card.id;
+      const strong = card.querySelector(":scope > strong");
+      return (strong && says(strong)) || card.id;
     }
     #cards(col) {
       return [...col.querySelectorAll(":scope > cq-card")];

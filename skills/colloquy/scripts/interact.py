@@ -2394,8 +2394,11 @@ RENDER_VIEWPORT = {"width": 1200, "height": 900}
 # "the runtime's own words" — its layer, and the labels it invents for controls
 # — and reaching for it as a general "this is chrome" marker is how a reviewer
 # ends up unable to comment on a heading they can see. So inside a widget, every
-# word under .cq-ui has to be a control's own label. The comment panel is out of
-# scope: a widget in a reply is markup frozen in the event log, not the document.
+# word under .cq-ui has to be a control's own label, or the line the paint pass
+# writes to say how many comments a block carries: that one is about the document
+# rather than of it, which is the same reason it wears .cq-ui at all, and it lands
+# inside a widget whenever a comment does. The comment panel is out of scope: a
+# widget in a reply is markup frozen in the event log, not the document.
 UNREACHABLE_WORDS = """() => {
     const found = [];
     const at = el => `<${el.tagName.toLowerCase()}${el.id ? ' id=' + el.id : ''}>`;
@@ -2416,7 +2419,7 @@ UNREACHABLE_WORDS = """() => {
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
         const el = n.parentElement;
         if (!n.data.trim() || !el.closest('.cq-ui') || !widget(el)) continue;
-        if (!el.closest('button, textarea, input, select'))
+        if (!el.closest('button, textarea, input, select, .cq-mark-note'))
             found.push(`${at(widget(el))} puts ${JSON.stringify(n.data.trim().slice(0, 40))} `
                        + `under .cq-ui, where no comment can reach it`);
     }
