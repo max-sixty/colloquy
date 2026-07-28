@@ -1983,6 +1983,22 @@ function restsOn(e, widget) {
     .map((el) => el.id);
   return [e.widget, ...parts];
 }
+// An id-bearing element's state as markup can say it: tag, attributes, and
+// place among its id-bearing kin. Text is deliberately absent — words are the
+// static gate's subject (restatement_errors); this is the rest, the state no
+// version file can speak. Diffed around each applyAction call to record what
+// replay wrote, and imported by check --render to read the version files with
+// the same eyes, so the two readings cannot drift.
+export function shallowSigs(root) {
+  const sigs = new Map();
+  for (const el of [root, ...root.querySelectorAll("[id]")]) {
+    if (!el.id) continue;
+    const attrs = [...el.attributes].map((a) => `${a.name}=${a.value}`).sort().join(" ");
+    const kin = [...(el.parentElement?.children ?? [])].filter((c) => c.id);
+    sigs.set(el.id, `${el.tagName} [${attrs}] in=${el.parentElement?.id ?? ""}#${kin.indexOf(el)}`);
+  }
+  return sigs;
+}
 function applyActions() {
   // Never mutate the page under a live gesture — a replayed foreign action could
   // move the nodes a drag preview is holding. Retry next poll.
@@ -2031,7 +2047,22 @@ function applyActions() {
     // order; the log stays canonical either way.
     if (e.seq < (lastActionByWidget.get(e.widget) ?? 0)) continue;
     lastActionByWidget.set(e.widget, e.seq);
+    // Record what the call wrote — the ids whose shallow state it changed — on
+    // the widget, where check --render reads it. A no-op says the markup
+    // already held the state; only a page widget can contradict its version,
+    // so a reply's widget (.cq-ui, no version) goes unrecorded.
+    const before = el.closest(".cq-ui") ? null : shallowSigs(el);
     el.applyAction(e.action, e.detail);
+    if (before) {
+      const after = shallowSigs(el);
+      const wrote = [...new Set([...before.keys(), ...after.keys()])].filter(
+        (id) => before.get(id) !== after.get(id),
+      );
+      if (wrote.length) {
+        const prior = el.dataset.cqReplayWrote?.split(" ") ?? [];
+        el.dataset.cqReplayWrote = [...new Set([...prior, ...wrote])].join(" ");
+      }
+    }
     applied = true;
   }
   // A replay moves the page's text — a card to another column, a suggestion to its
@@ -2039,6 +2070,10 @@ function applyActions() {
   // than left to the caller's order: a pass held off by a live drag lands on a poll
   // that has nothing else to re-render.
   if (applied) paintAnchors();
+  // Every action in the log is now decided (applied, skipped, or retired), and
+  // the stamp says so — it is what check --render awaits before reading the
+  // replay's record, so the gate never reads a page mid-replay.
+  document.body.dataset.cqApplied = String(appliedActions.size);
 }
 async function poll() {
   let state;

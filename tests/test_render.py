@@ -284,6 +284,33 @@ And the framing it replaces, for the record:
 </cq-specimen>
 """
 
+# Two decisions for a reviewer to take and a later version to honor, carry, or
+# contradict: a pick and a move.
+IMPORTER_CARD = '<cq-card id="card-importer"><strong>Wire the importer</strong></cq-card>'
+REPLAYED_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>replayed</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Rollout</h1>
+<cq-options id="approach" choose>
+  <cq-option id="opt-shim"><strong>Shim the old schema</strong> Fastest to ship.</cq-option>
+  <cq-option id="opt-stage"><strong>Migrate in stages</strong> Table by table.</cq-option>
+</cq-options>
+<cq-board id="work">
+  <cq-column id="col-doing" label="Doing">{card}</cq-column>
+  <cq-column id="col-done" label="Done"><cq-card id="card-notes"><strong>Draft the notes</strong></cq-card></cq-column>
+</cq-board>
+</main>
+</body>
+</html>
+""".format(card=IMPORTER_CARD)
+
 
 @pytest.fixture(scope="module")
 def browser():
@@ -907,6 +934,48 @@ def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, 
     )
     for tab in (first, second, third):
         tab.close()
+
+
+def test_render_reports_markup_the_log_replays_over(browser, serve):
+    """The static gate refuses a version that rewords what a decision rests on,
+    but `chosen`, a card's column, and their kind say nothing a text diff can
+    see — a version asserting them against the log used to lose silently, replay
+    painting the reviewer's state back over the author's intent. The render gate
+    reports exactly that: an id the author changed since the previous version
+    and replay then wrote. Silence (carrying the old markup forward) and honor
+    (authoring the decided state) both stay clean, because silence changes no
+    id and honor makes the replay a no-op."""
+    url = serve(REPLAYED_PAGE)
+    d = serve.page_dir
+    for widget, action, detail in [
+        ("approach", "choose", {"option": "opt-shim"}),
+        ("work", "move", {"card": "card-importer", "to": "col-done", "index": 0}),
+    ]:
+        interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
+                                  "widget": widget, "action": action, "detail": detail})
+
+    def publish(n, html):
+        (d / "versions" / f"v{n:03d}.html").write_text(html)
+        interact.append_event(d, {"kind": "note", "author": "claude", "version": n, "text": "t"})
+        return url.replace("v001", f"v{n:03d}")
+
+    # v2 says nothing about either decision; both stand, and nothing is reported.
+    assert interact.render_version(browser, publish(2, REPLAYED_PAGE)) == []
+
+    # v3 honors both: the pick authored, the card in its dragged-to column.
+    honored = REPLAYED_PAGE.replace('id="opt-shim"', 'id="opt-shim" chosen')
+    honored = honored.replace(IMPORTER_CARD, "").replace(
+        'label="Done">', f'label="Done">{IMPORTER_CARD}'
+    )
+    assert interact.render_version(browser, publish(3, honored)) == []
+
+    # v4 asserts the other option and re-authors the card into Doing: both
+    # widgets changed since v3 and replay overrides both — the author must hear.
+    contradicted = REPLAYED_PAGE.replace('id="opt-stage"', 'id="opt-stage" chosen')
+    failures = interact.render_version(browser, publish(4, contradicted))
+    assert len(failures) == 2, failures
+    assert any("id=approach" in f and "opt-stage" in f for f in failures), failures
+    assert any("id=work" in f and "card-importer" in f for f in failures), failures
 
 
 def test_a_pending_suggestion_can_be_discussed_instead_of_decided(browser, serve):

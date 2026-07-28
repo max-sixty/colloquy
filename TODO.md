@@ -130,22 +130,6 @@ stands alone.
 - [ ] Pending-state marker for board moves: after the toast fades, nothing shows
       which moves await the honoring version (choose has its mark; move has
       nothing). Toasts also coalesce — rapid moves show only the last.
-- [ ] A version whose *state* attributes contradict the log passes `check`. The
-      restatement gate compares what a version says, which now includes the
-      attributes the registry marks `x-says` — but `chosen`, `settled` and their
-      kind say nothing, so a version marking a different option `chosen`, or
-      re-emitting a widget in a state the reviewer already changed, is refused by
-      nothing. Replay resolves it in the reviewer's favor and the author's intent
-      is dropped without a word. That is the safe direction (no reviewer work is
-      ever lost) and it is the mirror of the bug the gate exists for, so it should
-      not stay unowned. Catching it statically means teaching `check` which
-      attribute encodes which verb's state, a second copy of what each widget's
-      `applyAction` already knows and the drift the registry exists to prevent.
-      The version that keeps one writer is the browser: `check --render` already
-      loads the page with the real runtime and the real log, so it can compare a
-      widget before and after replay and report the ones where the markup lost.
-      That makes the check cost a browser, which is why it is here rather than
-      done.
 - [ ] Widget-aware Δ: the version diff is additions-only by text key, so a card that
       moved columns isn't marked. The changelog line carries it today; marking cards
       whose column changed would need the diff to understand board structure.

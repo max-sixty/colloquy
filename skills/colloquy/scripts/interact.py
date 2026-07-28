@@ -1978,13 +1978,50 @@ UNREACHABLE_WORDS = """() => {
 }"""
 
 
+# A version whose markup asserts a state the log replays over — `chosen` moved
+# to another option, a card re-authored into a column the reviewer dragged it
+# out of. Replay resolves it in the reviewer's favor, so what needs reporting is
+# the author's intent going down silently. The static half can't say which
+# attribute is a verb's state — that lives in each widget's applyAction, and a
+# table here would be the second copy the registry exists to prevent — so the
+# browser compares: applyActions records the ids replay wrote
+# (data-cq-replay-wrote), and this pass asks which of them the author also
+# changed since the previous version, reading both files with the runtime's own
+# shallowSigs. An authored change replay then overrode is a conflict; an
+# unchanged id is the initial condition the log is supposed to outrank.
+REPLAY_OVERRIDES = """async () => {
+    const wrote = [...document.querySelectorAll('[data-cq-replay-wrote]')]
+        .map(el => [el, el.dataset.cqReplayWrote.split(' ')]);
+    if (!wrote.length) return [];
+    const name = location.pathname.split('/').pop();
+    const versions = (await (await fetch('/api/state')).json()).versions;
+    const i = versions.indexOf(name);
+    if (i <= 0) return [];
+    const { shallowSigs } = await import('/colloquy.js');
+    const sigs = async (v) => shallowSigs(new DOMParser().parseFromString(
+        await (await fetch('/versions/' + v)).text(), 'text/html').body);
+    const cur = await sigs(name), prev = await sigs(versions[i - 1]);
+    const out = [];
+    for (const [el, ids] of wrote) {
+        const asserted = ids.filter(id => (cur.get(id) ?? '') !== (prev.get(id) ?? ''));
+        if (asserted.length)
+            out.push(`<${el.tagName.toLowerCase()} id=${el.id}> authors state the log `
+                     + `replays over (${asserted.join(', ')}): the reviewer's decision `
+                     + `stands — either carry it in the markup, or rewrite the passage `
+                     + `and declare restated`);
+    }
+    return out;
+}"""
+
+
 def render_version(browser, url: str) -> list:
     """Everything wrong with a served version that only a browser can see: a
     console or page error, a request that 404s, a fail-soft error box, a widget
     upgraded into a box of no usable size, the page scrolling sideways, words the
     reviewer can read and can't select — each in both color schemes, because the
-    dark theme is real CSS nobody otherwise renders. Returns human-readable
-    failures; [] is a pass.
+    dark theme is real CSS nobody otherwise renders — and a version that authors
+    widget state the log replays over, in one scheme, because replay isn't CSS.
+    Returns human-readable failures; [] is a pass.
 
     One implementation with two callers — `check --render` on the page an agent
     just wrote, and the render suite on the shipped examples
@@ -2030,6 +2067,25 @@ def render_version(browser, url: str) -> list:
             .filter(box => box.w < 40 || box.h < 10)""")
         overflow = page.evaluate("document.body.scrollWidth - document.body.clientWidth")
         unreachable = page.evaluate(UNREACHABLE_WORDS)
+        # Replay is scheme-blind, so one scheme's reading covers both. The wait
+        # is for the runtime's own caught-up stamp: reading the replay's record
+        # mid-replay would miss whatever hadn't landed yet.
+        conflicts = []
+        if scheme == "light":
+            n_actions = page.evaluate(
+                "fetch('/api/state').then(r => r.json())"
+                ".then(s => s.events.filter(e => e.kind === 'action').length)"
+            )
+            if n_actions:
+                try:
+                    page.wait_for_function(
+                        f"() => Number(document.body.dataset.cqApplied ?? -1) >= {n_actions}"
+                    )
+                    conflicts = page.evaluate(REPLAY_OVERRIDES)
+                except PlaywrightTimeout:
+                    conflicts = [
+                        f"the runtime never finished replaying the log ({n_actions} action(s))"
+                    ]
         page.close()
         found = [f"[{scheme}] console: {e}" for e in errors]
         found += [f"[{scheme}] a widget failed soft: {t}" for t in failsoft]
@@ -2038,6 +2094,7 @@ def render_version(browser, url: str) -> list:
         if overflow > 0:
             found.append(f"[{scheme}] the page scrolls sideways by {overflow}px")
         found += [f"[{scheme}] {w}" for w in unreachable]
+        found += [f"[{scheme}] {c}" for c in conflicts]
         return found
 
     return [*in_scheme("light"), *in_scheme("dark")]

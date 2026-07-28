@@ -194,7 +194,11 @@ it. A version that says nothing about a decision leaves it standing. The cost la
 where the old design hid it — a version can't quietly revise what a reviewer acted on,
 because replay would paint their state back over the revision — so `restated` on the
 rewritten element retracts what rested on it, and `check` refuses a bare rewrite and an
-unearned `restated` alike (`restatement_errors`).
+unearned `restated` alike (`restatement_errors`). What a text diff can't see — `chosen`,
+a card's column, the state attributes that say nothing — the browser compares instead:
+replay records the ids it wrote (`data-cq-replay-wrote`), and `check --render` reports
+the ones the author also changed since the previous version, so a markup assertion the
+log overrides is heard rather than silently repainted.
 
 That attribute is a declaration, not state: `note` records it as a `restate` event and
 the log carries it onward. Left in the markup it would hold for exactly one version,

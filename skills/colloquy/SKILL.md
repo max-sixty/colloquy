@@ -328,7 +328,10 @@ It loads the version in the machine's installed Chrome (a couple of seconds, and
 before the version is noted) and fails, in both color schemes, on what a static lint
 cannot see: a console error, a widget upgraded into a box of no size, a page that
 scrolls sideways, a `cq-diagram` whose mermaid source doesn't parse, words on screen
-that no selection can reach. The lint validates a diagram element but never the notation
+that no selection can reach, a version that authors widget state the log replays over
+(a different option `chosen`, a card in a column the reviewer dragged it out of — the
+decision stands, so carry it in the markup or rewrite the passage and declare
+`restated`). The lint validates a diagram element but never the notation
 in its body, so a typo there would otherwise reach the reader as an error box; and it
 can't see a heading rendered as CSS generated content or marked `.cq-ui`, which leaves
 the reader looking at text they can't comment on. When Chrome isn't installed, the gate says so on stderr and
