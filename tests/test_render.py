@@ -795,6 +795,163 @@ def test_accepting_a_suggestion_settles_it_and_reaches_claude(browser, serve):
     assert [(e["widget"], e["action"], e["author"]) for e in logged] == [
         ("sug-refill", "accept", "user")
     ]
+    page.close()
+
+
+def test_accept_all_decides_every_pending_suggestion(browser, serve):
+    """The banner's button is a shortcut for the reviewer who has read the page
+    and wants all of it, so it has to reach the ones their eye didn't: the
+    suggestion inside a widget, whose controls dock in flow rather than hang in
+    the margin. Each is decided individually, so the log records what was
+    consented to one change at a time rather than one blanket yes."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    page.get_by_role("button", name="Accept all (3)").click()
+
+    for widget in ("sug-refill", "sug-thistle", "sug-in-card"):
+        expect(page.locator(f"#{widget} cq-new")).to_be_visible()
+        # Waited for, not read once: each is decided by its own round trip, so the
+        # last of them is still in flight when the first has settled.
+        expect(page.locator(f"#{widget} .cq-sug-actions")).to_be_hidden()
+    for widget in ("sug-refill", "sug-in-card"):  # the two that replace rather than insert
+        expect(page.locator(f"#{widget} cq-old")).to_be_hidden()
+    # Nothing left to accept, so the button says nothing rather than saying zero.
+    expect(page.get_by_role("button", name=re.compile("Accept all"))).to_be_hidden()
+
+    logged = [e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"]
+    assert [(e["widget"], e["action"]) for e in logged] == [
+        ("sug-refill", "accept"),
+        ("sug-thistle", "accept"),
+        ("sug-in-card", "accept"),
+    ]
+    assert errors == []
+    page.close()
+
+
+def test_a_decision_the_server_never_took_goes_back_to_pending(browser, serve):
+    """The page settles a decision before the server has taken it, so the reviewer
+    sees their own click land. That optimism is only honest if a send that fails
+    puts it back: a suggestion that reads as settled while the log has nothing is
+    a change the next version won't carry and the reviewer won't know to repeat."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    page.route("**/api/event", lambda route: route.abort())
+    page.locator("#sug-refill .cq-sug-accept").click()
+
+    expect(page.locator("#sug-refill cq-old")).to_be_visible()
+    expect(page.locator("#sug-refill .cq-sug-actions")).to_be_visible()
+    assert page.locator("#sug-refill").get_attribute("data-cq-state") is None
+    # And the page's own count is derived from that, so it comes back too.
+    expect(page.get_by_role("button", name="Accept all (3)")).to_be_visible()
+    expect(page.locator(".cq-toast")).to_contain_text("Couldn't send")
+    assert [e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"] == []
+
+    # The retry is a second click, not a reload: the widget is pending again.
+    page.unroute("**/api/event")
+    page.locator("#sug-refill .cq-sug-accept").click()
+    expect(page.locator("#sug-refill cq-old")).to_be_hidden()
+    # The refused POST is the one thing the console may carry, and it is this test's
+    # own doing — anything else means the page broke on the way back to pending.
+    assert errors == ["Failed to load resource: net::ERR_FAILED"]
+    page.close()
+
+
+def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, serve):
+    """Two windows on one page are two views of one log, not two documents. A
+    decision taken in either arrives in the other by the same replay that keeps a
+    reload's drag — and deciding takes the controls away, so the tab that receives
+    one has to settle it without the click that settled the tab that sent it. Where
+    the two disagree, the later entry in the log is what both end on."""
+    url = serve(SUGGESTION_PAGE)
+    first, first_errors = open_page(browser, url)
+    second, second_errors = open_page(browser, url)
+
+    first.locator("#sug-refill .cq-sug-accept").click()
+    expect(second.locator("#sug-refill cq-old")).to_be_hidden()
+    expect(second.locator("#sug-refill cq-new")).to_be_visible()
+    expect(second.locator("#sug-refill .cq-sug-actions")).to_be_hidden()  # nothing left to decide
+    expect(second.get_by_role("button", name="Accept all (2)")).to_be_visible()
+
+    # Now the race the controls make possible: a window cut off from the log still
+    # shows both buttons, so the reviewer can decide the other way there. Two
+    # decisions on one change, and the log's order — not either tab's belief —
+    # settles it for both once the cut-off one catches up.
+    third, third_errors = open_page(browser, url)
+    third.route("**/api/state", lambda route: route.abort())
+    first.locator("#sug-thistle .cq-sug-accept").click()
+    # In the log before the reject is clicked, so which one is later is this test's
+    # to decide rather than the network's.
+    expect(second.get_by_role("button", name="Accept all (1)")).to_be_visible()
+    third.locator("#sug-thistle .cq-sug-reject").click()
+    third.unroute("**/api/state")
+    for tab in (first, second, third):
+        expect(tab.locator("#sug-thistle cq-new")).to_be_hidden()
+    assert first_errors == [] and second_errors == []
+    assert set(third_errors) <= {"Failed to load resource: net::ERR_FAILED"}, (
+        f"the cut-off tab broke on more than the requests this test refused: {third_errors}"
+    )
+    for tab in (first, second, third):
+        tab.close()
+
+
+def test_a_pending_suggestion_can_be_discussed_instead_of_decided(browser, serve):
+    """✓ and ✗ are the visible affordances, but a proposal a reviewer half-agrees
+    with wants a sentence, not a verdict: the proposed words are ordinary page
+    text, so selecting them and commenting works like anywhere else. Then the
+    decision they eventually take has to reach the thread — rejecting retires the
+    text the comment was made on, and a comment pointing into markup nobody can
+    see has to read as detached rather than as a live mark that jumps nowhere."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    page.evaluate("""() => {
+        const r = document.createRange();
+        r.selectNodeContents(document.querySelector('#sug-refill cq-new'));
+        getSelection().removeAllRanges();
+        getSelection().addRange(r);
+        document.body.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    }""")
+    page.wait_for_selector(".cq-fab", state="visible")
+    page.locator(".cq-fab").click()
+    page.wait_for_selector(".cq-composer", state="visible")
+    quoted = page.evaluate("() => document.querySelector('.cq-composer-quote').textContent")
+    assert quoted.strip("“”") == "Refill a feeder when its camera shows it half-empty."
+    page.locator(".cq-composer textarea").fill("Half-empty by whose reading?")
+    page.locator(".cq-composer").get_by_role("button", name="Comment").click()
+
+    thread = page.locator(".cq-thread .cq-quote").first
+    expect(thread).to_be_visible()
+    expect(thread).not_to_have_class(re.compile(r"\bdetached\b"))
+    assert painted(page, "cq-mark") == "Refill a feeder when its camera shows it half-empty."
+
+    page.locator("#sug-refill .cq-sug-reject").click()
+    expect(thread).to_have_class(re.compile(r"\bdetached\b"))
+    assert painted(page, "cq-mark") == "", (
+        "a mark stayed painted on text the reviewer's own decision removed"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_a_reply_widget_replays_its_action_when_the_page_loads(browser, serve):
+    """A widget inside a reply exists only once the panel has rendered the log,
+    which is later than everything on the page — so the replay runs at the end of
+    a poll, after that render, and an action naming a widget it doesn't find is
+    one no version will ever hold (an honored suggestion, whose id the honoring
+    version dropped) rather than one to look for again on the next poll."""
+    url = serve(REPLY_HOST_PAGE)
+    d = serve.page_dir
+    interact.append_event(d, {"kind": "comment", "id": "c-ask", "author": "user",
+                              "version": 1, "text": "Which of these?"})
+    interact.append_event(d, {"kind": "reply", "author": "claude", "parent": "c-ask",
+                              "version": 1, "text": SPECIMEN_REPLY})
+    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
+                              "widget": "rp-live", "action": "choose",
+                              "detail": {"option": "rp-shim"}})
+    page, errors = open_page(browser, url)
+    page.get_by_role("button", name="Comments", exact=False).click()
+    expect(page.locator("#rp-shim")).to_have_attribute("chosen", "")
+    assert page.locator("#rp-live cq-option[chosen]").count() == 1
+    assert errors == []
+    page.close()
+
+
 def painted(page, name):
     """What the page is painting under a highlight name, whitespace-flattened. Marks are
     ranges in the highlight registry, not elements, so this is where a test looks."""

@@ -377,8 +377,10 @@ path, so it rides the same release train rather than a hotfix.</p>
 <h1>Release notes, drafted</h1>
 <p class="lede" id="rn-lede">Three notes cover everything user-visible in 3.2. Each is a
 draft you own: double-click one (or its ✎) and rewrite it until it reads right — the
-exact wording reaches me, and the next version of this page carries it. When the set
-reads well, sign off; if a note shouldn't ship at all, say so in a comment.</p>
+exact wording reaches me, and the next version of this page carries it. The framing lines
+are mine, and one of them is a rewrite I'm proposing: accept or reject it in the margin,
+or select it and comment if it needs discussing first. When the set reads well, sign off;
+if a note shouldn't ship at all, say so in a comment.</p>
 
 <section id="rn-cli-section">
 <h2>CLI</h2>
@@ -400,8 +402,13 @@ server now sets a Sunset header on every v1 response.
 
 <section id="rn-ops-section">
 <h2>Operations</h2>
-<p id="rn-ops-why">The minute figure is from staging (1.1M rows) — rounded rather than
-promised.</p>
+<cq-suggestion id="rn-sug-ops">
+  <cq-old><p id="rn-ops-why">The minute figure is from staging (1.1M rows) — rounded rather than
+  promised.</p></cq-old>
+  <cq-new><p>The minute figure is from staging (1.1M rows) on a warm cache — rounded rather
+  than promised. If operators will book a window around it, the note should give a range
+  instead.</p></cq-new>
+</cq-suggestion>
 <cq-draft id="rn-migration">
 Run the schema migration before deploying. It is online and takes about a
 minute on a million rows.

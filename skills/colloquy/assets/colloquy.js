@@ -788,7 +788,16 @@ function renderPanel() {
 // authored — a widget's label, an attribute renderSaid rendered — is diff-invisible and
 // quotable, which is the pair a reviewer expects: they can point at it, and it doesn't
 // read as a change nobody wrote.
-const UNQUOTABLE = ".cq-ui, script, style";
+//
+// A decided suggestion's retired slot goes with them. Its markup is still in the
+// document — the honoring version is what finally drops it — but the reviewer has
+// removed it, and the live view is the version plus their decisions. Text nobody can
+// see is text nobody can mean: without this a comment made on a passage then accepted
+// away kept reading as attached in the panel and jumped nowhere, and a quote from
+// elsewhere could match inside the invisible half of a replacement.
+const RETIRED =
+  'cq-suggestion[data-cq-state="accepted"] > cq-old, cq-suggestion[data-cq-state="rejected"] > cq-new';
+const UNQUOTABLE = `.cq-ui, script, style, ${RETIRED}`;
 const GENERATED = ".cq-ui, [data-cq-gen]";
 // The same question one node at a time: is this the runtime's own chrome rather than the
 // document? Every affordance asks it before acting on where the pointer or the caret is.
@@ -1625,7 +1634,13 @@ function syncSuggestions() {
   acceptAllBtn.style.display = n ? "" : "none";
   acceptAllBtn.textContent = `✓ Accept all (${n})`;
 }
-document.addEventListener("cq-suggestions", syncSuggestions);
+// A decision also changes what text the page has — the retired slot leaves it
+// (UNQUOTABLE) — so the marks are repainted from the same signal, and a comment
+// on text the reviewer just removed says so at once rather than at the next poll.
+document.addEventListener("cq-suggestions", () => {
+  syncSuggestions();
+  paintAnchors();
+});
 acceptAllBtn.onclick = async () => {
   acceptAllBtn.disabled = true;
   try {
@@ -1833,7 +1848,8 @@ latestChip.onclick = () => (location.href = "/");
 // live, and a pinned older version shows what the reviewer did while on it.
 // Widgets opt in by exposing applyAction(action, detail) — an absolute
 // placement, so replaying the sender's own action is a no-op. The first poll
-// runs after upgrades settle, so the methods exist.
+// runs after upgrades settle, so the methods exist, and the pass runs at the end
+// of a poll, so the panel's own widgets do too.
 const appliedActions = new Set();
 const lastActionByWidget = new Map();
 let cursor = 0; // what `wait` has delivered to Claude, from /api/state
@@ -1841,12 +1857,16 @@ function applyActions() {
   // Never mutate the page under a live gesture — a replayed foreign action could
   // move the nodes a drag preview is holding. Retry next poll.
   if (document.querySelector(".cq-dragging")) return;
+  let applied = false;
   for (const e of events) {
     if (e.kind !== "action" || appliedActions.has(e.seq)) continue;
+    // Every action is decided here and never looked at again. This pass runs after
+    // the panel has rendered the log, so every widget that will ever exist is on the
+    // page: one that isn't is one no version can carry — an honored suggestion, whose
+    // markup and id the honoring version replaced. Retrying instead meant looking a
+    // vanished element up every two seconds for as long as the page stayed open.
+    appliedActions.add(e.seq);
     const el = document.getElementById(e.widget);
-    // Marked applied only once a widget takes it: a widget that isn't on the page
-    // yet — one inside a thread reply renders after this pass — retries next poll,
-    // and per-widget seq order holds because its earlier actions are pending too.
     if (!el?.applyAction) continue;
     // Page widgets replay the on-screen version's own actions, plus undelivered
     // ones from older versions (seq > cursor): Claude can't have declined or
@@ -1858,11 +1878,8 @@ function applyActions() {
     if (
       !el.closest(".cq-ui") &&
       !(e.version === VNUM || (e.version < VNUM && e.seq > cursor))
-    ) {
-      appliedActions.add(e.seq);
+    )
       continue;
-    }
-    appliedActions.add(e.seq);
     // A foreign action older than one this tab already applied to the widget
     // would yank it backwards — skip it. Two tabs editing one widget in the same
     // poll window can diverge until a reload or the honoring version; the log
@@ -1870,7 +1887,13 @@ function applyActions() {
     if (e.seq < (lastActionByWidget.get(e.widget) ?? 0)) continue;
     lastActionByWidget.set(e.widget, e.seq);
     el.applyAction(e.action, e.detail);
+    applied = true;
   }
+  // A replay moves the page's text — a card to another column, a suggestion to its
+  // settled slot — so the marks are repainted where they now belong. Said here rather
+  // than left to the caller's order: a pass held off by a live drag lands on a poll
+  // that has nothing else to re-render.
+  if (applied) paintAnchors();
 }
 async function poll() {
   let state;
@@ -1883,7 +1906,6 @@ async function poll() {
   }
   events = state.events;
   cursor = state.cursor ?? 0;
-  applyActions();
   renderStatus(state);
   renderVersions(state);
   const key = JSON.stringify(events);
@@ -1911,6 +1933,10 @@ async function poll() {
       showToast("Claude replied — open Comments", () => setPanel(true));
     claudeMsgCount = claudeMsgs;
   }
+  // Last, because the panel has just rendered the log: a widget carried by a reply is
+  // on the page by now, so an action naming one that isn't names a widget no version
+  // holds, and applyActions can retire it instead of looking for it forever.
+  applyActions();
 }
 // ---------- restore ----------
 // The general box and reply textareas repopulate as they render; a saved composer draft

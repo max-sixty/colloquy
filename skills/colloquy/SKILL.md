@@ -110,6 +110,18 @@ prerequisite.
   margin. Fresh content — the first version, a new section, a restructure — is
   written straight, and its review is comments as usual. Name the answered thread
   with `resolves="<comment id>"` so accepting the fix closes the thread too.
+  Deciding isn't the only answer: the proposed words are ordinary page text, so the
+  reader can select them and comment instead — worth saying where the page
+  introduces its first suggestion, since ✓ and ✗ are the only visible affordances.
+- **Who writes the words picks the shape.** Three things change text once a review is
+  under way, and they differ by seat rather than by style. Prose you own, rewritten
+  after the reader has seen it: a `cq-suggestion`, theirs to accept or reject. A
+  passage that is theirs to word — a release note, a summary in their voice: a
+  `cq-draft`, which nobody decides and the next version carries verbatim. Their
+  wording for prose you own: a suggestion comment, which reaches the log for you to
+  take or answer. So a draft never sits inside a suggestion — its words aren't yours
+  to propose — and a suggestion carries markup, not a widget's own state: proposing a
+  card's column or an option's pick has no form yet.
 - The runtime injects the status banner, comment sidebar, version picker, and keyboard
   shortcuts (`?` in the browser shows the reference); don't build page UI for any of
   those.

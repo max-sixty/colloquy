@@ -188,7 +188,10 @@ and outside clicks hide, they don't discard. Cancel is the only discard.
   examples through Chrome (`channel="chrome"`, so no download). Assert what a static lint
   can't reach. A synthetic `dispatchEvent(new MouseEvent("click"))` skips the mousedown
   and so sails straight past the whole class of bug above — use real mouse input
-  (`page.mouse`, `locator.click()`) when the gesture is the point.
+  (`page.mouse`, `locator.click()`) when the gesture is the point. Assert the outcome
+  with `expect(...)`, never a bare `is_hidden()` or `count()`: every gesture that sends
+  is a round trip, and a plain read taken right after one passes on a fast run and fails
+  on a slow one, which is worse than failing outright.
 - **`node --check` proves syntax, not bindings.** A deleted `const` with six live callers
   passes it. Run the suite.
 - **Measure before optimising and before assuming.** The cost claims in this codebase came

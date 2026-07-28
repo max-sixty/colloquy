@@ -283,7 +283,7 @@
     "x-upgrade": false
   },
   "cq-suggestion": {
-    "description": "One proposed change to content the reviewer has already seen, decided in place. cq-old holds the current markup verbatim, cq-new the proposal: both slots replace, cq-new alone inserts, cq-old alone deletes. Pending, the old reads struck and the new tinted, with accept/reject controls in the page margin; deciding collapses the element to the settled markup and reaches Claude as an `accept` or `reject` action for the next version to carry. `resolves` names the comment whose thread this change answers — accepting resolves that thread too. Suggestions don't nest, and a reply can't carry one (reply markup is frozen in the log, so no version could settle it). Fresh content — a new section, the first version — is written straight instead.",
+    "description": "One proposed change to content the reviewer has already seen, decided in place. cq-old holds the current markup verbatim, cq-new the proposal: both slots replace, cq-new alone inserts, cq-old alone deletes. Pending, the old reads struck and the new tinted, with accept/reject controls in the page margin; deciding collapses the element to the settled markup and reaches Claude as an `accept` or `reject` action for the next version to carry. `resolves` names the comment whose thread this change answers — accepting resolves that thread too. Suggestions don't nest, and a reply can't carry one (reply markup is frozen in the log, so no version could settle it). Fresh content — a new section, the first version — is written straight instead, and a block the reviewer is to write in their own words is a cq-draft: theirs to rewrite, not Claude's to propose. The reviewer can also just comment on a pending suggestion rather than decide it.",
     "type": "object",
     "properties": {
       "id":       {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
@@ -318,7 +318,7 @@
     "x-upgrade": false
   },
   "cq-draft": {
-    "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach Claude as an `edit` action naming the element. The body is the draft text verbatim (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off close the review. Usable anywhere prose flows. The next version's markup carries the edited text — the document is the state.",
+    "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach Claude as an `edit` action naming the element. The body is the draft text verbatim (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off close the review. Usable anywhere prose flows. The next version's markup carries the edited text — the document is the state. Claude rewriting prose of its own goes in a cq-suggestion instead; a draft is the reviewer's own words, so there is nothing for them to accept.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
