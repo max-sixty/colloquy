@@ -81,6 +81,20 @@ stands alone.
       eat a click), so the fix is to carry the fact on the block rather than the passage:
       `aria-describedby` from the block a thread anchors in to that thread in the panel,
       coarser than the mark but saying the same thing.
+- [ ] A tab's name can't be commented on. Every other word a widget renders from an
+      authored attribute is text a reviewer can select (`x-says`), but `cq-tab`'s
+      `label` renders into the strip button the upgrade builds, and a control's label
+      is `.cq-ui` — the anchor pass skips it, and rightly, since "Save" and "choose"
+      are the runtime's words. The panel heading it also renders as (`cq-tab::before`)
+      is switched off the moment the strip exists, so after upgrade the name is
+      nowhere quotable. Making the button's label a non-`.cq-ui` span would let a drag
+      inside it select — and switch tabs on the mouseup, since the button is still a
+      button; `cq-options` already carries the guard for that shape ("a click that
+      lands inside a selection is that selection's"), so the pieces exist. A settled
+      `cq-options` row is the same shape — it names the chosen card in a button while
+      collapsing the card itself, so the decision is quotable only once the group is
+      opened. Worth doing when someone actually wants to comment on a tab's name or a
+      settled line; until then the asymmetry is small and stated rather than hidden.
 - [ ] Re-record `docs/demo.gif`: its step 2 is a select-and-comment, which now lights
       the passage while the composer is open, so the hero image shows the old behavior.
       `scripts/record-demo.sh` prints a shot list for a human to drive.
@@ -108,12 +122,14 @@ stands alone.
 - [ ] Widget-aware Δ: the version diff is additions-only by text key, so a card that
       moved columns isn't marked. The changelog line carries it today; marking cards
       whose column changed would need the diff to understand board structure.
-- [ ] Element deletion vs. anchor survival: `check` requires every id from the
-      previous version to survive, which forbids ever deleting a card the reviewer
-      dragged to "Done". When users ask for deletion, widen the frame (e.g., an id
-      retires once no unresolved thread anchors it) rather than exempting boards.
-      Settled options took the other route — keep every id, collapse the height —
-      which is right where the alternatives are the record of why the pick won, and
-      leaves this open for the case where the content itself is spent: a "Done" card
-      is not a record anyone rereads. Whichever way that lands, retirement is the
-      author's declaration, never a side effect of the reviewer's action.
+- [ ] Widget-aware suggestions: `cq-suggestion` proposes markup, so a change to a
+      widget's own state (a card moved between columns, an option marked `chosen`)
+      has no form yet — proposing it means re-stating the whole widget in both
+      slots. Whether that wants a per-widget proposal shape or nothing at all
+      waits for a page that needs it.
+- [ ] Un-decide a suggestion: a pick can be cleared by clicking its mark again,
+      but an accept or reject is final until the next version, because settling
+      collapses the suggestion to ordinary prose and leaves nothing to click.
+      Reversing it would mean keeping some mark on settled text, which is exactly
+      what settling is for — so the two widgets diverge here on purpose. Revisit
+      if a reviewer actually misclicks one.

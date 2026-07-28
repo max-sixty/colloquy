@@ -92,10 +92,18 @@ graph LR
   F --> H
   C -->|no| L[login]
 </cq-diagram>
-<aside class="callout" id="fallback-note">The fallback cookie is read-only: it can
-keep a session alive through a Redis blip, but revocation, rolling expiry, and new
-logins all require the store. A revoked session survives at most the cookie's
-5-minute lifetime.</aside>
+<p id="fallback-intro">One revision is waiting on you below: accept or reject it with
+the controls in the margin, and the next version carries whichever you chose.</p>
+<cq-suggestion id="sug-fallback-window">
+  <cq-old><aside class="callout" id="fallback-note">The fallback cookie is read-only: it can
+  keep a session alive through a Redis blip, but revocation, rolling expiry, and new
+  logins all require the store. A revoked session survives at most the cookie's
+  5-minute lifetime.</aside></cq-old>
+  <cq-new><aside class="callout">The fallback cookie is read-only: it can keep a session
+  alive through a Redis blip, but revocation, rolling expiry, and new logins all require
+  the store. A revoked session survives at most the cookie's 90-second lifetime — short
+  enough that support's "log out all devices" reads as immediate.</aside></cq-new>
+</cq-suggestion>
 </section>
 
 <section id="next-decision">

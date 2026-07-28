@@ -102,6 +102,13 @@ prerequisite.
   anchor to the nearest `id`, and an anchor survives into a new version only where its
   id does. The reader's place on the page falls back to those same ids when the text
   around it was rewritten. Keep ids stable across versions so neither detaches.
+- **Edits to reviewed content ship as suggestions.** Changing a passage the reader
+  has already seen — a rewrite, a deletion, above all the fix a comment asked for —
+  goes in a `cq-suggestion`: `cq-old` carries the current markup verbatim (its ids
+  ride there), `cq-new` the proposal, and the reader accepts or rejects it in the
+  margin. Fresh content — the first version, a new section, a restructure — is
+  written straight, and its review is comments as usual. Name the answered thread
+  with `resolves="<comment id>"` so accepting the fix closes the thread too.
 - The runtime injects the status banner, comment sidebar, version picker, and keyboard
   shortcuts (`?` in the browser shows the reference); don't build page UI for any of
   those.
@@ -184,14 +191,19 @@ On wake:
    - **A page-widget action** is the user editing the document through a widget — a
      board drag arrives as `{"kind": "action", "widget": "feeder-board", "action":
      "move", "detail": {"card": "card-baffle", "to": "col-doing", "index": 0}}`, an
-     options pick with `"action": "choose"` and `"detail": {"option": "st-s3"}` —
-     and they have already seen the change on screen. The version is the reply
-     either way: honor the edit by carrying it into the next version's markup
-     exactly (move that element, keep its id; mark the option `chosen` — and
-     `settled` too, once the decision has stopped being live), or decline
-     by shipping without that edit — everything else may still change — and saying
-     why in the note; tabs roll back to the authored state as they pick up that
-     version.
+     options pick with `"action": "choose"` and `"detail": {"option": "st-s3"}`,
+     a suggestion decided with `"action": "accept"` or `"reject"` — and they have
+     already seen the change on screen. The version is the reply either way: honor
+     the edit by carrying it into the next version's markup exactly (move that
+     element, keep its id; mark the option `chosen` — and `settled` too, once the
+     decision has stopped being live; replace an accepted suggestion with its
+     `cq-new` markup, a rejected one with its `cq-old`, keeping the old id where
+     the passage survives), or decline by shipping without that edit — everything
+     else may still change — and saying why in the note; tabs roll back to the
+     authored state as they pick up that version. `check` enforces the honoring:
+     a version may retire ids only where the log settled the suggestion holding
+     them, so an undecided proposal is carried, withdrawn whole, or left alone —
+     never quietly kept as settled content.
    - **A thread-widget action**: a `cq-options choose` group in one of your replies
      is an inline question (announce it there too — "click an option to answer");
      the user's pick is the answer, so acknowledge it with a reply in the same
@@ -249,8 +261,9 @@ Three passes stand between a version and its reviewer.
 the workflow holds no separate `check` call. It is deterministic and needs no browser:
 the HTML parses with balanced tags; the scaffold is exactly the theme link and the
 module script; every `cq-*` element validates against the vendored registry (schema,
-nesting, no self-closing form); ids are unique and every anchor id from the previous
-version survives; nothing has a fixed pixel width wider than the column.
+nesting, no self-closing form); ids are unique and every id from the previous version
+survives unless the log settled the suggestion holding it; nothing has a fixed pixel
+width wider than the column.
 
 **The render gate**, once, before the page's URL first reaches the user:
 
@@ -261,9 +274,11 @@ colloquy check --render <dir>
 It loads the version in the machine's installed Chrome (a couple of seconds, and works
 before the version is noted) and fails, in both color schemes, on what a static lint
 cannot see: a console error, a widget upgraded into a box of no size, a page that
-scrolls sideways, a `cq-diagram` whose mermaid source doesn't parse. The lint validates
-that element but never the notation in its body, so a typo there would otherwise reach
-the reader as an error box. When Chrome isn't installed, the gate says so on stderr and
+scrolls sideways, a `cq-diagram` whose mermaid source doesn't parse, words on screen
+that no selection can reach. The lint validates a diagram element but never the notation
+in its body, so a typo there would otherwise reach the reader as an error box; and it
+can't see a heading rendered as CSS generated content or marked `.cq-ui`, which leaves
+the reader looking at text they can't comment on. When Chrome isn't installed, the gate says so on stderr and
 lets the lint's result stand. It is the page's whole browser budget; a screenshot after
 it reads neither the console nor the second scheme.
 

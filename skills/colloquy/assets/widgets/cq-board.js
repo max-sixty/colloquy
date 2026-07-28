@@ -79,11 +79,31 @@ customElements.define(
     // the one fact about it not in its own text, is never announced. Roles
     // describe rather than afford, so this holds for a quoted board too: an
     // exhibit is read like anything else, it just takes no input.
+    //
+    // The heading is written here too, rather than declared x-says and left to
+    // the runtime's pass, because it is two things at once: the words a reviewer
+    // selects to comment on the column, and the list's accessible name. The pass
+    // renders one run of words at an edge and knows nothing about names, so it
+    // would put these into the tree a second time under a list already carrying
+    // them. Same marker (the theme styles [data-cq-said]) and same contract
+    // (generated, so the diff looks away; not .cq-ui, so the anchor pass doesn't)
+    // — a widget with a module of its own does the part only it can, which is
+    // the line CLAUDE.md draws and cq-milestone's chips are the other case of.
     #structure() {
       for (const col of this.querySelectorAll(":scope > cq-column")) {
         col.setAttribute("role", "list");
         col.setAttribute("aria-label", col.getAttribute("label"));
         for (const card of this.#cards(col)) card.setAttribute("role", "listitem");
+        if (col.querySelector(':scope > [data-cq-said="label"]')) continue;
+        const heading = document.createElement("span");
+        heading.dataset.cqSaid = "label";
+        heading.dataset.cqGen = "1";
+        // The column already carries these words as its name, so the heading is
+        // the visible half only: the tree hears them once, the reviewer can still
+        // select them, and the theme's generated copy is left to the no-script case.
+        heading.setAttribute("aria-hidden", "true");
+        heading.textContent = col.getAttribute("label");
+        col.prepend(heading);
       }
     }
 

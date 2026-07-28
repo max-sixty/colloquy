@@ -3,8 +3,10 @@
  *
  * Widget layer: reads /registry.json (vendored per page) and dynamically imports one
  * module per tag marked x-upgrade — element-widgets need no JS at all; the theme's CSS
- * renders them. Upgrades flush before the first anchor pass, so comment quotes always
- * search the enhanced DOM. Widget modules import the helper surface exported here
+ * renders them. It also renders the attributes the registry marks x-says as real text
+ * (renderSaid), for every widget alike: a word the page says has to be a word the
+ * reviewer can select. Upgrades flush before the first anchor pass, so comment quotes
+ * always search the enhanced DOM. Widget modules import the helper surface exported here
  * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `quoted`, `toast`,
  * `announce`, `keyHelp`, `reveal`, `pageScroller`, `REDUCED`, `SCROLL`); it stays
  * minimal until a real widget needs more.
@@ -21,9 +23,14 @@
  * second tab follows along live.
  *
  * Comment layer: talks to interact.py's server — polls GET /api/state, posts events to
- * POST /api/event. Everything it injects is namespaced .cq-* and marked .cq-ui so
- * anchoring skips it, and it styles itself from the theme's tokens so it themes with
- * the page.
+ * POST /api/event. Everything it injects is namespaced .cq-* and marked .cq-ui, and it
+ * styles itself from the theme's tokens so it themes with the page.
+ *
+ * .cq-ui marks the runtime's own words: its layer, and the controls a widget injects.
+ * Anchoring skips it, print hides it, and it carries the system-ui face that says "this
+ * is not the document" — which is why it is not the marker for "chrome". A widget's own
+ * label or heading is the page's word in a chrome look, and wears data-cq-gen alone: the
+ * diff looks away from it, the anchor pass does not. CLAUDE.md carries why.
  *
  * Passages and anchors: a comment points at an anchor (a section id, a quote, and the
  * neighbouring words where there are any). resolveAnchor is the only place the page is
@@ -174,8 +181,11 @@ export function reveal(el) {
   }
 }
 
+// The vocabulary, vendored per page: which tags a module upgrades, and which of their
+// attributes are words the page says (see renderSaid).
+let registry = null;
+
 async function upgradeWidgets() {
-  let registry;
   try {
     registry = await (await fetch("/registry.json")).json();
   } catch {
@@ -190,9 +200,49 @@ async function upgradeWidgets() {
         ),
       ),
   );
+  renderSaid(document.body);
   // Importing defined the elements and ran their connectedCallbacks; async ones
   // registered their work via settle(). Wait it out so geometry is final.
   await Promise.allSettled(settling);
+}
+
+// Words a widget says through an attribute — a metric's number, an event's time, an
+// option's effort — rendered as text the reviewer can reach. The theme renders the same
+// words with `content: attr()`, and a pseudo-element's glyphs are in no text node: no
+// selection can cover them, so no comment can be anchored on them, and the page shows
+// text you can read and can't point at. Not the widget author's to remember, either: the
+// registry names the attributes (x-says) and one pass renders them, so a widget cannot
+// render a word the reviewer can't quote.
+//
+// Each value goes at the edge its pseudo-element occupied (before = first child, after =
+// last) — the only placement a pseudo could ever have had, and so the line past which a
+// widget writes its own (cq-milestone's chips are a list and sit mid-element;
+// cq-column's heading is its list's accessible name, which this pass knows nothing
+// about). Those write the same data-cq-said span, and the guard below means the two
+// compose rather than race. The pass runs after the upgrades, so a module that rebuilds
+// its own body can't wipe a span put there first.
+//
+// The theme's pseudo rules stay, as the rendering a page carrying no script at all still
+// gets (docs/how-it-works.html is one); they stand down where this pass has been, asked
+// by :has(), so the two are never both on. The span is data-cq-gen and not .cq-ui: the
+// diff parses the base version unupgraded and must not read it as text that version
+// lacked, and the reviewer must be able to quote it.
+function renderSaid(root) {
+  // ?? {}: a reply's widgets reach here on a page with no vendored registry too, where
+  // nothing upgrades and the theme's pseudo-elements are doing the rendering.
+  for (const [tag, entry] of Object.entries(registry ?? {})) {
+    if (!entry["x-says"]) continue;
+    for (const el of root.querySelectorAll(tag))
+      for (const [attr, edge] of Object.entries(entry["x-says"])) {
+        const text = el.getAttribute(attr);
+        if (text === null || el.querySelector(`:scope > [data-cq-said="${attr}"]`)) continue;
+        const span = document.createElement("span");
+        span.dataset.cqSaid = attr;
+        span.dataset.cqGen = "1";
+        span.textContent = text;
+        el[edge === "before" ? "prepend" : "append"](span);
+      }
+  }
 }
 
 // ---------- comment layer ----------
@@ -340,6 +390,9 @@ const latestChip = el("button", "cq-ui cq-btn cq-latest-chip", "");
 latestChip.style.display = "none";
 const diffBtn = el("button", "cq-btn", "Δ");
 diffBtn.style.display = "none";
+const acceptAllBtn = el("button", "cq-btn", "");
+acceptAllBtn.style.display = "none";
+acceptAllBtn.title = "Accept every suggested change still pending";
 const versionSelect = document.createElement("select");
 versionSelect.title = "Version";
 versionSelect.setAttribute("aria-label", "Version");
@@ -353,6 +406,7 @@ banner.append(
   statusText,
   el("span", "cq-spacer"),
   latestChip,
+  acceptAllBtn,
   diffBtn,
   versionSelect,
   toggleBtn,
@@ -599,8 +653,10 @@ function msgNode(m) {
     // Claude's replies may carry widget markup, validated server-side by `reply`
     // against the vendored registry; already-defined widgets upgrade on insertion.
     // User text is always plain.
-    if (m.author === "claude" && /<cq-[a-z]/.test(m.text || "")) body.innerHTML = m.text;
-    else body.textContent = m.text || "";
+    if (m.author === "claude" && /<cq-[a-z]/.test(m.text || "")) {
+      body.innerHTML = m.text;
+      renderSaid(body); // custom elements upgrade themselves on insertion; this doesn't
+    } else body.textContent = m.text || "";
     if (m.suggestion) body.classList.add("cq-suggest-body");
     if (m.id) msgBodies.set(m.id, body);
   }
@@ -723,11 +779,15 @@ function renderPanel() {
 // first — what a selection rendered as versus what the document holds — and a second
 // answer is what there is now no room for.
 //
-// Two skip lists, because two jobs genuinely differ. Anchoring skips the runtime's own
-// chrome, inline scripts, and the stylesheet a rendered diagram carries inside its <svg>:
-// a quote holding text the search skips is a quote nothing can find again. The version
-// diff skips content an upgrade generated, because the base document parses unupgraded and
-// would never match it.
+// Two skip lists, because two jobs genuinely differ, and the difference is the whole
+// reason .cq-ui and data-cq-gen are two markers rather than one. Anchoring skips the
+// runtime's own words, inline scripts, and the stylesheet a rendered diagram carries
+// inside its <svg>: a quote holding text the search skips is a quote nothing can find
+// again. The version diff additionally skips content an upgrade generated, because the
+// base document parses unupgraded and would never match it. So generated text the page
+// authored — a widget's label, an attribute renderSaid rendered — is diff-invisible and
+// quotable, which is the pair a reviewer expects: they can point at it, and it doesn't
+// read as a change nobody wrote.
 const UNQUOTABLE = ".cq-ui, script, style";
 const GENERATED = ".cq-ui, [data-cq-gen]";
 // The same question one node at a time: is this the runtime's own chrome rather than the
@@ -1547,6 +1607,40 @@ function toggleHelp() {
   helpEl.focus({ preventScroll: true });
 }
 
+// ---------- suggestions ----------
+// A cq-suggestion is Claude's edit to reviewed content, offered rather than
+// shipped. The widget owns one suggestion and marks its own state in the DOM;
+// the banner owns the page's total, derived from that and refreshed whenever a
+// widget says it changed. Accept all decides each suggestion individually, so
+// the log records exactly what was consented to — accepting the rest after
+// rejecting one stays honest.
+// Quoted ones are exhibits: they carry no controls, so they are not the
+// banner's to count nor Accept all's to decide.
+const pendingSuggestions = () =>
+  [...document.querySelectorAll("cq-suggestion:not([data-cq-state])")].filter(
+    (suggestion) => !quoted(suggestion),
+  );
+function syncSuggestions() {
+  const n = pendingSuggestions().length;
+  acceptAllBtn.style.display = n ? "" : "none";
+  acceptAllBtn.textContent = `✓ Accept all (${n})`;
+}
+document.addEventListener("cq-suggestions", syncSuggestions);
+acceptAllBtn.onclick = async () => {
+  acceptAllBtn.disabled = true;
+  try {
+    for (const suggestion of pendingSuggestions()) await suggestion.accept?.();
+  } finally {
+    acceptAllBtn.disabled = false;
+    syncSuggestions();
+  }
+};
+// Accepting the fix a comment asked for answers that comment, so the same
+// gesture closes its thread: the widget names the thread, this layer owns the log.
+document.addEventListener("cq-resolve", (ev) =>
+  post({ kind: "resolve", parent: ev.detail.comment }),
+);
+
 // ---------- version diff ----------
 // "Changes since vN": blocks (paragraphs, list items, widget items) whose text
 // isn't present in the base version get a tinted marker, so re-reviewing a
@@ -1555,7 +1649,9 @@ function toggleHelp() {
 // it. The base is the previous published version.
 const DIFF_BLOCK =
   TEXT_BLOCK + ",aside,cq-option,cq-milestone,cq-event,cq-variant,cq-metric,cq-card";
-const DIFF_OPAQUE = "cq-diagram,cq-diff,cq-tree,cq-code,svg";
+// A suggestion is already its own mark, and its slots hold two versions of the
+// same passage — so the diff treats the whole element as one opaque unit.
+const DIFF_OPAQUE = "cq-diagram,cq-diff,cq-tree,cq-code,cq-suggestion,svg";
 let diffBase = ""; // previous version's file name, set by renderVersions
 let diffOn = false;
 const diffMarked = [];
@@ -1850,6 +1946,7 @@ const savedComposer = loadDraft("composer");
 // their import at top level would deadlock the cycle (their evaluation waits on this
 // module's async evaluation completing).
 upgradeWidgets().then(() => {
+  syncSuggestions();
   if (savedView) {
     restoreView(savedView);
     if (savedView.v < VNUM) showToast(`Updated to v${VNUM}`);

@@ -1,9 +1,0 @@
-# Worktrunk project configuration: https://worktrunk.dev
-
-[post-merge]
-# Colloquy is installed from this repo via a directory marketplace, so the
-# cached plugin at ~/.claude/plugins/cache/colloquy only refreshes when
-# explicitly reinstalled — `claude plugin update` no-ops because plugin.json's
-# version doesn't change between releases. Composes with the user-level
-# post-merge hooks (sync, push), which run first.
-refresh-plugin-cache = 'if [ "{{ target }}" = "{{ default_branch }}" ]; then claude plugin uninstall colloquy@colloquy; claude plugin install colloquy@colloquy; fi'

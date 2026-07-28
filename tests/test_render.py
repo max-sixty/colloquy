@@ -138,6 +138,37 @@ SETTLED_PAGE = """<!doctype html>
 """
 
 
+# The words a widget renders from an attribute — a column's heading, a metric's number —
+# with room around them, so a drag across one is an ordinary drag and not a two-pixel
+# feat. Both column labels differ, so a quote can only anchor where it was picked.
+SAID_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>said</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">This week</h1>
+<cq-metrics id="numbers">
+  <cq-metric id="m-open" value="1,204" delta="+18%" direction="up-good">Open sessions</cq-metric>
+</cq-metrics>
+<cq-board id="board">
+  <cq-column id="col-now" label="In flight">
+    <cq-card id="c-importer"><strong>Wire the importer</strong> Half done.</cq-card>
+  </cq-column>
+  <cq-column id="col-next" label="Queued">
+    <cq-card id="c-backfill"><strong>Backfill the index</strong> Waiting on the importer.</cq-card>
+  </cq-column>
+</cq-board>
+</main>
+</body>
+</html>
+"""
+
+
 # Short card titles, so the whole board fits in an expected ARIA snapshot and the
 # snapshot stays about structure. One column starts empty: a keyboard user has to
 # hear it to move a card into it.
@@ -192,6 +223,11 @@ SPECIMEN_PAGE = """<!doctype html>
     <cq-option id="q-lax" chosen><strong>Lax cookie</strong> Host-only.</cq-option>
     <cq-option id="q-bearer"><strong>Bearer header</strong> Suits mobile.</cq-option>
   </cq-options>
+  <p id="q-prose">Refill rules:
+    <cq-suggestion id="quoted-suggestion">
+      <cq-old>Refill every feeder each morning.</cq-old>
+      <cq-new>Refill when the camera shows it half-empty.</cq-new>
+    </cq-suggestion></p>
 </cq-specimen>
 <cq-options id="live-group" choose>
   <cq-option id="l-shim"><strong>Shim the old schema</strong> Fastest to ship.</cq-option>
@@ -202,6 +238,11 @@ SPECIMEN_PAGE = """<!doctype html>
     <cq-card id="l-card"><strong>Wire the importer</strong></cq-card>
   </cq-column>
 </cq-board>
+<p id="l-prose">Refill rules:
+  <cq-suggestion id="live-suggestion">
+    <cq-old>Refill every feeder each morning.</cq-old>
+    <cq-new>Refill when the camera shows it half-empty.</cq-new>
+  </cq-suggestion></p>
 </main>
 </body>
 </html>
@@ -303,8 +344,9 @@ def open_page(browser, url):
 def test_example_renders(browser, serve, example):
     """Every shipped example loads clean and lays out, in both color schemes: no
     fail-soft error box, no console error, every visible widget occupies real
-    space, no sideways scroll. A widget that upgrades into a 1x1 box is the
-    shape of failure a static lint cannot see. The invariants themselves live in
+    space, no sideways scroll, no words on screen a selection can't reach. A
+    widget that upgrades into a 1x1 box, or a heading painted by a pseudo-element,
+    is the shape of failure a static lint cannot see. The invariants live in
     interact.render_version — the pass `check --render` runs on agent-authored
     pages — so this sweep also proves the gate a reviewer's page goes through."""
     assert interact.render_version(browser, serve(example.read_text())) == []
@@ -455,10 +497,12 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     assert errors == []
     assert page.locator(".cq-error").count() == 0
 
-    # The exhibit rendered: the gutter's label, and cards with real size.
-    assert page.locator("#spec").evaluate(
-        "el => getComputedStyle(el, '::before').content"
-    ) == '"specimen · a decision"'
+    # The exhibit rendered: the gutter's caption, and cards with real size. The label is
+    # the page's own word, so the runtime says it as text a reviewer can quote; only the
+    # "specimen · " in front of it is the theme's, and only that is still pseudo-content.
+    label = page.locator('#spec > [data-cq-said="label"]')
+    assert label.text_content() == "a decision"
+    assert label.evaluate("el => getComputedStyle(el, '::before').content") == '"specimen · "'
     assert page.locator("#quoted-group cq-option").count() == 2
     assert page.locator("#quoted-group cq-option").first.evaluate(
         "el => Math.round(el.getBoundingClientRect().height)"
@@ -477,9 +521,17 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     # wears its mark, as a span.
     assert page.locator("#quoted-settled span.cq-pick").count() == 1
 
+    # A quoted suggestion shows what a pending change looks like — both slots
+    # marked — and grows nothing to settle it with, so it is also not the
+    # banner's to count or Accept all's to decide.
+    assert page.locator("#quoted-suggestion cq-old").is_visible()
+    assert page.locator("#quoted-suggestion .cq-sug-actions").count() == 0
+    expect(page.get_by_role("button", name="Accept all (1)")).to_be_visible()
+
     # The control: the same markup unquoted wires all of it.
     assert page.locator("#live-group button.cq-pick").count() == 2
     assert page.locator("#live-board .cq-grip").count() == 1
+    assert page.locator("#live-suggestion .cq-sug-actions").count() == 1
 
     # Nor the room for one. A quoted card stands at the height of a card in a
     # group that never declared `choose`, because that is what it is; reserving
@@ -519,10 +571,12 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
     assert errors == []
 
     # The gutter renders in the panel: the specimen rules aren't scoped to the
-    # document's column, and neither is the label.
-    assert page.locator("#rp-spec").evaluate(
-        "el => getComputedStyle(el, '::before').content"
-    ) == '"specimen · the April thread"'
+    # document's column, and neither is the label — which reaches the panel only
+    # because renderSaid runs over a reply's markup too, where no custom element
+    # upgrade would have carried it.
+    label = page.locator('#rp-spec > [data-cq-said="label"]')
+    assert label.text_content() == "the April thread"
+    assert label.evaluate("el => getComputedStyle(el, '::before').content") == '"specimen · "'
     assert page.locator("#rp-spec").evaluate(
         "el => getComputedStyle(el).borderLeftWidth"
     ) == "2px"
@@ -630,6 +684,117 @@ def test_composer_grows_with_its_text_without_script(browser, serve):
     page.close()
 
 
+# Two pending changes a line apart, and a third inside a widget that positions
+# its own contents — the case where `left: 100%` would resolve against the card
+# rather than the column and drop the controls back into the text.
+SUGGESTION_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>suggestions</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Feeder notes</h1>
+<p id="replace">The camera survey found two dead zones.
+  <cq-suggestion id="sug-refill">
+    <cq-old>Refill every feeder each morning.</cq-old>
+    <cq-new>Refill a feeder when its camera shows it half-empty.</cq-new>
+  </cq-suggestion></p>
+<p id="insert">Seed mix stays through the migration.
+  <cq-suggestion id="sug-thistle">
+    <cq-new>Switch the north feeder to thistle in autumn.</cq-new>
+  </cq-suggestion></p>
+<cq-board id="feeders">
+  <cq-column id="col-todo" label="To do">
+    <cq-card id="card-heater"><strong>Heated perch</strong>
+      <cq-suggestion id="sug-in-card">
+        <cq-old>Wire the south feeder.</cq-old>
+        <cq-new>Wire the south feeder to the porch circuit.</cq-new>
+      </cq-suggestion></cq-card>
+  </cq-column>
+  <cq-column id="col-done" label="Done"></cq-column>
+</cq-board>
+</main>
+</body>
+</html>
+"""
+
+
+def test_suggestion_controls_stay_out_of_the_column(browser, serve):
+    """Review chrome hangs in the page margin, so the prose keeps the full column
+    and reads as it will once the change is settled. Two things can pull the
+    controls back into the text and neither is visible to the lint: a positioned
+    ancestor, which `left: 100%` resolves against instead of the column, and a
+    window too narrow to have a margin at all. Both must dock the row into flow
+    rather than leave it overlapping the page."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    assert errors == []
+    column = page.locator("main").evaluate("el => el.getBoundingClientRect().right")
+    box = "el => el.getBoundingClientRect()"
+
+    margin_rows = page.locator("#sug-refill .cq-sug-actions, #sug-thistle .cq-sug-actions")
+    assert margin_rows.count() == 2
+    for i in range(2):
+        assert margin_rows.nth(i).evaluate(box)["left"] > column, (
+            "a control row overlapping the column re-wraps the prose it reviews"
+        )
+    # Two changes a line apart, so the rows would collide at their natural offsets.
+    first, second = (margin_rows.nth(i).evaluate(box) for i in range(2))
+    assert first["bottom"] <= second["top"], "control rows must not stack on each other"
+
+    # Inside the card the row has no margin to hang in: it docks into flow, which
+    # keeps it inside the card rather than over the column beside it.
+    docked = page.locator("#sug-in-card .cq-sug-actions")
+    assert docked.evaluate("el => el.classList.contains('cq-docked')")
+    card = page.locator("#card-heater").evaluate(box)
+    assert docked.evaluate(box)["right"] <= card["right"] + 1
+
+    # No margin anywhere: every row docks, and nothing spills sideways.
+    page.set_viewport_size({"width": 820, "height": 900})
+    page.wait_for_function(
+        "() => [...document.querySelectorAll('.cq-sug-actions')]"
+        ".every(r => r.classList.contains('cq-docked'))"
+    )
+    assert page.evaluate("() => document.body.scrollWidth <= document.body.clientWidth")
+    page.close()
+
+
+def test_accepting_a_suggestion_settles_it_and_reaches_claude(browser, serve):
+    """Accepting collapses the change to the proposal as ordinary prose — no
+    tint, no strike, no leftover chrome — because the live view is the version
+    plus the reviewer's actions, and the honoring version only has to catch up.
+    The outcome has to reach the log too: what the reviewer sees settle and what
+    Claude is told must be the same event."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    accept = page.locator("#sug-refill .cq-sug-accept")
+    assert accept.get_attribute("aria-label").startswith(
+        "Accept the suggested change: Refill a feeder when"
+    ), "the button names the proposal, not the text being replaced"
+
+    accept.click()
+    expect(page.locator("#sug-refill cq-old")).to_be_hidden()
+    expect(page.locator("#sug-refill cq-new")).to_be_visible()
+    assert page.locator("#sug-refill .cq-sug-actions").is_hidden()
+    settled = page.locator("#sug-refill cq-new").evaluate(
+        "el => getComputedStyle(el).textDecorationLine + ' ' + getComputedStyle(el).backgroundColor"
+    )
+    assert "line-through" not in settled and "rgba(0, 0, 0, 0)" in settled, (
+        f"settled text still wears a pending mark: {settled}"
+    )
+    # The banner's count follows the page: three pending, one decided.
+    expect(page.get_by_role("button", name="Accept all (2)")).to_be_visible()
+
+    page.wait_for_function(
+        "() => fetch('/api/state').then(r => r.json())"
+        ".then(s => s.events.some(e => e.kind === 'action' && e.action === 'accept'))"
+    )
+    logged = [e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"]
+    assert [(e["widget"], e["action"], e["author"]) for e in logged] == [
+        ("sug-refill", "accept", "user")
+    ]
 def painted(page, name):
     """What the page is painting under a highlight name, whitespace-flattened. Marks are
     ranges in the highlight registry, not elements, so this is where a test looks."""
@@ -801,6 +966,102 @@ def test_every_passage_in_a_real_page_can_be_quoted(browser, serve, example):
         f"{len(result['astray'])} passages in {example.stem} painted outside what was "
         f"selected: {result['astray']}"
     )
+    assert errors == []
+    page.close()
+
+
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
+def test_every_x_says_attribute_reaches_the_page_as_text(browser, serve, example):
+    """The other half of what interact.UNREACHABLE_WORDS asks of a page — that half is
+    in the gate, because a page-local widget is where a heading goes out of reach and the
+    gate is what a reviewer's page passes through; test_example_renders drives it over
+    these same examples.
+
+    What the gate can't ask is whether the words arrived at all: it works from the
+    rendered page, where an attribute that reaches nobody looks exactly like an attribute
+    with nothing to say. The registry knows the difference, so this reads x-says back and
+    asks each declaration to be somewhere in its element's text — a metric with no number
+    is a worse failure than one whose number can't be selected, and the only pass that
+    would notice is this one."""
+    page, errors = open_page(browser, serve(example.read_text()))
+    unsaid = page.evaluate("""async () => {
+        const out = [];
+        const reg = await (await fetch('/registry.json')).json();
+        for (const [tag, entry] of Object.entries(reg))
+            for (const attr of Object.keys(entry['x-says'] ?? {}))
+                for (const el of document.querySelectorAll(tag)) {
+                    const value = el.getAttribute(attr);
+                    if (value !== null && !el.textContent.includes(value))
+                        out.push(`<${tag}${el.id ? ' id=' + el.id : ''}> never says `
+                                 + `${attr}="${value}"`);
+                }
+        return out;
+    }""")
+    assert unsaid == [], (
+        f"{example.stem} declares attributes as x-says that never reach the page as "
+        f"text: {unsaid}"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_a_widgets_attribute_takes_a_comment_like_any_other_passage(browser, serve):
+    """The gesture itself, on the words a widget renders from an attribute: drag across
+    a column's heading and the same button, quote, and mark come up as for a paragraph,
+    and the comment is still anchored a version later. A real drag, because the whole
+    class of bug here is text that looks selectable and isn't — a synthetic Range would
+    select what no pointer can.
+
+    Then the other half of the pair, which the same spans decide: the version diff reads
+    a block's *authored* text, and the base version it compares against is parsed
+    unupgraded, where these spans don't exist. Drop their data-cq-gen and every widget
+    holding a said attribute lights up as changed on every revision — a failure that
+    looks like a busy page rather than like a bug."""
+    page, errors = open_page(browser, serve(SAID_PAGE))
+
+    heading = page.locator('cq-column#col-now > [data-cq-said="label"]')
+    box = heading.bounding_box()
+    page.mouse.move(box["x"] + 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] - 2, box["y"] + box["height"] / 2, steps=8)
+    page.mouse.up()
+
+    # The theme uppercases a column heading, so the selection reads back as the reader
+    # sees it and the quote as the document holds it — the asymmetry that makes
+    # selectionAnchor read the text nodes rather than the selection's own toString().
+    assert page.evaluate("() => getSelection().toString()").strip() == "IN FLIGHT", (
+        "a drag across the heading selected nothing — it is painted, not said"
+    )
+    page.locator(".cq-fab").click()
+    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+    quoted = page.evaluate("() => document.querySelector('.cq-composer-quote').textContent")
+    assert quoted.strip("“”") == "In flight"
+    page.locator(".cq-composer textarea").fill("this column's name is wrong")
+    page.get_by_role("button", name="Comment", exact=True).click()
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+
+    thread = page.locator(".cq-thread .cq-quote").first
+    assert thread.text_content().strip().strip("“”") == "In flight"
+
+    # A second version reworking one card's prose and nothing else. The page follows it,
+    # and the anchor is on a word only the runtime puts there, so it has to be found
+    # again in the version the reviewer now has.
+    d = serve.page_dir
+    (d / "versions" / "v002.html").write_text(
+        SAID_PAGE.replace("Waiting on the importer.", "Unblocked; starting Thursday.")
+    )
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    page.wait_for_url("**/v002.html", timeout=10_000)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    assert page.locator(".cq-thread .cq-quote.detached").count() == 0, (
+        "the comment came loose from the heading when the version turned over"
+    )
+
+    page.locator(".cq-banner button", has_text="Δ").click()
+    page.wait_for_function("() => document.querySelectorAll('.cq-ins-block').length > 0")
+    assert page.evaluate(
+        "() => [...document.querySelectorAll('.cq-ins-block')].map(e => e.id)"
+    ) == ["c-backfill"], "the diff read the runtime's own spans as text the base lacked"
     assert errors == []
     page.close()
 
