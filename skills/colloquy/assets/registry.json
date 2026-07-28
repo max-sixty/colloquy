@@ -1,11 +1,12 @@
 {
   "cq-options": {
-    "description": "A decision's alternatives, rendered as a card grid, for places where the reader picks one. Children are cq-option elements only. With `choose` (which requires an id), the reader picks a card — by click, or by keyboard via the toggle mark each card carries, which is also where its state reads. Clicking the picked card again clears it. The pick reaches Claude as a `choose` action naming the card, or null once cleared, and wears a green ring until the next version marks it `chosen`. `settled` (also requiring an id) retires a decision that has been made and acted on: the group collapses to one line naming the chosen option, with every card behind a disclosure the reader can open — the record keeps its ids and its anchors, and stops spending the page's height. Mark it once the choice has stopped being live, which is usually a version or two after honoring the pick, not the moment it was made; a settled group still takes a pick if the reader reopens it.",
+    "description": "A decision's alternatives, rendered as a card grid, for places where the reader picks one. Children are cq-option elements only. With `choose` (which requires an id), the reader picks a card — by click, or by keyboard via the toggle mark each card carries, which is also where its state reads. Clicking the picked card again clears it. The pick reaches Claude as a `choose` action naming the card, or null once cleared, and carries onto every later version by itself — marking the picked card `chosen` in the next version is how the record reads without the log, not what keeps the pick alive. A pick rests on the option picked, so rewriting what that option says needs its `restated` (see $restated in `catalog`); a pick the reader has cleared rests on the group, and takes the group's. `settled` (also requiring an id) retires a decision that has been made and acted on: the group collapses to one line naming the chosen option, with every card behind a disclosure the reader can open — the record keeps its ids and its anchors, and stops spending the page's height. Mark it once the choice has stopped being live, which is usually a version or two after honoring the pick, not the moment it was made; a settled group still takes a pick if the reader reopens it.",
     "type": "object",
     "properties": {
-      "id":      {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
-      "choose":  {"type": "boolean"},
-      "settled": {"type": "boolean"}
+      "id":       {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "choose":   {"type": "boolean"},
+      "settled":  {"type": "boolean"},
+      "restated": {"type": "boolean"}
     },
     "dependentRequired": {"choose": ["id"], "settled": ["id"]},
     "additionalProperties": false,
@@ -14,14 +15,15 @@
     "x-example": "<cq-options id=\"nav-gear\" choose>\n  <cq-option id=\"paper-maps\" effort=\"low\" risk=\"high\">\n    <strong>Paper maps</strong> Print the route ahead of time; nothing to charge.\n  </cq-option>\n  <cq-option id=\"gps-unit\" effort=\"med\" risk=\"low\" recommended>\n    <strong>Dedicated GPS</strong> Offline maps, week-long battery, reversible choice.\n  </cq-option>\n</cq-options>"
   },
   "cq-option": {
-    "description": "One alternative in a decision. Lead with a <strong> title; prose follows. `recommended` draws the accent ring (the author's take); `chosen` the green one (the reader's pick — the choose upgrade sets it live, and the next version carries it). `effort`/`risk` — the cost and the danger of picking this option — render as chips.",
+    "description": "One alternative in a decision. Lead with a <strong> title; prose follows. `recommended` draws the accent ring (the author's take); `chosen` the green one (the reader's pick — the choose upgrade sets it live, and the next version carries it so the page reads right without the log). `effort`/`risk` — the cost and the danger of picking this option — render as chips. Rewriting what a picked option says needs `restated` on that option (see $restated in `catalog`); the other options in the group are free to change.",
     "type": "object",
     "properties": {
       "id":          {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
       "effort":      {"enum": ["low", "med", "high"]},
       "risk":        {"enum": ["low", "med", "high"]},
       "recommended": {"type": "boolean"},
-      "chosen":      {"type": "boolean"}
+      "chosen":      {"type": "boolean"},
+      "restated":    {"type": "boolean"}
     },
     "required": ["id"],
     "additionalProperties": false,
@@ -220,7 +222,7 @@
     "x-example": "<cq-diagram id=\"checkout-flow\">\ngraph LR\n  Cart --> Pay\n  Pay --> Receipt\n</cq-diagram>"
   },
   "cq-board": {
-    "description": "A kanban board the reviewer edits directly: cards move between columns or reorder within one — dragged by the grip, or by keyboard (the grip is a button: Enter grabs, arrows move, Enter drops) — and each completed move reaches Claude as a `move` action naming the card, target column, and position. Children are cq-column elements only. The next version's markup carries the moved card — the document is the state.",
+    "description": "A kanban board the reviewer edits directly: cards move between columns or reorder within one — dragged by the grip, or by keyboard (the grip is a button: Enter grabs, arrows move, Enter drops) — and each completed move reaches Claude as a `move` action naming the card, target column, and position. Children are cq-column elements only. Write the board as you mean it and leave it alone afterwards: a recorded move carries onto every later version by itself, so re-emitting a card where you first put it does not undo the reviewer's move. A move rests on its card, so revising one they have moved is the card's `restated` (see $restated in `catalog`), never the board's.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
@@ -246,10 +248,11 @@
     "x-says": {"label": "before"}
   },
   "cq-card": {
-    "description": "One card on a board. Lead with a <strong> title; prose follows. The reviewer drags it by its grip; the id names it in `move` actions and keeps comment anchors stable across moves.",
+    "description": "One card on a board. Lead with a <strong> title; prose follows. The reviewer drags it by its grip; the id names it in `move` actions and keeps comment anchors stable across moves. Rewriting a card the reviewer has moved needs `restated` on the card (see $restated in `catalog`), which retracts the moves of that card alone — the rest of the board keeps its arrangement.",
     "type": "object",
     "properties": {
-      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "restated": {"type": "boolean"}
     },
     "required": ["id"],
     "additionalProperties": false,
@@ -287,7 +290,8 @@
     "type": "object",
     "properties": {
       "id":       {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
-      "resolves": {"type": "string", "pattern": "^[a-z0-9]+$"}
+      "resolves": {"type": "string", "pattern": "^[a-z0-9]+$"},
+      "restated": {"type": "boolean"}
     },
     "required": ["id"],
     "additionalProperties": false,
@@ -318,10 +322,11 @@
     "x-upgrade": false
   },
   "cq-draft": {
-    "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach Claude as an `edit` action naming the element. The body is the draft text verbatim (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off close the review. Usable anywhere prose flows. The next version's markup carries the edited text — the document is the state. Claude rewriting prose of its own goes in a cq-suggestion instead; a draft is the reviewer's own words, so there is nothing for them to accept.",
+    "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach Claude as an `edit` action naming the element. The body is the draft text verbatim (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off close the review. Usable anywhere prose flows. Claude rewriting prose of its own goes in a cq-suggestion instead; a draft is the reviewer's own words, so there is nothing for them to accept. Once they have edited one those words are theirs: re-emit the body you wrote and their edit still stands over it. To take the pen back — a fact of yours to fix in a sentence they rewrote — write the new text and mark the element `restated` (see $restated in `catalog`).",
     "type": "object",
     "properties": {
-      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "restated": {"type": "boolean"}
     },
     "required": ["id"],
     "additionalProperties": false,
@@ -343,6 +348,13 @@
     "x-says": {"label": "before"},
     "x-upgrade": false,
     "x-example": "<cq-specimen id=\"spec-gear\" label=\"next season's kit\">\n  <cq-options>\n    <cq-option id=\"sp-paper\" effort=\"low\" risk=\"high\"><strong>Paper maps</strong> Nothing to charge.</cq-option>\n    <cq-option id=\"sp-gps\" effort=\"med\" risk=\"low\" recommended><strong>Dedicated GPS</strong> Offline maps, week-long battery.</cq-option>\n  </cq-options>\n</cq-specimen>"
+  },
+  "$restated": {
+    "description": "A boolean attribute saying this version has rewritten words a reviewer already decided on, so what they decided no longer applies and they are being asked again. It goes on the element the decision rests on — a cq-draft or cq-suggestion, or the cq-card or cq-option inside a board or group — and retracts what rested on that element alone: one rewritten card drops the moves of that card, leaving the rest of the board arranged as the reviewer left it.",
+    "why": "A move, pick, edit or accept is recorded in the log against the version it was made on, and the page replays every recorded action onto every later version. A decision therefore survives a republish on its own — you never carry one into the next version's markup, and re-emitting a widget as you first wrote it does not undo it. The cost is that your markup cannot quietly overrule them either, which is what this attribute is for.",
+    "when": "Only where a later version has to change what the reviewer decided about: an error you found in a draft they rewrote, a picked option whose prose was wrong. Write the new words, mark that element, and say why in the note — to the reviewer this reads as a decision undone, and the note is where a version explains itself. `check` refuses a version that changes those words without it and a `restated` that retracts nothing, so it can be neither forgotten nor spent as a reflex; when it names the wrong element, the error says which one it wanted.",
+    "once": "It belongs to the one version that does the rewriting. Publishing records the retraction in the log, so it holds for good — later versions leave the attribute off, and `check` refuses one that repeats it.",
+    "example": "<cq-draft id=\"note-cli\" restated>\nAdds --dry-run to every mutating command. It defaults on for `purge`.\n</cq-draft>"
   },
   "$idioms": {
     "description": "Recurring shapes the theme styles directly — no registry entry, no JS. Plain semantic HTML gets the theme's voice for free; these classes cover what HTML lacks an element for.",

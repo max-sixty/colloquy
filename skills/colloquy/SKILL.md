@@ -206,17 +206,25 @@ On wake:
      "move", "detail": {"card": "card-baffle", "to": "col-doing", "index": 0}}`, an
      options pick with `"action": "choose"` and `"detail": {"option": "st-s3"}`,
      a suggestion decided with `"action": "accept"` or `"reject"` — and they have
-     already seen the change on screen. The version is the reply either way: honor
-     the edit by carrying it into the next version's markup exactly (move that
-     element, keep its id; mark the option `chosen` — and `settled` too, once the
-     decision has stopped being live; replace an accepted suggestion with its
-     `cq-new` markup, a rejected one with its `cq-old`, keeping the old id where
-     the passage survives), or decline by shipping without that edit — everything
-     else may still change — and saying why in the note; tabs roll back to the
-     authored state as they pick up that version. `check` enforces the honoring:
-     a version may retire ids only where the log settled the suggestion holding
-     them, so an undecided proposal is carried, withdrawn whole, or left alone —
-     never quietly kept as settled content.
+     already seen the change on screen. It stays on screen without your help: the
+     page replays every recorded action onto every later version, so their edit
+     survives a republish whether or not your markup mentions it. Write the next
+     version as the document should now read and leave their widget alone. What
+     the markup still owes them is the record — mark the picked option `chosen`
+     (and `settled` once the decision has stopped being live), replace an accepted
+     suggestion with its `cq-new` markup and a rejected one with its `cq-old`,
+     keeping the old id where the passage survives — so the page reads right to
+     someone who never saw the log.
+
+     Declining means putting different words there — yours, or the originals
+     back — and that takes `restated` on the element plus the reason in the note
+     (`catalog`'s `$restated` has the rest). Without it replay paints their words
+     over yours, so `check` refuses the version rather than let the two disagree
+     in silence. It guards the other end
+     too — a version may retire
+     ids only where the log settled the suggestion holding them, so an undecided
+     proposal is carried, withdrawn whole, or left alone, never quietly kept as
+     settled content.
    - **A thread-widget action**: a `cq-options choose` group in one of your replies
      is an inline question (announce it there too — "click an option to answer");
      the user's pick is the answer, so acknowledge it with a reply in the same

@@ -74,6 +74,12 @@ A second representation earns its place only when the two things are genuinely d
 (an element anchor has no text to paint, so it wears an outline). Not when they are the
 same thing reached by different code.
 
+`page_passages` is that one answer on the Python side, so anything asking what a version
+says slices it (`spoken`) rather than walking the markup again. A fifth answer would have
+been quiet and wrong in the usual way: an attribute the registry marks `x-says` is a word
+on the page, and a walk that only sees text nodes would say a picked option's `effort`
+never changed.
+
 ### The file's reading never claims more than the page's
 
 An anchor is captured in two places and resolved in one. `selectionAnchor` captures from
@@ -170,12 +176,36 @@ overlay, so help can't drift from behaviour.
 An `applyAction` implementation states an absolute placement, never a relative mutation,
 because the poll replays it and the sender's own action must be a no-op.
 
-### The document is the state
+### The document is the state, and the log outranks it
 
-A reviewer's edit (a dragged card, a pick) posts an `action` and is replayed onto the
-version on screen until Claude's next version carries it. Nothing is stored as "the
-current board" anywhere; the log plus the version is the whole truth. Keep it that way —
-a second store is a second thing to reconcile.
+A reviewer's edit (a dragged card, a pick) posts an `action`, and every action replays
+onto every version after the one it was made on. Nothing is stored as "the current
+board"; the log plus the version is the whole truth. Keep it that way — a second store
+is a second thing to reconcile.
+
+There was a second store once, unnamed: recorded state in the log and authored state in
+the markup, with the page's author expected to copy each decision from one to the other
+by hand. `check` guaranteed ids survived a republish and nothing guaranteed the state on
+them did, so a forgotten copy silently un-made a decision. A reviewer re-approved the
+same drafts version after version, and no part of the system said a word.
+
+One writer, then: markup states the initial condition, the log every transition after
+it. A version that says nothing about a decision leaves it standing. The cost lands
+where the old design hid it — a version can't quietly revise what a reviewer acted on,
+because replay would paint their state back over the revision — so `restated` on the
+rewritten element retracts what rested on it, and `check` refuses a bare rewrite and an
+unearned `restated` alike (`restatement_errors`).
+
+That attribute is a declaration, not state: `note` records it as a `restate` event and
+the log carries it onward. Left in the markup it would hold for exactly one version,
+because the version *after* a rewrite has nothing to declare, and its silence would hand
+the retracted decision straight back — the same bug, one version later.
+
+Both failures are invisible to the reviewer, so the question was never which is worse
+but who can see each. A dropped decision is visible to nobody. A stale decision standing
+over rewritten content is visible to the author as they rewrite it, and only they know
+whether the rewrite invalidates it. Route a failure to whoever can adjudicate it: the
+runtime preserves by default, and discarding costs the author a word.
 
 ### Never lose user text
 

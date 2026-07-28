@@ -113,6 +113,15 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0;
                         background: var(--accent); color: var(--card); font-size: 12px;
                         font-weight: 600; display: grid; place-items: center; }
 
+/* Something a version restated: it rewrote words the reviewer had decided on, so
+   the runtime dropped what they recorded and is asking again. Without the tint,
+   a decision undone looks exactly like one never made — the reviewer would find
+   it by rereading sixty drafts. Why it was undone belongs in the changelog note,
+   where a version explains itself. The runtime sets this, from the log; the
+   author's word is `restated` on the element. */
+[data-cq-restated] { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+                     outline-offset: 3px; border-radius: 2px; }
+
 /* ---------- element-widgets ---------- */
 
 /* Every attribute the registry marks x-says is written twice here. The runtime

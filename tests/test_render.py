@@ -2058,6 +2058,27 @@ JOURNEY_V1 = JOURNEY_SCAFFOLD.format(before=PASSAGE, after="<p id='p-filler'>Fil
 JOURNEY_V2 = JOURNEY_SCAFFOLD.format(before="<p id='p-filler'>Filler.</p>", after=PASSAGE)
 
 
+def _draft_says(html, text, attrs=""):
+    """The journey page with its draft rewritten — the source's indentation and
+    all, since that is what the widget dedents back out."""
+    return html.replace(
+        '<cq-draft id="draft-ops">\n' + "\n".join(f"    {l}" for l in DRAFT_TEXT.split("\n")),
+        f'<cq-draft id="draft-ops"{attrs}>\n    {text}',
+    )
+
+
+def _publish(page_dir, version, html, note):
+    """Write a version and publish it the way Claude does — through `note`, which
+    lints it and records what it says about the reviewer's decisions."""
+    (page_dir / "versions" / f"v{version:03d}.html").write_text(html)
+    result = CliRunner().invoke(
+        interact.cli,
+        ["note", str(page_dir), "--version", str(version), "--text", note],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+
 def test_review_round_trip(browser, serve):
     """The loop the product is, driven through the real UI: select a passage and
     comment on it, drag a card to another column, rewrite a draft in place, then
@@ -2160,6 +2181,111 @@ def test_review_round_trip(browser, serve):
         "detail": {"text": DRAFT_EDITED},
     }
     page.close()
+
+
+def test_a_decision_claude_has_seen_still_survives_the_next_version(browser, serve):
+    """The round trip above, differing in one fact: `wait` has handed the actions
+    to Claude before v2 publishes. That is the ordinary case — Claude writes a
+    version *because* it was handed the reviewer's edits — and it used to be the
+    one that lost them: replay stopped at the delivery cursor, on the premise
+    that a version written after seeing an action encodes it. Nothing checks that
+    premise, so a version that quietly omits the state re-emitted the widget as
+    untouched and the reviewer's work vanished with no error anywhere.
+
+    Delivery is not assent. Only the next version's markup can say what Claude
+    did with an edit, and until it says otherwise the log is what the reviewer
+    did."""
+    url = serve(JOURNEY_V1)
+    d = serve.page_dir
+    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
+                              "widget": "board", "action": "move",
+                              "detail": {"card": "card-x", "to": "col-done", "index": 0}})
+    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
+                              "widget": "draft-ops", "action": "edit",
+                              "detail": {"text": DRAFT_EDITED}})
+    # What `wait` writes on its way out: everything so far is Claude's to answer.
+    interact.write_json(d / "cursor.json", {"seq": len(interact.read_events(d))})
+    # And Claude answers with a version that carries neither — the page generator
+    # emitting its own idea of the board and the draft, as one did for five
+    # versions running.
+    (d / "versions" / "v002.html").write_text(JOURNEY_V2)
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "v2"})
+
+    page, errors = open_page(browser, url.replace("v001", "v002"))
+    page.wait_for_function(
+        "t => document.querySelector('#draft-ops .cq-draft-body').textContent === t",
+        arg=DRAFT_EDITED,
+    )
+    expect(page.locator("#col-done #card-x")).to_have_count(1)
+    assert errors == []
+    page.close()
+
+
+def test_restating_a_widget_is_how_a_version_takes_the_pen_back(browser, serve):
+    """The other end of the rule above. Since the log outranks the markup, a
+    version cannot revise a draft the reviewer has rewritten — replay would paint
+    their words straight back over it, and Claude's correction would reach nobody.
+    `restated` is the one way markup wins: it retracts what came before it, so
+    the new words render and the reviewer sees the widget marked as one whose
+    decision this version undid.
+
+    It costs a word, where losing a decision used to cost nothing, which is the
+    whole asymmetry: the failure that stays silent is now the one that needs
+    saying out loud."""
+    url = serve(JOURNEY_V1)
+    d = serve.page_dir
+    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
+                              "widget": "draft-ops", "action": "edit",
+                              "detail": {"text": DRAFT_EDITED}})
+    corrected = "Run the migration after deploying — it needs the new column."
+    _publish(d, 2, _draft_says(JOURNEY_V2, corrected, " restated"),
+             "0041 needs the column; rewrote the draft")
+
+    page, errors = open_page(browser, url.replace("v001", "v002"))
+    body = page.locator("#draft-ops .cq-draft-body")
+    expect(body).to_have_text(corrected)
+    # And the reviewer is told, rather than left to notice: their edit is gone,
+    # which without a mark reads exactly like a draft they never touched.
+    expect(page.locator("#draft-ops[data-cq-restated]")).to_have_count(1)
+    assert errors == []
+    page.close()
+
+
+def test_a_retraction_outlives_the_version_that_made_it(browser, serve):
+    """`restated` belongs to the version that rewrote the words, and to no other:
+    v003 has nothing to declare, because it is not the one taking anything back.
+
+    So the retraction cannot live in the markup, or v003's silence would read as
+    "carry the decision" and hand the reviewer's edit straight back — the same
+    resurrection the branch removed, one version later and just as quiet.
+    Publishing records it in the log instead, where it is a fact with a version
+    on it and every later version inherits it for free."""
+    url = serve(JOURNEY_V1)
+    d = serve.page_dir
+    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
+                              "widget": "draft-ops", "action": "edit",
+                              "detail": {"text": DRAFT_EDITED}})
+    corrected = "Run the migration after deploying — it needs the new column."
+    _publish(d, 2, _draft_says(JOURNEY_V2, corrected, " restated"), "rewrote the draft")
+    # v003 keeps v002's words and says nothing about the retraction, because
+    # saying it again would be claiming to undo a decision already undone.
+    _publish(d, 3, _draft_says(JOURNEY_V2, corrected), "unrelated copy edits")
+
+    page, errors = open_page(browser, url.replace("v001", "v003"))
+    expect(page.locator("#draft-ops .cq-draft-body")).to_have_text(corrected)
+    assert errors == []
+    page.close()
+
+    # And the careful author who carries the attribute forward anyway — the habit
+    # this whole design exists to break — is told which version already did it.
+    (d / "versions" / "v004.html").write_text(
+        _draft_says(JOURNEY_V2, corrected, " restated")
+    )
+    result = CliRunner().invoke(
+        interact.cli, ["note", str(d), "--version", "4", "--text", "again"]
+    )
+    assert result.exit_code != 0
+    assert "v002 already took that back" in result.output
 
 
 @pytest.fixture(scope="module")

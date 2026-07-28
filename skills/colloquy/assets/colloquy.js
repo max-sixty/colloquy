@@ -12,15 +12,16 @@
  * minimal until a real widget needs more.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
- * through it as an `action` event — sendAction posts it, `wait` delivers it, and the
- * next version's markup carries the change. Until then the live view = the version
- * plus its actions: each poll replays unapplied actions recorded against the version
- * on screen, plus undelivered ones from older versions (a version Claude wrote
- * before being handed the edit must not visibly revert it); a widget inside a
- * thread reply replays its actions on every version, because its markup is frozen
- * in the log and no version can carry its state. Widgets opt in via an
- * applyAction(action, detail) method, so a reload keeps the reviewer's drag and a
- * second tab follows along live.
+ * through it as an `action` event — sendAction posts it, `wait` delivers it. The live
+ * view is the version plus every action recorded up to it, replayed on each poll:
+ * authored markup is what a widget was before anyone touched it, the log is every
+ * transition since, and the log wins. A decision therefore outlives the version it
+ * was made on, without the page's author having to copy it into the next one by
+ * hand. When a version does mean to overrule one — the content the decision was
+ * about got rewritten — `check` makes the author say so (see restatement_errors in
+ * interact.py); it is never inferred from the markup's silence. Widgets opt in via an
+ * applyAction(action, detail) method stating an absolute value, so a reload keeps the
+ * reviewer's drag and a second tab follows along live.
  *
  * Comment layer: talks to interact.py's server — polls GET /api/state, posts events to
  * POST /api/event. Everything it injects is namespaced .cq-* and marked .cq-ui, and it
@@ -1919,20 +1920,51 @@ versionSelect.onchange = () => goVersion(versionSelect.value);
 latestChip.onclick = () => (location.href = "/");
 
 // ---------- polling ----------
-// Rendering version V shows V plus the actions recorded against it, replayed in
+// Rendering version V shows V plus every action recorded up to it, replayed in
 // seq order: a reload keeps the reviewer's drag, a second tab follows along
-// live, and a pinned older version shows what the reviewer did while on it.
-// Widgets opt in by exposing applyAction(action, detail) — an absolute
-// placement, so replaying the sender's own action is a no-op. The first poll
-// runs after upgrades settle, so the methods exist, and the pass runs at the end
-// of a poll, so the panel's own widgets do too.
+// live, and a decision made on v10 still stands on v25. Widgets opt in by
+// exposing applyAction(action, detail) — an absolute placement, so replaying
+// the sender's own action is a no-op. The first poll runs after upgrades
+// settle, so the methods exist, and the pass runs at the end of a poll, so the
+// panel's own widgets do too.
+//
+// The log outranks the markup, and that is the whole rule: authored state is the
+// initial condition, never a later correction, so nothing a version does or
+// omits can un-make a decision by itself. CLAUDE.md carries why, and what it
+// cost to learn. Replay used to stop at the delivery cursor, on the premise that
+// a version written after Claude was handed an action encoded it — a premise
+// nothing checked, and delivery is not assent. Only a version can say what
+// Claude did with an action, and saying it is `check`'s business now
+// (restatement_errors), not something inferred here from silence.
 const appliedActions = new Set();
 const lastActionByWidget = new Map();
-let cursor = 0; // what `wait` has delivered to Claude, from /api/state
+// What an action rests on: the widget that sent it, and the parts of that widget
+// its detail names — a `move` rests on its card as much as on the board. Either
+// can be taken back, which is what lets a rewritten card drop its own moves while
+// the rest of the board stays where the reviewer put it. Containment is the test,
+// not "the page has an element by that id", so a literal detail value can't
+// collide with an unrelated element that happens to be called the same thing.
+function restsOn(e, widget) {
+  const parts = Object.values(e.detail || {})
+    .map((v) => (typeof v === "string" ? document.getElementById(v) : null))
+    .filter((el) => el && widget.contains(el))
+    .map((el) => el.id);
+  return [e.widget, ...parts];
+}
 function applyActions() {
   // Never mutate the page under a live gesture — a replayed foreign action could
   // move the nodes a drag preview is holding. Retry next poll.
   if (document.querySelector(".cq-dragging")) return;
+  // Retractions: a version that rewrote the words under a decision says so with
+  // `restated`, and publishing records it here with the version on it. Reading
+  // it from the log rather than from the markup is what makes it last — the
+  // version *after* the rewrite declares nothing, and its silence would
+  // otherwise hand the reviewer's retracted state straight back.
+  const takenBack = new Map();
+  for (const e of events)
+    if (e.kind === "restate" && e.version <= VNUM)
+      for (const id of e.widgets || [])
+        takenBack.set(id, Math.max(takenBack.get(id) ?? 0, e.version));
   let applied = false;
   for (const e of events) {
     if (e.kind !== "action" || appliedActions.has(e.seq)) continue;
@@ -1944,22 +1976,27 @@ function applyActions() {
     appliedActions.add(e.seq);
     const el = document.getElementById(e.widget);
     if (!el?.applyAction) continue;
-    // Page widgets replay the on-screen version's own actions, plus undelivered
-    // ones from older versions (seq > cursor): Claude can't have declined or
-    // honored what it hasn't been handed, so the reviewer's edit carries forward
-    // instead of visibly reverting when a concurrently-written version publishes.
-    // A widget inside the comment layer (.cq-ui — a reply's inline question) is
-    // version-independent: its markup is frozen in the log and no version can
-    // ever carry its state, so its actions replay on every version.
-    if (
-      !el.closest(".cq-ui") &&
-      !(e.version === VNUM || (e.version < VNUM && e.seq > cursor))
-    )
-      continue;
+    // A pinned older version is a historical view, so it shows what the reviewer
+    // had done by then and not what they did later. A widget inside the comment
+    // layer (.cq-ui — a reply's inline question) has no version at all: its markup
+    // is frozen in the log, and no version can rewrite or retract it.
+    if (!el.closest(".cq-ui")) {
+      if (e.version > VNUM) continue;
+      const gone = restsOn(e, el).filter((id) => (takenBack.get(id) ?? 0) > e.version);
+      if (gone.length) {
+        // Say so on the page: a decision undone looks exactly like one never
+        // made, and the reviewer is owed the difference.
+        for (const id of gone) {
+          const target = document.getElementById(id);
+          if (target) target.dataset.cqRestated = "1";
+        }
+        continue;
+      }
+    }
     // A foreign action older than one this tab already applied to the widget
     // would yank it backwards — skip it. Two tabs editing one widget in the same
-    // poll window can diverge until a reload or the honoring version; the log
-    // stays canonical either way.
+    // poll window can diverge until either reloads and replays the log in seq
+    // order; the log stays canonical either way.
     if (e.seq < (lastActionByWidget.get(e.widget) ?? 0)) continue;
     lastActionByWidget.set(e.widget, e.seq);
     el.applyAction(e.action, e.detail);
@@ -1981,7 +2018,6 @@ async function poll() {
     return;
   }
   events = state.events;
-  cursor = state.cursor ?? 0;
   renderStatus(state);
   renderVersions(state);
   const key = JSON.stringify(events);

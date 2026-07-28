@@ -422,6 +422,243 @@ def test_check_rejects_duplicate_ids_and_dropped_ids(page_dir):
     assert "backfill-first" in result.output
 
 
+def _decided(page_dir, words):
+    """v001 carrying a draft the reviewer has since rewritten, and the log that
+    says so. Whatever v002 does about it, `check` is what has to notice."""
+    (page_dir / "versions" / "v001.html").write_text(
+        PAGE.replace("<h2>Plan</h2>", f'<h2>Plan</h2><cq-draft id="d1">{words}</cq-draft>')
+    )
+    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
+                                     "widget": "d1", "action": "edit",
+                                     "detail": {"text": "Cut the flag; backfill first."}})
+    return lambda words, attrs="": (page_dir / "versions" / "v002.html").write_text(
+        PAGE.replace("<h2>Plan</h2>", f'<h2>Plan</h2><cq-draft id="d1"{attrs}>{words}</cq-draft>')
+    )
+
+
+def test_a_version_may_not_quietly_rewrite_what_the_reviewer_decided(page_dir):
+    """The runtime replays a recorded action onto every later version, so the
+    reviewer's edit stands over whatever v002's markup says about that widget.
+    Which makes a rewritten widget a version talking to nobody — its new words
+    could never reach the reader. `restated` is how a version says it means to
+    take the decision back, and this is the gate that makes it say so."""
+    v2 = _decided(page_dir, "Ship the flag dark, then backfill.")
+    assert check(page_dir).exit_code == 0
+
+    # Re-emitting what v001 said is the ordinary republish, and costs nothing:
+    # the reviewer's edit is already on screen over it.
+    v2("Ship the flag dark, then backfill.")
+    assert check(page_dir, version=2).exit_code == 0, "a republish that changes nothing must pass"
+
+    # Writing their own words back is the other quiet case, and the commoner
+    # one: the version agrees with the edit rather than overruling it. A gate
+    # that fired here would fire on almost every version an author writes, and
+    # a gate that fires on correct work is one they learn to silence.
+    v2("Cut the flag; backfill first.")
+    assert check(page_dir, version=2).exit_code == 0, "honoring an edit must pass"
+
+    # Rewriting the words under the edit is the case that needs a decision.
+    v2("Ship the flag dark, then backfill. Roll back with one flag.")
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "its words changed" in result.output
+    assert "edit on v001" in result.output
+    assert "restated" in result.output
+
+    # Said out loud, the same version publishes.
+    v2("Ship the flag dark, then backfill. Roll back with one flag.", attrs=" restated")
+    assert check(page_dir, version=2).exit_code == 0, "a restated rewrite is allowed"
+
+
+def test_restating_on_the_first_version_is_refused(page_dir):
+    """There is nothing before v001 to take back, so `restated` there can only be
+    a misreading of what the word does — and one that would record a retraction
+    of nothing into the log."""
+    (page_dir / "versions" / "v001.html").write_text(
+        PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1" restated>Words.</cq-draft>')
+    )
+    result = check(page_dir)
+    assert result.exit_code == 1
+    assert "nothing to retract" in result.output
+    assert "recorded nothing on it" in result.output
+
+
+def test_restating_a_widget_that_kept_its_words_is_refused(page_dir):
+    """`restated` discards what the reviewer recorded, so a version may only
+    spend it where there is a rewrite to justify it. Unpoliced, it is the one
+    word that turns the gate back into the silence it replaced."""
+    v2 = _decided(page_dir, "Ship the flag dark, then backfill.")
+    v2("Ship the flag dark, then backfill.", attrs=" restated")
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "nothing to retract" in result.output
+    assert "unchanged since v001" in result.output
+
+
+def _board(todo, done):
+    """A two-column board, each column given its cards as (id, attrs, title)."""
+    card = lambda c: f'<cq-card id="{c[0]}"{c[1]}><strong>{c[2]}</strong></cq-card>'
+    return (
+        '<cq-board id="b1">'
+        f'<cq-column id="c-todo" label="Todo">{"".join(map(card, todo))}</cq-column>'
+        f'<cq-column id="c-done" label="Done">{"".join(map(card, done))}</cq-column>'
+        "</cq-board>"
+    )
+
+
+X = ("card-x", "", "Guard the delete")
+Y = ("card-y", "", "Wire the importer")
+
+
+def test_the_gate_asks_about_the_card_that_was_moved_and_not_the_board(page_dir):
+    """A `move` names the board, but what the reviewer decided about is the card:
+    where it belongs. Holding the version to the board's whole contents would
+    refuse it for editing an untouched card or adding a new one — a rule that
+    fires on innocent versions is one authors learn to silence.
+
+    So the subject is the card, and `restated` on it retracts that card's moves
+    alone. The rest of the board stays where the reviewer put it, which is what
+    keeps a typo fix from costing them an afternoon's arrangement."""
+    def write(version, todo, done):
+        (page_dir / "versions" / f"v{version:03d}.html").write_text(
+            PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + _board(todo, done))
+        )
+
+    write(1, [X, Y], [])
+    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
+                                     "widget": "b1", "action": "move",
+                                     "detail": {"card": "card-x", "to": "c-done", "index": 0}})
+    assert check(page_dir).exit_code == 0
+
+    # An untouched card rewritten, the moved card's own words left alone.
+    write(2, [X, ("card-y", "", "Wire the importer and its backfill")], [])
+    assert check(page_dir, version=2).exit_code == 0, "an untouched card is not the gate's business"
+
+    # The card written where the reviewer put it. Redundant now that replay
+    # carries the move, but a version that does it anyway is not wrong.
+    write(2, [Y], [X])
+    assert check(page_dir, version=2).exit_code == 0, "relocating the moved card must pass"
+
+    # The moved card's own words rewritten: now the decision is in question.
+    write(2, [("card-x", "", "Guard the delete behind the flag"), Y], [])
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "card-x" in result.output and "move on v001" in result.output
+    assert "card-y" not in result.output, "the gate named a card nobody had decided about"
+
+    write(2, [("card-x", " restated", "Guard the delete behind the flag"), Y], [])
+    assert check(page_dir, version=2).exit_code == 0
+
+    # And the board itself never takes the attribute: every move names a card, so
+    # a board is never what a decision rests on, and offering `restated` there
+    # would be a door onto an error message about retracting nothing.
+    (page_dir / "versions" / "v002.html").write_text(
+        (page_dir / "versions" / "v002.html").read_text().replace('<cq-board id="b1">',
+                                                                  '<cq-board id="b1" restated>')
+    )
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "restated" in result.output and "cq-board" in result.output
+
+
+OPTIONS = """<cq-options id="g1" choose>
+  <cq-option id="o-shim"{a}><strong>Shim it</strong> {shim}</cq-option>
+  <cq-option id="o-stage"{b}><strong>Migrate in stages</strong> {stage}</cq-option>
+</cq-options>"""
+
+
+def test_the_gate_reads_a_pick_the_same_way_it_reads_an_edit(page_dir):
+    """The rule was built on drafts and boards; a pick is the case it was not
+    built on. It lands the same way because nothing in it is per-widget: the
+    subject is what the detail names, so a pick rests on the option picked. What
+    the other options say is then free to change, and marking the pick `chosen`
+    — the one thing every version does after a pick — says nothing, so it is
+    invisible to the comparison.
+
+    `effort` and `risk` do say something (x-says renders them as text the reviewer
+    can select), so changing one on a picked option is changing what they picked.
+    The gate reads the version the way the anchor pass does, which is what keeps
+    that true without anything here knowing those two attributes exist."""
+    def write(version, **kw):
+        opts = OPTIONS.format(**{"a": "", "b": "", "shim": "Fastest to ship.",
+                                 "stage": "Table by table.", **kw})
+        (page_dir / "versions" / f"v{version:03d}.html").write_text(
+            PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts)
+        )
+
+    write(1)
+    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
+                                     "widget": "g1", "action": "choose",
+                                     "detail": {"option": "o-shim"}})
+    assert check(page_dir).exit_code == 0
+
+    # The record the next version owes: the picked card marked, nothing else.
+    write(2, a=" chosen")
+    assert check(page_dir, version=2).exit_code == 0, "marking the pick is not a rewrite"
+
+    # An option nobody picked, rewritten freely.
+    write(2, a=" chosen", stage="One table at a time, behind a flag.")
+    assert check(page_dir, version=2).exit_code == 0, "an unpicked option is free to change"
+
+    # The picked one, rewritten — the reviewer chose those words.
+    write(2, a=" chosen", shim="Fastest to ship, and we own the shim forever.")
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "o-shim" in result.output and "choose on v001" in result.output
+
+    write(2, a=" chosen restated", shim="Fastest to ship, and we own the shim forever.")
+    assert check(page_dir, version=2).exit_code == 0
+
+    # An x-says attribute is a word on the page: "low" becoming "high" on the
+    # option they picked reads to them as the option changing, and is caught the
+    # same way its prose is.
+    write(2, a=' chosen effort="high"')
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1, "an x-says attribute is words the reviewer read"
+    assert "o-shim" in result.output
+
+    write(2, a=' chosen restated effort="high"')
+    assert check(page_dir, version=2).exit_code == 0
+
+
+def test_a_cleared_pick_rests_on_the_group_that_holds_it(page_dir):
+    """Clearing a pick names no option (`{"option": null}`), so there is no part
+    of the widget for the decision to rest on and it rests on the group. That
+    falls out of the subject rule rather than being written for this case — which
+    is why the group takes `restated` and a board, whose every move names a card,
+    does not."""
+    def write(version, shim="Fastest to ship.", attrs=""):
+        opts = OPTIONS.format(a="", b="", shim=shim, stage="Table by table.")
+        (page_dir / "versions" / f"v{version:03d}.html").write_text(
+            PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts.replace(
+                '<cq-options id="g1" choose>', f'<cq-options id="g1" choose{attrs}>'))
+        )
+
+    write(1)
+    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
+                                     "widget": "g1", "action": "choose",
+                                     "detail": {"option": None}})
+    write(2, shim="Fastest to ship, and we own the shim forever.")
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "cq-options id='g1'" in result.output
+
+    write(2, shim="Fastest to ship, and we own the shim forever.", attrs=" restated")
+    assert check(page_dir, version=2).exit_code == 0
+
+
+def test_a_widget_nobody_has_touched_is_not_the_gate_s_business(page_dir):
+    """The gate is about decisions, so it holds nothing against a version that
+    rewrites a widget the reviewer never acted on."""
+    (page_dir / "versions" / "v001.html").write_text(
+        PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">First words.</cq-draft>')
+    )
+    (page_dir / "versions" / "v002.html").write_text(
+        PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">Quite different words.</cq-draft>')
+    )
+    assert check(page_dir, version=2).exit_code == 0
+
+
 def test_check_requires_the_vendored_layer(tmp_path):
     d = tmp_path / "bare"
     (d / "versions").mkdir(parents=True)

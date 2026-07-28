@@ -750,6 +750,18 @@ def cmd_note(page_dir: Path, version: int, text) -> None:
     # gate: a version that fails `check` can't go live.
     if cmd_check(page_dir, version) != 0:
         sys.exit(f"refusing to publish {name}: `check` failed (issues above)")
+    # Publishing is also where a `restated` declaration becomes a fact. The
+    # attribute is how the author says it while writing the version — beside the
+    # words they rewrote, where it can't be forgotten — and the log is where it
+    # has to live, because the retraction outlives the version declaring it and
+    # no later version should have to repeat it (see retractions).
+    parser = _StructParser()
+    parser.feed((page_dir / "versions" / name).read_text(encoding="utf-8"))
+    parser.close()
+    retracts = sorted(parser.restated)
+    if retracts:
+        append_event(page_dir, {"kind": "restate", "author": "claude",
+                                "version": version, "widgets": retracts})
     event = append_event(
         page_dir, {"kind": "note", "author": "claude", "version": version, "text": read_text_arg(text)}
     )
@@ -779,12 +791,18 @@ def cmd_export(page_dir: Path) -> None:
             print(f"- v{e['version']}: {e['text']}")
 
     # The reviewer's direct edits are review outcomes; without them the export
-    # understates the review whenever a changelog note doesn't restate them.
+    # understates the review whenever a changelog note doesn't restate them. So
+    # is a version taking one back, which is the same understatement the other
+    # way round — an edit shown as final that a later version overruled.
     # Widget-agnostic rendering: verb + detail pairs, against the version edited.
-    actions = [e for e in events if e.get("kind") == "action"]
-    if actions:
+    edits = [e for e in events if e.get("kind") in ("action", "restate")]
+    if edits:
         print("\n### Edits\n")
-        for e in actions:
+        for e in edits:
+            if e.get("kind") == "restate":
+                for wid in e.get("widgets", []):
+                    print(f"- `{wid}`: rewritten by v{e.get('version')}, retracting what was decided on it")
+                continue
             detail = " ".join(f"{k}={v}" for k, v in (e.get("detail") or {}).items())
             verb = f"{e.get('action')} {detail}".strip()  # accept/reject carry no detail
             print(f"- `{e.get('widget')}`: {verb} (on v{e.get('version')})")
@@ -837,6 +855,10 @@ def cmd_catalog(page_dir: Path) -> None:
         sys.exit(f"no registry.json in {page_dir}; run `init` first")
     print(CATALOG_PREAMBLE)
     print(json.dumps({k: v for k, v in reg.items() if not k.startswith("$")}, indent=2, ensure_ascii=False))
+    restated = reg.get("$restated")
+    if restated:
+        print("\n# `restated` — the one attribute that spans widgets; read it before revising one.\n")
+        print(json.dumps(restated, indent=2, ensure_ascii=False))
     idioms = reg.get("$idioms")
     if idioms:
         print("\n# Theme idioms — shapes the theme styles directly; no registry entry, no JS.\n")
@@ -997,7 +1019,8 @@ class _StructParser(HTMLParser):
         self.external_scripts = []  # (src, type)
         self.stylesheets = []  # hrefs of rel=stylesheet links
         self.cq_metas = []  # {"name", "content", "line"} for <meta name="cq-*">
-        self.cq_elements = []  # {"tag", "line", "attrs", "parent", "children", "text"}
+        # {"tag", "line", "attrs", "parent", "children", "text"}
+        self.cq_elements = []
         # {"id", "resolves", "line", "slots", "old_ids", "new_ids", "nested"} per
         # cq-suggestion: which slots it carries and which ids live in each, so a
         # version's outcome can license retiring exactly the ids it settles.
@@ -1007,6 +1030,16 @@ class _StructParser(HTMLParser):
     @property
     def ids(self) -> set:
         return set(self.all_ids)
+
+    @property
+    def restated(self) -> set:
+        """Ids this version declares it has rewritten, retracting whatever the
+        reviewer had recorded on them."""
+        return {
+            rec["attrs"]["id"]
+            for rec in self.cq_elements
+            if rec["attrs"].get("id") and "restated" in rec["attrs"]
+        }
 
     @property
     def duplicate_ids(self) -> list:
@@ -1324,6 +1357,44 @@ def section_span(owner: list, section: str):
     return (inside[0], inside[-1] + 1) if inside else None
 
 
+class Spoken(NamedTuple):
+    """What one element says, and where it sits."""
+
+    words: str  # the words under it, as the anchor pass reads them
+    within: tuple  # the ids enclosing it, outermost first, itself last
+
+
+# An element the version has no words for — nothing said, nothing enclosing it.
+EMPTY = Spoken("", ())
+
+
+def spoken(html: str, registry: dict) -> dict:
+    """id → Spoken, for every element with words under it.
+
+    This is the version's own reading of itself, so it is `page_passages` sliced by
+    id rather than a second walk: chrome skipped, x-says attributes counted (a
+    picked option's `effort` is a word on the page now, so changing it changes what
+    the reviewer decided about), whitespace collapsed the way a captured quote is.
+    Asking whether two versions still say the same thing has to mean the same text a
+    reviewer could have selected, or the question is about something else.
+
+    `section_span` answers this for one id by scanning the page; every id at once is
+    that same scan, done once."""
+    p = page_passages(html, registry)
+    first, last = {}, {}
+    for i, ids in enumerate(p.owner):
+        for wid in ids:
+            first.setdefault(wid, i)
+            last[wid] = i
+    # Stripped: the separator `_write` puts between blocks lands inside whichever
+    # element the next block opens, so a slice can start or end on one. It marks a
+    # boundary rather than saying anything.
+    return {
+        wid: Spoken(p.text[lo:last[wid] + 1].strip(), p.owner[lo])
+        for wid, lo in first.items()
+    }
+
+
 def enclosing_section(owner: list, lo: int, hi: int):
     """The innermost id enclosing every character of [lo, hi) — the runtime's
     `closest("[id]")` on the passage's common ancestor."""
@@ -1582,6 +1653,143 @@ def retirable_ids(suggestions: list, events: list, dropped: set) -> set:
     return licensed
 
 
+def action_subjects(event: dict, byid: dict, now: dict, registry: dict) -> list:
+    """What an action was *about*, at the finest grain the vocabulary allows.
+
+    An action names the widget that sent it, but on a container that is rarely
+    the thing decided: a `move` names the board and carries {card, to, index}, a
+    `choose` names the group and carries {option}. So the subjects are the parts
+    of the widget its detail points at, minus containers (x-content "items") —
+    the column a card landed in is where the decision *put* it, not what it was
+    about, and holding a version to a column's contents would refuse it for
+    adding an unrelated card. Where a detail names no part of the widget (an
+    `edit` carries text, an `accept` carries nothing) the widget is its own
+    subject.
+
+    No verb is interpreted here. A detail value counts when it names an element
+    *inside the widget that sent the action* — not merely an id the page has
+    somewhere, which would let a literal like "approved" collide with an element
+    that happens to be called that."""
+    widget = event.get("widget")
+    parts = [
+        v for v in (event.get("detail") or {}).values()
+        if isinstance(v, str) and widget in now.get(v, EMPTY).within
+    ]
+    leaves = [
+        v for v in parts
+        if registry.get(byid.get(v, {}).get("tag"), {}).get("x-content") != "items"
+    ]
+    return leaves or [widget]
+
+
+def retractions(events: list) -> dict:
+    """id → the version that last took back what was recorded on it.
+
+    A version declares a rewrite with `restated` in its markup and `note` records
+    it here, because the declaration belongs to the one version that rewrote the
+    words and a retraction has to outlive it. Left in the markup, the version
+    after would have to repeat the attribute to keep the retraction standing —
+    the hand-copying this whole design exists to remove, and silently
+    resurrecting a decision the moment someone forgot."""
+    at = {}
+    for e in events:
+        if e.get("kind") == "restate":
+            for wid in e.get("widgets", []):
+                at[wid] = max(at.get(wid, 0), e.get("version", 0))
+    return at
+
+
+def restatement_errors(cur, was: dict, now: dict, events: list, prev_num: int, registry: dict) -> list:
+    """The other half of the id-survival rule. That one keeps a republish from
+    dropping the anchors a reviewer hung on the page; this one keeps it from
+    dropping the decisions they recorded on it. CLAUDE.md carries why the log
+    outranks the markup and what that cost.
+
+    The runtime replays every action onto every later version, so a version
+    cannot revise what a reviewer acted on: replay would paint their recorded
+    state back over the revision and the new words would reach nobody. A version
+    that means to revise says so — `restated` on what it rewrote — and one that
+    changes those words in silence is refused here. An unearned `restated` is an
+    error too: a decision thrown away for nothing, and, left unchecked, the
+    one-word ritual that would make this gate meaningless.
+
+    The comparison is the words each version says (`spoken`), because words are
+    what a decision is about. Re-indenting a draft, marking the picked option
+    `chosen`, or relocating a card the reviewer already moved is not a revision,
+    and neither is writing their own edit back — a version that says what they
+    said is agreeing with them."""
+    errors = []
+    declared = cur.restated
+    # Retractions up to prev — never this version's own, which is what it is
+    # here to declare, so re-checking a published version reaches the same
+    # verdict as checking it did.
+    taken_back = {
+        wid: v for wid, v in retractions(events).items() if v <= prev_num
+    }
+    byid = {r["attrs"]["id"]: r for r in cur.cq_elements if r["attrs"].get("id")}
+
+    decided = {}  # subject id → the actions resting on it
+    for e in events:
+        if e.get("kind") != "action" or not e.get("widget"):
+            continue
+        for subject in action_subjects(e, byid, now, registry):
+            # Only what the reviewer had recorded by the time they were looking
+            # at prev, and only what no earlier version has already taken back.
+            floor = taken_back.get(subject, 0)
+            if subject in was and floor <= e.get("version", 0) <= prev_num:
+                decided.setdefault(subject, []).append(e)
+
+    for sid, rec in sorted(byid.items()):
+        live, restated = decided.get(sid, []), sid in declared
+        # A version that writes back what the reviewer themselves recorded is
+        # agreeing with them, not overruling them — an honored `edit` is the
+        # commonest and most correct thing an author does with a draft, and the
+        # gate has to stay quiet for it or it fires on nearly every version and
+        # teaches authors to reach for `restated` by reflex. No verb is special-
+        # cased: it is enough that the words on the page are words the reviewer
+        # sent.
+        echoed = {
+            " ".join(str(v).split())
+            for e in live
+            for v in (e.get("detail") or {}).values()
+            if isinstance(v, str)
+        }
+        said = now.get(sid, EMPTY).words
+        changed = sid in was and said != was[sid].words and said not in echoed
+        where = f"<{rec['tag']} id={sid!r}> (line {rec['line']})"
+        if restated and not (live and changed):
+            # An already-retracted widget is the case an author lands on by being
+            # careful — carrying the attribute forward the way state used to have
+            # to be carried — so it gets its own answer rather than the
+            # never-decided one, which would read as if the reviewer had done
+            # nothing.
+            if sid in taken_back:
+                errors.append(
+                    f"{where}: restated, but v{taken_back[sid]:03d} already took that "
+                    f"back — a retraction is recorded when it is published and holds "
+                    f"without being repeated. Drop the attribute."
+                )
+            else:
+                why = (
+                    f"its words are unchanged since v{prev_num:03d}"
+                    if live
+                    else "the reviewer has recorded nothing on it"
+                )
+                errors.append(
+                    f"{where}: restated, but there is nothing to retract — {why}. "
+                    f"Drop the attribute; `restated` discards their decision."
+                )
+        elif changed and live and not restated:
+            did = ", ".join(f"{e['action']} on v{e.get('version'):03d}" for e in live[-3:])
+            errors.append(
+                f"{where}: its words changed, and the reviewer has already acted "
+                f"on it ({did}). Their decision is what the page shows, so these "
+                f"words would never reach them — add `restated` to retract it and "
+                f"ask again, or leave the text as v{prev_num:03d} had it."
+            )
+    return errors
+
+
 def fragment_errors(html: str, registry: dict) -> list:
     """Structural + registry validation of a markup fragment (a Claude reply
     carrying widgets): the discussion-side analog of `check`."""
@@ -1668,11 +1876,18 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     )
 
     idx = versions.index(name)
+    # The first version has no predecessor, so it stands against an empty one:
+    # nothing of its can have been dropped and nothing decided, which is exactly
+    # what makes a `restated` on it an error like any other unearned one.
+    prev, prev_num, was = _StructParser(), 0, {}
+    prev.close()
     if idx > 0:
         prev_name = versions[idx - 1]
-        prev = _StructParser()
-        prev.feed((page_dir / "versions" / prev_name).read_text(encoding="utf-8"))
+        prev_html = (page_dir / "versions" / prev_name).read_text(encoding="utf-8")
+        prev, prev_num = _StructParser(), int(prev_name[1:4])
+        prev.feed(prev_html)
         prev.close()
+        was = spoken(prev_html, registry or {})
         # An id may retire when the log has settled what holds it; everything
         # else must survive, or the anchors on it break.
         gone = prev.ids - parser.ids
@@ -1682,6 +1897,12 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
                 f"ids present in {prev_name} but dropped in {name} "
                 f"(anchors on them will break): {dropped}"
             )
+    # And the decisions recorded on the ids that stayed.
+    errors.extend(
+        restatement_errors(
+            parser, was, spoken(html, registry or {}), events, prev_num, registry or {}
+        )
+    )
 
     # Thread markup is frozen in the log and rendered into the panel; a page id
     # colliding with one would steal its action replays (see thread_widget_ids).
@@ -1700,7 +1921,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
         return 1
     print(
         f"✓ {name}: parses, widgets validate, one module script + theme link, "
-        f"ids carried over, nothing overflows the {column}px column"
+        f"ids and decisions carried over, nothing overflows the {column}px column"
     )
     # Render only what passed the static half: an unparseable page would drown
     # the browser's report in consequences of what the lint already named.
