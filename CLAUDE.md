@@ -87,7 +87,10 @@ the DOM, `comment` captures from the version file, and `resolveAnchor` is still 
 thing that searches. Two captures are not two answers to "what does the page say here":
 both write the same collapsed text under the same rules, so what the file's reading holds
 the page holds too — where a module replaces what the file holds, the reading skips it,
-and everywhere else a module only adds.
+and everywhere else a module only adds. The file alone is not enough: a reviewer's
+decision moves the page's reading too, retiring a settled suggestion's losing slot, so
+`comment` reads the log and retires the same slot from its reading (`x-retired-when` in
+the registry), refusing a quote into one by naming the decision that removed it.
 
 Keeping that true is not free, and the first draft wasn't. A board's module prepends each
 column's heading, so a quote running from the lede into the first card matched a file the

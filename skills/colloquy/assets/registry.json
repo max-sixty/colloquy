@@ -300,7 +300,7 @@
     "x-example": "<p>Refill rules for the season:</p>\n<cq-suggestion id=\"sug-refill\">\n  <cq-old><p id=\"refill-rule\">Refill every feeder each morning.</p></cq-old>\n  <cq-new><p>Refill a feeder when its camera shows it half-empty.</p></cq-new>\n</cq-suggestion>"
   },
   "cq-old": {
-    "description": "The markup a suggestion would replace or delete, verbatim — ids and all, which live here while the suggestion is pending. Omitted when the suggestion only inserts.",
+    "description": "The markup a suggestion would replace or delete, verbatim — ids and all, which live here while the suggestion is pending. Omitted when the suggestion only inserts. Accepting the suggestion retires this slot: its words leave the page's reading, so nothing can anchor on them after.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
@@ -308,10 +308,11 @@
     "additionalProperties": false,
     "x-parent": "cq-suggestion",
     "x-content": "prose",
-    "x-upgrade": false
+    "x-upgrade": false,
+    "x-retired-when": "accept"
   },
   "cq-new": {
-    "description": "The markup a suggestion proposes. Omitted when the suggestion only deletes.",
+    "description": "The markup a suggestion proposes. Omitted when the suggestion only deletes. Rejecting the suggestion retires this slot: its words leave the page's reading, so nothing can anchor on them after.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
@@ -319,7 +320,8 @@
     "additionalProperties": false,
     "x-parent": "cq-suggestion",
     "x-content": "prose",
-    "x-upgrade": false
+    "x-upgrade": false,
+    "x-retired-when": "reject"
   },
   "cq-draft": {
     "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach Claude as an `edit` action naming the element. The body is the draft text verbatim (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off close the review. Usable anywhere prose flows. Claude rewriting prose of its own goes in a cq-suggestion instead; a draft is the reviewer's own words, so there is nothing for them to accept. Once they have edited one those words are theirs: re-emit the body you wrote and their edit still stands over it. To take the pen back — a fact of yours to fix in a sentence they rewrote — write the new text and mark the element `restated` (see $restated in `catalog`).",

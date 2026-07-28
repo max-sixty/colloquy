@@ -2592,7 +2592,7 @@ def written_anchors(page_dir, html, limit=40):
     page says twice, or one crossing a fence, is refused on purpose — skipping those here
     is that refusal, and what survives is exactly what the command promises to place."""
     registry = interact.load_registry(page_dir)
-    text, _, _ = interact.page_passages(html, registry)
+    text = interact.page_passages(html, registry).text
     words = text.split(" ")
     anchors = []
     for start in range(0, len(words), 3):

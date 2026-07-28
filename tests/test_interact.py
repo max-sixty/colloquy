@@ -1309,6 +1309,84 @@ def test_a_widgets_x_says_attribute_is_quotable_like_any_other_passage(page_dir)
         assert json.loads(result.output)["anchor"]["section"] == "backfill-first"
 
 
+SUGGESTED = PAGE.replace("<cq-options>", SUGGESTION)
+
+
+def suggested(page_dir):
+    """A published v001 carrying the sug-refill suggestion, both slots pending."""
+    (page_dir / "versions" / "v001.html").write_text(SUGGESTED)
+    return published(page_dir)
+
+
+def test_a_decision_retires_its_losing_slot_from_comments_reach(page_dir):
+    """The reviewer's accept removes cq-old from the page (RETIRED skips it in the
+    browser), so a quote into it is refused naming the decision — posted, it would
+    detach in front of them. The surviving slot quotes as ever, and a re-decision
+    moves the line: the reading follows the log the way replay does, last word
+    standing."""
+    suggested(page_dir)
+    decide(page_dir, "accept")
+    gone = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
+    assert gone.exit_code != 0
+    assert "accepted § sug-refill" in gone.output and "retired" in gone.output
+    kept = comment(page_dir, "--quote", "camera shows it half-empty", "--text", "x")
+    assert kept.exit_code == 0, kept.output
+
+    decide(page_dir, "reject")
+    gone = comment(page_dir, "--quote", "camera shows it half-empty", "--text", "x")
+    assert gone.exit_code != 0 and "rejected § sug-refill" in gone.output
+    kept = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
+    assert kept.exit_code == 0, kept.output
+
+
+def test_a_section_inside_a_retired_slot_is_refused(page_dir):
+    """An element anchor is a click on the element, and a retired slot's children
+    are elements nobody can click. The id is still in the file — the refusal has to
+    come from the decision, not the structure."""
+    suggested(page_dir)
+    decide(page_dir, "accept")
+    result = comment(page_dir, "--section", "refill-rule", "--text", "x")
+    assert result.exit_code != 0
+    assert "accepted" in result.output and "sug-refill" in result.output
+
+
+def test_a_decision_settles_which_copy_a_quote_names(page_dir):
+    """The browser counts occurrences on the page as decided, so the file has to
+    count the same way — otherwise a passage unique in front of the reviewer reads
+    as ambiguous here, and an anchor allowed on the wrong count would carry context
+    from words they no longer see."""
+    twice = SUGGESTED.replace(
+        "<h2>Plan</h2>", "<h2>Plan</h2>\n  <p>Refill every feeder each morning.</p>"
+    )
+    (page_dir / "versions" / "v001.html").write_text(twice)
+    published(page_dir)
+    ambiguous = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
+    assert ambiguous.exit_code != 0 and "2 times" in ambiguous.output
+    decide(page_dir, "accept")
+    result = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["anchor"]["section"] == "plan"
+
+
+def test_a_restated_suggestion_hands_its_slot_back(page_dir):
+    """A version that rewrites under a decision retracts it (`restated`), and replay
+    then shows the suggestion pending again — both slots on the page. The reading
+    follows the log all the way, not just to the first decision it finds."""
+    suggested(page_dir)
+    decide(page_dir, "accept")
+    revised = SUGGESTED.replace(
+        "Refill when the camera shows it half-empty.",
+        "Refill when the camera shows it two-thirds empty.",
+    ).replace('<cq-suggestion id="sug-refill">', '<cq-suggestion id="sug-refill" restated>')
+    (page_dir / "versions" / "v002.html").write_text(revised)
+    noted = CliRunner().invoke(
+        interact.cli, ["note", str(page_dir), "--version", "2", "--text", "revised the proposal"]
+    )
+    assert noted.exit_code == 0, noted.output
+    result = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
+    assert result.exit_code == 0, result.output
+
+
 def test_what_the_reader_never_sees_is_not_quotable(page_dir):
     """The runtime roots a section-less anchor at document.body, so a <title> is text no
     anchor can reach — and a page's title is often a sentence from the page as well."""

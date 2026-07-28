@@ -711,7 +711,9 @@ def check_thread_markup(page_dir: Path, kind: str, body: str) -> None:
 def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
     """Open a thread on a passage, as the reviewer's own selection does. The anchor is
     captured against the version they are looking at — the newest published one, since a
-    version no `note` has released is a passage nobody can be pointed at."""
+    version no `note` has released is a passage nobody can be pointed at — and read as
+    they see it: a slot their decision retired is off the page, so a quote into one is
+    refused here rather than detaching there."""
     if not quote and not section:
         sys.exit("a comment points at something: pass --quote, --section, or both")
     published = published_versions(page_dir)
@@ -719,8 +721,9 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
         sys.exit("no published version to anchor in; `note` one first")
     version = int(published[-1][1:4])
     html = (page_dir / "versions" / published[-1]).read_text(encoding="utf-8")
+    decided = suggestion_outcomes(read_events(page_dir), version)
     try:
-        anchor = capture_anchor(html, load_registry(page_dir), quote, section)
+        anchor = capture_anchor(html, load_registry(page_dir), quote, section, decided)
     except ValueError as err:
         sys.exit(f"can't anchor in v{version:03d}: {err}")
     body = read_text_arg(text)
@@ -1177,8 +1180,8 @@ class _StructParser(HTMLParser):
 # skip list, the same block-boundary space, the same collapse, the same caps.
 #
 # What the file cannot know is what a widget's module will write, and the registry is
-# where that is declared rather than guessed at per widget. Two keywords carry what can
-# be declared, and a fence carries the rest:
+# where that is declared rather than guessed at per widget. Three keywords carry what
+# can be declared, and a fence carries the rest:
 #
 #   x-says      attribute values the reader sees. renderSaid puts them in the DOM, so
 #               they go in here too, at the edge the registry names.
@@ -1187,6 +1190,9 @@ class _StructParser(HTMLParser):
 #               unmarked so anchoring can see it). Without it, an upgraded element is
 #               opaque: a mermaid body is a picture by the time it is read, a cq-ref
 #               with no body at all renders a link's text.
+#   x-retired-when  the outcome under which this element leaves the page: a decided
+#               suggestion's losing slot is skipped by the browser's anchor pass
+#               (RETIRED), so a reading given the log's outcomes skips it here too.
 #
 # A module writes between the children of the element it upgrades — a column's heading, a
 # milestone's chips, a diff's gutters — so an opaque element and each of its children is
@@ -1209,20 +1215,30 @@ UNQUOTABLE_TAGS = {"script", "style", "head"}
 # surrounding text it stores to tell two identical passages apart.
 QUOTE_CAP = 400
 CONTEXT = 24
+# How a refusal names a decision, past tense because the reviewer already made it.
+DECIDED_VERB = {"accept": "accepted", "reject": "rejected"}
 
 
 class _PassageParser(HTMLParser):
     """A version's prose as the anchor pass reads it. `text` is the whole page collapsed
     the way a captured quote is; `owner[i]` is the ids enclosing text[i], outermost
-    first, so a match can name the section it fell in and be re-read within it."""
+    first, so a match can name the section it fell in and be re-read within it.
 
-    def __init__(self, registry=None):
+    `decided` is the accept/reject each suggestion stands under (`suggestion_outcomes`).
+    A decision retires a slot — the registry's `x-retired-when` names which outcome —
+    and the browser's anchor pass drops the retired subtree (RETIRED in colloquy.js),
+    so this reading drops it the same way. Without `decided`, the reading is the
+    version as authored, every slot still pending."""
+
+    def __init__(self, registry=None, decided=None):
         super().__init__(convert_charrefs=True)
         self.registry = registry or {}
+        self.decided = decided or {}
         self.text = ""
         self.owner = []  # per character: the tuple of enclosing ids
         self.fences = set()  # indices a quote may not span
-        self.stack = []  # [{"tag", "ids", "skip", "opaque", "fenced", "tb", "block", "tail"}]
+        self.retired = {}  # id under a retired slot → the suggestion whose decision did it
+        self.stack = []  # [{"tag", "id", "ids", "skip", "opaque", "fenced", "retired_by", "tb", "block", "tail"}]
         self._uid = 0
         self._block = None  # the block the last character came from
         self._space = False  # a separator waiting for a character to follow it
@@ -1282,15 +1298,27 @@ class _PassageParser(HTMLParser):
         # A module may write anywhere inside the element it upgrades, unless the registry
         # says the body reaches the reader as its own words.
         opaque = bool(entry.get("x-upgrade") and not entry.get("x-verbatim"))
+        # A slot a decision retired: its words left the page with the outcome the
+        # registry names, and everything under it goes too. Looked up by the parent's
+        # own id — the same child-of-suggestion shape as the browser's selector.
+        retired_by = (parent["retired_by"] if parent else None) or (
+            parent["id"]
+            if parent and entry.get("x-retired-when")
+            and self.decided.get(parent["id"]) == entry["x-retired-when"]
+            else None
+        )
         frame = {
             "tag": tag,
+            "id": attrs_d.get("id"),
             "ids": (parent["ids"] if parent else ()) + ((attrs_d["id"],) if attrs_d.get("id") else ()),
             "skip": bool(
                 (parent and parent["skip"])
+                or retired_by
                 or tag in UNQUOTABLE_TAGS
                 or "cq-ui" in (attrs_d.get("class") or "").split()
                 or (opaque and entry.get("x-content") == "data")
             ),
+            "retired_by": retired_by,
             "opaque": opaque,
             "fenced": opaque or bool(parent and parent["opaque"]),
             "tb": tb,
@@ -1313,6 +1341,8 @@ class _PassageParser(HTMLParser):
                 frame["tail"].append(value)
         if frame["fenced"]:
             self._fence()
+        if retired_by and frame["id"]:
+            self.retired[frame["id"]] = retired_by
         self.stack.append(frame)
         if not frame["skip"]:
             self._said(frame, head)
@@ -1340,13 +1370,14 @@ class Passages(NamedTuple):
     text: str  # collapsed the way a captured quote is
     owner: list  # per character: the tuple of enclosing ids, outermost first
     fences: set  # indices a quote may not span: where a module may write
+    retired: dict  # id under a retired slot → the suggestion whose decision did it
 
 
-def page_passages(html: str, registry=None) -> Passages:
-    parser = _PassageParser(registry)
+def page_passages(html: str, registry=None, decided=None) -> Passages:
+    parser = _PassageParser(registry, decided)
     parser.feed(html)
     parser.close()
-    return Passages(parser.text, parser.owner, parser.fences)
+    return Passages(parser.text, parser.owner, parser.fences, parser.retired)
 
 
 def section_span(owner: list, section: str):
@@ -1417,11 +1448,15 @@ def occurrences(text: str, quote: str, lo: int, hi: int, fences=frozenset()) -> 
     return found
 
 
-def capture_anchor(html: str, registry, quote: str, section: str) -> dict:
+def capture_anchor(html: str, registry, quote: str, section: str, decided=None) -> dict:
     """The anchor a quote makes, written the way a selection's is. Raises ValueError with
     what to do about it — a quote the file doesn't hold, or holds twice, is a question
-    with an answer, and asking now beats posting a comment that lands nowhere."""
-    text, owner, fences = page_passages(html, registry)
+    with an answer, and asking now beats posting a comment that lands nowhere.
+
+    `decided` makes this the reading the reviewer is looking at rather than the version
+    as authored: a slot their decision retired is off the page, so an anchor naming one
+    is refused here instead of detaching there."""
+    text, owner, fences, retired = page_passages(html, registry, decided)
     if section:
         # Against the structure, not the text: an element anchor is the one a click makes
         # on a diagram or an image, and those hold no text to look for.
@@ -1429,6 +1464,13 @@ def capture_anchor(html: str, registry, quote: str, section: str) -> dict:
         structure.feed(html)
         if section not in structure.ids:
             raise ValueError(f"no element id {section!r} in this version")
+        if section in retired:
+            sid = retired[section]
+            raise ValueError(
+                f"§ {section} left the page when the reviewer {DECIDED_VERB[decided[sid]]} "
+                f"§ {sid} — a decided suggestion's losing slot is retired, and an anchor "
+                "on it would reach nobody. Anchor on the settled text instead."
+            )
     if not quote:
         return {"section": section}
 
@@ -1451,6 +1493,13 @@ def capture_anchor(html: str, registry, quote: str, section: str) -> dict:
                 "its own between them — a column's heading, a milestone's chips, a "
                 "diagram in place of its source. Quote within one part, or --section the "
                 "widget to point at the whole of it."
+            )
+        was = _retired_holder(html, registry, wanted, section, decided)
+        if was:
+            sid, verb = was
+            raise ValueError(
+                f"{where} said {wanted!r} until the reviewer {verb} § {sid} — that "
+                "decision retired these words from the page. Quote it as it now stands."
             )
         raise ValueError(
             f"{where} doesn't say {wanted!r} — quote it as the version file holds it. A "
@@ -1489,6 +1538,27 @@ def capture_anchor(html: str, registry, quote: str, section: str) -> dict:
         **({"prefix": prefix} if prefix else {}),
         **({"suffix": suffix} if suffix else {}),
     }
+
+
+def _retired_holder(html, registry, wanted: str, section: str, decided):
+    """The suggestion whose decision retired `wanted` from the page, if any. The
+    version as authored still holds the quote, and naming the decision that removed
+    it beats telling the writer the page never said it."""
+    if not decided:
+        return None
+    p = page_passages(html, registry)
+    lo, hi = 0, len(p.text)
+    if section:
+        span = section_span(p.owner, section)
+        if span is None:
+            return None
+        lo, hi = span
+    for at in occurrences(p.text, wanted, lo, hi, p.fences):
+        for ids in p.owner[at:at + len(wanted)]:
+            sid = next((wid for wid in ids if wid in decided), None)
+            if sid:
+                return sid, DECIDED_VERB[decided[sid]]
+    return None
 
 
 def _column_width(html: str, theme_css: str = "") -> int:
@@ -1634,12 +1704,12 @@ def retirable_ids(suggestions: list, events: list, dropped: set) -> set:
     retires the wrapper. A proposal no one has answered can still be withdrawn —
     nothing reviewed was kept — but only whole: the wrapper goes with the
     proposal inside it, so a version can't quietly keep an unanswered proposal
-    as settled content, and not while an unresolved thread is anchored in it."""
-    outcomes = {
-        e.get("widget"): e["action"]
-        for e in events
-        if e.get("kind") == "action" and e.get("action") in ("accept", "reject")
-    }
+    as settled content, and not while an unresolved thread is anchored in it.
+
+    The outcomes are replay's own (`suggestion_outcomes`), so a decision a later
+    version restated away settles nothing here either — replay hands the
+    suggestion back as pending, and the slots stay needed."""
+    outcomes = suggestion_outcomes(events)
     anchored = anchored_ids(events)
     licensed = set()
     for s in suggestions:
@@ -1697,6 +1767,22 @@ def retractions(events: list) -> dict:
             for wid in e.get("widgets", []):
                 at[wid] = max(at.get(wid, 0), e.get("version", 0))
     return at
+
+
+def suggestion_outcomes(events: list, version=None) -> dict:
+    """suggestion id → the accept/reject it stands under, as replay applies it
+    (applyActions in colloquy.js): an outcome recorded after `version` hasn't
+    happened there yet, and one whose suggestion a later version restated is
+    taken back rather than standing. With no version, the whole log's word."""
+    considered = [e for e in events if version is None or e.get("version", 0) <= version]
+    taken_back = retractions(considered)
+    return {
+        e["widget"]: e["action"]
+        for e in considered
+        if e.get("kind") == "action"
+        and e.get("action") in ("accept", "reject")
+        and taken_back.get(e["widget"], 0) <= e.get("version", 0)
+    }
 
 
 def restatement_errors(cur, was: dict, now: dict, events: list, prev_num: int, registry: dict) -> list:

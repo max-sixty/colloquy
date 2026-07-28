@@ -274,12 +274,14 @@ colloquy comment <dir> --section <element id> --text "…"    # a diagram, an im
 ```
 
 It anchors in the newest published version, deriving the section the way the browser
-does. Quote the words the file holds, not what the page renders, and stay inside one part
-of a widget — a module writes words of its own between an element's children (a column's
-heading, a milestone's chips, a `cq-ref`'s link text), and a quote spanning that join
-names nothing. A quote the version doesn't hold, holds twice, or that runs across such a
-join is refused with what to do about it, rather than posted as a comment that lands
-nowhere.
+does, and reads the version the way the reviewer sees it: a slot their decision retired
+(an accepted suggestion's `cq-old`, a rejected one's `cq-new`) is off the page, however
+much the file still holds it. Quote the words the file holds, not what the page renders,
+and stay inside one part of a widget — a module writes words of its own between an
+element's children (a column's heading, a milestone's chips, a `cq-ref`'s link text), and
+a quote spanning that join names nothing. A quote the version doesn't hold, holds twice,
+runs across such a join, or sits in a retired slot is refused with what to do about it,
+rather than posted as a comment that lands nowhere.
 
 A comment asks; a `cq-suggestion` proposes. Where you have the better sentence, ship it
 as a suggestion in the next version and let them accept it — a comment is for the
