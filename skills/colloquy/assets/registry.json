@@ -32,18 +32,6 @@
     "x-says": {"effort": "before", "risk": "after"},
     "x-upgrade": false
   },
-  "cq-plan": {
-    "description": "A plan container owning the chrome plan pages hand-build: lead with a <strong> title, optionally a <dl class=\"facts\"> summary row, then <section> children whose h2 headings number themselves. Content is open — sections, prose, and other widgets nest freely.",
-    "type": "object",
-    "properties": {
-      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
-    },
-    "required": ["id"],
-    "additionalProperties": false,
-    "x-content": "prose",
-    "x-upgrade": false,
-    "x-example": "<cq-plan id=\"aviary-plan\">\n  <strong>Rebuilding the aviary feeders</strong>\n  <dl class=\"facts\">\n    <dt>Owner</dt><dd>groundskeeping</dd>\n    <dt>Window</dt><dd>before the spring migration</dd>\n  </dl>\n  <section id=\"aviary-scope\"><h2>Scope</h2><p>Four feeders, one season.</p></section>\n  <section id=\"aviary-rollout\"><h2>Rollout</h2><p>One feeder a week.</p></section>\n</cq-plan>"
-  },
   "cq-milestones": {
     "description": "A timeline of milestones with status dots on a rail. Children are cq-milestone elements only.",
     "type": "object",

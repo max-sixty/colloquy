@@ -40,18 +40,13 @@
  * channel and not presentation.
  *
  * Authored content is never replaced, so there is no failSoft. */
-import { once, quoted, sendAction, toast } from "/colloquy.js";
+import { once, quoted, sendAction, toast, HIDDEN } from "/colloquy.js";
 
 const OPEN = "choose"; // the card is pickable
 const PICKED = "your pick"; // this reader picked it, this session
 const AUTHORED = "chosen"; // the document arrived carrying the pick
 
 const SETTLED_KEY = "cq-settled:";
-// hidden="until-found" is only a hide where the UA supports it (it rides
-// content-visibility, and the theme's display:block outranks the boolean
-// [hidden] rule) — without beforematch, fall back to plain boolean hidden,
-// which the theme hides itself; the group still collapses, ⌘F just can't see in.
-const HIDDEN = "onbeforematch" in document.body ? "until-found" : "";
 
 customElements.define(
   "cq-options",

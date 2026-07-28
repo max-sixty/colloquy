@@ -11,17 +11,12 @@
  * a Δ count, so a change can't hide behind an inactive tab. Unupgraded,
  * panels stack as labeled sections; authored content is never replaced, so
  * there is no failSoft. */
-import { once, keyHelp } from "/colloquy.js";
+import { once, keyHelp, HIDDEN } from "/colloquy.js";
 
 const TAB_KEY = "cq-tabs:";
 // Registered on first upgrade, not at import: the "?" overlay should list tab
 // keys only where a tab strip is.
 let helpRegistered = false;
-// hidden="until-found" is only a hide where the UA supports it (it rides
-// content-visibility, and the theme's display:block outranks the boolean
-// [hidden] rule) — without beforematch, fall back to plain boolean hidden,
-// which the theme hides itself; panels still switch, ⌘F just can't see in.
-const HIDDEN = "onbeforematch" in document.body ? "until-found" : "";
 
 customElements.define(
   "cq-tabs",

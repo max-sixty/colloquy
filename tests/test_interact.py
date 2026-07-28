@@ -158,14 +158,11 @@ def test_flag_attribute_accepts_both_html_spellings(page_dir):
     assert "is not of type 'boolean'" in result.output
 
 
-def test_plan_and_milestones_compose(page_dir):
-    nested = """<cq-plan id="plan-x">
-  <strong>Rebuild</strong>
-  <cq-milestones>
+def test_milestones_compose(page_dir):
+    nested = """<cq-milestones>
     <cq-milestone id="m-one" status="done" when="week 1"><strong>Survey</strong> Sites.</cq-milestone>
     <cq-milestone id="m-two" status="active" tags="wood,solar"><strong>Build</strong></cq-milestone>
   </cq-milestones>
-</cq-plan>
 <cq-options>"""
     (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<cq-options>", nested))
     result = check(page_dir)

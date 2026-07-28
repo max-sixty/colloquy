@@ -167,18 +167,24 @@ ASSETS = Path(__file__).resolve().parent.parent / "assets"
 VENDORED_FILES = ("colloquy.js", "theme.css", "registry.json")
 VENDORED_DIRS = ("widgets", "vendor")
 # What the server exposes from a page directory: exactly what init vendors,
-# plus the versions.
+# plus the versions — built from the vendoring constants, so growing them grows
+# this. The dir patterns are keyed by VENDORED_DIRS: vendoring a new dir
+# without saying what it may serve fails here, at import.
+_DIR_FILES = {"widgets": r"[a-z0-9-]+\.js", "vendor": r"[A-Za-z0-9._-]+"}
 SERVED_PATH = re.compile(
-    r"/(?:colloquy\.js|theme\.css|registry\.json"
-    r"|widgets/[a-z0-9-]+\.js|vendor/[A-Za-z0-9._-]+|versions/v[0-9]+\.html)"
+    "/(?:"
+    + "|".join(
+        [re.escape(f) for f in VENDORED_FILES]
+        + [f"{d}/{_DIR_FILES[d]}" for d in VENDORED_DIRS]
+        + [r"versions/v[0-9]+\.html"]
+    )
+    + ")"
 )
 CONTENT_TYPES = {
     ".js": "application/javascript",
-    ".mjs": "application/javascript",
     ".css": "text/css",
     ".json": "application/json",
     ".html": "text/html",
-    ".svg": "image/svg+xml",
 }
 
 # On Windows there is no fcntl; the append lock degrades to a no-op. The log is
@@ -398,6 +404,13 @@ def owned_pages(session_id: str) -> list:
     ]
 
 
+def undelivered(events: list, cursor: int) -> list:
+    """The reviewer's events past the handoff cursor: posted, and not yet in
+    Claude's hands. The one predicate for that — the banner's pending count and
+    `wait`'s delivery must agree on which events those are."""
+    return [e for e in events if e["seq"] > cursor and e.get("author") == "user"]
+
+
 def full_state(page_dir: Path) -> dict:
     status = read_json(page_dir / "status.json") or {"state": "idle", "detail": "", "ts": None}
     heartbeat = read_json(page_dir / "heartbeat.json") or {}
@@ -412,8 +425,7 @@ def full_state(page_dir: Path) -> dict:
         "status": status,
         "listening": time.time() - heartbeat.get("t", 0) < HEARTBEAT_FRESH_SECS,
         "cursor": cursor,
-        # Posted since the last handoff: Claude has not seen these yet.
-        "pending": sum(1 for e in events if e["seq"] > cursor and e.get("author") == "user"),
+        "pending": len(undelivered(events, cursor)),
         # None when nothing claimed the page — interact.py run outside Claude Code.
         "session_alive": pid_alive(session["pid"]) if session.get("pid") else None,
         "events": events,
@@ -622,7 +634,7 @@ def cmd_wait(page_dir: Path) -> int:
         while True:
             write_json(page_dir / "heartbeat.json", {"t": time.time()})
             events = read_events(page_dir)
-            new_user = [e for e in events if e["seq"] > cursor and e.get("author") == "user"]
+            new_user = undelivered(events, cursor)
             if new_user:
                 for event in new_user:
                     print(json.dumps(event, ensure_ascii=False), flush=True)
@@ -1914,18 +1926,23 @@ def restatement_errors(cur, was: dict, now: dict, events: list, prev_num: int, r
     return errors
 
 
+def structure_errors(parser: _StructParser) -> list:
+    """A fed parser's structural complaints, plus the tags it was left holding
+    open at the end of its input."""
+    errors = list(parser.errors)
+    leftover = [(t, ln) for t, ln, _ in parser.stack if t not in OPTIONAL_END]
+    if leftover:
+        errors.append("unclosed tags: " + ", ".join(f"<{t}> (line {ln})" for t, ln in leftover))
+    return errors
+
+
 def fragment_errors(html: str, registry: dict) -> list:
     """Structural + registry validation of a markup fragment (a Claude reply
     carrying widgets): the discussion-side analog of `check`."""
     parser = _StructParser()
     parser.feed(html)
     parser.close()
-    errors = list(parser.errors)
-    leftover = [(t, ln) for t, ln, _ in parser.stack if t not in OPTIONAL_END]
-    if leftover:
-        errors.append("unclosed tags: " + ", ".join(f"<{t}>" for t, _ in leftover))
-    errors.extend(widget_errors(parser.cq_elements, registry))
-    return errors
+    return structure_errors(parser) + widget_errors(parser.cq_elements, registry)
 
 
 def cmd_check(page_dir: Path, version, render: bool = False) -> int:
@@ -1945,11 +1962,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     parser = _StructParser()
     parser.feed(html)
     parser.close()
-    errors.extend(parser.errors)
-    leftover = [(t, ln) for t, ln, _ in parser.stack if t not in OPTIONAL_END]
-    if leftover:
-        unclosed = ", ".join(f"<{t}> (line {ln})" for t, ln in leftover)
-        errors.append(f"unclosed tags at end of document: {unclosed}")
+    errors.extend(structure_errors(parser))
 
     scripts = parser.external_scripts
     if len(scripts) != 1:
@@ -2110,15 +2123,16 @@ UNREACHABLE_WORDS = """() => {
 # the author's intent going down silently. The static half can't say which
 # attribute is a verb's state — that lives in each widget's applyAction, and a
 # table here would be the second copy the registry exists to prevent — so the
-# browser compares: applyActions records the ids replay wrote
+# browser compares: applyActions records the ids replay wrote on the body
 # (data-cq-replay-wrote), and this pass asks which of them the author also
 # changed since the previous version, reading both files with the runtime's own
 # shallowSigs. An authored change replay then overrode is a conflict; an
-# unchanged id is the initial condition the log is supposed to outrank.
+# unchanged id is the initial condition the log is supposed to outrank. For the
+# message, each conflicting id is laid at the door of the widget whose replay
+# wrote it — its nearest ancestor with an applyAction.
 REPLAY_OVERRIDES = """async () => {
-    const wrote = [...document.querySelectorAll('[data-cq-replay-wrote]')]
-        .map(el => [el, el.dataset.cqReplayWrote.split(' ')]);
-    if (!wrote.length) return [];
+    const ids = (document.body.dataset.cqReplayWrote ?? '').split(' ').filter(Boolean);
+    if (!ids.length) return [];
     const name = location.pathname.split('/').pop();
     const versions = (await (await fetch('/api/state')).json()).versions;
     const i = versions.indexOf(name);
@@ -2127,16 +2141,20 @@ REPLAY_OVERRIDES = """async () => {
     const sigs = async (v) => shallowSigs(new DOMParser().parseFromString(
         await (await fetch('/versions/' + v)).text(), 'text/html').body);
     const cur = await sigs(name), prev = await sigs(versions[i - 1]);
-    const out = [];
-    for (const [el, ids] of wrote) {
-        const asserted = ids.filter(id => (cur.get(id) ?? '') !== (prev.get(id) ?? ''));
-        if (asserted.length)
-            out.push(`<${el.tagName.toLowerCase()} id=${el.id}> authors state the log `
-                     + `replays over (${asserted.join(', ')}): the reviewer's decision `
-                     + `stands — either carry it in the markup, or rewrite the passage `
-                     + `and declare restated`);
+    const groups = new Map();
+    for (const id of ids) {
+        if ((cur.get(id) ?? '') === (prev.get(id) ?? '')) continue;
+        let widget = null;
+        for (let a = document.getElementById(id); a; a = a.parentElement)
+            if (a.applyAction) { widget = a; break; }
+        const key = widget ? `<${widget.tagName.toLowerCase()} id=${widget.id}>` : `id=${id}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(id);
     }
-    return out;
+    return [...groups].map(([who, asserted]) =>
+        `${who} authors state the log replays over (${asserted.join(', ')}): `
+        + `the reviewer's decision stands — either carry it in the markup, or `
+        + `rewrite the passage and declare restated`);
 }"""
 
 

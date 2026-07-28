@@ -222,7 +222,7 @@ customElements.define(
     #cancel(refocus = false) {
       const { card, grip, from, index } = this.#grabbed;
       this.#release();
-      this.#restore(card, from, index);
+      this.#place(card, from, index);
       if (refocus) grip.focus({ preventScroll: true }); // Esc keeps focus; blur means it left
       announce(`${this.#title(card)} — move cancelled`);
     }
@@ -233,9 +233,10 @@ customElements.define(
       this.classList.remove("cq-dragging");
     }
 
-    // Unsent means unrecorded: restore the original slot by index rather than
-    // show an edit Claude will never see. (post already toasted the failure.)
-    #restore(card, col, index) {
+    // The one writer of "card X sits at index i among column C's cards": a
+    // cancelled grab and a failed send restore the origin through it, and
+    // replay places through it.
+    #place(card, col, index) {
       const rest = this.#cards(col).filter((c) => c !== card);
       col.insertBefore(card, rest[index] ?? null);
     }
@@ -248,7 +249,7 @@ customElements.define(
         index: this.#cards(to).indexOf(card),
       }).then((ok) => {
         if (ok) toast(`Moved to ${to.getAttribute("label")} — sent to Claude`);
-        else this.#restore(card, from, oldIndex);
+        else this.#place(card, from, oldIndex);
       });
     }
 
@@ -310,8 +311,7 @@ customElements.define(
       const grip = card.querySelector(":scope > .cq-grip");
       const hadFocus = document.activeElement === grip;
       const first = card.getBoundingClientRect();
-      const rest = this.#cards(col).filter((c) => c !== card);
-      col.insertBefore(card, rest[detail.index] ?? null);
+      this.#place(card, col, detail.index);
       if (hadFocus) grip.focus({ preventScroll: true }); // reparenting blurred it
       if (REDUCED) return;
       const last = card.getBoundingClientRect();

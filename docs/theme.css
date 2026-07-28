@@ -250,15 +250,6 @@ cq-options[open] > .cq-settled::before { content: "▾"; }
   cq-options[settled] > cq-option { content-visibility: visible !important; }
 }
 
-/* cq-plan: the chrome plan pages hand-build — title, facts row, numbered
- * sections — as one element-widget. Numbering is CSS counters. */
-cq-plan { display: block; counter-reset: cq-plan-section; margin: 14px 0; }
-cq-plan > strong { display: block; font-size: 22px; line-height: 1.25;
-                   letter-spacing: -0.01em; margin: 0 0 6px; }
-cq-plan > section > h2::before { counter-increment: cq-plan-section;
-                                 content: counter(cq-plan-section) ".  ";
-                                 color: var(--muted); }
-
 /* cq-milestones / cq-milestone: a rail of status dots. The rail and dots are
  * CSS; the chip row (`when`, `tags`) is built by the cq-milestone upgrade. */
 cq-milestones { display: block; margin: 14px 0 14px 8px; }
@@ -438,7 +429,7 @@ cq-old { background: var(--del-tint); color: var(--muted);
 cq-new { background: var(--add-tint); }
 :is(cq-old, cq-new):has(> :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
     blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
-    cq-code, cq-tree, cq-board, cq-options, cq-plan, cq-milestones, cq-timeline,
+    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-timeline,
     cq-compare, cq-metrics, cq-tabs)) {
   display: block; padding: 2px 10px; margin: 10px 0; }
 /* Decided: the surviving slot is plain prose, the other one gone. */

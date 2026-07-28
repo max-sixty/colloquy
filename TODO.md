@@ -11,12 +11,11 @@ stands alone.
       branch), the vendored layer and event log would need gitignoring, and
       repo-less pages (personal-admin topics) still need the global home — so it
       would be a second convention beside it, not a replacement.
-- [ ] Additive overlay: customizing one token, or adding one widget or idiom, means
-      forking a whole file today — init's overlay replaces theme.css and
-      registry.json per file. Let the overlay add rather than replace (token
-      overrides folded into the vendored theme, registry entries merged by tag,
-      idiom classes appended) so a one-line customization doesn't go stale as the
-      shipped layer evolves.
+- [ ] Additive registry overlay: adding one widget means forking the whole
+      registry.json today — init's overlay replaces the file, and the fork goes
+      stale as the shipped vocabulary evolves. Merge overlay entries by tag
+      instead. The theme needs no counterpart: a page-local `<style>` block
+      already customizes tokens and idioms without forking theme.css.
 - [ ] A server outlives a session killed hard enough to skip its `SessionEnd` hook,
       so a page's port stays held by a process nothing will revisit. The banner
       already reports the page as orphaned (the owning pid is gone), so this costs a

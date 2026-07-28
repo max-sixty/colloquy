@@ -314,12 +314,9 @@ tunnel is on the backlog.
 Three passes stand between a version and its reviewer.
 
 **The lint.** `note` runs it on every version and refuses to publish one that fails, so
-the workflow holds no separate `check` call. It is deterministic and needs no browser:
-the HTML parses with balanced tags; the scaffold is exactly the theme link and the
-module script; every `cq-*` element validates against the vendored registry (schema,
-nesting, no self-closing form); ids are unique and every id from the previous version
-survives unless the log settled the suggestion holding it; nothing has a fixed pixel
-width wider than the column.
+the workflow holds no separate `check` call and a failing version never reaches the
+reviewer. It is deterministic and needs no browser, and a failure names what to fix —
+the markup's structure, the registry's rules, and the id-survival rule above.
 
 **The render gate**, once, before the page's URL first reaches the user:
 

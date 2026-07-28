@@ -8,7 +8,7 @@
  * reviewer can select. Upgrades flush before the first anchor pass, so comment quotes
  * always search the enhanced DOM. Widget modules import the helper surface exported here
  * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `quoted`, `toast`,
- * `announce`, `keyHelp`, `reveal`, `pageScroller`, `REDUCED`, `SCROLL`,
+ * `announce`, `keyHelp`, `pageScroller`, `HIDDEN`, `REDUCED`, `SCROLL`,
  * `DECIDED_VERB`); it stays minimal until a real widget needs more.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
@@ -182,11 +182,21 @@ export function keyHelp(title, rows) {
   helpSections.push({ title, rows });
 }
 
+// How a widget collapses content it may need to show again (cq-tabs' inactive
+// panels, a settled cq-options' cards): hidden="until-found", so find-in-page
+// and fragment navigation still reach it — `beforematch` fires and the widget
+// reopens what it owns. It is only a hide where the UA supports it (it rides
+// content-visibility, and the theme's display:block outranks the boolean
+// [hidden] rule) — without beforematch, fall back to plain boolean hidden,
+// which the theme hides itself; the widget still collapses and reopens, ⌘F
+// just can't see in.
+export const HIDDEN = "onbeforematch" in document.body ? "until-found" : "";
+
 // A scroll target can sit inside a collapsed container — a closed <details>, an
 // inactive tab. Opening what the platform owns (details) and letting a container
 // widget open what it owns (the cq-reveal event; cq-tabs listens) gives the
 // target geometry before the scroll. Called before every scroll-to-content.
-export function reveal(el) {
+function reveal(el) {
   for (let a = el; a; a = a.parentElement) {
     if (a.tagName === "DETAILS" && !a.open) a.open = true;
     if (a.hidden) a.dispatchEvent(new CustomEvent("cq-reveal"));
@@ -504,6 +514,7 @@ let events = [];
 let lastEventsKey = "";
 let lastVersionsKey = "";
 let latestName = "";
+let versionNames = []; // the server's version list; versionSelect renders it
 let claudeMsgCount = -1;
 let panelOpen = false;
 let pendingAnchor = null;
@@ -1193,7 +1204,7 @@ function resolveAnchor(anchor) {
 const MARK = "cq-mark";
 const PENDING = "cq-pending";
 const marked = new Map(); // thread id -> (Range | Element)[]: the pass's record of what it drew
-const described = new Map(); // block -> {authored, written}: the descriptions the pass has set
+const described = new Map(); // block -> its authored aria-describedby, held while the pass overrides it
 let pendingMarks = []; // the same record for the open composer's own passage
 let pendingOutline = null; // the element the open composer outlines, owned by nobody else
 const pointer = { x: -1, y: -1 }; // last seen, so a repaint can re-answer the hover
@@ -1235,18 +1246,18 @@ function paintAnchors() {
   // carries the fact instead: aria-describedby to the comment's own words in the
   // panel — coarser than the mark, the same fact. The authored attribute is the
   // initial condition, kept in the record so the last thread leaving restores it.
-  for (const [block, rec] of described)
+  for (const [block, authored] of described)
     if (!descriptions.has(block)) {
       described.delete(block);
-      if (rec.authored) block.setAttribute("aria-describedby", rec.authored);
+      if (authored) block.setAttribute("aria-describedby", authored);
       else block.removeAttribute("aria-describedby");
     }
   for (const [block, ids] of descriptions) {
-    let rec = described.get(block);
-    if (!rec)
-      described.set(block, (rec = { authored: block.getAttribute("aria-describedby"), written: null }));
-    const value = [rec.authored, ...ids].filter(Boolean).join(" ");
-    if (value !== rec.written) block.setAttribute("aria-describedby", (rec.written = value));
+    if (!described.has(block)) described.set(block, block.getAttribute("aria-describedby"));
+    block.setAttribute(
+      "aria-describedby",
+      [described.get(block), ...ids].filter(Boolean).join(" "),
+    );
   }
 
   // The composer's own passage, in the accent rather than the marker amber, so a draft
@@ -1466,8 +1477,10 @@ function selectionAnchor(sel) {
 // derived from that anchor and never read back off the stylesheet.
 const beside = (rect) => [rect.right + 6, rect.top - 6];
 let fabAnchor = null;
+let fabAt = null; // where the button was asked for — state, not the clamped style
 function showFab(anchor, left, top) {
   fabAnchor = anchor;
+  fabAt = anchor ? [left, top] : null;
   fab.style.display = anchor ? "block" : "none";
   if (anchor) place(fab, left, top);
 }
@@ -1573,16 +1586,22 @@ const syncComposer = wireInput(composerInput, {
     }
   },
 });
+// The composer's suggest-mode rendering — button label and placeholder — derived
+// from the checkbox in one place, so the three paths that set the checkbox
+// (toggle, open, close) can't each restate half of it.
+function syncSuggestMode() {
+  composerSend.textContent = suggestCheck.checked ? "Suggest" : "Comment";
+  composerInput.placeholder = suggestCheck.checked
+    ? `Replacement text · ${SEND_KEYS}`
+    : `Your comment · ${SEND_KEYS}`;
+}
 suggestCheck.onchange = () => {
   // Entering suggestion mode seeds the box with the passage to edit in place.
   if (suggestCheck.checked && !composerInput.value.trim() && pendingAnchor?.quote) {
     composerInput.value = seededQuote = pendingAnchor.quote;
     syncComposer();
   }
-  composerSend.textContent = suggestCheck.checked ? "Suggest" : "Comment";
-  composerInput.placeholder = suggestCheck.checked
-    ? `Replacement text · ${SEND_KEYS}`
-    : `Your comment · ${SEND_KEYS}`;
+  syncSuggestMode();
   saveComposerDraft();
 };
 
@@ -1611,7 +1630,7 @@ function openComposer(anchor, text, left, top, suggest = false) {
   composerInput.value = text || composerInput.value;
   suggestCheck.checked = suggest;
   suggestRow.style.display = anchor?.quote ? "flex" : "none";
-  composerSend.textContent = suggest ? "Suggest" : "Comment";
+  syncSuggestMode();
   // before placing: a hidden box has no height to fit, and the pass inside this call is
   // both what decides whether the quote takes up some of that height and what records
   // where the passage is that the box has to stay off.
@@ -1627,7 +1646,7 @@ function closeComposer() {
   composerInput.value = "";
   seededQuote = "";
   suggestCheck.checked = false;
-  composerSend.textContent = "Comment";
+  syncSuggestMode();
   pendingAnchor = null;
   saveDraft("composer", "");
   hideComposer();
@@ -1637,7 +1656,7 @@ function closeComposer() {
 fab.onclick = () => {
   if (!fabAnchor) return;
   const anchor = fabAnchor;
-  const [left, top] = [parseFloat(fab.style.left), parseFloat(fab.style.top)];
+  const [left, top] = fabAt;
   showFab(null);
   openComposer(anchor, "", left, top);
 };
@@ -1754,9 +1773,8 @@ threadsBox.addEventListener("keydown", (ev) => {
 
 // [ and ] step versions with the picker's own pin semantics.
 function stepVersion(dir) {
-  const names = [...versionSelect.options].map((o) => o.value);
-  const at = names.findIndex((name) => vnum(name) === VNUM);
-  const next = at === -1 ? null : names[at + dir];
+  const at = versionNames.findIndex((name) => vnum(name) === VNUM);
+  const next = at === -1 ? null : versionNames[at + dir];
   if (next) goVersion(next);
 }
 
@@ -1815,7 +1833,6 @@ acceptAllBtn.onclick = async () => {
     for (const suggestion of pendingSuggestions()) await suggestion.accept?.();
   } finally {
     acceptAllBtn.disabled = false;
-    syncSuggestions();
   }
 };
 // Accepting the fix a comment asked for answers that comment, so the same
@@ -1984,6 +2001,7 @@ function renderVersions(state) {
     }
     versionSelect.value = current ?? "";
   }
+  versionNames = state.versions;
   latestName = state.versions.at(-1) || "";
   const behind = latestName && VNUM !== null && vnum(latestName) !== VNUM;
   // Follow the newest version unless pinned or the user is mid-composition:
@@ -2054,7 +2072,7 @@ function restsOn(e, widget) {
 // its marks' classes, a block's description, its data-cq bookkeeping — is
 // absent too: no version can assert those, and looking away from them keeps a
 // reading taken from the live DOM equal to one taken from the file. Diffed
-// around each applyAction call to record what replay wrote, and imported by
+// around each replay batch to record what replay wrote, and imported by
 // check --render to read the version files with the same eyes, so the two
 // readings cannot drift.
 export function shallowSigs(root) {
@@ -2079,13 +2097,6 @@ export function shallowSigs(root) {
 // its state as `chosen`.
 let versionSigs = null;
 const actedOn = new Set();
-function markAwaiting() {
-  const now = shallowSigs(document.body);
-  for (const id of actedOn)
-    document
-      .getElementById(id)
-      ?.toggleAttribute("data-cq-awaiting", now.get(id) !== versionSigs.get(id));
-}
 function applyActions() {
   // Before anything can have moved — including past the gate below, where a
   // live drag's own drop would otherwise beat the snapshot to the DOM.
@@ -2103,6 +2114,13 @@ function applyActions() {
     if (e.kind === "restate" && e.version <= VNUM)
       for (const id of e.widgets || [])
         takenBack.set(id, Math.max(takenBack.get(id) ?? 0, e.version));
+  // One snapshot brackets the batch: the loop below is synchronous, so between
+  // these two readings nothing but its applyAction calls — no gesture, no widget
+  // rendering itself — can touch the page, and the diff of the ends is exactly
+  // what replay wrote.
+  const before = events.some((e) => e.kind === "action" && !appliedActions.has(e.seq))
+    ? shallowSigs(document.body)
+    : null;
   let applied = false;
   for (const e of events) {
     if (e.kind !== "action" || appliedActions.has(e.seq)) continue;
@@ -2137,33 +2155,36 @@ function applyActions() {
     // order; the log stays canonical either way.
     if (e.seq < (lastActionByWidget.get(e.widget) ?? 0)) continue;
     lastActionByWidget.set(e.widget, e.seq);
-    // Record what the call wrote — the ids whose shallow state it changed — on
-    // the widget, where check --render reads it. A no-op says the markup
-    // already held the state; only a page widget can contradict its version,
-    // so a reply's widget (.cq-ui, no version) goes unrecorded.
-    const before = el.closest(".cq-ui") ? null : shallowSigs(el);
-    // Its parts, not the widget: a board is never awaiting, its card is.
-    if (before) for (const id of restsOn(e, el).slice(1)) actedOn.add(id);
+    // Its parts, not the widget: a board is never awaiting, its card is. A
+    // reply's widget (.cq-ui) has no version to await.
+    if (!el.closest(".cq-ui")) for (const id of restsOn(e, el).slice(1)) actedOn.add(id);
     el.applyAction(e.action, e.detail);
-    if (before) {
-      const after = shallowSigs(el);
-      const wrote = [...new Set([...before.keys(), ...after.keys()])].filter(
-        (id) => before.get(id) !== after.get(id),
-      );
-      if (wrote.length) {
-        const prior = el.dataset.cqReplayWrote?.split(" ") ?? [];
-        el.dataset.cqReplayWrote = [...new Set([...prior, ...wrote])].join(" ");
-      }
-    }
     applied = true;
   }
-  // A replay moves the page's text — a card to another column, a suggestion to its
-  // settled slot — so the marks are repainted where they now belong. Said here rather
-  // than left to the caller's order: a pass held off by a live drag lands on a poll
-  // that has nothing else to re-render.
   if (applied) {
+    const now = shallowSigs(document.body);
+    // What the batch wrote — the ids whose shallow state its calls changed —
+    // recorded on the body, where check --render reads it. A no-op says the
+    // markup already held the state; only a page widget can contradict its
+    // version, so a reply's widget (.cq-ui, no version) goes unrecorded.
+    const wrote = [...new Set([...before.keys(), ...now.keys()])].filter(
+      (id) =>
+        before.get(id) !== now.get(id) &&
+        !document.getElementById(id)?.closest(".cq-ui"),
+    );
+    if (wrote.length) {
+      const prior = document.body.dataset.cqReplayWrote?.split(" ") ?? [];
+      document.body.dataset.cqReplayWrote = [...new Set([...prior, ...wrote])].join(" ");
+    }
+    for (const id of actedOn)
+      document
+        .getElementById(id)
+        ?.toggleAttribute("data-cq-awaiting", now.get(id) !== versionSigs.get(id));
+    // A replay moves the page's text — a card to another column, a suggestion to its
+    // settled slot — so the marks are repainted where they now belong. Said here rather
+    // than left to the caller's order: a pass held off by a live drag lands on a poll
+    // that has nothing else to re-render.
     paintAnchors();
-    markAwaiting();
   }
   // Every action in the log is now decided (applied, skipped, or retired), and
   // the stamp says so — it is what check --render awaits before reading the
