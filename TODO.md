@@ -49,13 +49,6 @@ stands alone.
 - [ ] Plan-mode integration hardening: remove the auto-approve workaround in
       `/colloquy-plans` and settle the default UX before promoting it from
       experimental.
-- [ ] Give class names an owner. Tags, attributes, nesting, and ids are all
-      registry-driven so the renderer, the linter, and the catalog can't drift
-      apart. CSS classes are the one part of the vocabulary with no owner, which
-      is how `cq-tabs` came to mark itself with a class the runtime's chrome had
-      already claimed, clipping every tabbed page to a pixel. Either the registry
-      grows a class list per widget that `check` can collide-detect, or the
-      chrome's rules get scoped so a widget's classes can't reach them.
 - [ ] A comment on a repeated passage goes back to naming the first copy once the page is
       revised around it. Context places a comment only where the neighbours it stored are
       still there in full on both sides; anything less falls back to document order — right

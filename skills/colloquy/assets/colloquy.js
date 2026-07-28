@@ -272,52 +272,19 @@ style.textContent = `
   html { height: 100%; overflow: hidden; }
   body { box-sizing: border-box; height: 100%; overflow-y: auto; scroll-padding-top: 54px; }
   @media print { html, body { height: auto; overflow: visible; } }
+  /* Rules at this level are the shared vocabulary: classes whose whole job is
+     elements the page owns — a widget's controls wear cq-ui and cq-btn, and the
+     runtime marks the page's own elements (cq-mark-el, cq-ins-block). Adding one
+     widens the vocabulary; a rule that styles the runtime's own layer goes in the
+     @scope block below instead. */
   .cq-ui { font-family: system-ui, -apple-system, sans-serif; font-size: var(--t-5); line-height: 1.45; color: var(--ink); box-sizing: border-box; }
   .cq-ui *, .cq-ui *::before, .cq-ui *::after { box-sizing: inherit; }
-  .cq-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 9000; height: 42px;
-    display: flex; align-items: center; gap: 10px; padding: 0 14px;
-    background: var(--veil); backdrop-filter: blur(6px); border-bottom: 1px solid var(--rule); }
-  .cq-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted-2); flex: none; }
-  .cq-dot.working { background: var(--accent); animation: cq-pulse 1.4s ease-in-out infinite; }
-  .cq-dot.listening { background: var(--ok); }
-  .cq-dot.away { background: var(--warn); }
-  .cq-dot.offline { background: var(--danger); }
-  @keyframes cq-pulse { 50% { opacity: .35; } }
-  .cq-status-text { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .cq-status-text .cq-age { color: var(--muted-2); }
-  .cq-spacer { flex: 1; min-width: 0; }
-  .cq-banner select { font: inherit; padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; max-width: 260px; min-width: 0; }
   .cq-btn { font: inherit; padding: 4px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); cursor: pointer; white-space: nowrap; color: inherit; }
   .cq-btn:hover { background: var(--chip); }
   .cq-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
   .cq-btn.primary:hover { filter: brightness(.92); }
   .cq-btn:disabled { opacity: .55; cursor: default; }
-  .cq-latest-chip { background: var(--warn-tint); border: 1px solid var(--warn); color: var(--warn-ink); border-radius: 6px; padding: 3px 8px; }
-  .cq-panel { position: fixed; top: 42px; right: 0; bottom: 0; width: min(360px, 100vw); z-index: 8900;
-    background: var(--card); border-left: 1px solid var(--rule); display: none; flex-direction: column; }
-  .cq-panel.open { display: flex; }
-  .cq-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--rule); font-weight: 600; }
-  /* contain: reaching the end of the thread list must not start scrolling the page
-     behind it — one wheel gesture moves one region. */
-  .cq-threads { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px; }
-  .cq-empty { color: var(--muted); padding: 18px 4px; }
-  .cq-thread { border: 1px solid var(--rule); border-radius: var(--r); padding: 10px; margin-bottom: 12px; }
-  .cq-thread.flash { animation: cq-flash 1.2s ease-out; }
-  @keyframes cq-flash { 0% { background: var(--hi-tint); } 100% { background: var(--card); } }
-  .cq-quote { margin: 0 0 8px; padding: 2px 8px; border-left: 3px solid var(--quote-bar); color: var(--muted); font-style: italic; cursor: pointer; overflow-wrap: anywhere; }
-  .cq-quote:hover { color: var(--ink-2); }
-  .cq-quote.detached { border-left-style: dashed; border-left-color: var(--border-2); color: var(--muted-2); cursor: default; }
-  /* Out of the picture, still in the accessibility tree — see the composer's quote in
-     paintAnchors for the one thing that wears this and why. */
-  .cq-unseen { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); }
-  .cq-msg { margin: 8px 0; }
-  .cq-msg-head { display: flex; gap: 6px; align-items: baseline; }
-  .cq-msg-head b { font-size: 12.5px; }
-  .cq-msg.claude .cq-msg-head b { color: var(--accent); }
-  .cq-msg time { color: var(--muted-2); font-size: 11.5px; }
-  .cq-msg p { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-  /* Send buttons sit at the bottom so a growing textarea doesn't stretch them. */
-  .cq-compose, .cq-general { display: flex; gap: 6px; margin-top: 8px; align-items: flex-end; }
+  .cq-btn.on { border-color: var(--accent); color: var(--accent); background: var(--chip); }
   /* The colloquy text box, in one rule. field-sizing does the growing, so no script
      measures a textarea: the JS that did had to reset height to auto to re-measure,
      which made the box briefly too small for its own text on every keystroke — and a
@@ -326,25 +293,6 @@ style.textContent = `
      a widget's own box wears the class itself. */
   .cq-ui textarea, textarea.cq-ui { font: inherit; padding: 5px 8px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; resize: none; field-sizing: content; max-height: 200px; overflow-y: auto; }
   .cq-ui textarea:focus, textarea.cq-ui:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 45%, var(--card)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
-  .cq-compose textarea, .cq-general textarea { flex: 1; min-width: 0; }
-  .cq-thread-actions { display: flex; justify-content: space-between; margin-top: 8px; }
-  .cq-resolve { border: none; background: none; color: var(--muted); cursor: pointer; font: inherit; }
-  .cq-resolve:hover { color: var(--ok); }
-  .cq-general { padding: 10px 14px; border-top: 1px solid var(--rule); }
-  .cq-details { margin-top: 6px; color: var(--muted); background: none; border: none; padding: 0; }
-  .cq-system { color: var(--ok); margin: 8px 0; }
-  .cq-fab { position: fixed; z-index: 9100; display: none; }
-  .cq-composer { position: fixed; z-index: 9100; display: none; width: 320px; background: var(--card);
-    border: 1px solid var(--border-2); border-radius: var(--r); box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 10px; }
-  /* A stranded quote is the whole passage, and the box is 320px wide. Only while showing:
-     on the hidden one this would out-specify .cq-unseen's own overflow. */
-  .cq-composer .cq-quote:not(.cq-unseen) { max-height: 4.2em; overflow-y: auto; }
-  .cq-suggest-row { display: none; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
-  .cq-suggest-row input { margin: 0; accent-color: var(--accent); }
-  .cq-suggest-label { font-size: var(--t-6); letter-spacing: .05em; text-transform: uppercase; color: var(--ok-ink); margin: 4px 0 2px; }
-  .cq-msg p.cq-suggest-body { background: var(--add-tint); padding: 4px 8px; border-radius: 6px; }
-  .cq-composer textarea { width: 100%; min-height: 56px; }
-  .cq-composer-row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
   /* A marked passage is painted, not wrapped (see paintAnchors), so its rules reach it
      through the highlight registry — which styles glyphs, so the underline stands in for
      a border and the pointer's cursor comes from a class the hit-test puts on body. A
@@ -358,28 +306,91 @@ style.textContent = `
   body.cq-over-mark { cursor: pointer; }
   .cq-mark-el { outline: 2px solid var(--quote-bar); outline-offset: 3px; border-radius: 2px; cursor: pointer; }
   .cq-mark-el.cq-pending { outline-color: var(--accent); cursor: auto; }
-  .cq-btn.on { border-color: var(--accent); color: var(--accent); background: var(--chip); }
   .cq-ins-block { background: var(--add-tint); box-shadow: 0 0 0 4px var(--add-tint); border-radius: 2px; }
-  .cq-toast { position: fixed; bottom: 18px; right: 18px; z-index: 9200; background: var(--ink); color: var(--paper);
-    padding: 9px 14px; border-radius: var(--r); opacity: 0; transition: opacity .25s; pointer-events: none; }
-  .cq-toast.show { opacity: .95; }
-  .cq-toast.clickable { pointer-events: auto; cursor: pointer; }
-  .cq-live { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .cq-thread:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .cq-help { position: fixed; z-index: 9300; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    width: min(420px, calc(100vw - 32px)); max-height: 80vh; overflow-y: auto; display: none;
-    background: var(--card); border: 1px solid var(--border-2); border-radius: var(--r);
-    box-shadow: 0 12px 32px rgba(0,0,0,.18); padding: 14px 18px; }
-  .cq-help.open { display: block; }
-  .cq-help-title { font-weight: 600; margin-bottom: 10px; }
-  .cq-help h3 { margin: 12px 0 4px; font-size: var(--t-6); font-weight: 600;
-    text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-  .cq-help table { width: 100%; border-collapse: collapse; }
-  .cq-help td { padding: 3px 0; vertical-align: baseline; }
-  .cq-help td:first-child { width: 84px; white-space: nowrap; }
-  .cq-help kbd { font-family: ui-monospace, monospace; font-size: 12px; background: var(--chip);
-    border: 1px solid var(--border-2); border-radius: 4px; padding: 1px 6px; }
   @media print { .cq-ui { display: none !important; } }
+  @keyframes cq-pulse { 50% { opacity: .35; } }
+  @keyframes cq-flash { 0% { background: var(--hi-tint); } 100% { background: var(--card); } }
+  /* Everything below is private to the chrome, scoped to the runtime's own container:
+     no widget or page class can match a rule here, whatever it is named. (cq-tabs once
+     marked itself cq-live — this block's name for the visually-hidden live region —
+     and every tabbed page clipped to a pixel.) */
+  @scope (.cq-chrome) {
+    .cq-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 9000; height: 42px;
+      display: flex; align-items: center; gap: 10px; padding: 0 14px;
+      background: var(--veil); backdrop-filter: blur(6px); border-bottom: 1px solid var(--rule); }
+    .cq-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted-2); flex: none; }
+    .cq-dot.working { background: var(--accent); animation: cq-pulse 1.4s ease-in-out infinite; }
+    .cq-dot.listening { background: var(--ok); }
+    .cq-dot.away { background: var(--warn); }
+    .cq-dot.offline { background: var(--danger); }
+    .cq-status-text { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .cq-status-text .cq-age { color: var(--muted-2); }
+    .cq-spacer { flex: 1; min-width: 0; }
+    .cq-banner select { font: inherit; padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; max-width: 260px; min-width: 0; }
+    .cq-latest-chip { background: var(--warn-tint); border: 1px solid var(--warn); color: var(--warn-ink); border-radius: 6px; padding: 3px 8px; }
+    .cq-panel { position: fixed; top: 42px; right: 0; bottom: 0; width: min(360px, 100vw); z-index: 8900;
+      background: var(--card); border-left: 1px solid var(--rule); display: none; flex-direction: column; }
+    .cq-panel.open { display: flex; }
+    .cq-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--rule); font-weight: 600; }
+    /* contain: reaching the end of the thread list must not start scrolling the page
+       behind it — one wheel gesture moves one region. */
+    .cq-threads { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px; }
+    .cq-empty { color: var(--muted); padding: 18px 4px; }
+    .cq-thread { border: 1px solid var(--rule); border-radius: var(--r); padding: 10px; margin-bottom: 12px; }
+    .cq-thread.flash { animation: cq-flash 1.2s ease-out; }
+    .cq-thread:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .cq-quote { margin: 0 0 8px; padding: 2px 8px; border-left: 3px solid var(--quote-bar); color: var(--muted); font-style: italic; cursor: pointer; overflow-wrap: anywhere; }
+    .cq-quote:hover { color: var(--ink-2); }
+    .cq-quote.detached { border-left-style: dashed; border-left-color: var(--border-2); color: var(--muted-2); cursor: default; }
+    /* Out of the picture, still in the accessibility tree — see the composer's quote in
+       paintAnchors for the one thing that wears this and why. */
+    .cq-unseen { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); }
+    .cq-msg { margin: 8px 0; }
+    .cq-msg-head { display: flex; gap: 6px; align-items: baseline; }
+    .cq-msg-head b { font-size: 12.5px; }
+    .cq-msg.claude .cq-msg-head b { color: var(--accent); }
+    .cq-msg time { color: var(--muted-2); font-size: 11.5px; }
+    .cq-msg p { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    /* Send buttons sit at the bottom so a growing textarea doesn't stretch them. */
+    .cq-compose, .cq-general { display: flex; gap: 6px; margin-top: 8px; align-items: flex-end; }
+    .cq-compose textarea, .cq-general textarea { flex: 1; min-width: 0; }
+    .cq-thread-actions { display: flex; justify-content: space-between; margin-top: 8px; }
+    .cq-resolve { border: none; background: none; color: var(--muted); cursor: pointer; font: inherit; }
+    .cq-resolve:hover { color: var(--ok); }
+    .cq-general { padding: 10px 14px; border-top: 1px solid var(--rule); }
+    .cq-details { margin-top: 6px; color: var(--muted); background: none; border: none; padding: 0; }
+    .cq-system { color: var(--ok); margin: 8px 0; }
+    .cq-fab { position: fixed; z-index: 9100; display: none; }
+    .cq-composer { position: fixed; z-index: 9100; display: none; width: 320px; background: var(--card);
+      border: 1px solid var(--border-2); border-radius: var(--r); box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 10px; }
+    /* A stranded quote is the whole passage, and the box is 320px wide. Only while showing:
+       on the hidden one this would out-specify .cq-unseen's own overflow. */
+    .cq-composer .cq-quote:not(.cq-unseen) { max-height: 4.2em; overflow-y: auto; }
+    .cq-suggest-row { display: none; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
+    .cq-suggest-row input { margin: 0; accent-color: var(--accent); }
+    .cq-suggest-label { font-size: var(--t-6); letter-spacing: .05em; text-transform: uppercase; color: var(--ok-ink); margin: 4px 0 2px; }
+    .cq-msg p.cq-suggest-body { background: var(--add-tint); padding: 4px 8px; border-radius: 6px; }
+    .cq-composer textarea { width: 100%; min-height: 56px; }
+    .cq-composer-row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+    .cq-toast { position: fixed; bottom: 18px; right: 18px; z-index: 9200; background: var(--ink); color: var(--paper);
+      padding: 9px 14px; border-radius: var(--r); opacity: 0; transition: opacity .25s; pointer-events: none; }
+    .cq-toast.show { opacity: .95; }
+    .cq-toast.clickable { pointer-events: auto; cursor: pointer; }
+    .cq-live { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .cq-help { position: fixed; z-index: 9300; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: min(420px, calc(100vw - 32px)); max-height: 80vh; overflow-y: auto; display: none;
+      background: var(--card); border: 1px solid var(--border-2); border-radius: var(--r);
+      box-shadow: 0 12px 32px rgba(0,0,0,.18); padding: 14px 18px; }
+    .cq-help.open { display: block; }
+    .cq-help-title { font-weight: 600; margin-bottom: 10px; }
+    .cq-help h3 { margin: 12px 0 4px; font-size: var(--t-6); font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+    .cq-help table { width: 100%; border-collapse: collapse; }
+    .cq-help td { padding: 3px 0; vertical-align: baseline; }
+    .cq-help td:first-child { width: 84px; white-space: nowrap; }
+    .cq-help kbd { font-family: ui-monospace, monospace; font-size: 12px; background: var(--chip);
+      border: 1px solid var(--border-2); border-radius: 4px; padding: 1px 6px; }
+  }
 `;
 document.head.appendChild(style);
 
@@ -470,7 +481,12 @@ helpEl.setAttribute("role", "dialog");
 helpEl.setAttribute("aria-label", "Keyboard reference");
 helpEl.tabIndex = -1; // focused on open, so the dialog isn't silent to a screen reader
 
-document.body.append(banner, panel, fab, composer, toastEl, liveEl, helpEl);
+// The one scope root for the chrome's private rules: they match nothing outside
+// this container. A div, not a cq-* element — the render gate reads a cq-* ancestor
+// as "inside a widget", and the runtime's layer is inside none.
+const chromeRoot = el("div", "cq-chrome");
+chromeRoot.append(banner, panel, fab, composer, toastEl, liveEl, helpEl);
+document.body.append(chromeRoot);
 const basePaddingTop = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
 document.body.style.paddingTop = basePaddingTop + 42 + "px";
 

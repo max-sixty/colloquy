@@ -473,6 +473,53 @@ def test_page_and_panel_scroll_in_separate_regions(browser, serve):
     page.close()
 
 
+def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
+    """The chrome's private rules live in one @scope block rooted at the runtime's
+    own container, so whatever name a widget or a page coins, it matches none of
+    them: cq-tabs once marked itself cq-live — the chrome's name for its
+    visually-hidden live region — and every tabbed page clipped to a pixel. An
+    element in the page wearing every scoped class at once must render exactly as
+    its unclassed twin, and the classes styled at document level must be exactly
+    the shared vocabulary a widget wears on purpose."""
+    page, _ = open_page(browser, serve(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>t</title>'
+        '<link rel="stylesheet" href="/theme.css">'
+        '<script type="module" src="/colloquy.js"></script></head>'
+        "<body><main><h1>t</h1><section id=s><p>words</p></section></main></body></html>"
+    ))
+    surface = page.evaluate("""() => {
+        const sheet = [...document.styleSheets].find(
+            s => { try { return [...s.cssRules].some(r => r instanceof CSSScopeRule); }
+                   catch { return false; } });
+        const classes = sel => [...(sel || "").matchAll(/\\.([A-Za-z0-9_-]+)/g)].map(m => m[1]);
+        const scoped = new Set(), global_ = new Set();
+        const collect = (rules, into) => { for (const r of rules) {
+            if (r instanceof CSSScopeRule) collect(r.cssRules, scoped);
+            else if (r.selectorText) classes(r.selectorText).forEach(c => into.add(c));
+            else if (r.cssRules) collect(r.cssRules, into); } };
+        collect(sheet.cssRules, global_);
+        const probe = document.createElement("div"), plain = document.createElement("div");
+        probe.className = [...scoped].join(" ");
+        probe.textContent = plain.textContent = "probe";
+        document.getElementById("s").append(plain, probe);
+        const cs = el => { const c = getComputedStyle(el), out = {};
+                           for (const p of c) out[p] = c.getPropertyValue(p); return out; };
+        const a = cs(probe), b = cs(plain);
+        return { scoped: [...scoped], global: [...global_],
+                 moved: Object.keys(a).filter(p => a[p] !== b[p]) };
+    }""")
+    assert "cq-live" in surface["scoped"] and len(surface["scoped"]) > 20, (
+        "the @scope block is missing or nearly empty — the chrome has lost its rules"
+    )
+    assert surface["moved"] == [], (
+        f"scoped chrome rules reached an element in the page: {surface['moved']}"
+    )
+    assert {c for c in surface["global"] if c.startswith("cq-")} == {
+        "cq-ui", "cq-btn", "cq-over-mark", "cq-mark-el", "cq-pending", "cq-ins-block",
+    }, "the document-level class surface changed: widen the shared vocabulary on purpose"
+    page.close()
+
+
 def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     """A settled decision reads as one line and the cards behind it stop spending
     the page's height — but they are hidden, not gone, so everything that used to

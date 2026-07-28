@@ -126,7 +126,7 @@ nobody hears; the trade stands, at a block's coarseness rather than in silence.
 ### Assume the browser it already assumes
 
 The runtime requires ES modules, custom elements, `field-sizing`, `color-mix`, `:has()`,
-and the highlight registry. Guarding one of those while assuming the rest buys nothing and
+`@scope`, and the highlight registry. Guarding one of those while assuming the rest buys nothing and
 reads as if the others were checked. Add a feature guard only where there is a real
 fallback to take.
 
@@ -175,6 +175,19 @@ overlay, so help can't drift from behaviour.
 
 An `applyAction` implementation states an absolute placement, never a relative mutation,
 because the poll replays it and the sender's own action must be a no-op.
+
+### The chrome's rules stay inside the chrome
+
+Tags, attributes, nesting, and ids are registry-driven, so the renderer, the linter,
+and the catalog can't drift apart. Class names have no registry entry; their owner is
+the stylesheet's shape. The runtime's private rules sit in one `@scope` block rooted
+at its own container, where no class a widget or a page coins can match them —
+`cq-tabs` once marked itself `cq-live`, the chrome's name for its visually-hidden
+live region, and every tabbed page clipped to a pixel. What is styled at document
+level is the shared vocabulary, and only that: `cq-ui` and `cq-btn`, which a widget's
+controls wear on purpose, and the marks the runtime paints onto the page's own
+elements. A global rule is a widening of that vocabulary; the render suite pins the
+list so widening is a decision rather than a leak.
 
 ### The document is the state, and the log outranks it
 
