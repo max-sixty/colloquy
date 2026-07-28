@@ -1,5 +1,8 @@
 # colloquy
 
+> **Not ready for general use.** Watch this space, and hopefully there'll be more to
+> say soon.
+
 A Claude Code plugin: Claude presents plans and write-ups as a web page instead of a
 wall of terminal text. Select any line to comment on it like a shared doc; your comment
 wakes the session, and Claude ships a revised version. It comments back the same way —
