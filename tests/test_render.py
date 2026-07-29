@@ -2256,6 +2256,146 @@ def test_a_click_on_a_mark_decides_once(browser, serve):
     page.close()
 
 
+CODE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>code</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Code</h1>
+<section id="walk">
+<p id="lede">The key changes shape:</p>
+<cq-code id="walk-code" lang="python" hi="2">
+def bucket_key(request):
+    if request.token:
+        return f"tok:{request.token.id}"
+    return "anon"
+<cq-note at="2">A token id shaped like an address would collide.</cq-note>
+</cq-code>
+<pre><code class="language-bash"># apply the migration, then run the marked suite
+cd gateway &amp;&amp; alembic upgrade head</code></pre>
+<cq-code id="plain-code">
+$ colloquy check --render ./page
+v1.html: renders clean
+</cq-code>
+</section>
+</main>
+</body>
+</html>
+"""
+
+
+def test_code_is_colored_without_a_word_moving(browser, serve):
+    """Colouring is spans, and the anchor pass is what spans break: the version file holds
+    one run of characters where the DOM now holds a dozen nodes. A <span> is no text block,
+    so both readings collapse to the same string — which is what lets the runtime color a
+    block the file knows nothing about, and what keeps `comment` able to quote into one.
+
+    One pass serves both shapes a page has for code, cq-code's `lang` and a plain
+    <pre><code class="language-*">, and neither guesses: a cq-code with no `lang` stays
+    the color of its own ink. The quote below is written the way `comment` writes one —
+    against the file — and spans a token boundary on its way back."""
+    url = serve(CODE_PAGE)
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => document.querySelector('cq-code.cq-rendered') !== null")
+
+    roles = page.evaluate("""() => {
+      const at = sel => [...document.querySelectorAll(sel + ' [data-cq-syn]')]
+        .map(e => [e.dataset.cqSyn, e.textContent]);
+      return { widget: at('#walk-code'), plain: at('#walk pre > code'),
+               undeclared: at('#plain-code') };
+    }""")
+    assert ["kw", "def"] in roles["widget"] and ["fn", "bucket_key"] in roles["widget"]
+    assert {r for r, _ in roles["widget"]} >= {"kw", "st", "fn"}, roles["widget"]
+    assert ["cm", "# apply the migration, then run the marked suite"] in roles["plain"]
+    assert roles["undeclared"] == [], (
+        f"a cq-code with no lang was colored anyway: {roles['undeclared']}"
+    )
+
+    # The words each block holds, unchanged by the spans: what the file says is what the
+    # page says, which is the whole reason a quote written against one lands in the other.
+    # The widget numbers lines, so its own newline is the join; the note it docks at line 2
+    # is prose and sits outside the code.
+    assert page.evaluate("() => document.querySelector('#walk pre > code').textContent") == (
+        "# apply the migration, then run the marked suite\ncd gateway && alembic upgrade head"
+    )
+    assert page.evaluate(
+        "() => [...document.querySelectorAll('#walk-code .cq-code-line')]"
+        ".map(l => l.textContent).join('')"
+    ) == (
+        'def bucket_key(request):\n    if request.token:\n'
+        '        return f"tok:{request.token.id}"\n    return "anon"\n'
+    )
+
+    # A quote across a token boundary — "upgrade" is plain, "head" is a keyword span.
+    page.request.post(
+        url.rsplit("/versions/", 1)[0] + "/api/event",
+        data={"kind": "comment", "version": 1, "text": "does prod want --sql here?",
+              "anchor": {"section": "walk", "quote": "alembic upgrade head",
+                         "prefix": "on, then run the marked suite cd gateway &&",
+                         "suffix": ""}},
+    )
+    page.get_by_role("button", name="Comments", exact=False).click()
+    expect(page.locator(".cq-thread")).to_have_count(1)
+    expect(page.locator(".cq-panel .cq-quote.detached")).to_have_count(0)
+    # The mark is a painted range, so what it covers is read back off CSS.highlights
+    # rather than off the DOM. Waited for, not read: the thread arrives on a poll.
+    page.wait_for_function(
+        "() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0",
+        timeout=5000,
+    )
+    marked = page.evaluate("""() => [...CSS.highlights.get('cq-mark').values()]
+                                     .map(r => r.toString()).join("")""")
+    assert marked == "alembic upgrade head", f"the mark landed on {marked!r}"
+    assert errors == []
+    page.close()
+
+
+def test_every_language_returns_the_source_it_was_given(browser, serve):
+    """`syntax` promises the tokens partition the source exactly, and cq-code's line
+    numbers, `hi`, and every note's `at` are counted off that partition — so a tokenizer
+    that dropped a character would slide all three with nothing on screen saying so. The
+    promise is checked at the boundary and the check throws; this drives every language
+    the registry offers through the real module, including each one against another
+    language's source, which is where a lexer meets input it was never written for.
+
+    It is also what a version bump of the vendored bundle has to survive."""
+    url = serve(CODE_PAGE)
+    page, errors = open_page(browser, url)
+    langs = interact.load_registry(serve.page_dir)["cq-code"]["properties"]["lang"]["enum"]
+    samples = [
+        'def f(x):\n    """doc\n    <b>&amp;</b>\n    """\n    return f"{x!r}"  # ok\n',
+        "# c\ncd x && ls -la | grep \"a b\" > /dev/null\n",
+        '{"a": [1, 2, {"b": null}], "c": "<>&"}\n',
+        "@@ -1 +1 @@\n-a <b>\n+c &d\n",
+        "SELECT * FROM t WHERE a = 'x''y'; -- note\n",
+        '<!doctype html>\n<a href="x?a=1&b=2">t &amp; u</a>\n',
+    ]
+    bad = page.evaluate(
+        """async ([langs, samples]) => {
+          const { syntax } = await import('/colloquy.js');
+          const bad = [];
+          for (const lang of langs)
+            for (const src of samples) {
+              try {
+                const tokens = await syntax(src, lang);
+                const back = tokens.map(t => t.text).join('');
+                if (back !== src) bad.push([lang, src, back]);
+              } catch (e) { bad.push([lang, src, String(e)]); }
+            }
+          return bad;
+        }""",
+        [langs, samples],
+    )
+    assert bad == [], f"the tokenizer changed the source: {bad}"
+    assert errors == []
+    page.close()
+
+
 def test_two_comments_on_one_element_both_stay_anchored(browser, serve):
     """A figure can carry more than one thread. When the page's record of what it drew was
     keyed by the mark, the second comment overwrote the first, and the panel told the

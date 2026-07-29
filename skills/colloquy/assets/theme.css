@@ -28,6 +28,12 @@
   --warn-tint: #fef3c7;   --warn-ink: #92400e;
   --danger-tint: #fee2e2; --danger-ink: #b91c1c;
   --add-tint: #e6ffec; --del-tint: #ffebe9; --hi-tint: #fef9c3;
+  /* Syntax roles. Six, because a page is read for its argument and code on it is
+     evidence — enough color to find the string and the comment, not a paint box.
+     Every scope the tokenizer knows collapses into these in colloquy.js, and what
+     it doesn't map keeps --ink, so an unmapped scope reads plain, never wrong. */
+  --syn-comment: #6e7781; --syn-keyword: #cf222e; --syn-string: #0a3069;
+  --syn-number: #0550ae;  --syn-name: #8250df;    --syn-type: #953800;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -45,6 +51,8 @@
     --warn-tint: #362a10;   --warn-ink: #f0c674;
     --danger-tint: #3a1c1c; --danger-ink: #f1948a;
     --add-tint: #12301d; --del-tint: #38191b; --hi-tint: #38320f;
+    --syn-comment: #9198a1; --syn-keyword: #ff7b72; --syn-string: #a5d6ff;
+    --syn-number: #79c0ff;  --syn-name: #d2a8ff;    --syn-type: #ffa657;
   }
 }
 
@@ -70,6 +78,24 @@ pre { background: var(--pre-bg); border: 1px solid var(--rule); border-radius: v
       padding: 12px 14px; overflow-x: auto; font-size: 12.5px; line-height: 1.5;
       font-family: var(--mono); }
 pre code { background: none; padding: 0; font-size: 100%; }
+/* Syntax roles. The runtime writes these into any code block that names a language —
+   a <pre><code class="language-*"> or a cq-code with `lang` — having collapsed the
+   tokenizer's scopes into six of colloquy's own first. Styled at document level like
+   the marks, because they land on the page's own elements; one attribute rather than
+   six classes, so the shared class vocabulary doesn't widen at all. A tokenizer swap
+   costs one table in colloquy.js and no page that has already shipped. */
+[data-cq-syn="cm"] { color: var(--syn-comment); font-style: italic; }
+[data-cq-syn="kw"] { color: var(--syn-keyword); }
+[data-cq-syn="st"] { color: var(--syn-string); }
+[data-cq-syn="nu"] { color: var(--syn-number); }
+[data-cq-syn="fn"] { color: var(--syn-name); }
+[data-cq-syn="ty"] { color: var(--syn-type); }
+/* A diff's own lines take the tints cq-diff and cq-suggestion already carry, so an
+   added line reads the same whichever of the three drew it. Ink only: these spans
+   cover a line's text and not its box, and a background would print as a ragged
+   half-width band. */
+[data-cq-syn="ins"] { color: var(--ok-ink); }
+[data-cq-syn="del"] { color: var(--danger-ink); }
 blockquote { margin: 14px 0; padding: 2px 14px; border-left: 2px solid var(--rule);
              color: var(--muted); }
 figure { margin: 18px 0; }

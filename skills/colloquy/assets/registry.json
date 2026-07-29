@@ -179,17 +179,18 @@
     "x-example": "<cq-tree id=\"feeder-tree\">\nfeeders/\n  mount.py  +2 -2\n  schedule.py  +1\n  sites/\n    north.toml\n</cq-tree>"
   },
   "cq-code": {
-    "description": "An annotated code block — the walkthrough shape. The body is the code verbatim (data, < and > escaped, column 0); `hi` highlights line ranges (\"3-5,8\"); cq-note children anchor remarks at lines.",
+    "description": "An annotated code block — the walkthrough shape. The body is the code verbatim (data, < and > escaped, column 0); `lang` colors it; `hi` highlights line ranges (\"3-5,8\"); cq-note children anchor remarks at lines. Leave `lang` off where the body isn't source (a transcript, command output) — nothing guesses, so an undeclared block stays plain.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "lang": {"enum": ["bash", "css", "diff", "go", "html", "java", "javascript", "json", "markdown", "python", "rust", "sql", "toml", "typescript", "yaml"]},
       "hi": {"type": "string", "pattern": "^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$"}
     },
     "required": ["id"],
     "additionalProperties": false,
     "x-content": "data",
     "x-upgrade": true,
-    "x-example": "<cq-code id=\"bracket-walk\" hi=\"2\">\ndef bracket(temp):\n    if temp &lt; 0:\n        return \"steel\"\n    return \"cedar\"\n<cq-note at=\"2\">Freezing is the only threshold that matters.</cq-note>\n</cq-code>"
+    "x-example": "<cq-code id=\"bracket-walk\" lang=\"python\" hi=\"2\">\ndef bracket(temp):\n    if temp &lt; 0:\n        return \"steel\"\n    return \"cedar\"\n<cq-note at=\"2\">Freezing is the only threshold that matters.</cq-note>\n</cq-code>"
   },
   "cq-note": {
     "description": "A remark anchored at a line of its cq-code parent. Prose content; `at` is the 1-based line number.",
@@ -422,6 +423,10 @@
     "details": {
       "description": "Evidence: a claim as the <summary>, its backing collapsed beneath. Native disclosure; find-in-page reaches the collapsed content.",
       "example": "<details>\n  <summary>The parser drops the slash on self-closed custom tags</summary>\n  <pre><code>document.querySelector(\"cq-ref\").textContent\n// → \"rest of the paragraph\"</code></pre>\n</details>"
+    },
+    "pre > code.language-*": {
+      "description": "A literal the reviewer can select and quote: a command to run, a config file, a snippet of output. Name the language to color it — the same set cq-code's `lang` takes, and `check` refuses one outside it. Leave the class off where the body isn't source; nothing is guessed from the text. Reach for cq-code instead when the block is a walkthrough: numbered lines, highlighted ranges, remarks anchored at a line.",
+      "example": "<pre><code class=\"language-bash\">colloquy check --render ~/.local/state/colloquy/pages/auth-diagnosis</code></pre>"
     }
   }
 }

@@ -147,6 +147,30 @@ def test_check_rejects_widget_violations(page_dir):
     assert "its body is data" in out
 
 
+def test_check_rejects_a_language_nothing_will_color(page_dir):
+    """A declared language the runtime won't honor renders as a plain block, which is
+    exactly what a block with no language renders as — so the reviewer sees nothing
+    wrong and the author never finds out. Both ways of getting it wrong are the lint's,
+    because the author is the only one who can still fix either: the class somewhere
+    other than <pre><code>, and a language this page's vendored layer doesn't speak."""
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace(
+            "<h2>Plan</h2>",
+            "<h2>Plan</h2>\n"
+            '<pre><code class="language-pythn">x = 1</code></pre>\n'
+            '<div class="note language-python">not a code block</div>\n'
+            '<pre><code class="language-python">y = 2</code></pre>',
+        )
+    )
+    result = check(page_dir)
+    assert result.exit_code == 1
+    out = result.output
+    assert 'class="language-pythn"' in out and "not a language this page's layer speaks" in out
+    assert 'class="language-python"' in out and "only <pre><code> is colored" in out
+    # The well-formed block is not among the complaints.
+    assert out.count('class="language-python"') == 1
+
+
 def test_check_rejects_loose_content_in_items_container(page_dir):
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<cq-options>", "<cq-options>\nloose text\n<p>stray</p>\n<br/>")

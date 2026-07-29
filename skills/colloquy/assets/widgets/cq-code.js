@@ -1,8 +1,14 @@
 /* cq-code: upgraded because it splits lines. The body is code verbatim (data);
  * `hi` highlights line ranges; authored cq-note children anchor a remark at a
  * line. Notes are moved, never rewritten, so their text stays quotable — the
- * annotated-walkthrough shape. */
-import { once, failSoft } from "/colloquy.js";
+ * annotated-walkthrough shape.
+ *
+ * `lang` colors it. A token can span a newline (a docstring, a block comment)
+ * and a line is the unit this widget numbers, so the tokens are cut at each
+ * newline rather than the source being colored a line at a time — coloring
+ * line by line would restart the tokenizer inside the docstring and read its
+ * second line as code. */
+import { once, failSoft, settle, synNodes, syntax } from "/colloquy.js";
 
 // "3-5,8" → Set of line numbers.
 function parseRanges(spec) {
@@ -15,11 +21,33 @@ function parseRanges(spec) {
   return lines;
 }
 
+// Tokens re-cut so none crosses a newline: one array of {text, role} per line, in
+// source order. The tokenizer's runs and the widget's lines are two different
+// spans of the same characters, and this is where they are reconciled.
+function tokenLines(tokens) {
+  const lines = [[]];
+  for (const { text, role } of tokens) {
+    const parts = text.split("\n");
+    parts.forEach((part, i) => {
+      if (i) lines.push([]);
+      if (part) lines.at(-1).push({ text: part, role });
+    });
+  }
+  return lines;
+}
+
 customElements.define(
   "cq-code",
   class extends HTMLElement {
     connectedCallback() {
       if (!once(this)) return;
+      // Registered with settle() so the runtime holds the first anchor pass until
+      // the lines are in — the tokenizer loads lazily, so even an uncolored block
+      // lands a microtask late and one writer has to finish before another reads.
+      settle(this.render());
+    }
+
+    async render() {
       // Split authored content: text nodes are the code, cq-note children are
       // annotations. A note sits on its own authored line, so one newline is
       // swallowed after each to keep line numbers honest.
@@ -36,6 +64,10 @@ customElements.define(
       }
       source = source.replace(/^\n+/, "").replace(/\s+$/, "");
       try {
+        const lang = this.getAttribute("lang");
+        // One representation either way: an uncolored block is the whole source as a
+        // single roleless token, so the line walk below has one shape to handle.
+        const lines = tokenLines(lang ? await syntax(source, lang) : [{ text: source }]);
         const hi = parseRanges(this.getAttribute("hi"));
         const byLine = new Map();
         for (const note of notes) {
@@ -43,15 +75,12 @@ customElements.define(
           byLine.set(at, [...(byLine.get(at) ?? []), note]);
         }
         const pre = document.createElement("pre");
-        const lines = source.split("\n");
-        lines.forEach((text, i) => {
+        lines.forEach((tokens, i) => {
           const n = i + 1;
-          pre.append(
-            Object.assign(document.createElement("span"), {
-              className: `cq-code-line${hi.has(n) ? " hi" : ""}`,
-              textContent: text + "\n",
-            }),
-          );
+          const line = document.createElement("span");
+          line.className = `cq-code-line${hi.has(n) ? " hi" : ""}`;
+          line.append(...synNodes(tokens), "\n");
+          pre.append(line);
           for (const note of byLine.get(n) ?? []) pre.append(noteNode(note));
           byLine.delete(n);
         });

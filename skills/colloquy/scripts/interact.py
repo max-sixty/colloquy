@@ -1088,6 +1088,11 @@ SIBLING_CLOSERS = {
 }
 
 
+# How a plain code block names its language, matching colloquy.js's own pattern. The
+# class is the universal one every Markdown renderer emits, so a block Claude wrote
+# elsewhere lands here unchanged.
+LANGUAGE_CLASS = re.compile(r"(?:^|\s)language-([\w+.#-]+)(?=\s|$)")
+
 # Container selectors whose max-width defines the readable column.
 COLUMN_SELECTORS = ("main", "body", "article", ".container", ".wrap", ".content", ".page")
 COLUMN_FALLBACK = 780
@@ -1137,6 +1142,10 @@ class _StructParser(HTMLParser):
         # cq-suggestion: which slots it carries and which ids live in each, so a
         # version's outcome can license retiring exactly the ids it settles.
         self.suggestions = []
+        # {"tag", "parent", "lang", "line"} per element claiming a language — the
+        # coloring the runtime honors on a plain <pre><code>, checked here because a
+        # class it doesn't honor is a request that silently isn't answered.
+        self.language_blocks = []
         self._svg_depth = 0
 
     @property
@@ -1215,6 +1224,15 @@ class _StructParser(HTMLParser):
         # Before the void check: <hr> is void and closes an open <p>, and a void tag
         # left inside a paragraph it ended puts the rest of the section in it.
         self._implicit_close(tag)
+        # After it, so the parent recorded here is the one the browser will see.
+        lang = LANGUAGE_CLASS.search(attrs_d.get("class") or "")
+        if lang:
+            self.language_blocks.append({
+                "tag": tag,
+                "parent": self.stack[-1][0] if self.stack else None,
+                "lang": lang.group(1),
+                "line": self.getpos()[0],
+            })
         if tag in VOID_TAGS:
             if self.stack and self.stack[-1][2] is not None:
                 self.stack[-1][2]["children"].append(tag)
@@ -1914,6 +1932,30 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
     return errors
 
 
+def language_errors(blocks: list, registry: dict) -> list:
+    """A declared language the runtime won't honor. Nothing here is visible to the
+    reviewer either way — a class in the wrong place and a misspelt language both render
+    as an ordinary uncolored block — so the failure is routed to the one party who can
+    still fix it, which is whoever wrote the word. The vendored registry holds the list,
+    the same one cq-code's `lang` validates against and the vendored bundle was built
+    from, so a page can't be told a language its own layer doesn't speak."""
+    known = ((registry.get("cq-code") or {}).get("properties") or {}).get("lang", {}).get("enum")
+    if not known:
+        return []
+    errors = []
+    for block in blocks:
+        where = f'class="language-{block["lang"]}" (line {block["line"]})'
+        if (block["tag"], block["parent"]) != ("code", "pre"):
+            errors.append(
+                f"{where}: only <pre><code> is colored, found <{block['tag']}> in "
+                f"<{block['parent'] or 'nothing'}> — move it, or use <cq-code lang=…> "
+                f"for a walkthrough"
+            )
+        elif block["lang"] not in known:
+            errors.append(f"{where}: not a language this page's layer speaks — known: {known}")
+    return errors
+
+
 def suggestion_errors(suggestions: list, comment_ids: set) -> list:
     """What the registry's schema can't say about a suggestion: it holds at most
     one of each slot and at least one of them, it doesn't nest, and `resolves`
@@ -2377,6 +2419,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     registry = load_registry(page_dir)
     if registry is not None:
         errors.extend(widget_errors(parser.cq_elements, registry))
+        errors.extend(language_errors(parser.language_blocks, registry))
         for tag, entry in registry.items():
             if entry.get("x-upgrade") and not (page_dir / "widgets" / f"{tag}.js").is_file():
                 errors.append(

@@ -148,6 +148,14 @@ prerequisite.
   `cq-diagram` (mermaid source body); reach for hand-drawn inline `<svg>` only where
   layout must be bespoke, drawn from the theme's tokens, with labelled nodes and
   arrowheaded edges. Never box-drawing (`┌─┐ │ ▼`) in a `<pre>`.
+- **Name a code block's language and it gets colored.** Two shapes, by what the block
+  is for: `<pre><code class="language-python">` for a literal the reader selects and
+  quotes — a command, a config, a snippet of output — and `<cq-code lang="python">` for
+  a walkthrough, which adds line numbers, `hi` ranges, and `cq-note` remarks anchored at
+  a line. The language names are the same set either way, `catalog` lists them, and
+  `check` refuses one outside it. Nothing is inferred from the text, so a block whose
+  body isn't source — a transcript, a stack trace, a log — simply says nothing and stays
+  plain.
 - **Make references clickable.** Declare the repo or tracker base once as
   `<meta name="cq-base" content="https://host/repo/blob/main/{path}#L{line}">` and
   write source references as `<cq-ref src="path/to/file.py:88"></cq-ref>`. Render

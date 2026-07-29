@@ -141,3 +141,10 @@ stands alone.
       Reversing it would mean keeping some mark on settled text, which is exactly
       what settling is for — so the two widgets diverge here on purpose. Revisit
       if a reviewer actually misclicks one.
+- [ ] `cq-diff` is the page's most code-dense widget and the one shape that isn't
+      syntax-colored: its lines carry add/del tints, which is what the widget is
+      about, and stacking token colors on a green line is a legibility question
+      rather than a missing feature. It also has no language to work from — a
+      unified diff spans files, so the language would come per-hunk from each
+      file's extension rather than from a `lang` the author wrote. Decide the look
+      before the plumbing.

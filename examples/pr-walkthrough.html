@@ -53,7 +53,7 @@ diff --git a/gateway/limits.py b/gateway/limits.py
 
 <section id="walkthrough">
 <h2>Why the prefixes matter</h2>
-<cq-code id="key-walk" hi="3-4">
+<cq-code id="key-walk" lang="python" hi="3-4">
 def bucket_key(self, request):
     if request.token:
         return f"tok:{request.token.id}"
@@ -72,6 +72,10 @@ so the migration renames them once at deploy; mixed keys never coexist.</aside>
   <li>Integration: two tokens behind one address each get a full budget; two
   addresses on one token share one.</li>
 </ul>
+<p id="test-run">Both suites run under the rate-limit marker:</p>
+<pre><code class="language-bash"># the integration half needs the migration applied first
+cd gateway &amp;&amp; alembic upgrade head
+pytest tests/ -m ratelimit --maxfail=1</code></pre>
 </section>
 </main>
 </body>
