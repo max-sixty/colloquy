@@ -27,18 +27,27 @@
  *    same mark every decided-and-unhonored widget wears, driven by the registry's
  *    x-state rather than remembered here.
  *
- * Editing has two doors: double-click the text (the fast path — it wins over the
- * word-selection it makes, so no comment button flashes), or the ✎ button (the door
- * keyboards and touch can use; it also makes the block *look* editable). Unsent
+ * Editing has two doors: double-click the text (the fast path), or the ✎ button (the
+ * door keyboards and touch can use; it also makes the block *look* editable). Unsent
  * keystrokes ride the runtime's draft store (saveDraft/loadDraft), the composer's
  * discipline: written on input, cleared only by a successful send, so reload, version
  * switch, and server death all recover.
  *
+ * The fast path is taken on the second mousedown rather than on dblclick, because the
+ * word the browser selects is selected *by* that mousedown and painted before dblclick
+ * arrives: clearing it afterwards is a frame too late, and the reviewer saw a word
+ * flash blue and vanish. Cancelling the mousedown's default means there was never a
+ * selection to flash, or a comment button to contest the gesture. What that default
+ * was saying — "this word" — is carried into the box instead, where a double-click
+ * still means what it means everywhere else: type over this word.
+ *
  * Chrome is injected through the runtime's `offer`, which marks it .cq-ui so anchoring
  * skips it, data-cq-gen so the diff ignores it, and data-cq-offer so it leaves the
  * printed page; the class also earns the edit box the runtime's one textarea rule.
- * Presentation is theme CSS; authored content is never discarded, so there is no
- * failSoft.
+ * Presentation is theme CSS, the swap between the two views included: an open edit is
+ * the box being in the document, so the CSS reads that and this module writes no
+ * display state at all. Which is also what lets paper disagree — it drops the box and
+ * keeps the words. Authored content is never discarded, so there is no failSoft.
  */
 import { once, offer, quoted, sendAction, toast, keyHelp, saveDraft, loadDraft } from "/colloquy.js";
 
@@ -49,6 +58,30 @@ let helpRegistered = false;
 // The store key for a draft's unsent edit. The page's port is its own origin, so
 // the id alone is unambiguous — the same scoping every composer draft relies on.
 const ctx = (id) => "edit:" + id;
+
+// Where the browser's own double-click would have drawn the word's edges. Segmenter
+// knows the boundaries of the language the draft is written in, which /\w+/ does not:
+// it keeps "l'écran" and a run of CJK whole where a character class splits them. The
+// boundaries follow the script the words are written in; the locale only refines that,
+// and the page's own `lang` is not the place to take it from — nothing validates that
+// attribute, and Segmenter throws on a tag it can't parse, which at module scope is a
+// typo in the markup costing every draft on the page its upgrade.
+const words = new Intl.Segmenter(undefined, { granularity: "word" });
+
+// The word under the pointer as a range in the body's text — the body holds one text
+// node, so its offsets are the textarea's offsets. Between words the range is the
+// collapsed caret the click asked for, which needs no second shape for the caller to
+// test; past the end of the text there is no offset to carry at all, and the box opens
+// where focus alone would have put it.
+function wordAt(body, x, y) {
+  const pos = document.caretPositionFromPoint(x, y);
+  if (!pos || pos.offsetNode !== body.firstChild) return null;
+  for (const w of words.segment(body.textContent)) {
+    if (w.isWordLike && pos.offset >= w.index && pos.offset <= w.index + w.segment.length)
+      return [w.index, w.index + w.segment.length];
+  }
+  return [pos.offset, pos.offset];
+}
 
 // What the agent wrote, verbatim, minus what the HTML source needed: the leading
 // newline after the open tag, trailing whitespace before the close tag, and the
@@ -98,12 +131,12 @@ customElements.define(
       this.#pencil.title = "Edit this text — or double-click it";
       this.prepend(this.#pencil);
 
-      // The fast path. Editing wins over the word-selection the gesture makes;
-      // clearing it keeps the comment button from contesting the double-click.
-      this.addEventListener("dblclick", (ev) => {
-        if (ev.target.closest(".cq-ui")) return;
-        getSelection()?.removeAllRanges();
-        this.#open();
+      // The fast path, taken before the browser paints the selection this gesture
+      // would have made (see above). The word it aimed at opens selected in the box.
+      this.addEventListener("mousedown", (ev) => {
+        if (ev.detail !== 2 || ev.target.closest(".cq-ui")) return;
+        ev.preventDefault();
+        this.#open(undefined, wordAt(this.#body, ev.clientX, ev.clientY));
       });
 
       // A recovered edit outranks the authored text: the reviewer typed it and never
@@ -118,7 +151,7 @@ customElements.define(
       return b;
     }
 
-    #open(seed) {
+    #open(seed, at) {
       if (this.#ta) return;
       const ta = offer("textarea", "cq-draft-edit");
       ta.value = seed ?? this.#body.textContent;
@@ -135,10 +168,11 @@ customElements.define(
         this.#button("Save", () => this.#commit(), "primary"),
       );
       this.#ta = ta;
-      this.#body.hidden = true;
-      this.#pencil.hidden = true;
       this.#body.after(ta, this.#row);
       ta.focus();
+      // Only the pointer names a place; the pencil and a recovered draft leave the
+      // caret where focus put it, at the start of the text.
+      if (at) ta.setSelectionRange(at[0], at[1]);
     }
 
     #close(discard) {
@@ -147,8 +181,6 @@ customElements.define(
       this.#ta.remove();
       this.#row.remove();
       this.#ta = this.#row = null;
-      this.#body.hidden = false;
-      this.#pencil.hidden = false;
       // The edit box had focus and is gone; hand it to the draft's one persistent
       // control so a keyboard reviewer isn't dropped back at the page top.
       this.#pencil.focus();

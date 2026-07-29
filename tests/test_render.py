@@ -3470,6 +3470,63 @@ def test_a_comment_inside_a_widget_stays_out_of_what_the_widget_reads(browser, s
     page.close()
 
 
+def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
+    """Two halves of one gesture, both of them invisible to a static lint.
+
+    The box: reading and editing are the same box, so the words a reviewer
+    double-clicked are still under the pointer when the editor opens. They were
+    not — the runtime's general textarea rule wraps text in padding and a border
+    and floors it at 64px, which moved the first character 9px right and 6px down
+    and stretched a two-line draft — and text that jumps out from under a
+    double-click is the reviewer's aim thrown away.
+
+    The gesture: the word the browser would select is selected by the second
+    mousedown and painted before dblclick arrives, so the handler that cleared it
+    afterwards ran a frame late and the reviewer saw a flash. That frame is
+    timing, and no assertion here reaches it; what is assertable is the outcome
+    on either side of it. Nothing on the page ends up selected, and the word the
+    gesture named opens selected in the box — which is what a double-click means
+    everywhere else, and what cancelling the default rather than undoing it is
+    for.
+
+    And the swap is the screen's, which is why the widget writes none of it: paper
+    drops the box with the other offers, so a draft mid-edit printed as an empty
+    frame for as long as the module hid the body itself."""
+    page, errors = open_page(browser, serve(JOURNEY_V1))
+    metrics = """(sel) => {
+      const el = document.querySelector('#draft-ops ' + sel), s = getComputedStyle(el);
+      const b = el.getBoundingClientRect();
+      return [b.x + parseFloat(s.paddingLeft) + parseFloat(s.borderLeftWidth),
+              b.y + parseFloat(s.paddingTop) + parseFloat(s.borderTopWidth), b.width, b.height];
+    }"""
+    read = page.evaluate(metrics, ".cq-draft-body")
+
+    box = page.locator("#draft-ops .cq-draft-body").bounding_box()
+    page.mouse.dblclick(box["x"] + 60, box["y"] + 8)
+    editor = page.locator("#draft-ops textarea")
+    expect(editor).to_be_focused()
+    assert page.evaluate(metrics, "textarea") == read, (
+        "the editor's text sits somewhere the read view's text did not"
+    )
+    assert page.evaluate(
+        "() => getSelection().rangeCount > 0 && "
+        "getSelection().containsNode(document.querySelector('#draft-ops .cq-draft-body'), true)"
+    ) is False, "the gesture left the page's own words selected under the open editor"
+    selected = page.evaluate(
+        "() => { const t = document.querySelector('#draft-ops textarea');"
+        "        return t.value.slice(t.selectionStart, t.selectionEnd); }"
+    )
+    assert selected == "migration", f"the box opened on {selected!r} rather than the word clicked"
+
+    page.emulate_media(media="print")
+    assert page.locator("#draft-ops").inner_text() == DRAFT_TEXT, (
+        "the printed page lost the draft's words to a box paper hasn't got"
+    )
+    page.emulate_media(media="screen")
+    assert errors == []
+    page.close()
+
+
 def test_a_decision_claude_has_seen_still_survives_the_next_version(browser, serve):
     """The round trip above, differing in one fact: `wait` has handed the actions
     to Claude before v2 publishes. That is the ordinary case — Claude writes a
