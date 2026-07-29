@@ -6,12 +6,15 @@ buildable.
 
 ## Stage
 
-Early, and nothing owes the past anything: there is no deployment, no database, no
-page or log older than the directory in front of you that has to keep working. So the
-trade between simplicity and robustness is already settled — take the simpler code.
-A guard earns its place only where the state it defends against is reachable and
-there is something to do about it; the rest is complexity paid for a case that never
-arrives, and it reads as if the impossible were expected.
+Early, and nothing owes the past anything. Nobody uses it, so there is no deployment,
+no database, no page or log older than the directory in front of you that has to keep
+working, and no command, flag, or name anyone has learned. Backward compatibility
+carries zero weight: rename and reshape whenever the better form is clear, and treat a
+name being the current one as no argument for keeping it. So the trade between
+simplicity and robustness is already settled — take the simpler code. A guard earns
+its place only where the state it defends against is reachable and there is something
+to do about it; the rest is complexity paid for a case that never arrives, and it
+reads as if the impossible were expected.
 
 Where data enters, check it once and completely: browser events at `POST /api/event`,
 authored markup at `check`, a replayed action's detail in the widget's own
@@ -141,9 +144,7 @@ occurrence can ever confirm, which silently costs the comment its copy.
 So where the file can't model what a module writes, the reading stops rather than guesses:
 `x-says` and `x-verbatim` cover what the registry can declare, a fence covers the rest, and
 a quote across a fence is refused when it is written instead of detaching later in front of
-the reviewer. A widget that writes words of its own declares them or stays fenced. Never
-teach the passage reader about a widget by name — that is the drift the registry exists to
-prevent, and this would be the fourth place to forget.
+the reviewer. A widget that writes words of its own declares them or stays fenced.
 
 ### Paint; don't wrap
 
@@ -241,7 +242,27 @@ construction; that mistake is now made where the label is written, in front of w
 wrote the word, rather than in a print rule three files away that nobody thought to
 write.
 
-### Widgets declare, the runtime decides
+### Widgets declare; nothing else names them
+
+A widget is anonymous to everything outside it. Its name reaches `registry.json`, its
+own module, and no further: every other consumer works from what the entry declares and
+never from which widget it is looking at. So no branch anywhere reads `cq-diagram` and
+does something particular — where a behaviour is wanted by some widgets and not others,
+it becomes an `x-` key they declare and the consumer dispatches on. That binds the
+runtime, the lint, `check --render`, export, and the skill's own prose alike; the test
+is whether a twelfth widget touches anything but its module and its entry, and where it
+would, the thing missing is a declaration.
+
+Anonymity is what makes the vocabulary extensible without a rewrite, and its opposite
+fails quietly rather than loudly: a consumer taught one widget by name keeps working
+perfectly on that widget while silently doing nothing for the next one, so the bug
+surfaces as a feature that was never wired up rather than as an error.
+
+Declare the general property, not the particular widget, or the special case has only
+moved into the registry: `x-upgrade` says a module enhances this tag, not that mermaid
+needs loading. The bar is real — an `x-` key the log records is a forever-contract the
+vendored-layer stamp then carries (`$events`) — which is an argument for finding the
+general shape, not for reaching past the registry.
 
 A widget module gets the helper surface `colloquy.js` exports, and no more until one
 genuinely needs it. Widgets never register keys with a dispatcher: focus-scoped keys
