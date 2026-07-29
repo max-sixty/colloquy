@@ -962,24 +962,40 @@ def styled(css, body='<svg width="10" height="10"></svg>'):
 def test_check_reads_a_page_stylesheet_as_css(page_dir):
     """Grammar, not brace-counting. A `}` inside a string is a character, and counting it
     as the end of a block drops every declaration after it in that rule. A comment's
-    braces are not braces either. An @media wraps rules that state widths, and under
-    nesting a rule states its own width as well as wrapping others — which a walk that
-    reads only the innermost block never sees."""
+    braces are not braces either. And an @media wraps rules of its own, which a walk that
+    read the sheet as one flat run of blocks would attribute to the query."""
 
-    def checked(css, body='<svg width="10" height="10"></svg>'):
-        (page_dir / "versions" / "v1.html").write_text(styled(css, body))
+    def checked(css):
+        (page_dir / "versions" / "v1.html").write_text(styled(css))
         return check(page_dir)
 
     assert "sets width: 900px" in checked("@media print { .wide { width: 900px } }").output
     assert "sets width: 900px" in checked('.wide::before { content: "}"; width: 900px }').output
     assert checked("/* .wide { width: 900px } */").exit_code == 0
-    # A nested rule's parent declares the column it also wraps rules inside.
-    assert (
-        checked(
-            "main { max-width: 1000px; & p { color: red } }", '<svg width="900" height="10"></svg>'
-        ).exit_code
-        == 0
+
+
+def test_check_takes_its_column_from_what_a_page_states_outright(page_dir):
+    """A rule inside an at-rule applies only when a condition this check never evaluates
+    holds, which cuts both ways. It cannot set the column, because the column is the
+    baseline everything else is measured against — reading it there let one line of print
+    CSS measure every screen element against 2000px and pass the page. It can overflow
+    one, because a pin is a risk rather than a baseline: it is too wide whenever its
+    condition holds."""
+    (page_dir / "versions" / "v1.html").write_text(
+        styled(
+            "main { max-width: 760px } @media print { main { max-width: 2000px } }",
+            '<svg width="900" height="10"></svg>',
+        )
     )
+    result = check(page_dir)
+    assert result.exit_code == 1
+    assert '<svg width="900"> exceeds column (760px)' in result.output
+
+    # And nesting is not a condition: a column stated on a rule that also wraps one stands.
+    (page_dir / "versions" / "v1.html").write_text(
+        styled("main { max-width: 1000px; & p { color: red } }", '<svg width="900" height="10"></svg>')
+    )
+    assert check(page_dir).exit_code == 0
 
 
 def test_check_counts_only_a_width_fixed_in_pixels(page_dir):

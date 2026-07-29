@@ -1852,21 +1852,23 @@ def css_block(css):
 
 
 def css_rules(css: str):
-    """(selector, block) per qualified rule, at every depth. A rule inside an @media or
-    nested in another rule states a width like any other, and a rule that holds both
-    declarations and a nested rule states one of its own."""
+    """(selector, block, conditional) per qualified rule, at every depth — a rule that
+    holds both declarations and a nested rule states one of its own. `conditional` is
+    true for a rule inside an at-rule, which applies only when a condition this check
+    never evaluates holds: `@media print`, a viewport query. Nesting alone is not a
+    condition, so a rule nested in a conditional one is conditional and no more."""
     yield from _rules(tinycss2.parse_stylesheet(css, skip_comments=True, skip_whitespace=True))
 
 
-def _rules(nodes):
-    """`nodes` and every rule nested inside them, as (selector, block)."""
+def _rules(nodes, conditional=False):
+    """`nodes` and every rule nested inside them, as (selector, block, conditional)."""
     for node in nodes:
         if node.type == "qualified-rule":
             block = css_block(node.content)
-            yield tinycss2.serialize(node.prelude).strip(), block
-            yield from _rules(block)
+            yield tinycss2.serialize(node.prelude).strip(), block, conditional
+            yield from _rules(block, conditional)
         elif node.type == "at-rule" and node.content:
-            yield from _rules(css_block(node.content))
+            yield from _rules(css_block(node.content), True)
 
 
 def _number(text: str):
@@ -1900,12 +1902,18 @@ def _px_widths(declarations, props: tuple):
 
 def _column_width(page_css: str, theme_css: str) -> int:
     """Best-effort readable-column width from the max-width of a container rule.
-    A page's own <style> wins over the vendored theme, which wins over the fallback."""
+    A page's own <style> wins over the vendored theme, which wins over the fallback.
+
+    Only what a stylesheet states outright counts: a column is the baseline everything
+    else is measured against, so it has to be certain, and a conditional rule states a
+    column for some condition rather than for the page. Reading them too let a page
+    disable this check with one line of print CSS — `@media print { main { max-width:
+    2000px } }` measured every screen element against 2000px."""
     for css in (page_css, theme_css):
         widths = [
             px
-            for selector, block in css_rules(css)
-            if any(sel in selector for sel in COLUMN_SELECTORS)
+            for selector, block, conditional in css_rules(css)
+            if not conditional and any(sel in selector for sel in COLUMN_SELECTORS)
             for _, px in _px_widths(block, ("max-width",))
         ]
         if widths:
@@ -1915,9 +1923,12 @@ def _column_width(page_css: str, theme_css: str) -> int:
 
 def _overwide_elements(parser: _StructParser, column: int) -> list:
     """Everything a version pins wider than the column: its own rules, its inline
-    styles, and the width="" attributes that count as pixels."""
+    styles, and the width="" attributes that count as pixels.
+
+    A conditional rule counts here, where it cannot define the column: a pin is a risk
+    rather than a baseline, and it overflows whenever its condition holds."""
     hits = []
-    for selector, block in css_rules(parser.css):
+    for selector, block, _ in css_rules(parser.css):
         for prop, px in _px_widths(block, OVERFLOW_PROPS):
             if px > column:
                 hits.append(f"rule `{selector}` sets {prop}: {px:g}px (column is {column}px)")
