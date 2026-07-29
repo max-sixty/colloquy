@@ -10,6 +10,7 @@ Run from the repo root:
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -887,6 +888,110 @@ def test_check_takes_column_width_from_vendored_theme(page_dir):
     assert "exceeds column (760px)" in result.output
 
 
+def test_media_names_a_file_by_its_bytes_and_serves_it(page_dir, tmp_path, server):
+    """An image reaches a page by reference, because the page's author is a language
+    model and a screenshot is a megabyte of base64 it cannot type. The name is the
+    hash of the bytes, which is what lets the page directory keep its promise while
+    holding content: two versions showing the same screenshot share the one file, and
+    a name the reviewer has already approved can never come to mean different pixels."""
+    shot = tmp_path / "nav.png"
+    shot.write_bytes(b"\x89PNG\r\n\x1a\n" + b"pretend pixels")
+    (url,) = [u for _, u in interact.cmd_media(page_dir, [shot])]
+    assert re.fullmatch(r"/media/[a-f0-9]{16}\.png", url)
+    # Re-adding the same bytes is the same file, not a second copy of it.
+    assert interact.cmd_media(page_dir, [shot])[0][1] == url
+    assert len(list((page_dir / "media").iterdir())) == 1
+
+    status, body = fetch(server + url)
+    assert (status, body) == (200, shot.read_bytes())
+    # And nothing else out of the directory: the log is not a served path.
+    assert fetch(server + "/comments.jsonl")[0] == 404
+
+
+def test_check_names_a_media_reference_the_directory_cannot_answer(page_dir):
+    """A broken image is silent in the file and obvious on the page. The render gate
+    would see the 404, but it runs once; this runs on every version, and whether a
+    file is there is as deterministic as whether an id is."""
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><p><img alt="x" src="/media/deadbeefdeadbeef.png"></p>')
+    )
+    result = check(page_dir)
+    assert result.exit_code == 1
+    assert "/media/deadbeefdeadbeef.png isn't in the page directory" in result.output
+
+    # A mention is not a reference: a page explaining colloquy writes one of these
+    # paths in its prose, and reading the markup rather than the attributes would
+    # send its author hunting for a screenshot the page never asks for.
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace(
+            "<h2>Plan</h2>",
+            '<h2>Plan</h2><p>Write it as <code>"/media/deadbeefdeadbeef.png"</code>.</p>',
+        )
+    )
+    assert check(page_dir).exit_code == 0
+
+
+def test_check_reads_only_the_page_stylesheet_and_stays_near_free(page_dir):
+    """A version's CSS is what its <style> blocks hold. Reading the whole file as one
+    made a megabyte of base64 (one screenshot as a data: URI) into a stylesheet to walk,
+    and the rule scanner used to backtrack quadratically across any long brace-free run,
+    which took the better part of an hour. The clock bound is three orders of magnitude
+    above the fixed cost, so it fails on a re-introduced quadratic and not on a slow
+    machine; the assertion above it fails on the shape that fed it the page."""
+    blob = "A" * 1_000_000
+    html = PAGE.replace("<h2>Plan</h2>", f'<h2>Plan</h2><p><img alt="shot" src="data:image/png;base64,{blob}"></p>')
+    (page_dir / "versions" / "v1.html").write_text(html)
+    parser = interact._StructParser()
+    parser.feed(html)
+    parser.close()
+    assert parser.css == ""
+
+    started = time.monotonic()
+    assert check(page_dir).exit_code == 0
+    assert time.monotonic() - started < 10
+
+
+def test_css_rules_reads_leaf_rules_past_nesting_and_comments(page_dir):
+    """Braces delimit a rule, so @media yields the rules it wraps rather than itself —
+    and a commented-out rule's braces are not braces, or the walk would read the rest of
+    the sheet one nesting level deep."""
+    assert list(interact.css_rules("main { max-width: 760px }")) == [("main", " max-width: 760px ")]
+    assert list(interact.css_rules("@media print { .cq-ui { display: none } }")) == [
+        (".cq-ui", " display: none ")
+    ]
+    assert list(interact.css_rules("/* .old { width: 900px } */ main { max-width: 760px }")) == [
+        ("main", " max-width: 760px ")
+    ]
+
+
+def test_check_measures_against_the_column_the_page_sets_for_itself(page_dir):
+    """A page-local <style> is the page's own answer to how wide it reads, so it wins
+    over the vendored theme's 760px and an element wider than the theme allows passes."""
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace("</head>", "<style>main { max-width: 1000px }</style></head>").replace(
+            "<h2>Plan</h2>", '<h2>Plan</h2><svg width="900" height="10"></svg>'
+        )
+    )
+    assert check(page_dir).exit_code == 0
+
+
+def test_check_reads_widths_where_the_document_states_them(page_dir):
+    """A width is what an attribute or a <style> block states. Scanning the file's text
+    for one instead read a rule quoted in the page's prose as a rule the page applies,
+    and never saw a style="" written with the other quote character."""
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2><div style='width:900px'>wide</div>")
+    )
+    result = check(page_dir)
+    assert result.exit_code == 1
+    assert "inline style width: 900px (column is 760px)" in result.output
+
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2><p>Write it as <code>.wide { width: 900px }</code>.</p>")
+    )
+    assert check(page_dir).exit_code == 0
+
+
 @pytest.fixture
 def server(page_dir):
     """A real HTTP server over the page directory, on an ephemeral port."""
@@ -1390,6 +1495,8 @@ def test_the_runtimes_cq_id_namespace_is_off_limits(page_dir):
 
 
 def test_export_prints_threads_and_versions(page_dir):
+    # The heading is the page's title as a reader sees it, entities and all.
+    (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<title>t</title>", "<title>Cutoff &amp; backfill</title>"))
     CliRunner().invoke(interact.cli, ["note", str(page_dir), "--version", "1", "--text", "first cut"])
     interact.append_event(
         page_dir,
@@ -1416,6 +1523,7 @@ def test_export_prints_threads_and_versions(page_dir):
     )
     result = CliRunner().invoke(interact.cli, ["export", str(page_dir)])
     assert result.exit_code == 0, result.output
+    assert "## Review: Cutoff & backfill" in result.output
     assert "- v1: first cut" in result.output
     # The reviewer's direct edits are review outcomes, not just events.
     assert "### Edits" in result.output

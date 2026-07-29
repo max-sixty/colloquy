@@ -39,6 +39,7 @@ it runs verbatim in any shell.
 ```bash
 colloquy init <dir>                          # create layout, vendor the widget layer
 colloquy catalog <dir>                       # the page's vocabulary: widgets + theme idioms
+colloquy media <dir> <file>…                 # put images in the page; prints each src to write
 colloquy serve <dir>                         # background task; prints the URL
 colloquy status <dir> working "<detail>"     # or: waiting, idle
 colloquy wait <dir>                          # background task; exits on new user events
@@ -166,6 +167,20 @@ prerequisite.
   Give any element that can overflow (a `<pre>`, a `<table>`, an `<svg>`)
   `max-width: 100%` or `overflow-x: auto`, and size diagrams responsively rather than a
   fixed pixel width wider than the column. `check` flags fixed widths that exceed it.
+- **Images come in by reference, never inline.** `colloquy media <dir> <file>…` copies
+  files into the page directory and prints the `src` to write; that path is the only
+  form an image takes on a page, because a base64 `data:` URI is more bytes than you
+  can usefully type and it would sit in every version forever. Each file is named by
+  the hash of its bytes, so two versions showing one screenshot share one copy and a
+  version the reader approved cannot come to show them something else. `check` refuses
+  a `/media/` reference the directory can't answer.
+  Where the deliverable is a change to a UI with a real *before* state, let the reader
+  compare the renders rather than describing what moved: a `cq-shot` holds the pair and
+  flips between them in place. Capture both states at the same viewport (the
+  `/playwright-cli:playwright-cli` skill drives the browser; render the base commit in
+  a second worktree rather than stashing). Say in prose what changed — a downscaled
+  full-page shot shows that something moved and not what, and the column is 760px, so
+  crop to the part that moved wherever the change is smaller than the page.
 - **Show real content as evidence; quote invented content in a specimen.** Prefer
   putting the actual file contents, diff, or output behind `<details>` over
   paraphrasing it. An example that merely exhibits syntax or a widget goes in a

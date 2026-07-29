@@ -93,6 +93,27 @@ stands alone.
       the hero image shows the old behavior twice over.
       `scripts/record-demo.sh` prints a shot list for a human to drive.
 - [ ] Widgets deferred until a page wants them: risks, verdict.
+- [ ] A `cq-shot` pair has no difference view. The script this came from toggled in an
+      ImageMagick heat-map of the changed pixels and printed the count, and its own
+      documentation then said not to trust either: downscale and anti-aliasing inflate
+      the count with no real change, and a reflow paints everything below it red. The
+      flip does that job better and needs nothing on PATH — a change the heat-map would
+      have marked is a change the flip makes move. Worth revisiting only if a real pair
+      defeats the eye, and then in Python (`uv` stays the one prerequisite) rather than
+      on a canvas, which a page with no script can't paint.
+- [ ] A full-page screenshot is illegible in a 760px column — a 1300px desktop shot lands
+      at 58%, and body text in it is unreadable at any color scheme. `cq-shot` says so and
+      tells the author to crop, which works, but the advice is the whole answer: there is
+      no zoom, and the reader's way to the pixels is the browser's own "open image in new
+      tab". A link would be the obvious affordance and is what the first draft had; it came
+      out because a click on the image is how a comment on it opens, and the two gestures
+      were competing for the same pixels. Wants either an affordance outside the frame or a
+      widget allowed to exceed the column, which nothing else on a page may do.
+- [ ] `cq-shot` isn't in `examples/`, so the render suite covers it through its own
+      fixtures rather than through the corpus every other widget shares. An example would
+      mean committing screenshots and regenerating `gallery.html` around them; worth doing
+      the next time an example page has a real before/after to show, rather than staging
+      one for the sake of the corpus.
 - [ ] Render tests, next tier — deferred while the chrome is still being
       designed, because each is a baseline that re-records on every deliberate
       restyle: a per-example box dump (id/tag, position, size on a 4px grid —

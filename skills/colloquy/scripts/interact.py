@@ -24,6 +24,13 @@ A page directory holds:
                          statement of what this page's vendored runtime speaks
     widgets/             one ES module per upgraded widget (cq-ref.js, cq-diagram.js)
     vendor/              vendored third-party assets (mermaid.min.js, sortable.esm.js)
+    media/               images the page shows, each named by the hash of its bytes
+                         (`media`). Not vendored — this is the page's content, not the
+                         layer's — but served the same way, and content-addressing is
+                         what lets content live here at all: a name means one set of
+                         bytes forever, so a version the reviewer approved cannot show
+                         them different pixels later, and two versions showing the same
+                         screenshot share the one file rather than a copy each
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
     status.json          Claude's declared state: {"state": working|waiting|idle, "detail", "ts"};
                          `wait` writes it working with "handoff": true when it delivers events,
@@ -115,7 +122,7 @@ comment neither wakes its watcher nor reads as unanswered. What Claude cannot do
 that happened; closing one from this side would file it away unread.
 
 Commands:
-    init serve status wait comment reply note events stop check catalog export
+    init media serve status wait comment reply note events stop check catalog export
 
 `check` is a deterministic pre-handover lint (no browser, near-free — `note`
 re-runs it on every version): the HTML parses with balanced tags; the page
@@ -151,6 +158,7 @@ detaches later in the reviewer's browser. Element-anchor an opaque widget instea
 """
 
 import errno
+import hashlib
 import json
 import os
 import re
@@ -187,16 +195,33 @@ BROWSER_EVENT_FIELDS = {
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 VENDORED_FILES = ("colloquy.js", "theme.css", "registry.json")
 VENDORED_DIRS = ("widgets", "vendor")
-# What the server exposes from a page directory: exactly what init vendors,
-# plus the versions — built from the vendoring constants, so growing them grows
-# this. The dir patterns are keyed by VENDORED_DIRS: vendoring a new dir
-# without saying what it may serve fails here, at import.
-_DIR_FILES = {"widgets": r"[a-z0-9-]+\.js", "vendor": r"[A-Za-z0-9._-]+"}
+# Images the page shows, named by the hash of their bytes (`media`). Not vendored
+# — they are the page's content, not the layer's — but served like it, and the
+# naming is what keeps the directory's promise: same name, same bytes, so a
+# version the reviewer approved cannot show them something else later.
+MEDIA_DIR = "media"
+MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+# What the server exposes from a page directory: exactly what init vendors, plus
+# the media and the versions — built from the vendoring constants, so growing
+# them grows this. The dir patterns are keyed by the directories themselves:
+# vendoring a new dir without saying what it may serve fails here, at import.
+_DIR_FILES = {
+    "widgets": r"[a-z0-9-]+\.js",
+    "vendor": r"[A-Za-z0-9._-]+",
+    MEDIA_DIR: r"[a-f0-9]{16}(?:" + "|".join(re.escape(e) for e in MEDIA_TYPES) + ")",
+}
 SERVED_PATH = re.compile(
     "/(?:"
     + "|".join(
         [re.escape(f) for f in VENDORED_FILES]
-        + [f"{d}/{_DIR_FILES[d]}" for d in VENDORED_DIRS]
+        + [f"{d}/{_DIR_FILES[d]}" for d in (*VENDORED_DIRS, MEDIA_DIR)]
         + [r"versions/v[0-9]+\.html"]
     )
     + ")"
@@ -206,7 +231,9 @@ CONTENT_TYPES = {
     ".css": "text/css",
     ".json": "application/json",
     ".html": "text/html",
+    **MEDIA_TYPES,
 }
+BINARY_TYPES = frozenset(MEDIA_TYPES.values()) - {"image/svg+xml"}
 
 # On Windows there is no fcntl; the append lock degrades to a no-op. The log is
 # append-only and a torn final line is tolerated by read_events, so this only
@@ -519,7 +546,11 @@ class Handler(BaseHTTPRequestHandler):
             # resolve to directories.
             if file.is_file():
                 ctype = CONTENT_TYPES.get(Path(path).suffix, "application/octet-stream")
-                self._send(200, f"{ctype}; charset=utf-8", file.read_bytes())
+                # charset describes an encoding, so it rides on the types that
+                # have one. On a PNG it is noise.
+                if ctype not in BINARY_TYPES:
+                    ctype += "; charset=utf-8"
+                self._send(200, ctype, file.read_bytes())
                 return
         self._json({"error": "not found"}, 404)
 
@@ -605,6 +636,28 @@ def cmd_init(page_dir: Path, retire_vocabulary: bool = False) -> None:
     if not (page_dir / "status.json").exists():
         cmd_status(page_dir, "working", "Writing the page")
     print(f"initialized {page_dir}")
+
+
+def cmd_media(page_dir: Path, files: list) -> list:
+    """Copy images into the page's media directory, named by the hash of their
+    bytes; returns (source, served path) per file, in the order given.
+
+    Content-addressing is doing two jobs. It keeps the directory's promise —
+    a name can only ever mean one set of bytes, so a version the reviewer
+    approved shows them the same picture forever, which is the same guarantee
+    vendoring gives the layer. And it de-duplicates for free: a version that
+    re-shows last version's screenshot re-uses the file rather than a second
+    copy of it, which is what makes the review history cheap to keep."""
+    out = []
+    (page_dir / MEDIA_DIR).mkdir(exist_ok=True)
+    for src in files:
+        if src.suffix.lower() not in MEDIA_TYPES:
+            sys.exit(f"{src}: not an image colloquy serves — {', '.join(sorted(MEDIA_TYPES))}")
+        data = src.read_bytes()
+        name = hashlib.sha256(data).hexdigest()[:16] + src.suffix.lower()
+        (page_dir / MEDIA_DIR / name).write_bytes(data)
+        out.append((str(src), f"/{MEDIA_DIR}/{name}"))
+    return out
 
 
 def cmd_serve(page_dir: Path) -> None:
@@ -876,8 +929,10 @@ def cmd_export(page_dir: Path) -> None:
     versions = list_versions(page_dir)
     title = ""
     if versions:
-        m = re.search(r"<title>(.*?)</title>", (page_dir / "versions" / versions[-1]).read_text(encoding="utf-8"), re.DOTALL)
-        title = m.group(1).strip() if m else ""
+        parser = _StructParser()
+        parser.feed((page_dir / "versions" / versions[-1]).read_text(encoding="utf-8"))
+        parser.close()
+        title = parser.title.strip()
     print(f"## Review: {title or page_dir.name}")
 
     notes = [e for e in events if e["kind"] == "note"]
@@ -1098,6 +1153,9 @@ COLUMN_SELECTORS = ("main", "body", "article", ".container", ".wrap", ".content"
 COLUMN_FALLBACK = 780
 # Attribute widths only count as pixels on these elements.
 PIXEL_WIDTH_TAGS = {"img", "svg", "table", "canvas", "iframe", "video", "object"}
+# The properties that overflow a column when pinned in pixels. max-width defines the
+# column instead, so it is read there and never counted here.
+OVERFLOW_PROPS = ("width", "min-width")
 # Page-level declarations the runtime reads from <meta name="cq-*"> in the head,
 # name → allowed content values (None = free-form). A misspelled name or value
 # would silently declare nothing in the browser, so `check` owns this vocabulary
@@ -1122,11 +1180,12 @@ def implicit_closes(open_tags: list, tag: str) -> int:
 
 
 class _StructParser(HTMLParser):
-    """Tracks a tag stack to catch unclosed and mismatched tags, and collects
-    element ids, every <script src> tag, stylesheet links, and each cq-* element
-    (attributes, direct parent, direct children, direct text) for registry
-    validation. Foreign markup inside <svg> is skipped (SVG has its own
-    self-closing rules that don't matter here)."""
+    """Tracks a tag stack to catch unclosed and mismatched tags, and collects what the
+    rest of `check` reads off a version: element ids, every <script src> tag,
+    stylesheet links, each cq-* element (attributes, direct parent, direct children,
+    direct text) for registry validation, the page's title, and everything it says
+    about width. Foreign markup inside <svg> is skipped (SVG has its own self-closing
+    rules that don't matter here)."""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -1136,6 +1195,18 @@ class _StructParser(HTMLParser):
         self.external_scripts = []  # (src, type)
         self.stylesheets = []  # hrefs of rel=stylesheet links
         self.cq_metas = []  # {"name", "content", "line"} for <meta name="cq-*">
+        # /media/ paths any attribute points at, so the check that the file is
+        # there reads references and not mentions: a page documenting colloquy
+        # writes one of these paths in prose, and a raw scan of the markup
+        # would send its author hunting for a screenshot nothing asks for.
+        self.media_refs = set()
+        # What the version says about width, each where a document says it: CSS is
+        # what a <style> block holds, and a fixed width is what a rule, a style="" or
+        # a width="" states. The column check reads these three and nothing else.
+        self.css = ""
+        self.inline_styles = []  # each style="" declaration list
+        self.attr_widths = []  # (tag, value) per width="" that counts as pixels
+        self.title = ""  # what <title> says, for the export's heading
         # {"tag", "line", "attrs", "parent", "children", "text"}
         self.cq_elements = []
         # {"id", "resolves", "line", "slots", "old_ids", "new_ids", "nested"} per
@@ -1205,6 +1276,13 @@ class _StructParser(HTMLParser):
             self.cq_metas.append(
                 {"name": attrs_d["name"], "content": attrs_d.get("content"), "line": self.getpos()[0]}
             )
+        if attrs_d.get("style"):
+            self.inline_styles.append(attrs_d["style"])
+        if tag in PIXEL_WIDTH_TAGS and attrs_d.get("width"):
+            self.attr_widths.append((tag, attrs_d["width"]))
+        self.media_refs.update(
+            v for v in attrs_d.values() if v and v.startswith(f"/{MEDIA_DIR}/")
+        )
 
     def handle_starttag(self, tag, attrs):
         attrs_d = dict(attrs)
@@ -1282,6 +1360,11 @@ class _StructParser(HTMLParser):
     def handle_data(self, data):
         if self.stack and self.stack[-1][2] is not None and data.strip():
             self.stack[-1][2]["text"] = True
+        holder = self.stack[-1][0] if self.stack else None
+        if holder == "style":
+            self.css += data
+        elif holder == "title":
+            self.title += data
 
     def handle_endtag(self, tag):
         if tag == "svg":
@@ -1755,49 +1838,110 @@ def _removed_by(html, registry, wanted: str, section: str, decided, rewritten):
     return None
 
 
-def _column_width(html: str, theme_css: str = "") -> int:
+# ---------- the readable column ----------
+# The version's own stylesheet, read the way CSS is written: braces delimit a rule, `;`
+# a declaration, `:` its property from its value. What a version pins in pixels then
+# comes off the parser, since a rule, a style="" and a width="" are the three places a
+# document states a width.
+
+
+def _uncommented(css: str) -> str:
+    """`css` with its comments taken out. They are grammar rather than noise here: a
+    commented-out rule still carries braces, and a walk that counted them would read
+    the rest of the sheet one nesting level deep."""
+    out = []
+    while True:
+        head, sep, css = css.partition("/*")
+        out.append(head)
+        if not sep:
+            return "".join(out)
+        _, _, css = css.partition("*/")
+
+
+def css_rules(css: str):
+    """(selector, body) per leaf rule — a nested at-rule yields the rules inside it
+    rather than itself, since only a leaf holds declarations."""
+    css = _uncommented(css)
+    stack, mark = [], 0
+    for i, ch in enumerate(css):
+        if ch == "{":
+            if stack:
+                stack[-1][2] = False  # it wraps rules, so it declares nothing itself
+            stack.append([css[mark:i].strip(), i, True])
+            mark = i + 1
+        elif ch == "}":
+            if stack:
+                selector, opened, leaf = stack.pop()
+                if leaf and selector:
+                    yield selector, css[opened + 1:i]
+            mark = i + 1
+
+
+def css_declarations(css: str):
+    """(property, value) per declaration in a declaration list — a rule's body, or a
+    style="" attribute, which is one without the braces."""
+    for declaration in css.split(";"):
+        prop, sep, value = declaration.partition(":")
+        if sep:
+            yield prop.strip().lower(), value.strip()
+
+
+def _number(text: str):
+    """`text` as a number, or None when it is not one."""
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _px(value: str):
+    """The pixel length a CSS value states, or None for one that states something
+    else: a percentage, a vw, a calc() whose last term happens to end in px. Only a
+    fixed pixel width is a hard overflow."""
+    value = value.strip().lower()
+    return _number(value[:-2]) if value.endswith("px") else None
+
+
+def _px_widths(css: str, props: tuple):
+    """(property, pixels) per declaration in `props` that a declaration list pins to a
+    fixed pixel length."""
+    for prop, value in css_declarations(css):
+        px = _px(value) if prop in props else None
+        if px is not None:
+            yield prop, px
+
+
+def _column_width(page_css: str, theme_css: str) -> int:
     """Best-effort readable-column width from the max-width of a container rule.
     A page's own <style> wins over the vendored theme, which wins over the fallback."""
-    for css in (html, theme_css):
-        widths = []
-        for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
-            selector, body = m.group(1), m.group(2)
-            if not any(sel in selector for sel in COLUMN_SELECTORS):
-                continue
-            mw = re.search(r"max-width\s*:\s*(\d+(?:\.\d+)?)px", body)
-            if mw:
-                widths.append(float(mw.group(1)))
+    for css in (page_css, theme_css):
+        widths = [
+            px
+            for selector, body in css_rules(css)
+            if any(sel in selector for sel in COLUMN_SELECTORS)
+            for _, px in _px_widths(body, ("max-width",))
+        ]
         if widths:
             return int(max(widths))
     return COLUMN_FALLBACK
 
 
-def _overwide_elements(html: str, column: int) -> list:
-    """Fixed pixel widths (width/min-width) that exceed the column. Percentages,
-    vw, and unitless viewBox numbers are ignored — only px is a hard overflow."""
+def _overwide_elements(parser: _StructParser, column: int) -> list:
+    """Everything a version pins wider than the column: its own rules, its inline
+    styles, and the width="" attributes that count as pixels."""
     hits = []
-    # CSS rules: width / min-width in px (not max-width).
-    for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", html):
-        selector, body = m.group(1).strip(), m.group(2)
-        for prop in ("width", "min-width"):
-            wm = re.search(rf"(?<!-){prop}\s*:\s*(\d+(?:\.\d+)?)px", body)
-            if wm and float(wm.group(1)) > column:
-                hits.append(f"rule `{selector}` sets {prop}: {wm.group(1)}px (column is {column}px)")
-    # Inline style="… width: Npx …".
-    for m in re.finditer(r'style\s*=\s*"([^"]*)"', html):
-        css = m.group(1)
-        for prop in ("width", "min-width"):
-            wm = re.search(rf"(?<!-){prop}\s*:\s*(\d+(?:\.\d+)?)px", css)
-            if wm and float(wm.group(1)) > column:
-                hits.append(f'inline style {prop}: {wm.group(1)}px (column is {column}px)')
-    # width="N" attributes on raster/media elements (treated as px).
-    for m in re.finditer(r"<(\w+)\b([^>]*)>", html):
-        tag, rest = m.group(1).lower(), m.group(2)
-        if tag not in PIXEL_WIDTH_TAGS:
-            continue
-        wm = re.search(r'\bwidth\s*=\s*"(\d+(?:\.\d+)?)"', rest)
-        if wm and float(wm.group(1)) > column:
-            hits.append(f'<{tag} width="{wm.group(1)}"> exceeds column ({column}px)')
+    for selector, body in css_rules(parser.css):
+        for prop, px in _px_widths(body, OVERFLOW_PROPS):
+            if px > column:
+                hits.append(f"rule `{selector}` sets {prop}: {px:g}px (column is {column}px)")
+    for style in parser.inline_styles:
+        for prop, px in _px_widths(style, OVERFLOW_PROPS):
+            if px > column:
+                hits.append(f"inline style {prop}: {px:g}px (column is {column}px)")
+    for tag, value in parser.attr_widths:
+        px = _number(value)
+        if px is not None and px > column:
+            hits.append(f'<{tag} width="{value}"> exceeds column ({column}px)')
     return hits
 
 
@@ -2478,9 +2622,17 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     if taken:
         errors.append(f"ids already taken by widget markup in a reply: {taken}")
 
+    # A /media/ reference the directory can't answer renders as a broken image.
+    # The render gate would catch it as a 404, but that runs once a page; this
+    # runs on every version, and a missing file is as deterministic as a missing
+    # id.
+    for ref in sorted(parser.media_refs):
+        if not (page_dir / ref.lstrip("/")).is_file():
+            errors.append(f"{ref} isn't in the page directory — `colloquy media` puts it there")
+
     theme_css = (page_dir / "theme.css").read_text(encoding="utf-8") if (page_dir / "theme.css").exists() else ""
-    column = _column_width(html, theme_css)
-    errors.extend(_overwide_elements(html, column))
+    column = _column_width(parser.css, theme_css)
+    errors.extend(_overwide_elements(parser, column))
 
     if errors:
         print(f"✗ {name}: {len(errors)} issue(s)", file=sys.stderr)
@@ -2547,7 +2699,12 @@ UNREACHABLE_WORDS = """() => {
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
         const el = n.parentElement;
         if (!n.data.trim() || !el.closest('.cq-ui') || !widget(el)) continue;
-        if (!el.closest('button, textarea, input, select, .cq-mark-note'))
+        // Where a control's own words may sit. `label` is on the list because a
+        // radio and a checkbox have nowhere else to put theirs: a button holds
+        // its words, an input cannot, and HTML's answer is an element beside it.
+        // cq-shot's flip is radios, so that it keeps working in a page whose
+        // script is gone.
+        if (!el.closest('button, textarea, input, select, label, .cq-mark-note'))
             found.push(`${at(widget(el))} puts ${JSON.stringify(n.data.trim().slice(0, 40))} `
                        + `under .cq-ui, where no comment can reach it`);
     }
@@ -2813,6 +2970,20 @@ def init(dir: str, retire_vocabulary: bool) -> None:
     a vocabulary the incoming layer no longer speaks (--retire-vocabulary
     overrides, discarding those events' replay for good)."""
     cmd_init(resolve_dir(dir, must_exist=False), retire_vocabulary)
+
+
+@cli.command()
+@click.argument("dir")
+@click.argument("files", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False))
+def media(dir: str, files) -> None:
+    """Put images in the page directory; prints the src to write for each.
+
+    A page cannot inline a screenshot the way it inlines a diagram: the author is
+    a language model, and a megabyte of base64 is not something it can type. So an
+    image arrives by reference — copied in here, and written into the version as
+    the printed path."""
+    for src, url in cmd_media(resolve_dir(dir), [Path(f) for f in files]):
+        print(f"{url}\t{src}")
 
 
 @cli.command()

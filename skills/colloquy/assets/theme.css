@@ -443,6 +443,40 @@ cq-tabs.cq-rendered > cq-tab[hidden]:not([hidden="until-found"]) { display: none
   cq-tabs.cq-rendered > cq-tab::before { content: attr(label); }
 }
 
+/* cq-shot: a before/after pair of screenshots, one on screen at a time. Both
+ * frames occupy the same grid cell, so the box is the taller of the two and
+ * flipping between them moves nothing under it — which is the whole point, the
+ * change being the only thing that shifts. The switch is a radio group and one
+ * :has(:checked) rule, so it runs with no script behind it: in a page whose
+ * handlers are gone, and after a `min-width` media query too narrow for the
+ * radios to be worth showing. Print shows both frames stacked, since paper has
+ * nothing to press — the radios drop with the other offers and the captions,
+ * which are the only words saying which frame is which, stay. */
+cq-shot { display: block; margin: 16px 0; }
+cq-shot .cq-shotframe { position: relative; grid-area: 1 / 1;
+    border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden;
+    background: var(--card); }
+cq-shot:has(.cq-shotframe) { display: grid; }
+cq-shot .cq-shotframe img { display: block; width: 100%; height: auto; }
+cq-shot:has(input[value="after"]:checked) .cq-shotframe[data-cq-state="before"],
+cq-shot:has(input[value="before"]:checked) .cq-shotframe[data-cq-state="after"] {
+    visibility: hidden; }
+cq-shot .cq-shotcap { position: absolute; top: 6px; left: 6px;
+    font-size: var(--t-6); text-transform: uppercase; letter-spacing: .05em;
+    padding: 2px 7px; border-radius: 999px; background: var(--veil);
+    border: 1px solid var(--rule); color: var(--muted); }
+cq-shot .cq-shotpick { grid-area: 2 / 1; display: flex; gap: var(--sp-3);
+    align-items: center; margin-top: var(--sp-2); font-size: var(--t-5);
+    color: var(--muted); }
+cq-shot .cq-shotpick label { display: inline-flex; gap: 5px; align-items: center;
+    cursor: pointer; }
+cq-shot .cq-shotpick input:focus-visible { outline: 2px solid var(--accent);
+    outline-offset: 1px; }
+@media print {
+  cq-shot, cq-shot:has(.cq-shotframe) { display: block; }
+  cq-shot .cq-shotframe { visibility: visible !important; margin-bottom: var(--sp-2); }
+}
+
 /* cq-suggestion / cq-old / cq-new: a proposed change to reviewed content. The
  * wrapper generates no box, so a suggestion sits inline mid-sentence or wraps
  * whole sections without disturbing either flow; the slots carry the marks,

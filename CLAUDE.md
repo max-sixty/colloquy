@@ -42,6 +42,14 @@ Six things, and nothing between them:
 The whole layer is vendored into each page directory at `init`. A page you approved can't
 change under you when the defaults do.
 
+A page's own images are the one thing in that directory the layer doesn't put there, and
+they hold the same promise a different way: `media` names each file by the hash of its
+bytes, so a name can only ever mean one picture. That is also the only door an image has.
+The page's author is a language model, and a screenshot is a megabyte of base64 it cannot
+type — nor should each version carry a copy of one that a `check` walks and a browser
+reloads. So the transport was never an optimisation over inlining; inlining was never
+available.
+
 ## Norms
 
 Each of these was learned by getting it wrong. The failure is named because the rule
@@ -93,6 +101,14 @@ says slices it (`spoken`) rather than walking the markup again. A fifth answer w
 been quiet and wrong in the usual way: an attribute the registry marks `x-says` is a word
 on the page, and a walk that only sees text nodes would say a picked option's `effort`
 never changed.
+
+Two parsers read a version and nothing else does: `_StructParser` for what its markup
+declares, `page_passages` for what it says. A new question about a version is a field on
+one of them rather than a pattern over the file's text, because a pattern answers
+something adjacent to the question asked. The column check's three did: the document read
+as a stylesheet handed a screenshot's base64 to the rule walker, `width` needed a
+lookbehind to exclude `max-width` because it matched a name instead of reading a property,
+and the scan for `style=""` never saw one written with the other quote.
 
 ### The file's reading never claims more than the page's
 
@@ -261,6 +277,25 @@ textarea and posted with their edit. And a widget asking what its own slot holds
 it legitimately, and `cq-suggestion` labelled itself from the raw text and offered to
 accept "Retry three times. 1 comment". The first rule keeps the line out of a widget's
 content; the second is for where it belongs there anyway.
+
+### A widget's chrome outlives its handlers
+
+`cq-shot` flips between two screenshots with a radio group and one `:has(:checked)` rule,
+where a dragged wipe divider would have read more naturally. The reason is what a colloquy
+page becomes once it leaves the server: rendered DOM, script tags dropped. The upgrade has
+already run, so everything a module built is still on the page — and nothing it bound is.
+A slider would freeze wherever the last reader left it. A radio's state belongs to the
+browser, and CSS can see it.
+
+That cuts both ways, and the first draft got the other half wrong: `checked` set as a
+property leaves no attribute to serialize, so the standalone copy opened with neither
+frame chosen and both of them stacked in the one cell. What a widget wants to survive
+goes in an attribute, and the test that proves it strips every `<script>` before asking.
+
+Print is the same question asked by a medium that has always been script-less, which is
+why the answers coincide: paper drops the radios and stacks both frames, and the captions
+naming them are `data-cq-gen` rather than `.cq-ui` — a frame's caption is the widget's own
+word, like a column's heading, not a control's like "Save".
 
 ### The chrome's rules stay inside the chrome
 

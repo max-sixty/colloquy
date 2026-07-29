@@ -27,13 +27,17 @@ Chrome is driven through Playwright's `channel="chrome"`, which attaches to the
 installed browser: no download, no build step, `uv` still the one prerequisite.
 """
 
+import base64
+import hashlib
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import threading
 import time
+import zlib
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from http.server import ThreadingHTTPServer
@@ -484,6 +488,117 @@ def test_render_reports_a_word_the_printed_page_loses(browser, serve):
         '[print] <cq-option id=c-bearer> drops "Suits the mobile client;\\n  '
         'puts the id w", which it says on screen',
     ], lost
+
+
+def solid_png(width: int, height: int, rgb: tuple) -> bytes:
+    """A solid-colour PNG, written here rather than committed, so the pair a shot
+    test flips between is two files whose only difference is the one the test made."""
+    raw = b"".join(b"\x00" + bytes(rgb) * width for _ in range(height))
+
+    def chunk(tag, data):
+        body = tag + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
+SHOTS = {"before": solid_png(600, 300, (210, 220, 235)), "after": solid_png(600, 300, (235, 215, 205))}
+SHOT_SRC = {k: f"/media/{hashlib.sha256(v).hexdigest()[:16]}.png" for k, v in SHOTS.items()}
+SHOT_PAGE = LONG_PAGE.replace(
+    "</main>",
+    f"""<p id="lede">What moved, in words, because the picture cannot say it.</p>
+<cq-shot id="shot-nav" alt="the navigation rail"
+         before="{SHOT_SRC['before']}" after="{SHOT_SRC['after']}"></cq-shot>
+</main>""",
+)
+
+
+def shown_frames(page):
+    return page.evaluate("""() => [...document.querySelectorAll('.cq-shotframe')]
+        .filter(f => getComputedStyle(f).visibility === 'visible')
+        .map(f => f.dataset.cqState)""")
+
+
+def test_a_shot_shows_one_frame_and_flips_between_them(browser, serve):
+    """The comparison cq-shot makes is a flip: two registered frames in one grid cell,
+    one of them showing. What the gate covers on the way past is the rest of the
+    widget's bargain — the captions naming each frame are the page's words and stay
+    selectable, the radios are chrome and take no space in the reviewer's reading, and
+    a printed copy keeps both frames and both captions."""
+    url = serve(SHOT_PAGE)
+    for name, data in SHOTS.items():
+        (serve.page_dir / "media").mkdir(exist_ok=True)
+        (serve.page_dir / SHOT_SRC[name].lstrip("/")).write_bytes(data)
+    assert interact.render_version(browser, url) == []
+
+    page, errors = open_page(browser, url)
+    assert shown_frames(page) == ["before"]
+    page.get_by_role("radio", name="after").check()
+    expect(page.locator('.cq-shotframe[data-cq-state="after"]')).to_be_visible()
+    assert shown_frames(page) == ["after"]
+    assert errors == []
+    page.close()
+
+
+def test_a_shot_still_flips_with_every_script_removed(browser, serve, tmp_path):
+    """Which is the whole reason the control is a radio group. A standalone copy of a
+    colloquy page is its rendered DOM with the script tags dropped — the upgrade has
+    already run, so the frames are there, but nothing the runtime bound is. A slider
+    would have frozen at whatever the reader left it on; `:has(:checked)` is CSS, and
+    the browser owns a radio's state.
+
+    The bug this pins was real: setting `checked` as a property left no attribute to
+    serialize, so the copy opened with neither frame chosen and both of them stacked
+    in the one cell."""
+    url = serve(SHOT_PAGE)
+    for name, data in SHOTS.items():
+        (serve.page_dir / "media").mkdir(exist_ok=True)
+        (serve.page_dir / SHOT_SRC[name].lstrip("/")).write_bytes(data)
+    page, _ = open_page(browser, url)
+    page.evaluate("() => document.querySelectorAll('script').forEach(s => s.remove())")
+    baked = page.evaluate("() => document.documentElement.outerHTML").replace(
+        '<link rel="stylesheet" href="/theme.css">',
+        "<style>" + (serve.page_dir / "theme.css").read_text() + "</style>",
+    )
+    for name, data in SHOTS.items():
+        baked = baked.replace(
+            SHOT_SRC[name], "data:image/png;base64," + base64.b64encode(data).decode()
+        )
+    page.close()
+
+    standalone = tmp_path / "standalone.html"
+    standalone.write_text(baked)
+    loose = browser.new_page(viewport={"width": 1200, "height": 900})
+    loose.goto(standalone.as_uri(), wait_until="load")
+    assert loose.evaluate("document.querySelectorAll('script').length") == 0
+    assert shown_frames(loose) == ["before"]
+    loose.get_by_role("radio", name="after").check()
+    assert shown_frames(loose) == ["after"]
+    loose.close()
+
+
+def test_a_shot_refuses_a_pair_shot_at_two_widths(browser, serve):
+    """Both frames render at the frame's width, so a pair captured at two viewports is
+    scaled by two different factors and every line in it lands somewhere new — the flip
+    then reports that the whole page changed, convincingly and with nothing on screen
+    to say otherwise. The one failure worth an error box rather than a caveat."""
+    narrow = solid_png(400, 300, (235, 215, 205))
+    page_html = SHOT_PAGE.replace(
+        SHOT_SRC["after"], f"/media/{hashlib.sha256(narrow).hexdigest()[:16]}.png"
+    )
+    url = serve(page_html)
+    (serve.page_dir / "media").mkdir(exist_ok=True)
+    (serve.page_dir / SHOT_SRC["before"].lstrip("/")).write_bytes(SHOTS["before"])
+    (serve.page_dir / "media" / f"{hashlib.sha256(narrow).hexdigest()[:16]}.png").write_bytes(narrow)
+
+    assert [f for f in interact.render_version(browser, url) if "600px" in f and "400px" in f], (
+        "the gate has to hear about a mismatch, since nobody else will"
+    )
 
 
 UNPARSEABLE_DIAGRAM = LONG_PAGE.replace(

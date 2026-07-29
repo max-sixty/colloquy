@@ -217,6 +217,21 @@
     "x-upgrade": true,
     "x-example": "<cq-diagram id=\"checkout-flow\">\ngraph LR\n  Cart --> Pay\n  Pay --> Receipt\n</cq-diagram>"
   },
+  "cq-shot": {
+    "description": "A before/after pair of screenshots of one view, shown one at a time in a single frame: the reader clicks between them and the change is the only thing on screen that moves. `before` and `after` are served image paths — `colloquy media <dir> <file>…` copies files into the page directory and prints the path to write, which is the only way an image gets onto a page (a screenshot is far too many bytes to inline). `alt` says what the pair shows, for a reader who can't see it. The element takes no content: what the page has to say about the change is ordinary prose written around it, where the reviewer can quote it. Reach for it when the change reads at page scale — layout, spacing, a component swapped out. Below that scale the column's width is against you: crop the pair to the part that moved, or show the element itself before and after at real size.",
+    "type": "object",
+    "properties": {
+      "id":     {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "before": {"type": "string", "pattern": "^/media/\\S+$"},
+      "after":  {"type": "string", "pattern": "^/media/\\S+$"},
+      "alt":    {"type": "string"}
+    },
+    "required": ["id", "before", "after", "alt"],
+    "additionalProperties": false,
+    "x-content": "none",
+    "x-upgrade": true,
+    "x-example": "<h3>The option cards</h3>\n<p>Effort and risk now sit above the title, so a scanning eye reads cost before prose.</p>\n<cq-shot id=\"shot-cards\" alt=\"the decision page's option cards\" before=\"/media/0f2c91a4b7de3105.png\" after=\"/media/6b40ac7719ee5d82.png\"></cq-shot>"
+  },
   "cq-board": {
     "description": "A kanban board the reviewer edits directly: cards move between columns or reorder within one — dragged by the grip, or by keyboard (the grip is a button: Enter grabs, arrows move, Enter drops) — and each completed move reaches Claude as a `move` action naming the card, target column, and position. Children are cq-column elements only. Write the board as you mean it and leave it alone afterwards: a recorded move carries onto every later version by itself, so re-emitting a card where you first put it does not undo the reviewer's move. A move rests on its card, so revising one they have moved is the card's `restated` (see $restated in `catalog`), never the board's.",
     "type": "object",
