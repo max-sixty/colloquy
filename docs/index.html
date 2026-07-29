@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>colloquy · review Claude's plans like a document</title>
-<meta name="description" content="colloquy is a Claude Code plugin: Claude presents plans and findings as a commentable web page, your comments wake Claude, and revised versions ship with changelogs.">
+<title>colloquy · collaborate with your agent in HTML</title>
+<meta name="description" content="colloquy is a Claude Code plugin: Claude presents plans, findings, and work in progress as a commentable web page, your comments wake Claude, and revised versions ship with changelogs.">
 <link rel="stylesheet" href="theme.css">
 <style>
 /* Landing layer over the stock theme: hero scale and the session screenshot.
@@ -23,13 +23,15 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 
 <header class="hero" id="top">
 <p class="eyebrow">colloquy · a Claude Code plugin</p>
-<h1>Stop reading Claude's plans in the terminal.</h1>
-<p class="lede" id="lede">Claude hands you a web page instead. Select any line and
-comment on it like a shared doc; the comment itself wakes Claude, and a revised
+<h1>Collaborate with your agent in HTML.</h1>
+<p class="lede" id="lede">Claude builds you a page rather than a scroll of terminal
+text: diagrams, boards you drag, a list of work that ticks over as it goes. Select any
+line and comment on it like a shared doc; the comment itself wakes Claude, and a revised
 version arrives with the change.</p>
 <p id="scope">It works for anything that would otherwise land as a wall of terminal
 text: a migration plan, an architecture write-up, an incident diagnosis, a PR
-walkthrough, a review. <a href="#install">Two commands install it</a>. No accounts,
+walkthrough, a review, or a list of things to work through that ticks over as Claude
+does them. <a href="#install">Two commands install it</a>. No accounts,
 no daemon, no config; you need <a href="https://docs.astral.sh/uv/"><code>uv</code></a>
 on your PATH and a browser on the same machine.</p>
 </header>
@@ -48,8 +50,35 @@ immutable version with its changelog, the Δ toggle marks what changed, and the
 banner tracks whether Claude is working or listening.</figcaption>
 </figure>
 
+<section id="range">
+<h2>What a page can do</h2>
+<ul>
+<li id="range-explain"><strong>Explain.</strong> Everything HTML has to offer, in place
+of everything a terminal doesn't: mermaid diagrams, a code walkthrough with remarks
+anchored at the line each is about, a unified diff, a file tree, two screenshots that
+flip between before and after, a row of measurements, evidence collapsed under the claim
+it backs, and real links out to the source line or the ticket. It prints, too.</li>
+<li id="range-collaborate"><strong>Collaborate.</strong> Ask about one part of the page
+rather than the whole of it. Every passage carries its own thread, so several
+conversations run at once and each stays anchored to the words it is about: yours and
+Claude's alike, since it opens threads on the page the same way you do.</li>
+<li id="range-interact"><strong>Interact.</strong> The page takes input back. Drag cards
+to re-prioritize a board, click an option to decide it, accept or reject a proposed
+edit, or rewrite a draft (an email, a release note) in your own words. Each edit reaches
+Claude as a structured action and holds its place on every later version.</li>
+<li id="range-track"><strong>Track.</strong> A page can be a working dashboard rather
+than a document: the state of the resources you asked about, a queue draining, a
+checklist ticking over. Claude republishes as the work moves and your browser follows on
+its own, so you watch it happen rather than reading a summary afterwards.</li>
+</ul>
+<p id="more"><a href="how-it-works.html">How it works</a> shows the widget system
+rendering live, and the
+<a href="https://github.com/max-sixty/colloquy/tree/main/examples">examples
+gallery</a> holds a complete page for each kind of write-up.</p>
+</section>
+
 <section id="loop">
-<h2>A review, end to end</h2>
+<h2>Example: A review</h2>
 <ol class="steps">
 <li id="loop-ask"><strong>Ask.</strong> "Write up the migration options as a page"
 triggers it, as does <code>/colloquy</code>. Claude writes the page, serves it on a
@@ -73,20 +102,6 @@ pages that seek approval carry the button, informational ones take comments only
 <code>export</code> prints the whole thread as Markdown for a PR
 description.</li>
 </ol>
-</section>
-
-<section id="widgets">
-<h2>The page takes edits, too</h2>
-<p>Pages are semantic HTML plus themed widgets: decision cards, kanban boards,
-mermaid diagrams, diffs, timelines. The interactive ones carry input back. Drag
-a card between columns, click an option to pick it, or double-click a draft and
-rewrite its text, and the edit reaches Claude as a structured action; the next
-version ships with the board as you left it, your pick marked, and your wording
-carried.</p>
-<p id="more"><a href="how-it-works.html">How it works</a> shows the widget system
-rendering live, and the
-<a href="https://github.com/max-sixty/colloquy/tree/main/examples">examples
-gallery</a> holds a complete page for each kind of write-up.</p>
 </section>
 
 <section id="install">

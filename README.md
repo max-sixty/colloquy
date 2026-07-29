@@ -3,10 +3,12 @@
 > **Not ready for general use.** Watch this space, and hopefully there'll be more to
 > say soon.
 
-A Claude Code plugin: Claude presents plans and write-ups as a web page instead of a
-wall of terminal text. Select any line to comment on it like a shared doc; your comment
-wakes the session, and Claude ships a revised version. It comments back the same way —
-in the margin, on the passage in question, rather than in the terminal.
+A Claude Code plugin for collaborating with your agent in HTML: Claude presents plans,
+write-ups, and work in flight as a web page rather than a wall of terminal text. Select any line to comment on it like a shared doc;
+your comment wakes the session, and Claude ships a revised version. It comments back the
+same way — in the margin, on the passage in question, rather than in the terminal. A page
+tracking work in progress keeps up with it: items go from planned to done as Claude works
+through them, and the browser follows each new version on its own.
 
 ![colloquy demo](docs/demo.gif)
 

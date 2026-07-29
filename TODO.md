@@ -83,6 +83,14 @@ stands alone.
       the passage while the composer is open and no longer repeats it inside the box, so
       the hero image shows the old behavior twice over.
       `scripts/record-demo.sh` prints a shot list for a human to drive.
+- [ ] The tour walks one example and it is the review loop. `docs/index.html` names four
+      things a page does — explain, collaborate, interact, track — and then walks only the
+      second, so the other three are claims a reader takes on trust. Two more worked
+      examples would cover them: an interactive one (a draft the reader rewrites and
+      approves, a board they re-prioritize) and a live one (a dashboard whose items tick
+      over as the work moves). The live example wants a page in `examples/` to point at
+      first — the corpus is seven documents about something and nothing that keeps up
+      with work, so a model writing its first dashboard has nothing to imitate either.
 - [ ] Widgets deferred until a page wants them: risks, verdict.
 - [ ] A `cq-shot` pair has no difference view. The script this came from toggled in an
       ImageMagick heat-map of the changed pixels and printed the count, and its own
