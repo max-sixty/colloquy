@@ -305,21 +305,28 @@ construction; that mistake is now made where the label is written, in front of w
 wrote the word, rather than in a print rule three files away that nobody thought to
 write.
 
-### Widgets declare; nothing else names them
+### The widget list is never closed
 
-A widget is anonymous to everything outside it. Its name reaches `registry.json`, its
-own module, and no further: every other consumer works from what the entry declares and
-never from which widget it is looking at. So no branch anywhere reads `cq-diagram` and
-does something particular — where a behaviour is wanted by some widgets and not others,
-it becomes an `x-` key they declare and the consumer dispatches on. That binds the
-runtime, the lint, `check --render`, export, and the skill's own prose alike; the test
-is whether a twelfth widget touches anything but its module and its entry, and where it
-would, the thing missing is a declaration.
+The vocabulary grows by an entry in `registry.json` and a module beside it, and nothing
+may assume it has seen the whole of it. A consumer that works from which widget it is
+looking at is a consumer that stops at the ones it was taught, and it fails quietly
+rather than loudly: it keeps working perfectly on those while silently doing nothing for
+the next one, so the bug surfaces as a feature that was never wired up rather than as an
+error. So a consumer works from what an entry declares — where a behaviour is wanted by
+some widgets and not others, it becomes an `x-` key they declare and the consumer
+dispatches on, and no branch anywhere reads `cq-diagram` and does something particular.
+That binds the runtime, the lint, `check --render`, export, and the skill's own prose
+alike; the test is whether a twelfth widget touches anything but its module and its
+entry, and where it would, the thing missing is a declaration.
 
-Anonymity is what makes the vocabulary extensible without a rewrite, and its opposite
-fails quietly rather than loudly: a consumer taught one widget by name keeps working
-perfectly on that widget while silently doing nothing for the next one, so the bug
-surfaces as a feature that was never wired up rather than as an error.
+Most widgets are things a page contains, and those are anonymous outside their own
+module. A few are part of the machine the list is defined against, and core names those
+outright. The suggestion is the one today: the log settles it, `retirable_ids` is written
+in terms of its slots, thread markup refuses one, and the banner offers to accept them
+all. That name is a mechanism's, not a member's, so it isn't a special case waiting for a
+declaration to replace it. Which kind a widget is has one question behind it — is this one
+of the ways colloquy works, or one of the things a page can hold? Convenience is not an
+answer to it; a widget joins the first set by having the loop written in terms of it.
 
 Declare the general property, not the particular widget, or the special case has only
 moved into the registry: `x-upgrade` says a module enhances this tag, not that mermaid
