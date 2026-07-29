@@ -155,7 +155,7 @@
     "x-example": "<p>The cutoff lives in <cq-ref src=\"jobs/backfill.py:88\"></cq-ref>.</p>"
   },
   "cq-diff": {
-    "description": "A unified diff rendered with per-file collapse, add/del coloring, and per-file +/− counts. The body is data: the diff verbatim, at column 0 (context lines keep their leading space), with < and > escaped as &lt; and &gt;. Comments anchor to the required id.",
+    "description": "A unified diff rendered with per-file collapse, add/del tints, and per-file +/− counts. The body is data: the diff verbatim, at column 0 (context lines keep their leading space), with < and > escaped as &lt; and &gt;. Comments anchor to the required id. Takes no language: each file's own path is read for one ($languages), so keep the `diff --git` or ---/+++ headers rather than pasting bare hunks, and a path naming no language leaves that file plain.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
@@ -183,12 +183,13 @@
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
-      "lang": {"enum": ["bash", "css", "diff", "go", "html", "java", "javascript", "json", "markdown", "python", "rust", "sql", "toml", "typescript", "yaml"]},
+      "lang": {"type": "string"},
       "hi": {"type": "string", "pattern": "^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$"}
     },
     "required": ["id"],
     "additionalProperties": false,
     "x-content": "data",
+    "x-language": "lang",
     "x-upgrade": true,
     "x-example": "<cq-code id=\"bracket-walk\" lang=\"python\" hi=\"2\">\ndef bracket(temp):\n    if temp &lt; 0:\n        return \"steel\"\n    return \"cedar\"\n<cq-note at=\"2\">Freezing is the only threshold that matters.</cq-note>\n</cq-code>"
   },
@@ -385,6 +386,18 @@
     "x-says": {"label": "before"},
     "x-upgrade": false,
     "x-example": "<cq-specimen id=\"spec-gear\" label=\"next season's kit\">\n  <cq-options>\n    <cq-option id=\"sp-paper\" effort=\"low\" risk=\"high\"><strong>Paper maps</strong> Nothing to charge.</cq-option>\n    <cq-option id=\"sp-gps\" effort=\"med\" risk=\"low\" recommended><strong>Dedicated GPS</strong> Offline maps, week-long battery.</cq-option>\n  </cq-options>\n</cq-specimen>"
+  },
+  "$languages": {
+    "description": "The languages this page's layer can color, and what a filename means. `names` is the whole vocabulary: what an author may declare, what the lint refuses a word outside, and what scripts/vendor-highlight.sh builds the tokenizer bundle from. It is a property of the page rather than of any widget, which is why it lives here and not under the schema of whichever tag happens to take a `lang` — a widget declares that one of its attributes names a language (x-language) and the lint reads the list from here, so a second tag taking one costs a declaration and no new reader. `paths` is the half nobody writes: the one place a language is derived rather than declared, because a unified diff spans files and so has no attribute to carry one. An extension is the diff's own statement about what a file holds, which is a declaration like any other; an extension absent here leaves that file plain.",
+    "why-diff-is-not-a-path": "`diff` is in `names` and deliberately not in `paths`: a .patch inside a diff would be colored by the diff grammar, whose addition and deletion ink is the same statement the widget's own tints already make — said twice, in two channels, about the same line.",
+    "names": ["bash", "css", "diff", "go", "html", "java", "javascript", "json", "markdown", "python", "rust", "sql", "toml", "typescript", "yaml"],
+    "paths": {
+      "bash": "bash", "cjs": "javascript", "css": "css", "go": "go", "htm": "html",
+      "html": "html", "java": "java", "js": "javascript", "json": "json",
+      "jsx": "javascript", "md": "markdown", "mjs": "javascript", "py": "python",
+      "rs": "rust", "sh": "bash", "sql": "sql", "toml": "toml", "ts": "typescript",
+      "tsx": "typescript", "yaml": "yaml", "yml": "yaml"
+    }
   },
   "$events": {
     "description": "The vocabulary stamp: the event kinds this layer's runtime and CLI read, and the fields each carries beyond id/ts/author/kind/seq. Vendored with the page, it is the one statement of what that page's runtime speaks — `note` refuses to write a shape the page's vendored copy doesn't declare (an old runtime drops unknown shapes silently), and `init` refuses to re-vendor over a log recorded in kinds or verbs (x-state, per widget) the incoming layer no longer speaks, because those events would never replay again. A registry with no $events predates the stamp and is read as exactly the pre-stamp vocabulary.",

@@ -156,7 +156,9 @@ prerequisite.
   a line. The language names are the same set either way, `catalog` lists them, and
   `check` refuses one outside it. Nothing is inferred from the text, so a block whose
   body isn't source — a transcript, a stack trace, a log — simply says nothing and stays
-  plain.
+  plain. A `cq-diff` needs no language and takes none: a unified diff spans files, so
+  each file's own path says what it holds, and a path naming nothing leaves that file
+  plain like any undeclared block.
 - **Make references clickable.** Declare the repo or tracker base once as
   `<meta name="cq-base" content="https://host/repo/blob/main/{path}#L{line}">` and
   write source references as `<cq-ref src="path/to/file.py:88"></cq-ref>`. Render

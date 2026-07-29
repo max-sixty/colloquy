@@ -5,10 +5,10 @@
  *
  * `lang` colors it. A token can span a newline (a docstring, a block comment)
  * and a line is the unit this widget numbers, so the tokens are cut at each
- * newline rather than the source being colored a line at a time — coloring
- * line by line would restart the tokenizer inside the docstring and read its
- * second line as code. */
-import { once, failSoft, settle, synNodes, syntax } from "/colloquy.js";
+ * newline (tokenLines) rather than the source being colored a line at a time —
+ * coloring line by line would restart the tokenizer inside the docstring and
+ * read its second line as code. */
+import { once, failSoft, settle, synNodes, syntax, tokenLines } from "/colloquy.js";
 
 // "3-5,8" → Set of line numbers.
 function parseRanges(spec) {
@@ -17,21 +17,6 @@ function parseRanges(spec) {
   for (const part of spec.split(",")) {
     const [from, to] = part.split("-").map(Number);
     for (let n = from; n <= (to ?? from); n++) lines.add(n);
-  }
-  return lines;
-}
-
-// Tokens re-cut so none crosses a newline: one array of {text, role} per line, in
-// source order. The tokenizer's runs and the widget's lines are two different
-// spans of the same characters, and this is where they are reconciled.
-function tokenLines(tokens) {
-  const lines = [[]];
-  for (const { text, role } of tokens) {
-    const parts = text.split("\n");
-    parts.forEach((part, i) => {
-      if (i) lines.push([]);
-      if (part) lines.at(-1).push({ text: part, role });
-    });
   }
   return lines;
 }

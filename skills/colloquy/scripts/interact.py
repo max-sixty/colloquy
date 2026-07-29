@@ -1971,6 +1971,15 @@ def vendored_event_fields(page_dir: Path) -> dict:
     return (reg.get("$events") or {}).get("kinds") or {}
 
 
+def vendored_languages(page_dir: Path) -> list:
+    """The languages this page's vendored layer can color ($languages.names). Read off
+    the raw registry rather than load_registry's tag→schema view, because the list is a
+    property of the page and not of any one tag — the same reason it doesn't live under
+    the schema of whichever widget happens to take a `lang`."""
+    reg = read_json(page_dir / "registry.json") or {}
+    return (reg.get("$languages") or {}).get("names") or []
+
+
 def declared_verbs(registry: dict) -> set:
     """Every action verb the layer's widgets declare (x-state), across tags."""
     return {
@@ -2074,14 +2083,17 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
     return errors
 
 
-def language_errors(blocks: list, registry: dict) -> list:
+def language_errors(blocks: list, cq_elements: list, registry: dict, known: list) -> list:
     """A declared language the runtime won't honor. Nothing here is visible to the
     reviewer either way — a class in the wrong place and a misspelt language both render
     as an ordinary uncolored block — so the failure is routed to the one party who can
-    still fix it, which is whoever wrote the word. The vendored registry holds the list,
-    the same one cq-code's `lang` validates against and the vendored bundle was built
-    from, so a page can't be told a language its own layer doesn't speak."""
-    known = ((registry.get("cq-code") or {}).get("properties") or {}).get("lang", {}).get("enum")
+    still fix it, which is whoever wrote the word.
+
+    One list answers both spellings, and it is the page's ($languages) rather than any
+    widget's: a plain <pre><code class="language-…"> belongs to no widget at all, and a
+    tag that takes the word says which of its attributes carries it (x-language) instead
+    of being known here by name. The vendored bundle is built from the same list, so a
+    page cannot be told a language its own layer doesn't speak."""
     if not known:
         return []
     errors = []
@@ -2095,6 +2107,14 @@ def language_errors(blocks: list, registry: dict) -> list:
             )
         elif block["lang"] not in known:
             errors.append(f"{where}: not a language this page's layer speaks — known: {known}")
+    for rec in cq_elements:
+        attr = (registry.get(rec["tag"]) or {}).get("x-language")
+        word = rec["attrs"].get(attr) if attr else None
+        if word is not None and word not in known:
+            errors.append(
+                f'<{rec["tag"]} {attr}="{word}"> (line {rec["line"]}): not a language '
+                f"this page's layer speaks — known: {known}"
+            )
     return errors
 
 
@@ -2561,7 +2581,11 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     registry = load_registry(page_dir)
     if registry is not None:
         errors.extend(widget_errors(parser.cq_elements, registry))
-        errors.extend(language_errors(parser.language_blocks, registry))
+        errors.extend(
+            language_errors(
+                parser.language_blocks, parser.cq_elements, registry, vendored_languages(page_dir)
+            )
+        )
         for tag, entry in registry.items():
             if entry.get("x-upgrade") and not (page_dir / "widgets" / f"{tag}.js").is_file():
                 errors.append(

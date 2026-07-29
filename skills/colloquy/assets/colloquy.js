@@ -207,6 +207,37 @@ export const synNodes = (tokens) =>
     return span;
   });
 
+// Tokens re-cut so none crosses a newline: one array of {text, role} per line, in source
+// order. The tokenizer's runs and a line are two different spans of the same characters,
+// and this is where they are reconciled — for cq-code, whose lines are what it numbers,
+// and for cq-diff, whose lines are what it tints. Both tokenize a whole run and cut it
+// afterwards rather than colouring a line at a time, because a token can span a newline:
+// a docstring coloured line by line restarts the tokenizer inside itself and reads its
+// second line as code.
+export function tokenLines(tokens) {
+  const lines = [[]];
+  for (const { text, role } of tokens) {
+    const parts = text.split("\n");
+    parts.forEach((part, i) => {
+      if (i) lines.push([]);
+      if (part) lines.at(-1).push({ text: part, role });
+    });
+  }
+  return lines;
+}
+
+// What a filename says it holds, or undefined where the registry's table has no answer
+// and the block stays the colour of its own ink. The only place a language is derived
+// rather than declared: a unified diff spans files, so cq-diff has no `lang` to read and
+// each file's path is the diff's own statement about what it is. Still a declaration —
+// the rule that nothing is inferred is about source *text*, which no path is. The table
+// is the registry's ($languages), beside the enum it has to agree with, rather than a
+// second list here. Asked of the table optionally, because a user or project overlay
+// replaces registry.json wholesale (see init) and one written before $languages is a
+// registry that simply names no languages — the same way a stampless one names no events.
+export const langForPath = (path) =>
+  registry?.$languages?.paths?.[path.split("/").pop().split(".").slice(1).pop()?.toLowerCase()];
+
 // The page's own code blocks: <pre><code class="language-python">. The class is the
 // universal one — what every Markdown renderer emits, and what `check` validates — so a
 // block Claude wrote anywhere else needs no translation to land here. cq-code declares

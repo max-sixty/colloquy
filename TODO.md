@@ -162,10 +162,11 @@ stands alone.
       Reversing it would mean keeping some mark on settled text, which is exactly
       what settling is for — so the two widgets diverge here on purpose. Revisit
       if a reviewer actually misclicks one.
-- [ ] `cq-diff` is the page's most code-dense widget and the one shape that isn't
-      syntax-colored: its lines carry add/del tints, which is what the widget is
-      about, and stacking token colors on a green line is a legibility question
-      rather than a missing feature. It also has no language to work from — a
-      unified diff spans files, so the language would come per-hunk from each
-      file's extension rather than from a `lang` the author wrote. Decide the look
-      before the plumbing.
+- [ ] `cq-diff` keeps text in the DOM that nothing on screen shows: the `---`/`+++`
+      headers render as `.meta` lines the theme sets to `display: none`, because the
+      summary already names the file. A reviewer cannot select them, but the paint
+      pass reads text nodes rather than boxes, so a quote matching one would anchor
+      to a mark nobody can see — the mirror image of the rule that everything the
+      page says can be pointed at. The fix is for the widget to drop the lines it
+      isn't showing rather than the theme to hide them, which is also one fewer
+      thing the anchor pass has to be right about by accident.

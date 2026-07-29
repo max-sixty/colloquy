@@ -2481,7 +2481,7 @@ def test_every_language_returns_the_source_it_was_given(browser, serve):
     It is also what a version bump of the vendored bundle has to survive."""
     url = serve(CODE_PAGE)
     page, errors = open_page(browser, url)
-    langs = interact.load_registry(serve.page_dir)["cq-code"]["properties"]["lang"]["enum"]
+    langs = interact.vendored_languages(serve.page_dir)
     samples = [
         'def f(x):\n    """doc\n    <b>&amp;</b>\n    """\n    return f"{x!r}"  # ok\n',
         "# c\ncd x && ls -la | grep \"a b\" > /dev/null\n",
@@ -2507,6 +2507,133 @@ def test_every_language_returns_the_source_it_was_given(browser, serve):
         [langs, samples],
     )
     assert bad == [], f"the tokenizer changed the source: {bad}"
+    assert errors == []
+    page.close()
+
+
+# A diff of three files, one per thing the colouring has to get right: a Python file
+# whose second hunk moves a docstring across lines and whose two sides disagree about
+# what is open, a yaml file (the grammar that reads a leading `-` as a sequence bullet
+# and a leading `+` as a string, so the prefix column has to be off before it looks),
+# and a file whose extension names no language at all.
+DIFF_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>diff</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Diff</h1>
+<cq-diff id="patch">
+diff --git a/gateway/limits.py b/gateway/limits.py
+--- a/gateway/limits.py
++++ b/gateway/limits.py
+@@ -38,7 +38,8 @@ class Limiter:
+     def bucket_key(self, request):
+-        return request.remote_addr
+\\ No newline at end of file
++        if request.token:
++            return f"tok:{request.token.id}"
+@@ -71,5 +73,7 @@ class Limiter:
+     def reset(self, key):
+-        \"\"\"Drop one bucket.
+-        Called on logout.\"\"\"
++        \"\"\"Drop one bucket, prefix and all.
++
++        Called on logout, and once per renamed key.
++        \"\"\"
+         self.buckets.pop(key, None)
+diff --git a/gateway/config.yaml b/gateway/config.yaml
+--- a/gateway/config.yaml
++++ b/gateway/config.yaml
+@@ -4,6 +4,6 @@ ratelimit:
+-  burst: 20
++  burst: 40
+   window: 60
+diff --git a/deploy/Dockerfile b/deploy/Dockerfile
+--- a/deploy/Dockerfile
++++ b/deploy/Dockerfile
+@@ -9,2 +9,2 @@ COPY gateway /srv/gateway
+-RUN pip install -r requirements.txt
++RUN pip install --no-cache-dir -r requirements.txt
+</cq-diff>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_diff_is_colored_by_each_files_own_path(browser, serve):
+    """A diff is the page's most code-dense shape and it sits beside cq-code on the pages
+    that carry both, so leaving it plain said the evidence was not code. It has no `lang`
+    to read — a unified diff spans files — so each file's path is what says what it holds,
+    and a path naming nothing leaves that file the colour of its own ink.
+
+    Three things that were each wrong in a draft of this. The +/−/space column is the
+    diff's word about a line and not the file's: yaml lexes a leading `-` as a sequence
+    bullet and a leading `+` as a string, so a prefix left on restates the widget's own
+    signal in the wrong ink. A hunk is tokenized one side at a time, because read straight
+    through it interleaves two versions that never coexisted. And each side is tokenized
+    whole, because a docstring spans lines — coloured a line at a time, the prose inside
+    one comes back as code."""
+    page, errors = open_page(browser, serve(DIFF_PAGE))
+    page.wait_for_function("() => document.querySelector('cq-diff.cq-rendered') !== null")
+
+    files = page.evaluate("""() => [...document.querySelectorAll('#patch details')].map(d => ({
+      path: d.querySelector('summary code').textContent,
+      lines: [...d.querySelectorAll('pre > span')].map(l => ({
+        kind: l.className,
+        text: l.textContent,
+        // Whether the line opens inside a syntax span — which is where the +/− column
+        // would have gone if it had been handed to the tokenizer along with the source.
+        signInSpan: l.firstChild?.nodeType === Node.ELEMENT_NODE,
+        roles: [...l.querySelectorAll('[data-cq-syn]')].map(s => [s.dataset.cqSyn, s.textContent]),
+      })),
+    }))""")
+    by_path = {f["path"]: f["lines"] for f in files}
+    assert set(by_path) == {"gateway/limits.py", "gateway/config.yaml", "deploy/Dockerfile"}
+
+    py = by_path["gateway/limits.py"]
+    assert any(["kw", "if"] in line["roles"] for line in py), py
+    assert {r for line in py for r, _ in line["roles"]} >= {"kw", "st", "fn"}
+
+    # The docstring the second hunk rewrites: every line of it is string, on both sides.
+    # Colouring line by line instead, `and` inside the prose came back a keyword.
+    doc = [l for l in py if "Called on logout" in l["text"]]
+    assert len(doc) == 2, [l["text"] for l in py]
+    for line in doc:
+        assert [r for r, _ in line["roles"]] == ["st"], line
+
+    # yaml, the grammar that would have eaten the prefix: with the column left on, the
+    # `-` came back a bullet in keyword ink and the `+` a string. No span opens a line
+    # here, and the key is still an attr — so the prefix came off before the lexer looked.
+    yml = [l for l in by_path["gateway/config.yaml"] if l["kind"] in ("add", "del")]
+    assert len(yml) == 2
+    for line in yml:
+        assert not line["signInSpan"], line
+        assert ["ty", "burst:"] in line["roles"], line
+
+    # `\\ No newline at end of file` is git remarking on the line above, not a line of
+    # the file. Shown, because the diff says it, but its own kind — read as context it
+    # would go into both reconstructed sides as source the file never held.
+    note = [l for l in py if l["kind"] == "note"]
+    assert [l["text"] for l in note] == ["\\ No newline at end of file\n"], py
+    assert note[0]["roles"] == [], note
+
+    # No extension the table names: plain, the way a cq-code with no `lang` is.
+    assert all(l["roles"] == [] for l in by_path["deploy/Dockerfile"]), by_path["deploy/Dockerfile"]
+
+    # And every line still reads exactly as authored, sign column and all — colour adds
+    # no characters and moves none, which is what keeps the file's reading and the
+    # page's the same reading.
+    assert [l["text"] for l in by_path["gateway/config.yaml"]] == [
+        "--- a/gateway/config.yaml\n", "+++ b/gateway/config.yaml\n",
+        "@@ -4,6 +4,6 @@ ratelimit:\n",
+        "-  burst: 20\n", "+  burst: 40\n", "   window: 60\n",
+    ]
     assert errors == []
     page.close()
 
@@ -2578,11 +2705,16 @@ TWICE_PAGE = """<!doctype html>
 <p>Something else entirely, so the two copies do not touch each other.</p>
 <p>A second copy follows. The version stamp never lands. And a second tail after it.</p>
 </section>
-<cq-diff id="patch" file="cache.py">@@ -18,7 +18,7 @@ class Bucket:
+<cq-diff id="patch">
+diff --git a/gateway/cache.py b/gateway/cache.py
+--- a/gateway/cache.py
++++ b/gateway/cache.py
+@@ -18,7 +18,7 @@ class Bucket:
  def key(self, request):
 -    return request.path
 +    return request.path, request.headers.get("Accept")
- def store(self, request):</cq-diff>
+ def store(self, request):
+</cq-diff>
 </main>
 </body>
 </html>
@@ -3071,24 +3203,41 @@ def test_a_diff_anchors_to_the_side_it_was_read_on(browser, serve):
     """The case this exists for, and the one a section cannot narrow: a diff carries the
     same line added and removed under a single id, so the reviewer commenting on the fix
     had their comment marked against the bug — stored that way, and shown to Claude that
-    way in the next round."""
+    way in the next round.
+
+    The passage is picked out of the rendered widget, where syntax colour has cut the
+    line into spans: `return` is a keyword and ` request.path` is the text after it, so
+    the selection starts in one node and ends in another. That is the ordinary shape of a
+    passage in a coloured block, and the anchor knows nothing about it — a span is no text
+    block, so both readings still collapse to the same run of characters."""
     page, errors = open_page(browser, serve(TWICE_PAGE))
+    page.wait_for_function("() => document.querySelector('cq-diff.cq-rendered') !== null")
     landed = page.evaluate("""async () => {
         const skip = '.cq-ui, script, style';
         const w = document.createTreeWalker(document.getElementById('patch'),
             NodeFilter.SHOW_TEXT,
             {acceptNode: n => n.parentElement?.closest(skip)
                 ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});
-        const hits = [];
-        const phrase = 'return request.path';
+        // One flat run over the widget's text nodes, and where each node started in it,
+        // so a phrase is found whether or not a token boundary falls inside it.
+        const nodes = [], starts = [];
+        let flat = '';
         for (let n = w.nextNode(); n; n = w.nextNode()) {
-            let i = n.data.indexOf(phrase);
-            while (i !== -1) { hits.push({node: n, at: i}); i = n.data.indexOf(phrase, i + 1); }
+            starts.push(flat.length); nodes.push(n); flat += n.data;
         }
+        const phrase = 'return request.path';
+        const hits = [];
+        for (let i = flat.indexOf(phrase); i !== -1; i = flat.indexOf(phrase, i + 1)) hits.push(i);
         if (hits.length < 2) return `only ${hits.length} occurrence(s) — fixture broken`;
-        const h = hits.at(-1);   // the added line: the later of the pair
+        const at = (offset) => {
+            const i = starts.findLastIndex((s) => s <= offset);
+            return [nodes[i], offset - starts[i]];
+        };
+        const start = hits.at(-1);   // the added line: the later of the pair
         const want = document.createRange();
-        want.setStart(h.node, h.at); want.setEnd(h.node, h.at + phrase.length);
+        want.setStart(...at(start)); want.setEnd(...at(start + phrase.length));
+        if (want.startContainer === want.endContainer)
+            return 'the phrase sat in one node — colour never split it, so this proves nothing';
         const sel = getSelection(); sel.removeAllRanges(); sel.addRange(want);
         document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
         await new Promise(r => setTimeout(r, 40));

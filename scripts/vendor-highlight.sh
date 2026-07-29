@@ -9,10 +9,11 @@
 # the tokenizer's cannot drift: `lang="html"` either resolves or the bundle was
 # built from a different list than the registry states.
 #
-# The language list is not stated here: it is read out of registry.json's `lang`
-# enum, which is the list `check` refuses an unknown language against and the list
-# the catalog shows Claude. One list, so the bundle cannot offer a language the
-# lint rejects or lack one it accepts. Add a language there, then rerun this.
+# The language list is not stated here: it is read out of registry.json's
+# `$languages.names`, which is the list `check` refuses an unknown language against
+# and the list the catalog shows Claude. One list, so the bundle cannot offer a
+# language the lint rejects or lack one it accepts. Add a language there, then rerun
+# this.
 set -euo pipefail
 
 HLJS_VERSION=11.11.1
@@ -34,7 +35,7 @@ tar xzf "highlight.js-$HLJS_VERSION.tgz"
 
 languages=$(python3 -c '
 import json, sys
-print(" ".join(json.load(open(sys.argv[1]))["cq-code"]["properties"]["lang"]["enum"]))
+print(" ".join(json.load(open(sys.argv[1]))["$languages"]["names"]))
 ' "$ASSETS/registry.json")
 
 {

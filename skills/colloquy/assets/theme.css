@@ -578,11 +578,15 @@ cq-diff .cq-diff-stat { color: var(--muted); font-weight: 400; margin-left: 8px;
                         font-size: var(--t-6); }
 cq-diff.cq-rendered pre { margin: 0; border: none; border-top: 1px solid var(--rule);
                           border-radius: 0; padding: 6px 0; }
-cq-diff pre span { display: block; padding: 0 12px; }
+/* A child selector, because a line's own span is not the only one in here any more:
+   syntax colour puts one around each token, and as a descendant rule this laid every
+   token out on a line of its own. */
+cq-diff pre > span { display: block; padding: 0 12px; }
 cq-diff pre .add  { background: var(--add-tint); }
 cq-diff pre .del  { background: var(--del-tint); }
 cq-diff pre .hunk { color: var(--accent); background: var(--pre-bg); }
 cq-diff pre .meta { display: none; } /* the summary already names the file */
+cq-diff pre .note { color: var(--muted); } /* git's remark on the line above, not a line */
 
 /* cq-tree rendered form: nested lists with hairline guides and change badges. */
 cq-tree.cq-rendered { font-family: var(--mono); font-size: 12.5px; }

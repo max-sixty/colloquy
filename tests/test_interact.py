@@ -151,15 +151,19 @@ def test_check_rejects_widget_violations(page_dir):
 def test_check_rejects_a_language_nothing_will_color(page_dir):
     """A declared language the runtime won't honor renders as a plain block, which is
     exactly what a block with no language renders as — so the reviewer sees nothing
-    wrong and the author never finds out. Both ways of getting it wrong are the lint's,
-    because the author is the only one who can still fix either: the class somewhere
-    other than <pre><code>, and a language this page's vendored layer doesn't speak."""
+    wrong and the author never finds out. Every way of getting it wrong is the lint's,
+    because the author is the only one who can still fix any of them: the class somewhere
+    other than <pre><code>, an unknown word on the class, and an unknown word on a
+    widget attribute that declares itself a language (x-language). The last is checked
+    against the same list as the first two rather than by that widget's own schema,
+    which is what keeps a second tag taking a language from needing a second reader."""
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
             "<h2>Plan</h2>",
             "<h2>Plan</h2>\n"
             '<pre><code class="language-pythn">x = 1</code></pre>\n'
             '<div class="note language-python">not a code block</div>\n'
+            '<cq-code id="walk-bad" lang="pythn">z = 3\n</cq-code>\n'
             '<pre><code class="language-python">y = 2</code></pre>',
         )
     )
@@ -168,6 +172,7 @@ def test_check_rejects_a_language_nothing_will_color(page_dir):
     out = result.output
     assert 'class="language-pythn"' in out and "not a language this page's layer speaks" in out
     assert 'class="language-python"' in out and "only <pre><code> is colored" in out
+    assert '<cq-code lang="pythn">' in out, out
     # The well-formed block is not among the complaints.
     assert out.count('class="language-python"') == 1
 
@@ -1429,6 +1434,20 @@ def test_registry_examples_validate(page_dir):
     for tag, example in examples.items():
         errs = interact.fragment_errors(example, registry)
         assert not errs, f"{tag} x-example doesn't validate: {errs}"
+
+
+def test_every_path_a_diff_resolves_names_a_language_the_bundle_carries(page_dir):
+    """The language vocabulary has two halves and they have to agree. `names` is the half
+    an author writes and the half scripts/vendor-highlight.sh builds the tokenizer bundle
+    from; `paths` is what a filename means, which is how a diff colours a file nobody
+    declared a language for. A path resolving outside `names` would resolve to a language
+    the vendored bundle doesn't carry, and the whole hunk would fall back to plain text
+    with a console error — visible only on a page that happens to diff that extension."""
+    reg = json.loads((page_dir / "registry.json").read_text())
+    names = set(reg["$languages"]["names"])
+    paths = reg["$languages"]["paths"]
+    assert paths  # a table with nothing in it would pass the check below and colour nothing
+    assert set(paths.values()) <= names, f"no bundle for {sorted(set(paths.values()) - names)}"
 
 
 def test_examples_pass_check(tmp_path, monkeypatch):
