@@ -69,7 +69,7 @@ instead puts a live review behind the session, and the review-loop hooks then ho
 watching that page.
 
 ```
-uv run --with pytest --with click --with jsonschema --with playwright python -m pytest tests
+uv run --with pytest --with click --with jsonschema --with tinycss2 --with playwright python -m pytest tests
 ```
 
 ## Rebuilding the syntax bundle

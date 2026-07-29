@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.9"
-# dependencies = ["click>=8", "jsonschema>=4"]
+# requires-python = ">=3.10"
+# dependencies = ["click>=8", "jsonschema>=4", "tinycss2>=1.4"]
 # ///
 """Serve and mediate an interactive colloquy page.
 
@@ -176,6 +176,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 import click
+import tinycss2
 from jsonschema import Draft202012Validator
 
 HEARTBEAT_FRESH_SECS = 8
@@ -1839,76 +1840,62 @@ def _removed_by(html, registry, wanted: str, section: str, decided, rewritten):
 
 
 # ---------- the readable column ----------
-# The version's own stylesheet, read the way CSS is written: braces delimit a rule, `;`
-# a declaration, `:` its property from its value. What a version pins in pixels then
-# comes off the parser, since a rule, a style="" and a width="" are the three places a
-# document states a width.
+# A rule, a style="" and a width="" are the three places a document states a width.
+# The first two are CSS, so tinycss2 reads them; the third is an attribute, so the
+# markup parser does.
 
 
-def _uncommented(css: str) -> str:
-    """`css` with its comments taken out. They are grammar rather than noise here: a
-    commented-out rule still carries braces, and a walk that counted them would read
-    the rest of the sheet one nesting level deep."""
-    out = []
-    while True:
-        head, sep, css = css.partition("/*")
-        out.append(head)
-        if not sep:
-            return "".join(out)
-        _, _, css = css.partition("*/")
+def css_block(css):
+    """What a block holds: the declarations it states, and the rules nested inside it. A
+    style="" attribute is a block written without the braces around it."""
+    return tinycss2.parse_blocks_contents(css, skip_comments=True, skip_whitespace=True)
 
 
 def css_rules(css: str):
-    """(selector, body) per leaf rule — a nested at-rule yields the rules inside it
-    rather than itself, since only a leaf holds declarations."""
-    css = _uncommented(css)
-    stack, mark = [], 0
-    for i, ch in enumerate(css):
-        if ch == "{":
-            if stack:
-                stack[-1][2] = False  # it wraps rules, so it declares nothing itself
-            stack.append([css[mark:i].strip(), i, True])
-            mark = i + 1
-        elif ch == "}":
-            if stack:
-                selector, opened, leaf = stack.pop()
-                if leaf and selector:
-                    yield selector, css[opened + 1:i]
-            mark = i + 1
+    """(selector, block) per qualified rule, at every depth. A rule inside an @media or
+    nested in another rule states a width like any other, and a rule that holds both
+    declarations and a nested rule states one of its own."""
+    yield from _rules(tinycss2.parse_stylesheet(css, skip_comments=True, skip_whitespace=True))
 
 
-def css_declarations(css: str):
-    """(property, value) per declaration in a declaration list — a rule's body, or a
-    style="" attribute, which is one without the braces."""
-    for declaration in css.split(";"):
-        prop, sep, value = declaration.partition(":")
-        if sep:
-            yield prop.strip().lower(), value.strip()
+def _rules(nodes):
+    """`nodes` and every rule nested inside them, as (selector, block)."""
+    for node in nodes:
+        if node.type == "qualified-rule":
+            block = css_block(node.content)
+            yield tinycss2.serialize(node.prelude).strip(), block
+            yield from _rules(block)
+        elif node.type == "at-rule" and node.content:
+            yield from _rules(css_block(node.content))
 
 
 def _number(text: str):
-    """`text` as a number, or None when it is not one."""
+    """`text` as a number, or None when it is not one. A width="" attribute states a
+    bare count of pixels, so it has no unit for the CSS parser to read."""
     try:
         return float(text)
     except ValueError:
         return None
 
 
-def _px(value: str):
-    """The pixel length a CSS value states, or None for one that states something
-    else: a percentage, a vw, a calc() whose last term happens to end in px. Only a
-    fixed pixel width is a hard overflow."""
-    value = value.strip().lower()
-    return _number(value[:-2]) if value.endswith("px") else None
+def _px(declaration):
+    """The pixel length a declaration states, or None where it states something else: a
+    percentage, a vw, a calc() with a px term inside it. Only a fixed pixel length is a
+    hard overflow, and only a lone length is fixed. A value keeps the whitespace around
+    it, which is a token like any other and not part of what the value says."""
+    value = [t for t in declaration.value if t.type != "whitespace"]
+    if len(value) == 1 and value[0].type == "dimension" and value[0].lower_unit == "px":
+        return value[0].value
+    return None
 
 
-def _px_widths(css: str, props: tuple):
-    """(property, pixels) per declaration in `props` that a declaration list pins to a
-    fixed pixel length."""
-    for prop, value in css_declarations(css):
-        px = _px(value) if prop in props else None
-        if px is not None:
-            yield prop, px
+def _px_widths(declarations, props: tuple):
+    """(property, pixels) per declaration in `props` pinned to a fixed pixel length."""
+    for declaration in declarations:
+        if declaration.type == "declaration" and declaration.lower_name in props:
+            px = _px(declaration)
+            if px is not None:
+                yield declaration.lower_name, px
 
 
 def _column_width(page_css: str, theme_css: str) -> int:
@@ -1917,9 +1904,9 @@ def _column_width(page_css: str, theme_css: str) -> int:
     for css in (page_css, theme_css):
         widths = [
             px
-            for selector, body in css_rules(css)
+            for selector, block in css_rules(css)
             if any(sel in selector for sel in COLUMN_SELECTORS)
-            for _, px in _px_widths(body, ("max-width",))
+            for _, px in _px_widths(block, ("max-width",))
         ]
         if widths:
             return int(max(widths))
@@ -1930,12 +1917,12 @@ def _overwide_elements(parser: _StructParser, column: int) -> list:
     """Everything a version pins wider than the column: its own rules, its inline
     styles, and the width="" attributes that count as pixels."""
     hits = []
-    for selector, body in css_rules(parser.css):
-        for prop, px in _px_widths(body, OVERFLOW_PROPS):
+    for selector, block in css_rules(parser.css):
+        for prop, px in _px_widths(block, OVERFLOW_PROPS):
             if px > column:
                 hits.append(f"rule `{selector}` sets {prop}: {px:g}px (column is {column}px)")
     for style in parser.inline_styles:
-        for prop, px in _px_widths(style, OVERFLOW_PROPS):
+        for prop, px in _px_widths(css_block(style), OVERFLOW_PROPS):
             if px > column:
                 hits.append(f"inline style {prop}: {px:g}px (column is {column}px)")
     for tag, value in parser.attr_widths:

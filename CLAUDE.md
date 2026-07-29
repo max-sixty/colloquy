@@ -105,13 +105,24 @@ been quiet and wrong in the usual way: an attribute the registry marks `x-says` 
 on the page, and a walk that only sees text nodes would say a picked option's `effort`
 never changed.
 
-Two parsers read a version and nothing else does: `_StructParser` for what its markup
-declares, `page_passages` for what it says. A new question about a version is a field on
-one of them rather than a pattern over the file's text, because a pattern answers
-something adjacent to the question asked. The column check's three did: the document read
-as a stylesheet handed a screenshot's base64 to the rule walker, `width` needed a
-lookbehind to exclude `max-width` because it matched a name instead of reading a property,
-and the scan for `style=""` never saw one written with the other quote.
+A version is written in two languages, and each one is read by a parser for that
+language: `_StructParser` for what the markup declares and `page_passages` for what it
+says, `tinycss2` for the CSS a `<style>` block holds. A new question about a version is a
+field on one of those readings rather than a pattern over the file's text, because a
+pattern answers something adjacent to the question asked. The column check's three did:
+the document read as a stylesheet handed a screenshot's base64 to the rule walker, `width`
+needed a lookbehind to exclude `max-width` because it matched a name instead of reading a
+property, and the scan for `style=""` never saw one written with the other quote.
+
+Hand-rolling one is the same mistake a level down, and harder to see, because a
+hand-rolled parser is right about the grammar it was written against. The brace walk those
+patterns became knew that a comment's braces are not braces, and still read a `}` inside
+`content: "}"` as the end of the block, dropping every declaration after it in that rule;
+still read a rule holding both declarations and a nested rule as declaring nothing of its
+own; and still told a fixed `900px` from a `calc(100% - 900px)` by asking whether the
+string ended in `px`, which `900px !important` does not. CSS has no parser in the stdlib,
+so the dependency is a real cost — one more wheel behind every `check`, ~6ms to read the
+theme — and it buys the grammar whole rather than one bug's worth at a time.
 
 ### The file's reading never claims more than the page's
 

@@ -933,11 +933,12 @@ def test_check_names_a_media_reference_the_directory_cannot_answer(page_dir):
 
 def test_check_reads_only_the_page_stylesheet_and_stays_near_free(page_dir):
     """A version's CSS is what its <style> blocks hold. Reading the whole file as one
-    made a megabyte of base64 (one screenshot as a data: URI) into a stylesheet to walk,
-    and the rule scanner used to backtrack quadratically across any long brace-free run,
-    which took the better part of an hour. The clock bound is three orders of magnitude
-    above the fixed cost, so it fails on a re-introduced quadratic and not on a slow
-    machine; the assertion above it fails on the shape that fed it the page."""
+    made a megabyte of base64 (one screenshot as a data: URI) into a stylesheet to
+    tokenize, and the rule scanner reading it used to backtrack quadratically across any
+    long brace-free run, which took the better part of an hour. The clock bound is three
+    orders of magnitude above the fixed cost, so it fails on a re-introduced quadratic
+    and not on a slow machine; the assertion above it fails on the shape that fed it the
+    page."""
     blob = "A" * 1_000_000
     html = PAGE.replace("<h2>Plan</h2>", f'<h2>Plan</h2><p><img alt="shot" src="data:image/png;base64,{blob}"></p>')
     (page_dir / "versions" / "v1.html").write_text(html)
@@ -951,26 +952,54 @@ def test_check_reads_only_the_page_stylesheet_and_stays_near_free(page_dir):
     assert time.monotonic() - started < 10
 
 
-def test_css_rules_reads_leaf_rules_past_nesting_and_comments(page_dir):
-    """Braces delimit a rule, so @media yields the rules it wraps rather than itself —
-    and a commented-out rule's braces are not braces, or the walk would read the rest of
-    the sheet one nesting level deep."""
-    assert list(interact.css_rules("main { max-width: 760px }")) == [("main", " max-width: 760px ")]
-    assert list(interact.css_rules("@media print { .cq-ui { display: none } }")) == [
-        (".cq-ui", " display: none ")
-    ]
-    assert list(interact.css_rules("/* .old { width: 900px } */ main { max-width: 760px }")) == [
-        ("main", " max-width: 760px ")
-    ]
+def styled(css, body='<svg width="10" height="10"></svg>'):
+    """PAGE with `css` as its own stylesheet and `body` after the first heading."""
+    return PAGE.replace("</head>", f"<style>{css}</style></head>").replace(
+        "<h2>Plan</h2>", f"<h2>Plan</h2>{body}"
+    )
+
+
+def test_check_reads_a_page_stylesheet_as_css(page_dir):
+    """Grammar, not brace-counting. A `}` inside a string is a character, and counting it
+    as the end of a block drops every declaration after it in that rule. A comment's
+    braces are not braces either. An @media wraps rules that state widths, and under
+    nesting a rule states its own width as well as wrapping others — which a walk that
+    reads only the innermost block never sees."""
+
+    def checked(css, body='<svg width="10" height="10"></svg>'):
+        (page_dir / "versions" / "v1.html").write_text(styled(css, body))
+        return check(page_dir)
+
+    assert "sets width: 900px" in checked("@media print { .wide { width: 900px } }").output
+    assert "sets width: 900px" in checked('.wide::before { content: "}"; width: 900px }').output
+    assert checked("/* .wide { width: 900px } */").exit_code == 0
+    # A nested rule's parent declares the column it also wraps rules inside.
+    assert (
+        checked(
+            "main { max-width: 1000px; & p { color: red } }", '<svg width="900" height="10"></svg>'
+        ).exit_code
+        == 0
+    )
+
+
+def test_check_counts_only_a_width_fixed_in_pixels(page_dir):
+    """A length is a typed value, not a string ending in `px`. A percentage or a vw
+    scales to whatever contains it, and a calc() with a px term inside it is arithmetic
+    rather than a pin — only a lone pixel length can overflow the column."""
+    (page_dir / "versions" / "v1.html").write_text(
+        styled(".a { width: 200% } .b { width: 90vw } .c { width: calc(100% - 900px) }")
+    )
+    assert check(page_dir).exit_code == 0
+
+    (page_dir / "versions" / "v1.html").write_text(styled(".d { width: 900px !important }"))
+    assert "sets width: 900px" in check(page_dir).output
 
 
 def test_check_measures_against_the_column_the_page_sets_for_itself(page_dir):
     """A page-local <style> is the page's own answer to how wide it reads, so it wins
     over the vendored theme's 760px and an element wider than the theme allows passes."""
     (page_dir / "versions" / "v1.html").write_text(
-        PAGE.replace("</head>", "<style>main { max-width: 1000px }</style></head>").replace(
-            "<h2>Plan</h2>", '<h2>Plan</h2><svg width="900" height="10"></svg>'
-        )
+        styled("main { max-width: 1000px }", '<svg width="900" height="10"></svg>')
     )
     assert check(page_dir).exit_code == 0
 
