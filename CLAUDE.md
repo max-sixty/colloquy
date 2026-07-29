@@ -4,6 +4,21 @@ A page Claude hands the reviewer, and the loop that carries their comments back.
 README covers what it does; this covers how it is built, and the rules that keep it
 buildable.
 
+## Soul
+
+Everything here serves a high-fidelity connection between the agent and the person it is
+working with. That is why the handover is a page. A terminal has one channel and one
+width; a page has as many as the subject needs — a diagram, a board the reviewer drags,
+two screenshots that flip in place — and it carries the reply back on the words that
+prompted it. The vocabulary is something to build with rather than a form to fill in: a
+shape colloquy hasn't got is one a project can add, since theme, registry and widget
+modules all overlay from the user's own config.
+
+Bandwidth is one axis; the other is time. A page that keeps up with the work — a list of
+things ticking over as each is done — says more than the same list written afterwards,
+and keeping it true costs a version rather than a paragraph. Build toward pages that are
+the work itself.
+
 ## Stage
 
 Early, and nothing owes the past anything. Nobody uses it, so there is no deployment,

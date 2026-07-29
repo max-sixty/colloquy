@@ -1,26 +1,51 @@
 ---
 name: colloquy
 description:
-  'Presents a concept, design, decisions, or findings as an HTML page the user comments
-  on in the browser — Claude watches for comments, replies in-thread, and ships revised
-  versions. Use instead of a wall-of-text plan or a handed-over .md report. Triggers:
-  "explain this in HTML", "write it up as a page", "write up the findings", "I want to
-  see the options", or reaching for plan mode on something intricate.'
-argument-hint: "[concept or decision to explain]"
+  'Presents a concept, design, decisions, findings, or a run of work in progress as an
+  HTML page the user comments on in the browser — Claude watches for comments, replies
+  in-thread, and ships revised versions as the work moves. Use instead of a wall-of-text
+  plan or a handed-over .md report. Triggers: "explain this in HTML", "write it up as a
+  page", "write up the findings", "I want to see the options", a run of work whose items
+  the user will want to watch go by, or reaching for plan mode on something intricate.'
+argument-hint: "[concept, decision, or work to show]"
 allowed-tools:
   - Bash(colloquy:*)
 ---
 
-Explain a concept, decision, or findings as an HTML page the user opens in a browser and
-reviews in place: they select text and comment, you reply in-thread and ship revised
+Present a concept, decision, findings, or work in progress as an HTML page the user opens
+in a browser and reviews in place: they select text and comment, you reply in-thread and ship revised
 versions, and a banner shows whether you're working or listening. Reach for it instead
 of a wall-of-text plan or a `.md` report handed over by path, when a complex change
-needs shared understanding or a decision before code, or when a diagnosis or review is
-itself the deliverable. With nothing named below, the subject is whatever the session is
-about — the plan you were about to give, the design under discussion, or the findings you
-just gathered.
+needs shared understanding or a decision before code, when a diagnosis or review is
+itself the deliverable, or when a run of work has items the reviewer will want to watch
+go by. With nothing named below, the subject is whatever the session is about — the plan
+you were about to give, the design under discussion, the findings you just gathered, or
+the work you are about to start.
 
 $ARGUMENTS
+
+## Soul
+
+A page is the highest-bandwidth thing you can hand someone, so use it. Two habits carry
+most of that.
+
+**Shape follows the subject.** Ask what the subject *is* before writing about it. A set
+of things renders as things — `cq-milestones` for work with stages, `cq-board` for work
+the reviewer re-orders, `cq-options` for a decision, `cq-metrics` for what was measured —
+and the prose says what only prose can. Five paragraphs about five items hand the reader
+the job of rebuilding the list you dissolved; the same five as items, each carrying its
+own state, are read at a glance and commented on one at a time.
+
+**The page keeps up with the work.** A page is not only a thing to review before the
+work starts. Where the work is yours to do and the page tracks it, publish a version each
+time the state moves — an item to `active`, then `done`; a finding added as you find it —
+and the reviewer watches it happen instead of reading about it afterwards. Their browser
+follows each new version by itself, deferring only while they are mid-comment or
+mid-drag, so a version costs them nothing. Ship one when an item's state actually
+changes rather than at every step it took, and let `status working "<detail>"` carry the
+finer grain in between. Keep `wait` running while you work, restarting it as soon as it
+delivers: a comment that lands mid-flight ("skip that one") then reaches you at the next
+step rather than at the end, and the banner reads as working throughout.
 
 ## Setup
 
