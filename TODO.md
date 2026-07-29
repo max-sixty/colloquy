@@ -161,6 +161,29 @@ stands alone.
       Reversing it would mean keeping some mark on settled text, which is exactly
       what settling is for — so the two widgets diverge here on purpose. Revisit
       if a reviewer actually misclicks one.
+- [ ] A rewritten draft shows the new words and nothing about the change. Both layers
+      already say *that* one happened — the runtime marks the draft `data-cq-pending`
+      until a version honors it, the version diff marks the whole block — and neither
+      says *what*, so a reviewer returning to a page they edited yesterday re-reads a
+      paragraph to find their own sentence in it. Half the pieces are here:
+      `authoredFacets` captures every unit's markup state before the first replay, so
+      authored-against-standing is a lookup, and `Intl.Segmenter` is already assumed, so
+      the words are already cut. The missing half is the alignment itself — the version
+      diff compares whole blocks by multiset membership and `cq-diff` renders a unified
+      diff someone else computed, so nothing in this layer has ever lined two strings up.
+      Editing *inside* that view is the larger ask and wants its own answer: the widget's
+      premise is that reading and editing are one box, and a diff is a third rendering
+      that is neither.
+- [ ] A draft can't be walked back. The record is already complete — every `edit` carries
+      the whole new body, so the log holds each state the draft has been in, and the page
+      holds the log — and restoring one needs no new verb, since an absolute `edit`
+      naming an older text is an ordinary edit that replay converges on like any other.
+      What is missing is a way for a widget to read its own past (modules are handed the
+      fold, never the sequence) and a shape for showing it that a one-box widget can hold
+      — the same rendering question as the diff above, which a history view would want
+      anyway to say how two entries differ. The reading half belongs on the runtime's
+      helper surface rather than in `cq-draft`, because the second widget to want it
+      would otherwise copy it.
 - [ ] `cq-diff` keeps text in the DOM that nothing on screen shows: the `---`/`+++`
       headers render as `.meta` lines the theme sets to `display: none`, because the
       summary already names the file. A reviewer cannot select them, but the paint

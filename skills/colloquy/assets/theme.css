@@ -664,15 +664,23 @@ cq-code cq-note { display: block; }
    the host, since a border on the textarea is a border read mode hasn't got: the dashed
    border goes solid and accent for as long as an edit is open.
 
+   The controls are a fixed part of that box rather than something an edit adds to it:
+   one row under the text in both views, holding ✎ while reading and Cancel and Save
+   while editing, all three the same button, so the row's height is the same in either
+   view and nothing under the pointer moves. It cost the ✎ its floating corner. An
+   absolute corner costs no height, but then the row replacing it does, and the box grew
+   36px the instant a double-click landed — a gesture aimed at a word, answered by the
+   whole block changing shape. The text got the corner's 40px gutter back.
+
    The box being open is a fact about the screen, so the whole swap is scoped to it and
    the widget's JS writes none of it. Paper drops the box with the other offers, and
    without this scope it dropped the hidden body too and printed a draft as an empty
    frame — the words a page states have to survive a medium that has no box to type in,
    and an unsent edit is not yet among them. */
-cq-draft { display: block; position: relative; border: 1px dashed var(--border-2); border-radius: 6px;
-           padding: 10px 40px 10px 14px; margin: 12px 0; background: var(--card); }
+cq-draft { display: block; border: 1px dashed var(--border-2); border-radius: 6px;
+           padding: 10px 14px; margin: 12px 0; background: var(--card); }
 .cq-draft-body, .cq-draft-edit.cq-ui { white-space: pre-wrap; overflow-wrap: break-word; }
-.cq-draft-pencil { position: absolute; top: 6px; right: 6px; opacity: .45; }
+.cq-draft-pencil { opacity: .45; }
 cq-draft:hover .cq-draft-pencil, cq-draft:focus-within .cq-draft-pencil { opacity: 1; }
 .cq-draft-edit.cq-ui { display: block; width: 100%; padding: 0; border: 0; background: none;
            min-height: 0; max-height: none; overflow: hidden; }
@@ -682,9 +690,9 @@ cq-draft:hover .cq-draft-pencil, cq-draft:focus-within .cq-draft-pencil { opacit
              border-color: color-mix(in srgb, var(--accent) 45%, var(--card));
              box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
   cq-draft:has(.cq-draft-edit) > .cq-draft-body,
-  cq-draft:has(.cq-draft-edit) > .cq-draft-pencil { display: none; }
+  cq-draft:has(.cq-draft-edit) .cq-draft-pencil { display: none; }
 }
-.cq-draft-editrow { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.cq-draft-controls { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 
 /* Where a widget upgrade fails, it fails soft into this box. */
 .cq-error { border: 1px solid var(--danger); background: var(--danger-tint);

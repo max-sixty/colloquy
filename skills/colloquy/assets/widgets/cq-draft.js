@@ -28,10 +28,12 @@
  *    x-state rather than remembered here.
  *
  * Editing has two doors: double-click the text (the fast path), or the ✎ button (the
- * door keyboards and touch can use; it also makes the block *look* editable). Unsent
- * keystrokes ride the runtime's draft store (saveDraft/loadDraft), the composer's
- * discipline: written on input, cleared only by a successful send, so reload, version
- * switch, and server death all recover.
+ * door keyboards and touch can use; it also makes the block *look* editable). It sits
+ * in a control row the draft always has, which Cancel and Save join for the length of
+ * an edit — one row of the same button either way, so opening one changes what the box
+ * offers without changing its shape. Unsent keystrokes ride the runtime's draft store
+ * (saveDraft/loadDraft), the composer's discipline: written on input, cleared only by a
+ * successful send, so reload, version switch, and server death all recover.
  *
  * The fast path is taken on the second mousedown rather than on dblclick, because the
  * word the browser selects is selected *by* that mousedown and painted before dblclick
@@ -98,7 +100,7 @@ function capture(el) {
 customElements.define(
   "cq-draft",
   class extends HTMLElement {
-    #body; #pencil; #ta = null; #row = null;
+    #body; #pencil; #row; #ta = null;
 
     connectedCallback() {
       if (!once(this)) return;
@@ -130,7 +132,9 @@ customElements.define(
       this.#pencil.classList.add("cq-draft-pencil");
       this.#pencil.setAttribute("aria-label", `Edit ${this.id}`);
       this.#pencil.title = "Edit this text — or double-click it";
-      this.prepend(this.#pencil);
+      this.#row = offer("div", "cq-draft-controls");
+      this.#row.append(this.#pencil);
+      this.append(this.#row);
 
       // The fast path, taken before the browser paints the selection this gesture
       // would have made (see above). The word it aimed at opens selected in the box.
@@ -163,13 +167,12 @@ customElements.define(
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) this.#commit();
         else if (e.key === "Escape") this.#close(true);
       });
-      this.#row = offer("div", "cq-draft-editrow");
       this.#row.append(
         this.#button("Cancel", () => this.#close(true)),
         this.#button("Save", () => this.#commit(), "primary"),
       );
       this.#ta = ta;
-      this.#body.after(ta, this.#row);
+      this.#body.after(ta);
       ta.focus();
       // Only the pointer names a place; the pencil and a recovered draft leave the
       // caret where focus put it, at the start of the text.
@@ -180,10 +183,12 @@ customElements.define(
       if (!this.#ta) return;
       if (discard) saveDraft(ctx(this.id), "");
       this.#ta.remove();
-      this.#row.remove();
-      this.#ta = this.#row = null;
-      // The edit box had focus and is gone; hand it to the draft's one persistent
-      // control so a keyboard reviewer isn't dropped back at the page top.
+      this.#ta = null;
+      // States the whole row rather than removing two buttons from it, so read mode
+      // is one call from anywhere. The edit box had focus and is gone; hand it to the
+      // draft's one persistent control so a keyboard reviewer isn't dropped back at
+      // the page top.
+      this.#row.replaceChildren(this.#pencil);
       this.#pencil.focus();
     }
 

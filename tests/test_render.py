@@ -3861,6 +3861,12 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
     everywhere else, and what cancelling the default rather than undoing it is
     for.
 
+    The block around them counts too: the whole draft has to keep its shape, or a
+    gesture aimed at one word is answered by everything under it moving. Cancel and
+    Save join a row the draft always has rather than arriving as one, which is worth
+    a measurement because the row is invisible in the diff that matters — both views
+    lay out fine on their own, and only the two together say whether the box moved.
+
     And the swap is the screen's, which is why the widget writes none of it: paper
     drops the box with the other offers, so a draft mid-edit printed as an empty
     frame for as long as the module hid the body itself."""
@@ -3872,6 +3878,7 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
               b.y + parseFloat(s.paddingTop) + parseFloat(s.borderTopWidth), b.width, b.height];
     }"""
     read = page.evaluate(metrics, ".cq-draft-body")
+    host = page.locator("#draft-ops").bounding_box()
 
     box = page.locator("#draft-ops .cq-draft-body").bounding_box()
     page.mouse.dblclick(box["x"] + 60, box["y"] + 8)
@@ -3879,6 +3886,9 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
     expect(editor).to_be_focused()
     assert page.evaluate(metrics, "textarea") == read, (
         "the editor's text sits somewhere the read view's text did not"
+    )
+    assert page.locator("#draft-ops").bounding_box() == host, (
+        "the draft changed shape under the pointer when the editor opened"
     )
     assert page.evaluate(
         "() => getSelection().rangeCount > 0 && "
@@ -3890,6 +3900,21 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
     )
     assert selected == "migration", f"the box opened on {selected!r} rather than the word clicked"
 
+    # Closing states both properties in reverse, and the focus half is a question
+    # only because the ✎ is CSS-hidden for as long as the editor is there: #close
+    # reaches for it the instant the editor goes, so a style that hadn't caught up
+    # would drop a keyboard reviewer back at the top of the page.
+    page.keyboard.press("Escape")
+    expect(page.locator("#draft-ops .cq-draft-pencil")).to_be_focused()
+    assert page.locator("#draft-ops").bounding_box() == host, (
+        "the draft came back from an edit a different shape than it went in"
+    )
+
+    # Reopened through the other door, because print is where the box has to be
+    # gone and its words still there — and print emulation blurs the textarea it
+    # hides, so an editor opened before this point is no longer one Escape closes.
+    page.locator("#draft-ops .cq-draft-pencil").click()
+    expect(page.locator("#draft-ops textarea")).to_be_visible()
     page.emulate_media(media="print")
     assert page.locator("#draft-ops").inner_text() == DRAFT_TEXT, (
         "the printed page lost the draft's words to a box paper hasn't got"
