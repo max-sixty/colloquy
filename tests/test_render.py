@@ -601,6 +601,43 @@ def test_a_shot_refuses_a_pair_shot_at_two_widths(browser, serve):
     )
 
 
+# Two ways a widget leaves words on screen that no comment can land on, written into the
+# markup because the gate reads the rendered page and cannot tell who put them there — a
+# page-local module is where both actually happen, and standing one up here would test the
+# module loader rather than the gate. First: a heading inside a chrome-looking row, with
+# nothing said about whose words it is. Second: the words declared the page's, and put
+# inside a form control, where no pointer can select them however they are marked.
+OUT_OF_REACH_PAGE = CARRIED_PAGE.replace(
+    "<cq-option id=\"c-lax\" chosen>",
+    '<cq-option id="c-lax" chosen><div class="cq-ui"><strong>Session cookies</strong>'
+    "</div><button data-cq-said>Lax, host-only</button>",
+)
+
+
+def test_render_reports_words_a_widget_puts_out_of_reach(browser, serve):
+    """The reviewer's half of the gate. A reviewer selected a draft's heading, tried to
+    comment on it, and got nothing back — twice, months apart, on the same page. The
+    heading was the page's word in a row its author had marked as the runtime's, and
+    `.cq-ui` is a look rather than a permission, so the class alone can't be the answer:
+    the declaration goes on the label (relabel), and an undeclared word under chrome is
+    reported here.
+
+    The second one no marker can fix, which is why it reads differently: a word inside a
+    form control is unselectable in every engine, so a widget that reaches for <button>
+    has put its label somewhere the reviewer cannot go. `offer` builds a press as a span
+    for exactly this reason, and this is what says so when a widget doesn't use it."""
+    assert interact.render_version(browser, serve(CARRIED_PAGE)) == [], (
+        "the same page without the two mistakes has nothing to report"
+    )
+    found = interact.render_version(browser, serve(OUT_OF_REACH_PAGE))
+    assert sorted({f.split("] ", 1)[1] for f in found}) == [
+        '<cq-option id=c-lax> puts "Session cookies" under .cq-ui, where no comment '
+        "can reach it",
+        '<cq-option id=c-lax> says "Lax, host-only" inside a form control, where no '
+        "selection can reach it",
+    ], found
+
+
 UNPARSEABLE_DIAGRAM = LONG_PAGE.replace(
     "</main>",
     "<cq-diagram id='d-broken'>\nflowchart LR\n  A[Start --&gt; B{{{ ]]] broken\n</cq-diagram>\n</main>",
@@ -802,7 +839,13 @@ def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     reach them still does: the disclosure opens them, and a comment anchored in
     one opens the group on its way to the passage. A collapse a comment can't see
     through is worse than no collapse at all, because the thread still lists the
-    quote and clicking it lands nowhere."""
+    quote and clicking it lands nowhere.
+
+    The line itself is in reach too, which is the harder half: while the group is
+    collapsed it is the only place the decision is stated, and it is written into a
+    disclosure — chrome, and a control. And naming the card there means the page now
+    says the card's lede twice, so the third part asks the one thing that buys: a
+    comment made on the card lands on the card."""
     page, errors = open_page(
         browser, serve(SETTLED_PAGE, anchored=[("opt-strict", "arrives logged out")])
     )
@@ -825,8 +868,60 @@ def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     )
 
     row.click()  # closed again, so the reveal below has something to open
-    page.get_by_role("button", name="Comments", exact=False).click()
-    page.locator(".cq-panel .cq-quote").first.click()
+
+    # While it is closed the row is the decision's only visible statement, so the part of
+    # it naming the card has to be quotable — and a drag across it must not toggle the
+    # disclosure it lives in, which is the mouseup of that drag.
+    title = page.locator("#transport .cq-settled [data-cq-said]")
+    box = title.bounding_box()
+    y = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + 2, y)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] - 2, y, steps=8)
+    page.mouse.up()
+    assert page.evaluate("() => getSelection().toString()").strip() == "Settled: Lax cookie"
+    expect(page.locator("#opt-strict")).to_be_hidden()
+    page.locator(".cq-fab").click()
+    expect(page.locator(".cq-composer")).to_be_visible()
+    assert composer_quote(page)["text"].strip("“”") == "Settled: Lax cookie"
+    page.keyboard.press("Escape")
+
+    # The row names the chosen card, so the page now says "Lax cookie" twice and both
+    # copies are quotable. A comment on the card's own lede has to land on the card —
+    # the row comes first in document order, which is where a search on the quote alone
+    # would put it.
+    #
+    # Dropping the selection first is the reviewer's own next move: a press that lands
+    # inside a live selection is that selection's, so the row would not open under it.
+    page.locator("#lede").click()
+    row.click()
+    expect(page.locator("#opt-lax")).to_be_visible()  # until-found keeps a box either way
+    lede = page.locator("#opt-lax > strong")
+    box = lede.bounding_box()
+    y = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + 2, y)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] - 2, y, steps=8)
+    page.mouse.up()
+    page.locator(".cq-fab").click()
+    expect(page.locator(".cq-composer")).to_be_visible()
+    page.locator(".cq-composer textarea").fill("which copy is this on?")
+    page.get_by_role("button", name="Comment", exact=True).click()
+    # Two, not one: this page arrived carrying a mark, so waiting for any at all is a
+    # wait that was over before the gesture started.
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) >= 2")
+    # Both marks on the page: the one this fixture arrived carrying, and the new one.
+    assert sorted(page.evaluate(
+        "() => [...CSS.highlights.get('cq-mark')].map(r => "
+        "r.startContainer.parentElement.closest('[id]').id)"
+    )) == ["opt-lax", "opt-strict"], (
+        "the comment landed on the summary line rather than the card it was made on"
+    )
+    row.click()  # closed again, so the reveal below has something to open
+
+    # Sending opened the panel, so the thread is already listed. Its quote is on a card
+    # the collapse is hiding, and following it has to bring the card back.
+    page.locator(".cq-panel .cq-quote", has_text="arrives logged out").click()
     assert page.locator("#opt-strict").is_visible(), (
         "clicking a thread's quote must open the group holding it"
     )
@@ -885,10 +980,12 @@ def test_a_pick_the_page_only_reports_can_still_be_pointed_at(browser, serve):
     no selection can reach, and under a drag that raises the Comment button.
 
     It shipped the other way round. The mark is one element in two shapes — a
-    button where there is a pick to make, a span where there isn't — and the span
-    wore the button's `.cq-ui`, which anchoring skips, so a reviewer could read
-    "chosen" and not point at it. Every shipped example declares `choose`, so the
-    render suite never rendered the span and nothing said so.
+    press where there is a pick to make, an inert span where there isn't — and the
+    inert one wore the press's `.cq-ui`, which anchoring skipped, so a reviewer
+    could read "chosen" and not point at it. Every shipped example declares
+    `choose`, so the render suite never rendered the inert shape and nothing said
+    so. The press was out of reach for longer and for a different reason, which
+    test_a_pick_offered_can_be_pointed_at_too covers.
 
     Quotable is half a pair, so the other half is here too: the diff parses the
     base version unupgraded, where no mark exists at all, and must not read this
@@ -898,7 +995,7 @@ def test_a_pick_the_page_only_reports_can_still_be_pointed_at(browser, serve):
 
     page, errors = open_page(browser, url)
     mark = page.locator("#c-lax .cq-pick")
-    assert mark.evaluate("el => el.tagName") == "SPAN", "nothing to press means no button"
+    assert mark.get_attribute("role") is None, "nothing to press means no button role"
     box = mark.bounding_box()
     page.mouse.move(box["x"] + 2, box["y"] + box["height"] / 2)
     page.mouse.down()
@@ -938,6 +1035,83 @@ def test_a_pick_the_page_only_reports_can_still_be_pointed_at(browser, serve):
     page.close()
 
 
+def test_a_pick_offered_can_be_pointed_at_too(browser, serve):
+    """The same words on the other shape of mark, in a group that takes a pick. This
+    one was out of reach for a reason no marker could fix: the mark was a <button>,
+    and no engine starts a pointer selection inside a form control, so "chosen" was on
+    screen and unselectable however it was declared. A press is a span wearing the role
+    now, which is what makes the drag below possible at all.
+
+    Two things then have to hold at once. The drag has to select rather than pick — its
+    mouseup lands on the very control it crossed — and the mark has to stay pressable,
+    or the fix has traded a word nobody can quote for a decision nobody can make."""
+    page, errors = open_page(browser, serve(SETTLED_PAGE))
+    page.locator("#transport .cq-settled").click()  # open the group; the cards are hidden
+    mark = page.locator("#opt-lax .cq-pick")
+    expect(mark).to_have_text("chosen")
+
+    # Where the theme puts it: one line along the card's own bottom edge, the same box
+    # whichever word it carries, so a pick shifts nothing. Pinned because the mark now
+    # declares itself the page speaking, and the marker it declares with is the one the
+    # theme's effort/risk chips are selected by — matched bare, the mark came out a pill
+    # in the card's top corner and every assertion here still passed.
+    seat = """el => { const r = el.getBoundingClientRect();
+                      const card = el.closest('cq-option').getBoundingClientRect();
+                      return [Math.round(r.height), Math.round(card.bottom - r.bottom),
+                              Math.round(r.left - card.left)]; }"""
+    assert mark.evaluate(seat) == page.locator("#opt-strict .cq-pick").evaluate(seat)
+    height, up, over = mark.evaluate(seat)
+    assert height < 24 and up < 16 and over < 20, (
+        f"the mark is not a one-line caption on the card's bottom-left: {mark.evaluate(seat)}"
+    )
+
+    box = mark.bounding_box()
+    y = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + box["width"] - 2, y)  # right to left: the ✓ ring is not text
+    page.mouse.down()
+    page.mouse.move(box["x"] + 2, y, steps=8)
+    page.mouse.up()
+    assert page.evaluate("() => getSelection().toString()").strip() == "chosen"
+    expect(page.locator("#transport > cq-option[chosen]")).to_have_count(1)
+    page.locator(".cq-fab").click()
+    expect(page.locator(".cq-composer")).to_be_visible()
+    assert composer_quote(page)["text"].strip("“”") == "chosen"
+    page.keyboard.press("Escape")
+
+    # Still a control: clicking the card that holds the pick clears it, and the keyboard
+    # reaches the mark and works it the way the <button> did.
+    page.evaluate("() => getSelection().removeAllRanges()")
+    page.locator("#opt-strict").click()
+    expect(page.locator("#opt-strict[chosen]")).to_have_count(1)
+    page.locator("#opt-bearer .cq-pick").focus()
+    page.keyboard.press("Enter")
+    expect(page.locator("#opt-bearer[chosen]")).to_have_count(1)
+
+    # And the pair the quotable half always comes with. This mark is the one element on
+    # any page wearing the chrome class and the page-speaking marker at once, so it is the
+    # only case where the anchor pass's reading and the diff's can come apart: the base
+    # version is parsed unupgraded and has no mark in it at all. Read as text, the card
+    # carrying the pick lights up as changed on every revision.
+    #
+    # v2 rewords a third card, so the card the diff should mark and the card wearing the
+    # mark are different ones — with the pick on the reworded card there is nothing to
+    # see, which is how this passed while reading the mark as text.
+    d = serve.page_dir
+    (d / "versions" / "v2.html").write_text(
+        SETTLED_PAGE.replace("arrives logged out", "arrives logged out every time")
+    )
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    page.wait_for_url("**/v2.html", timeout=10_000)
+    expect(page.locator("#opt-bearer[chosen]")).to_have_count(1)  # replay carried the pick
+    page.locator(".cq-banner button", has_text="Δ").click()
+    page.wait_for_function("() => document.querySelectorAll('.cq-ins-block').length > 0")
+    assert page.evaluate(
+        "() => [...document.querySelectorAll('.cq-ins-block')].map(e => e.id)"
+    ) == ["opt-strict"], "the diff read a pick mark as text the base version lacked"
+    assert errors == []
+    page.close()
+
+
 def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     """A specimen is a mention, not a use. The exhibited widgets render at full
     fidelity — that is the whole point of showing one — but wire nothing that
@@ -963,18 +1137,18 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
         "el => Math.round(el.getBoundingClientRect().height)"
     ) > 20
 
-    # …but takes nothing back. Nothing pressable: no grips, and no mark that is
-    # a button — an unpicked quoted card carries no mark at all, exactly as a
-    # group that never declared `choose`. A click chooses nothing either (the
+    # …but takes nothing back. Nothing pressable: no grips, and no mark wearing
+    # the button role — an unpicked quoted card carries no mark at all, exactly as
+    # a group that never declared `choose`. A click chooses nothing either (the
     # choose path sets `chosen` before it sends, so a pick would show here).
-    assert page.locator("#quoted-group button.cq-pick").count() == 0
+    assert page.locator('#quoted-group .cq-pick[role="button"]').count() == 0
     assert page.locator("#quoted-board .cq-grip").count() == 0
     page.locator("#q-shim").click()
     assert page.locator("#quoted-group cq-option[chosen]").count() == 0
 
     # The document's own state still reads: the settled group's authored pick
-    # wears its mark, as a span.
-    assert page.locator("#quoted-settled span.cq-pick").count() == 1
+    # wears its mark, with nothing to press.
+    assert page.locator("#quoted-settled .cq-pick:not([role])").count() == 1
 
     # A quoted suggestion shows what a pending change looks like — both slots
     # marked — and grows nothing to settle it with, so it is also not the
@@ -984,7 +1158,7 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     expect(page.get_by_role("button", name="Accept all (1)")).to_be_visible()
 
     # The control: the same markup unquoted wires all of it.
-    assert page.locator("#live-group button.cq-pick").count() == 2
+    assert page.locator('#live-group .cq-pick[role="button"]').count() == 2
     assert page.locator("#live-board .cq-grip").count() == 1
     assert page.locator("#live-suggestion .cq-sug-actions").count() == 1
 
@@ -1039,7 +1213,7 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
                               "version": 1, "text": SPECIMEN_REPLY})
     page, errors = open_page(browser, url)
     page.get_by_role("button", name="Comments", exact=False).click()
-    page.wait_for_selector("#rp-live button.cq-pick")  # the reply's widgets upgraded
+    page.wait_for_selector('#rp-live .cq-pick[role="button"]')  # the reply's widgets upgraded
     assert errors == []
 
     # The gutter renders in the panel: the specimen rules aren't scoped to the
@@ -1056,7 +1230,7 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
 
     # The exhibit takes the click first, so anything it sends would reach the log
     # ahead of the live group's pick — then the live group takes its own.
-    assert page.locator("#rp-quoted button.cq-pick").count() == 0
+    assert page.locator('#rp-quoted .cq-pick[role="button"]').count() == 0
     page.locator("#rp-memory").click()
     page.locator("#rp-stage").click()
 
@@ -1586,6 +1760,62 @@ def test_a_decision_already_in_the_log_retires_its_slot_at_load(browser, serve):
     page.close()
 
 
+# A suggestion whose losing slot holds a widget. cq-old takes prose, and prose takes
+# widgets, so the mark on a chosen option can sit inside the half a decision removes.
+# `choose`, because that is the shape that bites: a group offering a pick renders the
+# mark as a press, which wears the chrome class *and* declares its word the page's.
+RETIRED_WIDGET_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>retired</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Session transport</h1>
+<p id="lede">Replacing the whole decision block below.</p>
+<cq-suggestion id="sug-swap">
+  <cq-old id="was">
+    <cq-options id="old-group" choose>
+      <cq-option id="old-lax" chosen><strong>Lax cookie</strong> The way it stands.</cq-option>
+    </cq-options>
+  </cq-old>
+  <cq-new id="now"><p id="p-now">A bearer header, settled elsewhere.</p></cq-new>
+</cq-suggestion>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_label_in_a_retired_slot_leaves_the_page_with_the_slot(browser, serve):
+    """A decided suggestion's losing slot is off the page, and a label inside it goes
+    too. The label is the one thing that reads back over chrome — a pick mark says
+    "chosen" and declares those words the page's, which is what lets a reviewer point at
+    it anywhere else — so the rule has to stop at the slot: a marker that outranks a look
+    must not outrank a decision, or a quote lands in the half the reviewer removed."""
+    url = serve(RETIRED_WIDGET_PAGE, anchored=[("sug-swap", "chosen")])
+    interact.append_event(serve.page_dir, {"kind": "action", "author": "user", "version": 1,
+                                           "widget": "sug-swap", "action": "accept",
+                                           "detail": {}})
+    page, errors = open_page(browser, url)
+    expect(page.locator("#sug-swap cq-old")).to_be_hidden()
+    assert page.locator("#old-lax .cq-pick").evaluate("el => el.textContent") == "chosen", (
+        "fixture is not exercising the case — the mark the slot hides never rendered"
+    )
+    expect(page.locator(".cq-thread .cq-quote").first).to_have_class(
+        re.compile(r"\bdetached\b")
+    )
+    assert painted(page, "cq-mark") == "", (
+        "a quote matched inside the half the reviewer accepted away, because the "
+        "label there declared itself the page speaking"
+    )
+    assert errors == []
+    page.close()
+
+
 def test_a_decision_that_empties_its_widget_detaches_the_element_anchor(browser, serve):
     """An element anchor asks whether its section is still on the reviewer's page,
     and for a suggestion that settles to nothing — an insertion refused — the
@@ -2035,7 +2265,13 @@ def test_every_passage_in_a_real_page_can_be_quoted(browser, serve, example):
     what the search reads come apart — an uppercased header, a widget's own chrome, the
     stylesheet a rendered diagram carries — and a hand-built page has none of them. So
     this drags across every pair of adjacent blocks in every shipped example, which is
-    the shape a real selection takes, and asks for the highlight the composer promises."""
+    the shape a real selection takes, and asks for the highlight the composer promises.
+
+    "Every" includes the words a widget renders into a control, which is why the filter
+    below is the runtime's own rule rather than a test for the chrome class: while it was
+    the class, the sweep that proves every passage is quotable structurally could not see
+    the passages that weren't. It reaches six tab names, two column headings and a settled
+    group's summary line in the gallery alone."""
     page, errors = open_page(browser, serve(example.read_text()))
     result = page.evaluate("""async () => {
         const tick = () => new Promise(r => setTimeout(r, 0));
@@ -2045,9 +2281,16 @@ def test_every_passage_in_a_real_page_can_be_quoted(browser, serve, example):
         // the other tab — so everything is in scope, not just what the page opens on.
         document.querySelectorAll('details').forEach(d => (d.open = true));
         document.querySelectorAll('[hidden]').forEach(e => e.removeAttribute('hidden'));
+        // Declared labels are in scope, and the filter is the runtime's own rule rather
+        // than the class: a tab's name and a settled row's title are words the page says
+        // from inside chrome, which is exactly the shape a filter on .cq-ui cannot see.
+        const speaks = el => {
+            const near = el.closest('.cq-ui, [data-cq-said]');
+            return !near || near.matches('[data-cq-said]');
+        };
         const blocks = [...document.querySelectorAll('p,li,h1,h2,h3,td,th,blockquote,'
-            + 'figcaption,summary,cq-option,cq-variant,cq-milestone,cq-metric')]
-          .filter(b => !b.closest('.cq-ui') && b.checkVisibility()
+            + 'figcaption,summary,cq-option,cq-variant,cq-milestone,cq-metric,[data-cq-said]')]
+          .filter(b => speaks(b) && b.checkVisibility()
                     && b.textContent.trim().length > 12);
         const missed = [], skipped = [], astray = [];
         for (let i = 0; i < blocks.length; i++) {
@@ -2197,6 +2440,135 @@ def test_a_widgets_attribute_takes_a_comment_like_any_other_passage(browser, ser
     assert page.evaluate(
         "() => [...document.querySelectorAll('.cq-ins-block')].map(e => e.id)"
     ) == ["c-backfill"], "the diff read the runtime's own spans as text the base lacked"
+    assert errors == []
+    page.close()
+
+
+# A label a widget renders into a control it also built. The tab strip is the case with
+# nowhere else to say it: once the strip exists the panel heading stands down, so the
+# button is the panel's only name. Every word here is distinct, so a quote can only
+# anchor where it was picked, and the panels are long enough that a drag across one of
+# these labels is an ordinary drag.
+CONTROL_LABEL_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>labels</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Aviary projects</h1>
+<p id="lede">Two workstreams, one page.</p>
+<cq-tabs id="projects">
+  <cq-tab id="tab-feeders" label="Winter feeders">
+    <p id="p-feeders">Two of the four feeders are mounted; the south pair waits on brackets.</p>
+  </cq-tab>
+  <cq-tab id="tab-bath" label="Heated bird bath">
+    <p id="p-bath">The thermostat arrived cracked and a replacement is on order.</p>
+  </cq-tab>
+</cq-tabs>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_widgets_label_takes_a_comment_inside_the_control_it_labels(browser, serve):
+    """The other half of the pair above: a word the page says that the widget renders
+    into a control. A tab's name is the case with nowhere else to go — the panel heading
+    the theme paints stands down the moment the strip exists — so if the strip's button
+    can't be quoted, the reviewer can read the tab's name and never point at it.
+
+    That is what a reviewer hit, twice, on a draft's heading: the words were the page's
+    and the row holding them was marked as the runtime's. `.cq-ui` is a look, and
+    anchoring's question is whose words these are — so the label answers it where it is
+    written (relabel), and the nearest answer wins over the box around it.
+
+    A real drag, because the whole class of bug is text that looks selectable and
+    isn't. Then the republish, because an anchor on a widget's word has to survive a
+    version turning over the way one on a paragraph does."""
+    page, errors = open_page(browser, serve(CONTROL_LABEL_PAGE))
+
+    tab = page.get_by_role("tab", name="Heated bird bath")
+    box = tab.bounding_box()
+    y = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + 6, y)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] - 6, y, steps=8)
+    page.mouse.up()
+
+    assert page.evaluate("() => getSelection().toString()").strip() == "Heated bird bath", (
+        "a drag across the tab's name selected nothing"
+    )
+    # The drag ended on a button, and the button still switches tabs — but this mouseup
+    # was a selection's, not a press, so the reader is still looking at what they were
+    # reading when they reached for the name.
+    expect(page.locator("#p-feeders")).to_be_visible()
+
+    page.locator(".cq-fab").click()
+    expect(page.locator(".cq-composer")).to_be_visible()
+    assert composer_quote(page)["text"].strip("“”") == "Heated bird bath"
+    page.locator(".cq-composer textarea").fill("call it the bath, not the bird bath")
+    page.get_by_role("button", name="Comment", exact=True).click()
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+
+    thread = page.locator(".cq-thread .cq-quote").first
+    assert thread.text_content().strip().strip("“”") == "Heated bird bath"
+
+    # A second version reworking the other panel's prose and nothing else: the name the
+    # comment is on is still there, so the comment is still on it.
+    d = serve.page_dir
+    (d / "versions" / "v2.html").write_text(
+        CONTROL_LABEL_PAGE.replace("the south pair waits on brackets", "the brackets arrived")
+    )
+    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    page.wait_for_url("**/v2.html", timeout=10_000)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    assert page.locator(".cq-thread .cq-quote.detached").count() == 0, (
+        "the comment came loose from the tab's name when the version turned over"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_a_selection_around_a_control_does_not_deaden_it(browser, serve):
+    """The other side of the guard above, and the one that cost more. A reviewer reads
+    the sentence a suggestion sits in, drags across it, and then presses Accept — a
+    fresh press, long after that drag's own mouseup.
+
+    Asking whether the live selection *contains* the control is a question about the
+    DOM, and a suggestion's buttons are its children, hung out in the margin by CSS
+    alone: every selection over the passage contains them. So Accept did nothing, and
+    kept doing nothing, because a press that refuses a drag never collapses the
+    selection that deadened it either. The keyboard still worked, which is the shape of
+    a bug nobody reports — it looks like a slip of the mouse.
+
+    Both decisions the product exists to collect go through a press, so this asserts the
+    pointer and then the keyboard, with the selection standing throughout."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    # The card's suggestion rather than the column's, because a suggestion in running
+    # prose hangs its controls in the page margin, which is where the drag's own
+    # Comment button lands too — a real element in front of the one under test.
+    card = page.locator("#card-heater").bounding_box()
+    page.mouse.move(card["x"] + 4, card["y"] + 6)
+    page.mouse.down()
+    page.mouse.move(card["x"] + card["width"] - 6, card["y"] + card["height"] - 6, steps=16)
+    page.mouse.up()
+    assert page.evaluate(
+        "() => getSelection().containsNode(document.querySelector('#sug-in-card"
+        " .cq-sug-reject'), true)"
+    ), "the selection doesn't reach the control, so this run tests nothing"
+
+    page.locator("#sug-in-card .cq-sug-reject").click()
+    expect(page.locator("#sug-in-card")).to_have_attribute("data-cq-state", "rejected")
+    assert page.evaluate("() => !getSelection().isCollapsed"), (
+        "the press cleared the selection, so the keyboard half below is untested"
+    )
+    page.locator("#sug-thistle .cq-sug-accept").focus()
+    page.keyboard.press("Enter")
+    expect(page.locator("#sug-thistle")).to_have_attribute("data-cq-state", "accepted")
     assert errors == []
     page.close()
 
@@ -3593,6 +3965,78 @@ def test_a_comment_written_on_an_edited_draft_lands_on_their_words(browser, serv
     thread = page.locator(".cq-thread .cq-quote").first
     expect(thread).not_to_have_class(re.compile(r"\bdetached\b"))
     assert painted(page, "cq-mark") == "It takes about a minute."
+    assert errors == []
+    page.close()
+
+
+# The two presses this asks about, on one page: a draft's ✎ (a thing to do) and a pick
+# mark (a thing to do that becomes a thing the page says once it is pressed).
+KEYS_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>keys</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Session store</h1>
+<cq-options id="opts" choose>
+  <cq-option id="opt-keep"><strong>Keep the store</strong> Sessions stay where they are.</cq-option>
+  <cq-option id="opt-token"><strong>Signed tokens</strong> No store at all.</cq-option>
+</cq-options>
+<cq-draft id="draft-ops">
+    Run the migration before deploying.
+</cq-draft>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_press_takes_the_keys_a_button_came_with(browser, serve):
+    """A press is a span wearing role="button" (`offer`), so Enter and Space are the
+    runtime's to supply — and it supplies them once, for every widget, which is why this
+    is one test rather than a leg in each widget's own. What it has to get right is the
+    two things a real <button> did for free.
+
+    Activation: the ✎ on a draft is the door a keyboard reviewer uses, and if a span
+    swallowed Enter there would be no way in at all.
+
+    And once per press however long the key is held. A real button fired on keyup; a
+    keydown listener hears the key repeat, and a mark that toggles per repeat posts a
+    `choose` per repeat — a stuck key filling the log with decisions the reviewer never
+    made. Repeats are dispatched rather than driven, because no automation holds a key
+    down; what the browser delivers is exactly this event with `repeat` set."""
+    page, errors = open_page(browser, serve(KEYS_PAGE))
+
+    page.locator("#draft-ops .cq-draft-pencil").focus()
+    page.keyboard.press("Enter")
+    expect(page.locator("#draft-ops textarea")).to_be_focused()
+    page.keyboard.press("Escape")
+
+    mark = page.locator("#opts .cq-pick").first
+    mark.focus()
+    page.keyboard.press(" ")
+    expect(page.locator("#opts > cq-option[chosen]")).to_have_count(1)
+    chosen = page.locator("#opts > cq-option[chosen]").get_attribute("id")
+    mark.evaluate("""el => {
+        for (let i = 0; i < 5; i++)
+            el.dispatchEvent(new KeyboardEvent('keydown',
+                {key: ' ', repeat: true, bubbles: true, cancelable: true}));
+    }""")
+    expect(page.locator(f"#{chosen}[chosen]")).to_have_count(1)
+    sent = [
+        json.loads(line)
+        for line in (serve.page_dir / "comments.jsonl").read_text().splitlines()
+    ]
+    assert [e for e in sent if e.get("action") == "choose"] != [], (
+        "the first press sent nothing, so the repeats below had nothing to duplicate"
+    )
+    assert len([e for e in sent if e.get("action") == "choose"]) == 1, (
+        "a held key sent one decision per repeat"
+    )
     assert errors == []
     page.close()
 

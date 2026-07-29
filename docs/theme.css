@@ -170,7 +170,13 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0;
  * where the runtime got there, asked by :has() and placed later in the cascade,
  * so the two are never both on. The word in front of a value stays a pseudo
  * either way ("effort", "specimen ·"): that one is the theme's word about the
- * page's, and only the page's is worth quoting. */
+ * page's, and only the page's is worth quoting.
+ *
+ * Every rule here names the attribute it styles, because data-cq-said is the wider
+ * claim that these words are the page's — a widget's own label wears it bare
+ * (relabel) — and a rule matching it bare styles whatever a widget says next. The
+ * chosen-option mark is a direct child of cq-option and came out as an effort chip
+ * pinned to the card's top corner. */
 
 /* cq-options / cq-option: this is the widget's whole definition — no JS.
  * Chips read the attributes: effort top-left, risk top-right (tinted per
@@ -185,7 +191,7 @@ cq-option > strong { display: block; margin: 0 0 4px; font-size: 15px; }
 cq-option[recommended] { border-color: var(--accent);
                          box-shadow: 0 0 0 1px var(--accent); }
 cq-option::before, cq-option::after,
-cq-option > [data-cq-said] { position: absolute; top: 12px;
+cq-option > [data-cq-said="effort"], cq-option > [data-cq-said="risk"] { position: absolute; top: 12px;
     font-size: var(--t-6); line-height: 1.6; padding: 0 8px; border-radius: 999px;
     background: var(--chip); color: var(--ink-2); }
 cq-option[effort]::before, cq-option > [data-cq-said="effort"] { left: 12px; }
@@ -227,12 +233,12 @@ cq-option[chosen] { padding-bottom: 32px; }
 cq-option .cq-pick { position: absolute; left: var(--sp-3); bottom: 9px;
                      display: inline-flex; align-items: center; gap: 6px;
                      font: inherit; font-size: var(--t-6); line-height: 1.5;
-                     padding: 0; border: 0; background: none; color: var(--muted); }
+                     color: var(--muted); }
 cq-option .cq-pick::before { content: ""; width: 11px; height: 11px; flex: none;
                      border: 1.5px solid var(--border-2); border-radius: 50%;
                      display: grid; place-items: center; box-sizing: border-box;
                      font-size: 8px; line-height: 1; color: var(--card); }
-cq-option button.cq-pick { cursor: pointer; }
+cq-option .cq-pick[role="button"] { cursor: pointer; }
 cq-options[choose] > cq-option:not([chosen]):hover .cq-pick { color: var(--ink-2); }
 cq-options[choose] > cq-option:not([chosen]):hover .cq-pick::before { border-color: var(--muted); }
 cq-option[chosen] .cq-pick { color: var(--ok-ink); }
@@ -251,9 +257,11 @@ cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-off
  * lays out as a block, so hidden cards contribute no grid rows and no gaps;
  * open, the grid is back. Unupgraded (and in print) every card shows. */
 cq-options[settled].cq-rendered:not([open]) { display: block; }
-/* Scoped, not a bare .cq-settled: the row wears cq-ui so anchoring skips it, and
- * the runtime's own .cq-ui font and color rules are later in the cascade. This
- * is the page's disclosure, so it reads at the theme's summary size. */
+/* Scoped, not a bare .cq-settled: the row wears cq-ui for the chrome look, and the
+ * runtime's own .cq-ui font and color rules are later in the cascade. This is the
+ * page's disclosure, so it reads at the theme's summary size. (The part of the row
+ * naming the chosen card is the page speaking and says so, which anchoring reads
+ * over the class — see cq-options.js.) */
 cq-options[settled] > .cq-settled {
               grid-column: 1 / -1; display: flex; width: 100%; align-items: baseline;
               gap: var(--sp-2); margin: 0 0 var(--sp-2); padding: 7px 12px;
@@ -390,9 +398,9 @@ cq-card { display: block; position: relative; background: var(--card);
           padding: 8px 34px 8px 10px; margin: 0 0 var(--sp-2); font-size: 14px; }
 cq-card:last-child { margin-bottom: 0; }
 cq-card > strong { display: block; margin: 0 0 2px; }
-/* The grip is a <button>, so the keyboard reaches it: Enter grabs, arrows move. */
+/* The grip is a press, so the keyboard reaches it: Enter grabs, arrows move. */
 cq-card .cq-grip { position: absolute; top: 2px; right: 0; color: var(--muted);
-          background: none; border: none; cursor: grab; padding: 8px 10px;
+          cursor: grab; padding: 8px 10px;
           border-radius: 4px; user-select: none;
           -webkit-user-select: none; font-size: 14px; line-height: 1;
           touch-action: none; /* the handle owns the gesture; scroll stays on the card */ }
@@ -425,12 +433,12 @@ cq-tabs.cq-rendered > cq-tab[hidden] { margin: 0; }
 cq-tabs.cq-rendered > cq-tab[hidden]:not([hidden="until-found"]) { display: none; }
 .cq-tabstrip { display: flex; flex-wrap: wrap; gap: 2px;
                border-bottom: 1px solid var(--rule); }
-.cq-tabstrip button { font: inherit; font-size: var(--t-5); padding: 6px 12px;
-               border: none; background: none; color: var(--muted); cursor: pointer;
+.cq-tabstrip .cq-tab-btn { font: inherit; font-size: var(--t-5); padding: 6px 12px;
+               color: var(--muted); cursor: pointer;
                border-bottom: 2px solid transparent; margin-bottom: -1px;
                border-radius: var(--r) var(--r) 0 0; }
-.cq-tabstrip button:hover { color: var(--ink-2); background: var(--chip); }
-.cq-tabstrip button[aria-selected="true"] { color: var(--ink); font-weight: 600;
+.cq-tabstrip .cq-tab-btn:hover { color: var(--ink-2); background: var(--chip); }
+.cq-tabstrip .cq-tab-btn[aria-selected="true"] { color: var(--ink); font-weight: 600;
                border-bottom-color: var(--accent); }
 .cq-tabdiff { font-size: var(--t-6); font-weight: 400; margin-left: 6px;
               padding: 0 6px; border-radius: 999px;
@@ -512,11 +520,11 @@ cq-suggestion[data-cq-state="rejected"]:not(:has(cq-old)) { display: none; }
     display: inline-flex; gap: 4px; white-space: nowrap; }
 .cq-sug-actions[hidden] { display: none; } /* outranks the flex above, unlike the UA rule */
 .cq-sug-actions.cq-docked { position: static; margin-left: 6px; vertical-align: baseline; }
-.cq-sug-actions button { font: inherit; font-size: var(--t-6); line-height: 1.7;
+.cq-sug-actions [role="button"] { font: inherit; font-size: var(--t-6); line-height: 1.7;
     padding: 0 8px; border: 1px solid var(--border-2); border-radius: 999px;
     background: var(--card); color: var(--ink-2); cursor: pointer; }
-.cq-sug-actions button:hover { background: var(--chip); }
-.cq-sug-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cq-sug-actions [role="button"]:hover { background: var(--chip); }
+.cq-sug-actions [role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cq-sug-actions .cq-sug-accept:hover { border-color: var(--ok); color: var(--ok-ink); }
 .cq-sug-actions .cq-sug-reject:hover { border-color: var(--danger); color: var(--danger-ink); }
 /* A page carrying a change to decide gives the rail up out of its own width,

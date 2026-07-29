@@ -41,13 +41,14 @@
  * was saying — "this word" — is carried into the box instead, where a double-click
  * still means what it means everywhere else: type over this word.
  *
- * Chrome is injected through the runtime's `offer`, which marks it .cq-ui so anchoring
- * skips it, data-cq-gen so the diff ignores it, and data-cq-offer so it leaves the
- * printed page; the class also earns the edit box the runtime's one textarea rule.
- * Presentation is theme CSS, the swap between the two views included: an open edit is
- * the box being in the document, so the CSS reads that and this module writes no
- * display state at all. Which is also what lets paper disagree — it drops the box and
- * keeps the words. Authored content is never discarded, so there is no failSoft.
+ * Chrome is injected through the runtime's `offer`, which marks it .cq-ui for the chrome
+ * look, data-cq-gen so the diff ignores it, and data-cq-offer for a thing to work — which
+ * is what keeps it off the printed page and out of the anchor pass, this widget declaring
+ * no label the page speaks through; the class also earns the edit box the runtime's one
+ * textarea rule. Presentation is theme CSS, the swap between the two views included: an
+ * open edit is the box being in the document, so the CSS reads that and this module
+ * writes no display state at all. Which is also what lets paper disagree — it drops the
+ * box and keeps the words. Authored content is never discarded, so there is no failSoft.
  */
 import { once, offer, quoted, sendAction, toast, keyHelp, saveDraft, loadDraft } from "/colloquy.js";
 

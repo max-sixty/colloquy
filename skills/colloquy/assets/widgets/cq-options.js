@@ -80,12 +80,16 @@ customElements.define(
       if (this.hasAttribute("settled")) this.#settle();
       if (!choosable) return;
       this.addEventListener("click", (e) => {
-        // A click that lands inside a selection is that selection's, not a pick:
-        // it's the mouseup of a drag-select. A selection elsewhere on the page —
-        // a comment's, most often — is none of this click's business, and a
-        // keyboard activation (detail 0) is never a drag-select.
+        // A click that ends a drag-select is that selection's, not a pick. The
+        // runtime guards its own controls (see `offer`); this is the card, which is
+        // no control at all — a drag across an option's prose ends here, not on the
+        // mark. Same question, so the same test: did this click's mouseup leave the
+        // selection where it is (its focus end)? Asking whether the selection
+        // contains the card instead answers yes for any selection over the group,
+        // and the card stops taking picks until the reviewer clears it.
         const sel = getSelection();
-        if (e.detail !== 0 && sel && !sel.isCollapsed && sel.containsNode(e.target, true)) return;
+        const card = e.target.closest?.("cq-option");
+        if (e.detail !== 0 && sel && !sel.isCollapsed && card?.contains(sel.focusNode)) return;
         if (e.target.closest("a")) return; // links keep their job
         const option = e.target.closest("cq-option");
         if (!option || option.parentElement !== this) return;
@@ -111,11 +115,12 @@ customElements.define(
     // click bubbles into the group's pick handler where there's a pick to make,
     // and the same mark as a span where there isn't.
     #mark(option, label, pressable) {
-      // A button is chrome, and .cq-ui reaches exactly as far as the control does:
-      // anchoring skips a word for working the thing. The span holds no control at
-      // all — it is the page saying which option it carries, and the obvious thing
-      // to hang "not this one" on. data-cq-gen either way, since the diff parses the
-      // base version unupgraded and would read any mark as text that version lacked.
+      // A press wears the chrome face and .cq-ui reaches exactly as far as the control
+      // does; the other shape holds no control at all, so it needs neither. What each
+      // one *says* is a separate question both shapes answer the same way (#label), and
+      // the answer is what decides whether a comment can land on it. data-cq-gen either
+      // way, since the diff parses the base version unupgraded and would read any mark
+      // as text that version lacked.
       const mark = pressable ? offer("button", "cq-pick") : document.createElement("span");
       if (!pressable) {
         mark.className = "cq-pick";
@@ -135,21 +140,21 @@ customElements.define(
       this.#retitle();
     }
 
-    // A button's accessible name has to say which card it picks, and to contain
-    // the visible word — so it tracks the label rather than staying "choose".
-    // Pressed reads off the card, which #choose sets before relabelling. Which
-    // kind of word the label is travels with it: "choose" is a thing to do and
-    // leaves the printed page, while a picked card's mark is the only place the
-    // page says where the pick sits, so paper keeps that one. The span is the
-    // page's own words already, and says so by being no control at all.
+    // Which kind of word the label is travels with it, on both shapes of mark and on
+    // every write: "choose" is a thing to do, so it leaves the printed page and no
+    // comment lands on it, while a picked or carried card's mark is the only place the
+    // page says where the pick sits — paper keeps that one and a reviewer can point at
+    // it. Asked of the label rather than of the element, because one mark is both over
+    // its life and neither shape is a <button> to tell them apart by.
+    //
+    // Then what only a control needs: an accessible name saying which card it picks,
+    // containing the visible word, and the pressed state, which reads off the card that
+    // #choose set before relabelling.
     #label(option, label) {
       const mark = option.querySelector(":scope > .cq-pick");
       if (!mark) return;
-      if (mark.tagName !== "BUTTON") {
-        mark.textContent = label;
-        return;
-      }
       relabel(mark, label, { says: label !== OPEN });
+      if (!mark.matches('[role="button"]')) return;
       const title = optionLede(option) || option.id;
       mark.setAttribute("aria-label", `${label}: ${title}`);
       mark.setAttribute("aria-pressed", String(option.hasAttribute("chosen")));
@@ -162,7 +167,11 @@ customElements.define(
 
     #settle() {
       // A disclosure is a thing to work, and what it names — the chosen card — the
-      // cards themselves say once paper opens the group.
+      // cards themselves say once paper opens the group. On screen they do not: the
+      // row is the decision's only visible statement while the group stays collapsed,
+      // so the part of it naming the card is the page speaking and says so, and the
+      // anchor pass reads it over the row's chrome. The count beside it is the runtime
+      // talking about the document, which is why the two are separate spans.
       this.#row = offer("button", "cq-settled");
       this.#title = document.createElement("span");
       const options = [...this.querySelectorAll(":scope > cq-option")];
@@ -209,7 +218,7 @@ customElements.define(
       if (!this.#title) return;
       const chosen = this.querySelector(":scope > cq-option[chosen]");
       const name = chosen && optionLede(chosen);
-      this.#title.textContent = name ? `Settled: ${name}` : "Settled";
+      relabel(this.#title, name ? `Settled: ${name}` : "Settled", { says: true });
     }
 
     // One Δn chip on the row when the diff marks passages inside, so the toast's

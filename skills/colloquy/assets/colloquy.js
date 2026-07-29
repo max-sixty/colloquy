@@ -27,19 +27,25 @@
  * POST /api/event. Everything it injects is namespaced .cq-* and marked .cq-ui, and it
  * styles itself from the theme's tokens so it themes with the page.
  *
- * .cq-ui marks the runtime's own words: its layer, and the controls a widget injects.
- * Anchoring skips it, and it carries the system-ui face that says "this is not the
- * document" — which is why it is not the marker for "chrome". A widget's own label or
- * heading is the page's word in a chrome look, and wears data-cq-gen alone: the diff
- * looks away from it, the anchor pass does not. CLAUDE.md carries why.
+ * .cq-ui is the chrome face — the system-ui look that says "this is not the document" —
+ * and it is anchoring's answer only where nothing nearer speaks. A label the widget
+ * declares the page's own words (relabel's data-cq-said) is nearer, and wins: a heading
+ * in a chrome-looking row and a tab's name inside its own strip button are both passages
+ * a reviewer can point at. Reading the class as the whole answer is what left a reviewer
+ * able to see a draft's heading and unable to comment on it. A widget's own label, note
+ * or badge outside any control declares nothing at all: data-cq-gen alone keeps it out of
+ * the diff and in reach of the anchor pass. CLAUDE.md carries why.
  *
- * Paper asks a different question, so it reads a different marker. data-cq-offer says
- * this is a thing to work, which a printed page has nothing to do with; `offer` sets it
- * on every control a widget injects and `relabel` takes it off a label that turns out
- * to be the page speaking. Keying print on .cq-ui instead cost a printed decision the
- * only words that stated it (see CLAUDE.md), because a pick mark is a control and a
- * statement at once. render_version compares the two media and reports what a page says
- * on screen and not on paper.
+ * Paper reads both: a control a widget injected (data-cq-offer) has nothing on paper to
+ * be pressed, so it goes, unless its own label is one of the page's words. Keying print
+ * on .cq-ui instead cost a printed decision the only words that stated it (see
+ * CLAUDE.md), because a pick mark is a control and a statement at once. render_version
+ * compares the two media and reports what a page says on screen and not on paper.
+ *
+ * A control that says one of the page's words is never a <button>: Chrome starts no
+ * pointer selection inside a form control, so its label would be unreachable however it is
+ * marked. `offer` builds every press as a span wearing role="button" for that reason, and
+ * wires the keys the UA would have given it.
  *
  * Passages and anchors: a comment points at an anchor (a section id, a quote, and the
  * neighbouring words where there are any). resolveAnchor is the only place the page is
@@ -292,13 +298,28 @@ export function quoted(el) {
 
 // The chrome a widget injects: a control, or the box that holds controls. Three
 // markers, one per question asked of it — `cq-ui` for the runtime's look, which
-// anchoring skips; `data-cq-gen` so the version diff looks away; `data-cq-offer`
+// anchoring reads where no label speaks nearer; `data-cq-gen` so the diff looks away; `data-cq-offer`
 // for a thing to work, which paper drops because there is nothing there to press.
 // A widget writes none of the three by hand: they are what make an element chrome,
 // and one of them going missing is invisible until something breaks.
+//
+// "button" names a thing to press, not the element. A real <button> is a wall a
+// pointer's selection cannot cross — Chrome starts no selection inside a form
+// control and `user-select: text` does not move it — so any word inside one is
+// unreachable to a reviewer whatever it is marked, and a control's label turns out
+// to be one of the page's own words often enough (a tab's name, the card a settled
+// group carries, the mark on a chosen option) that a widget cannot be trusted to
+// have picked the element with that in mind. So a press is a span wearing the role,
+// and the keys the UA would have supplied are wired once below. Nothing these controls
+// do needed the element: no forms, no submit, and no `disabled` — which a widget's press
+// therefore cannot have (the .cq-btn:disabled rule is the runtime's own buttons').
 export function offer(tag, cls, label) {
-  const node = document.createElement(tag);
-  if (tag === "button") node.type = "button";
+  const press = tag === "button";
+  const node = document.createElement(press ? "span" : tag);
+  if (press) {
+    node.setAttribute("role", "button");
+    node.tabIndex = 0; // and the tabindex attribute is what says "a press" below
+  }
   node.className = cls ? `${cls} cq-ui` : "cq-ui";
   node.dataset.cqGen = "1";
   node.dataset.cqOffer = "";
@@ -306,11 +327,69 @@ export function offer(tag, cls, label) {
   return node;
 }
 
+// The keys a <button> came with and a span does not: Enter and Space activate. One
+// listener rather than one per press, and on the bubble, so a control that handles the
+// key itself has already said so by preventing the default — cq-board's grip grabs on
+// Enter, and a press that also clicked would be the runtime overruling the focused
+// control, which is the opposite of the rule widgets keep (CLAUDE.md: focus-scoped keys
+// belong to the focused control). A held key repeats keydown where a real button fired
+// once, and a pick mark toggling per repeat posts a `choose` per repeat.
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+  if (ev.defaultPrevented || ev.repeat) return;
+  if (!ev.target?.matches?.("[data-cq-offer][tabindex]")) return;
+  ev.preventDefault(); // Space would scroll the page out from under the press
+  ev.target.click();
+});
+
+// A drag that ends on a control is that selection's mouseup, not a press: the
+// reviewer was reaching for the words, and a control whose label is one of the
+// page's own words is exactly where they reach. Here rather than in each widget,
+// because `offer` is what made the thing pressable — the same reason the markers
+// live there. A keyboard activation (detail 0) is never a drag.
+//
+// The question is whether *this* click's mouseup is where the selection stopped, so
+// it reads the selection's focus end — the character the pointer was on when the
+// button came up. Asking instead whether the selection contains the control is a
+// question about the DOM, and it answers yes for any selection over the passage a
+// widget sits in: a suggestion's buttons are its children, hung in the margin by CSS
+// alone, so a reviewer who read the sentence and then reached for Accept pressed a
+// control that had gone dead — and stayed dead, because a press that refuses a drag
+// (`user-select: none`) never collapses the selection that deadened it either.
+document.addEventListener(
+  "click",
+  (ev) => {
+    if (ev.detail === 0) return;
+    const control = ev.target.closest?.("[data-cq-offer]");
+    const sel = getSelection();
+    if (control && sel && !sel.isCollapsed && control.contains(sel.focusNode)) {
+      ev.stopPropagation();
+      ev.preventDefault();
+    }
+  },
+  true,
+);
+
 // A control's label, and which kind of word it is. Most are things to do — "Save",
-// "choose", a grip — and go with the rest of the UI on paper. Some are the page
-// speaking: a pick mark reading "chosen" is the only place the page says which
-// option it carries, so paper keeps it. One element wears both over its life, so
-// the kind is restated on every write rather than settled at birth.
+// "choose", a grip — and go with the rest of the UI on paper, out of reach of a
+// quote. Some are the page speaking: a pick mark reading "chosen" is the only place
+// the page says which option it carries, and a tab's name is the panel's only name
+// once the strip exists. One element wears both over its life, so the kind is
+// restated on every write rather than settled at birth.
+//
+// This writes one marker and one only: data-cq-said, the page speaking. Anchoring
+// takes it over the `.cq-ui` box around it — that box is a look, the chrome face, and
+// it was standing in for a permission the reviewer has no category for — and paper
+// reads it beside data-cq-offer to keep a control whose label is one of the page's own
+// words. data-cq-gen goes on either way, because the diff parses the base version
+// unupgraded and would read any label as text that version lacked.
+//
+// It leaves data-cq-offer alone, which it used to clear. That attribute is what `offer`
+// made: this is a control a widget injected, true for the mark's whole life however it
+// is worded, and three passes ask it (print, the drag guard above, the render gate).
+// Clearing it here made "paper drops this" the meaning and left the other two unable to
+// see a control — a drag across a picked card's mark was a press again, and only
+// cq-options' own guard on the card stood between that and clearing the pick.
 //
 // `says` has no default, because the answer a caller doesn't give is the one that
 // costs a printed page its words, and silently. Refusing throws where the widget
@@ -320,7 +399,8 @@ export function relabel(node, label, { says } = {}) {
   if (typeof says !== "boolean")
     throw new TypeError(`relabel(${label}): say whether this label is the page speaking`);
   node.textContent = label;
-  node.toggleAttribute("data-cq-offer", !says);
+  node.dataset.cqGen = "1";
+  node.toggleAttribute("data-cq-said", says);
 }
 
 // The element the document scrolls: body, not the viewport (see the stylesheet below,
@@ -450,6 +530,13 @@ async function upgradeWidgets() {
 // by :has(), so the two are never both on. The span is data-cq-gen and not .cq-ui: the
 // diff parses the base version unupgraded and must not read it as text that version
 // lacked, and the reviewer must be able to quote it.
+//
+// data-cq-said names the attribute here and stands bare on a label relabel wrote, because
+// the two are one claim — these words are the page's, whoever rendered them. The anchor
+// pass reads the marker alone; the value is for whoever means one attribute in
+// particular, which is this pass (so it writes no second span over its own) and the
+// theme, whose every rule names the attribute it styles rather than matching the bare
+// marker.
 function renderSaid(root) {
   // ?? {}: a reply's widgets reach here on a page with no vendored registry too, where
   // nothing upgrades and the theme's pseudo-elements are doing the rendering.
@@ -499,7 +586,17 @@ style.textContent = `
      @scope block below instead. */
   .cq-ui { font-family: system-ui, -apple-system, sans-serif; font-size: var(--t-5); line-height: 1.45; color: var(--ink); box-sizing: border-box; }
   .cq-ui *, .cq-ui *::before, .cq-ui *::after { box-sizing: inherit; }
-  .cq-btn { font: inherit; padding: 4px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); cursor: pointer; white-space: nowrap; color: inherit; }
+  /* A press a widget injects is a span wearing role="button" (see offer), so the two
+     things a <button> came with are stated here. The box, because an inline span drops
+     vertical padding out of the line — only .cq-btn needs it, since every other press
+     is a flex item or positioned. And the drag: a real button refused one, which is
+     worth keeping wherever the control's words are the runtime's, and is exactly what
+     must not happen where one of them is the page's. So the selection goes off only
+     where nothing under the press is said: a descendant cannot win it back, since
+     user-select none on an ancestor takes the whole subtree out of a pointer's reach
+     whatever the descendant declares. */
+  .cq-btn { font: inherit; padding: 4px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); cursor: pointer; white-space: nowrap; color: inherit; display: inline-block; }
+  .cq-ui[role="button"]:not([data-cq-said]):not(:has([data-cq-said])) { user-select: none; -webkit-user-select: none; }
   .cq-btn:hover { background: var(--chip); }
   .cq-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
   .cq-btn.primary:hover { filter: brightness(.92); }
@@ -538,8 +635,12 @@ style.textContent = `
      the page's own words — a pick mark reading "chosen" is the only place the page
      says which option it carries — which is why this keys on the declaration each
      label makes (see relabel) rather than on .cq-ui, whose question is anchoring's.
-     The runtime's own layer hides as one thing, in the @scope block below. */
-  @media print { [data-cq-offer] { display: none !important; } }
+     Asked of the control itself, not of what it holds: a settled group's disclosure
+     names the chosen card, and that word is worth keeping on screen where the row is
+     the only place it stands and worth dropping on paper, where the cards are open
+     underneath saying it themselves. The runtime's own layer hides as one thing, in
+     the @scope block below. */
+  @media print { [data-cq-offer]:not([data-cq-said]) { display: none !important; } }
   @keyframes cq-pulse { 50% { opacity: .35; } }
   @keyframes cq-flash { 0% { background: var(--hi-tint); } 100% { background: var(--card); } }
   /* Everything below is private to the chrome, scoped to the runtime's own container:
@@ -1100,16 +1201,22 @@ const retiredSlots = () =>
         `${entry["x-parent"]}[data-cq-state="${DECIDED_VERB[entry["x-retired-when"]]}"] > ${tag}`,
     )
     .join(", ");
-function unquotable() {
+// What no label can speak through, however it is marked: an inline script, the
+// stylesheet a rendered diagram carries inside its <svg>, and a slot the reviewer's
+// decision took off the page. Chrome is the rest of what the anchor pass skips and
+// the one part a label yields — it is a look, and a look cannot make a word the
+// runtime's.
+function silenced() {
   const retired = retiredSlots();
-  return [".cq-ui", "script", "style", ...(retired ? [retired] : [])].join(", ");
+  return ["script", "style", ...(retired ? [retired] : [])].join(", ");
 }
 
 // An element the reviewer's decision took off the page, asked of an element rather
 // than of text: a retired slot (or anything inside one), or a decided element the
 // retirement emptied — a deletion accepted, an insertion refused — whose every child
 // is now a retired slot or the runtime's own chrome, with no text of its own. The
-// same declaration the anchor pass skips text by answers both, so an element anchor
+// same declaration the anchor pass skips text by answers both (`inUi`, so a child
+// that is a declared label counts as words still showing), and so an element anchor
 // and a quote cannot disagree about what left the page.
 function settledAway(el) {
   const retired = retiredSlots();
@@ -1120,22 +1227,45 @@ function settledAway(el) {
     nodes.some((n) => n.nodeType === 1 && n.matches(retired)) &&
     nodes.every((n) =>
       n.nodeType === 1
-        ? n.matches(retired) || n.matches(".cq-ui")
+        ? n.matches(retired) || inUi(n)
         : n.nodeType !== 3 || !n.data.trim(),
     )
   );
 }
 const GENERATED = ".cq-ui, [data-cq-gen]";
+// A label a widget declared as the page speaking (relabel), which the anchor pass reads
+// over the chrome it sits in.
+const SAID = "[data-cq-said]";
 // The same question one node at a time: is this the runtime's own chrome rather than the
 // document? Every affordance asks it before acting on where the pointer or the caret is.
-const inUi = (node) =>
-  Boolean((node?.nodeType === 1 ? node : node?.parentElement)?.closest(".cq-ui"));
+// The nearest element that answers wins: a declared label is the page's words inside the
+// control it labels, and a control nested inside one is chrome again. `.cq-ui` alone was
+// the answer once, and it is a look — which is how a reviewer ended up reading a heading
+// they could not point at, twice.
+const inUi = (node) => {
+  const near = (node?.nodeType === 1 ? node : node?.parentElement)?.closest(`.cq-ui, ${SAID}`);
+  return Boolean(near) && !near.matches(SAID);
+};
 const TEXT_BLOCK = "p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dd,dt,figcaption,summary";
+// The two readings, each one predicate over a text node and named for the question it
+// answers. Anchoring reads what the reviewer can point at: not the runtime's own words —
+// `inUi`, which a declared label answers for itself — and nothing behind a wall no label
+// speaks through, so a pick mark inside a slot the reviewer accepted away is gone with
+// the slot, its marker notwithstanding. The diff reads what the base version holds, and
+// the base parses unupgraded, so everything an upgrade generated goes, a declared label
+// included: the version being compared against has none.
+//
+// Built per walk rather than per node, because the retired half of the wall is read out
+// of the registry each time it is asked for.
+const quotable = () => {
+  const gone = silenced();
+  return (n) => !inUi(n) && !n.parentElement?.closest(gone);
+};
+const authored = () => (n) => !n.parentElement?.closest(GENERATED);
 // ownerDocument, not document: the diff walks a base version parsed into its own document.
-function textNodesUnder(rootEl, skip = unquotable()) {
+function textNodesUnder(rootEl, accepts = quotable()) {
   const walker = rootEl.ownerDocument.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) =>
-      n.parentElement?.closest(skip) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    acceptNode: (n) => (accepts(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
   });
   const segments = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode())
@@ -1769,6 +1899,13 @@ function showFab(anchor, left, top) {
 // quote through behind a rendered three-character selection — a quote short enough to match
 // almost anywhere.
 const MIN_QUOTE = 3;
+// A selection of the page's own words, as against none, a bare caret, or one made inside
+// the runtime's own layer. That is the line between a reviewer reaching for a passage and
+// one working the chrome, and it is the question every caller here is really asking.
+const pageSelection = () => {
+  const sel = getSelection();
+  return sel && !sel.isCollapsed && !inUi(sel.anchorNode) ? sel : null;
+};
 // What the button is on, decided here alone. The selection is read fresh; a visual find —
 // a clicked diagram or image, which has no text to select — comes in from the click that
 // found it, and a qualifying selection outranks it. The last branch is why order between
@@ -1776,21 +1913,28 @@ const MIN_QUOTE = 3;
 // for an element anchor, so the selection's absence takes down only a quote, and the
 // queued re-decide lands on the same outcome.
 function updateFab(visual) {
-  const sel = getSelection();
-  const anchor =
-    sel && !sel.isCollapsed && !inUi(sel.anchorNode) ? selectionAnchor(sel) : null;
+  const sel = pageSelection();
+  const anchor = sel ? selectionAnchor(sel) : null;
   if (anchor?.quote.length >= MIN_QUOTE)
     showFab(anchor, ...beside(sel.getRangeAt(0).getBoundingClientRect()));
   else if (visual) showFab({ section: visual.id }, visual.x + 6, visual.y - 40);
   else if (fabAnchor?.quote) showFab(null);
 }
+// Where the pointer stopped is not the question; where the selection is, is. The guard
+// exists so a mouseup inside the runtime's layer — a click in the panel, the composer —
+// can't re-decide the button out from under an open draft. A drag that ends on a widget's
+// control is the opposite case: the reviewer was selecting that control's label, and a
+// tab's name runs to within a few pixels of the strip button's padding, so the mouseup
+// lands on chrome while the selection is the page's.
 document.addEventListener("mouseup", (ev) => {
-  if (inUi(ev.target)) return;
+  if (inUi(ev.target) && !pageSelection()) return;
   setTimeout(updateFab);
 });
-// Selections made from the keyboard (shift-arrows, ⌘A) deserve the same button.
+// Selections made from the keyboard (shift-arrows, ⌘A) deserve the same button. Typing in
+// a box never does, whatever is selected elsewhere.
 document.addEventListener("keyup", (ev) => {
-  if (inUi(ev.target) || editable(ev.target)) return;
+  if (editable(ev.target)) return;
+  if (inUi(ev.target) && !pageSelection()) return;
   setTimeout(updateFab);
 });
 document.addEventListener("mousedown", (ev) => {
@@ -2112,7 +2256,7 @@ function syncSuggestions() {
   acceptAllBtn.textContent = `✓ Accept all (${n})`;
 }
 // A decision also changes what text the page has — the retired slot leaves it
-// (unquotable) — so the marks are repainted from the same signal, and a comment
+// (`quotable`) — so the marks are repainted from the same signal, and a comment
 // on text the reviewer just removed says so at once rather than at the next poll.
 document.addEventListener("cq-suggestions", () => {
   syncSuggestions();
@@ -2155,8 +2299,10 @@ const diffOpaqueSel = () =>
 let diffBase = ""; // previous version's file name, set by renderVersions
 let diffOn = false;
 const diffMarked = [];
-// A block's key is its *authored* text, read the same way a quote is (see GENERATED).
-const blockKey = (b) => quoteFrom(textNodesUnder(b, GENERATED));
+// A block's key is its *authored* text, read the same way a quote is — including the
+// labels anchoring reads as the page's own words, which this reading has to drop: the
+// base version is parsed unupgraded and holds none of them.
+const blockKey = (b) => quoteFrom(textNodesUnder(b, authored()));
 function diffBlocks(root) {
   const pairs = [];
   const [blocks, opaque] = [diffBlockSel(), diffOpaqueSel()];

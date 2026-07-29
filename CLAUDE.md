@@ -221,15 +221,23 @@ wrong" on. It was a `<strong>` in a row marked `.cq-ui`, which the anchor pass s
 author reached for that class meaning "this is chrome". What it means is "these are the
 runtime's words, not the page's".
 
-Chrome is a look, not a permission, and the reviewer has no such category. `.cq-ui`
-belongs on the runtime's own layer and on the controls a widget injects — a control is a
-thing to work rather than a thing to say, which is why its label is usually the name of
-an action ("Save", "choose", the drag grip). The line counting the comments on a passage
-is the same kind of word for the same reason: it is about the document rather than of it,
-which is why it wears `.cq-ui` even inside a widget, and why the gate names it beside the
-controls rather than as a heading someone hid. A widget's own label, note, heading, or
-badge wears `data-cq-gen` alone: the version diff looks away from it, the anchor pass does
-not, and those two questions were never the same question.
+Chrome is a look, not a permission, and the reviewer has no such category — so the class
+cannot be the whole of anchoring's answer. Whose words these are is declared where they
+are written (`relabel`'s `says`, the same word paper reads), and the anchor pass takes the
+nearest answer: the class where nothing nearer speaks, the declaration where one does, so
+a label is the page's inside the chrome that holds it. Without that there is nowhere left
+to put the words a control is the only place for.
+
+`.cq-ui` still marks the runtime's own layer and the controls a widget injects — a
+control is a thing to work rather than a thing to say, which is why its label is usually
+the name of an action ("Save", "choose", the drag grip) — and still carries the face that
+says "this is not the document". It just no longer decides. The line counting the comments
+on a passage is the runtime's one word inside the page's own blocks: about the document
+rather than of it, which is why it wears the class there and why the gate names it beside
+the controls rather than as a heading someone hid. A widget's own label, note, heading or
+badge outside a control declares nothing at all — `data-cq-gen` alone keeps it out of the
+version diff and in reach of the anchor pass, and those two questions were never the same
+question.
 
 The rule has a second edge, and that one had every shipped widget: `content: attr(label)`
 paints glyphs into no text node, so a metric's headline number, a column's heading and an
@@ -239,25 +247,54 @@ widget would be leaving it to be forgotten, which is how it was forgotten the fi
 A widget writes its own only where the pass can't reach: one run of words at the element's
 first or last child is all a pseudo-element could ever have been, so a chip row placed
 after a title (`cq-milestone`) or a heading that doubles as a list's accessible name
-(`cq-column`) is a module's job. Same span, same markers.
+(`cq-column`) is a module's job. Same contract either way — generated, so the diff looks
+away; no chrome marker, so the anchor pass doesn't — and `data-cq-said` beyond that only
+where something else reads it: the theme keys the column heading's look on it, the chip
+row has a class of its own.
 
-What stays out of reach is what a control says. State the cost where that leaves a word
-with nowhere else to be said: after upgrade a `cq-tabs` strip button is a tab's only
-label, and a settled `cq-options` row names the chosen card while collapsing it. Neither
-is quotable, and both are in `TODO.md` rather than quietly absent.
+A control that says one of those words is never a `<button>`. Chrome starts no pointer
+selection inside a form control — not with `user-select: text`, and not on a span nested
+inside one, which is what the plan this replaced assumed would work — so the words are on
+screen and out of reach whatever they are marked. `offer` builds every press as a span wearing
+`role="button"`, and one listener supplies the keys the UA would have — on the bubble, so
+a control that handles Enter itself has already said so by preventing the default and the
+runtime doesn't overrule the focused control. That is one place rather than each widget
+remembering, and it costs nothing these controls used: no forms, and no `disabled`, which
+a widget's press therefore cannot have. What the platform gives back has to be given back too — the press refuses a
+drag exactly where nothing under it is said, since `user-select: none` on the control
+takes the whole subtree with it and no descendant can win it back.
 
-Paper asks a different question, so it reads a different marker. Print's question is "is
-this a thing to work?", because nothing on paper can be pressed; `.cq-ui`'s answer is
-"these are the runtime's words", which is anchoring's question. Keying print on the class
-cost a printed decision the only words that stated it: a pick mark is a control and a
-statement at once, and the settled row naming the chosen card is chrome too, so a printed
-group said which option won only in a border colour greyscale drops, and a settled one
-said it nowhere at all. So a control says which it is where its label is written — `offer` marks the
-chrome a widget injects, `relabel` takes the mark off a label that turns out to be the
-page speaking — print hides the declaration rather than the class, and the runtime's own
-layer hides as one thing at its `@scope` root. No print rule anywhere has to remember a
+Then a drag that ends on a control is that selection's mouseup and not a press, which is
+`offer`'s to know. Two guards around it each asked a question next to the right one and
+paid differently. Where the *pointer* stopped is not it: a tab's name runs to within a few
+pixels of its own padding, so the mouseup lands on chrome while the selection is the
+page's, and the Comment button never came up. Whether the selection *contains* the control
+is not it either, and that one cost more — containment is a fact about the DOM, and a
+suggestion's buttons are its children hung out in the margin by CSS, so a reviewer who
+read the sentence and then reached for Accept pressed a control that did nothing, and kept
+doing nothing, since a press that refuses a drag never collapses the selection deadening
+it. The question is whether this click's own mouseup is where the selection stopped, and
+the selection's focus end is that answer.
+
+Paper asks its own question and reads its own pair of markers. Print's question is "is
+this a thing to work, and nothing else?", because nothing on paper can be pressed; the
+class's answer is "these are the runtime's words". Keying print on the class cost a
+printed decision the only words that stated it: a pick mark is a control and a statement
+at once, and the settled row naming the chosen card is chrome too, so a printed group
+said which option won only in a border colour greyscale drops, and a settled one said it
+nowhere at all. So a control says which it is where its label is written — `offer`
+marks the chrome a widget injects, `relabel` marks a label that turns out to be the page
+speaking — print hides the declaration rather than the class, and the runtime's own layer
+hides as one thing at its `@scope` root. No print rule anywhere has to remember a
 control's label now: what `cq-tabs` still restores on paper is each panel's own authored
 label, painted back on the panel because the strip that carried it is gone.
+
+Each marker gets one writer, and the arrangement where one of them had two cost
+something. `relabel` used to *clear* `offer`'s mark instead of adding its own, which made
+that mark read "paper drops this" rather than "a widget injected this control" — so the
+two other passes that ask it went blind on exactly the controls this norm is about. A
+drag across a picked card's mark was a press again, and nothing but `cq-options`' own
+guard on the card stood between the reviewer selecting the word and losing their pick.
 
 `render_version` reads the page in both media and reports what the second drops — the
 whole page, not the widgets in it, because a printout losing a paragraph is no better

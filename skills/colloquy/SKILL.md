@@ -396,8 +396,9 @@ that authors widget state the log replays over
 decision stands, so carry it in the markup or rewrite the passage and declare
 `restated`). The lint validates a diagram element but never the notation
 in its body, so a typo there would otherwise reach the reader as an error box; and it
-can't see a heading rendered as CSS generated content or marked `.cq-ui`, which leaves
-the reader looking at text they can't comment on. When Chrome isn't installed, the gate says so on stderr and
+can't see a heading rendered as CSS generated content, or left under `.cq-ui` with
+nothing said about whose words these are, which leaves the reader looking at text they can't
+comment on. When Chrome isn't installed, the gate says so on stderr and
 lets the lint's result stand. It is the page's whole browser budget; a screenshot after
 it reads neither the console nor the second scheme.
 

@@ -11,7 +11,7 @@
  * a Δ count, so a change can't hide behind an inactive tab. Unupgraded,
  * panels stack as labeled sections; authored content is never replaced, so
  * there is no failSoft. */
-import { once, keyHelp, offer, HIDDEN } from "/colloquy.js";
+import { once, keyHelp, offer, relabel, HIDDEN } from "/colloquy.js";
 
 const TAB_KEY = "cq-tabs:";
 // Registered on first upgrade, not at import: the "?" overlay should list tab
@@ -35,16 +35,26 @@ customElements.define(
           ["Home/End", "first / last tab"],
         ]);
       }
-      // The strip is a thing to work, and its buttons ride inside it: what each says
-      // is a panel's own label, which the theme puts back on the panel in print.
+      // The strip is a thing to work, and its tabs ride inside it, so paper drops the
+      // whole row and puts each panel's label back on the panel. What a tab says is not
+      // the strip's word though — it is the panel's name, and once the strip exists it
+      // is the only place that name is written. So the name goes in its own span,
+      // declared the page speaking, and the anchor pass reads it over the chrome around
+      // it: a reviewer points at a tab's name the way they point at a heading. Its own
+      // span rather than the tab's whole text, because the Δ badge lands here too and
+      // that one is the runtime talking about the document.
+      //
+      // A press is a span wearing the role rather than a <button> (see `offer`), which
+      // is what makes a drag across the name possible at all.
       const strip = offer("div", "cq-tabstrip");
       strip.setAttribute("role", "tablist");
       for (const panel of panels) {
-        const btn = document.createElement("button");
-        btn.type = "button";
+        const btn = offer("button", "cq-tab-btn");
         btn.setAttribute("role", "tab");
         btn.setAttribute("aria-controls", panel.id);
-        btn.textContent = panel.getAttribute("label");
+        const name = document.createElement("span");
+        relabel(name, panel.getAttribute("label"), { says: true });
+        btn.append(name);
         btn.onclick = () => this.#activate(panel, true);
         strip.append(btn);
         this.#buttons.set(panel, btn);

@@ -1420,7 +1420,7 @@ class _StructParser(HTMLParser):
 #               with no body at all renders a link's text.
 #   x-retired-when  the outcome under which this element leaves the page: a decided
 #               suggestion's losing slot. The browser builds its anchor pass's skip
-#               list from this key too (unquotable in colloquy.js), so a reading given
+#               list from this key too (`quotable` in colloquy.js), so a reading given
 #               the log's outcomes drops here exactly what drops there — and a widget
 #               whose decision leaves nothing showing goes with its slots (settledAway
 #               there, `gone` here). Its values are also the vocabulary's decision
@@ -1464,8 +1464,8 @@ class _PassageParser(HTMLParser):
 
     `decided` is the accept/reject each suggestion stands under (`decisions`).
     A decision retires a slot — the registry's `x-retired-when` names which outcome —
-    and the browser's anchor pass builds its skip list from the same key (unquotable in
-    colloquy.js), so this reading drops it the same way. A decision that leaves its
+    and the browser's anchor pass reads the same key (`quotable` in colloquy.js), so
+    this reading drops it the same way. A decision that leaves its
     widget with nothing — a deletion accepted, an insertion refused — empties the
     wrapper too (`gone`), because an element showing nothing is one nobody can point
     at, however present its markup. `rewrites` is the reviewer's
@@ -2714,15 +2714,22 @@ RENDER_VIEWPORT = {"width": 1200, "height": 900}
 # element's own attribute values should still be reaching the reader as
 # generated content.
 #
-# Or it can mark them .cq-ui, which the anchor pass skips. That marker means
-# "the runtime's own words" — its layer, and the labels it invents for controls
-# — and reaching for it as a general "this is chrome" marker is how a reviewer
-# ends up unable to comment on a heading they can see. So inside a widget, every
-# word under .cq-ui has to be a control's own label, or the line the paint pass
-# writes to say how many comments a block carries: that one is about the document
-# rather than of it, which is the same reason it wears .cq-ui at all, and it lands
-# inside a widget whenever a comment does. The comment panel is out of scope: a
-# widget in a reply is markup frozen in the event log, not the document.
+# Or it can leave them under .cq-ui with nothing said about whose words they are.
+# That class is the chrome face, a look — reaching for it as a general "this is
+# chrome" marker is how a reviewer ends up unable to comment on a heading they can
+# see. The declaration is made where the label is written: data-cq-said for the page
+# speaking, which the anchor pass reads over the box around it, data-cq-offer for a
+# thing to work. So inside a widget, every word under .cq-ui has to be declared the
+# page's, be a control's own label, or be the line the paint pass writes to say how
+# many comments a block carries: that one is about the document rather than of it,
+# which is the same reason it wears .cq-ui at all, and it lands inside a widget
+# whenever a comment does. The comment panel is out of scope: a widget in a reply is
+# markup frozen in the event log, not the document.
+#
+# And a declared label inside a form control is out of reach whatever it is marked:
+# Chrome starts no pointer selection inside one, which is why `offer` builds a press
+# as a span wearing role="button". A widget reaching for <button> anyway is the one
+# mistake the marker cannot fix, so it is reported separately and says why.
 UNREACHABLE_WORDS = """() => {
     const found = [];
     const at = el => `<${el.tagName.toLowerCase()}${el.id ? ' id=' + el.id : ''}>`;
@@ -2739,18 +2746,32 @@ UNREACHABLE_WORDS = """() => {
     // layer is appended to body and sits inside none of them.
     const widget = el => { for (let a = el; a; a = a.parentElement)
                                if (a.tagName.startsWith('CQ-')) return a; };
+    // The anchor pass's own rule: the nearest element that answers wins.
+    const speaks = el => Boolean(el.closest('.cq-ui, [data-cq-said]')?.matches('[data-cq-said]'));
+    const FORM = 'button, textarea, input, select';
+    // Where a control's own words may sit: the control a widget declared (data-cq-offer,
+    // asked instead of the role it wears, because cq-tabs overwrites `offer`'s
+    // role="button" with "tab" and a Δ badge in a tab then read as a heading somebody
+    // hid while the identical badge in a settled row read as chrome), or a native
+    // control. `label` is among those because a radio and a checkbox have nowhere else
+    // to put their words: a button holds its own, an input cannot, and HTML's answer is
+    // an element beside it. cq-shot's flip is radios, so that it keeps working in a page
+    // whose script is gone.
+    const CONTROL = `${FORM}, label, [data-cq-offer]`;
     const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
         const el = n.parentElement;
         if (!n.data.trim() || !el.closest('.cq-ui') || !widget(el)) continue;
-        // Where a control's own words may sit. `label` is on the list because a
-        // radio and a checkbox have nowhere else to put theirs: a button holds
-        // its words, an input cannot, and HTML's answer is an element beside it.
-        // cq-shot's flip is radios, so that it keeps working in a page whose
-        // script is gone.
-        if (!el.closest('button, textarea, input, select, label, .cq-mark-note'))
-            found.push(`${at(widget(el))} puts ${JSON.stringify(n.data.trim().slice(0, 40))} `
-                       + `under .cq-ui, where no comment can reach it`);
+        if (speaks(el) || el.closest(`${CONTROL}, .cq-mark-note`)) continue;
+        found.push(`${at(widget(el))} puts ${JSON.stringify(n.data.trim().slice(0, 40))} `
+                   + `under .cq-ui, where no comment can reach it`);
+    }
+    // FORM rather than CONTROL: a <label>'s words select like any others, and a widget
+    // that declared a box a control has said nothing about what element it is.
+    for (const el of document.querySelectorAll('[data-cq-said]')) {
+        if (!el.closest(FORM) || !widget(el)) continue;
+        found.push(`${at(widget(el))} says ${JSON.stringify(el.textContent.trim().slice(0, 40))} `
+                   + `inside a form control, where no selection can reach it`);
     }
     return [...new Set(found)];
 }"""

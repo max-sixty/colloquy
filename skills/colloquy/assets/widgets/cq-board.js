@@ -1,8 +1,8 @@
 /* cq-board: the one widget the reviewer edits directly, movable two ways that
  * share one send path and one gesture gate. Dragging is wired via the vendored
  * SortableJS (pointer-driven `forceFallback` mode, so touch works and the
- * follower is stylable — native HTML5 DnD is not used). The grip is a real
- * button, so the keyboard path needs no pointer: Enter grabs, arrows restate
+ * follower is stylable — native HTML5 DnD is not used). The grip is a press
+ * (`offer`), so the keyboard path needs no pointer: Enter grabs, arrows restate
  * the card's placement (announced through the live region), Enter drops, and
  * Escape or focus loss restores the origin. Either way the board wears
  * .cq-dragging for the whole gesture — the runtime's poll gates on it (no

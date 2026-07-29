@@ -24,11 +24,16 @@ stands alone.
       session `serve`-ing an old page is the case that says yes.
 - [ ] Opt-in tunnel for remote sessions (`cloudflared`/`tailscale` when present),
       gated behind an auth token added to the server first.
-- [ ] A written anchor can't quote across a widget's parts. `comment` reads the version
+- [ ] A written anchor can't quote across a widget's parts, or reach a label a module
+      writes. `comment` reads the version
       file, so it can't know the words a module writes between an element's children — a
-      milestone's chips sit after its title, and no registry keyword can say where a
+      milestone's chips sit after its title, a tab's name sits in the strip and a settled
+      group's summary in its disclosure row, and no registry keyword can say where a
       mid-element row lands (x-says reaches an element's first and last child, which is
-      all a pseudo-element could ever have been). Fences make that a refusal rather than
+      all a pseudo-element could ever have been). The reviewer can point at all of them;
+      Claude can't quote them, which is the smaller half of the asymmetry — Claude has
+      the words in front of it either way and can say "the tab called X" in prose.
+      Fences make that a refusal rather than
       an anchor that detaches in the reviewer's browser, so the cost is a quote Claude
       has to shorten. Closing it properly means either a placement vocabulary richer than
       two edges, or resolving the anchor in the browser at post time, which `comment`
@@ -60,20 +65,6 @@ stands alone.
       write the same text under the same rules is false by exactly that margin. The only
       alignment on offer is the browser stopping at fences too, since the file cannot
       learn to read through one; the cost is context the browser could legitimately use.
-- [ ] A tab's name can't be commented on. Every other word a widget renders from an
-      authored attribute is text a reviewer can select (`x-says`), but `cq-tab`'s
-      `label` renders into the strip button the upgrade builds, and a control's label
-      is `.cq-ui` — the anchor pass skips it, and rightly, since "Save" and "choose"
-      are the runtime's words. The panel heading it also renders as (`cq-tab::before`)
-      is switched off the moment the strip exists, so after upgrade the name is
-      nowhere quotable. Making the button's label a non-`.cq-ui` span would let a drag
-      inside it select — and switch tabs on the mouseup, since the button is still a
-      button; `cq-options` already carries the guard for that shape ("a click that
-      lands inside a selection is that selection's"), so the pieces exist. A settled
-      `cq-options` row is the same shape — it names the chosen card in a button while
-      collapsing the card itself, so the decision is quotable only once the group is
-      opened. Worth doing when someone actually wants to comment on a tab's name or a
-      settled line; until then the asymmetry is small and stated rather than hidden.
 - [ ] A move's awaiting mark is visual only: `data-cq-awaiting` outlines the card, and a
       screen reader hears the move announced when it is made but nothing durable after.
       The grip's label (the board module's names pass) is the natural place to say it,

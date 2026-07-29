@@ -113,11 +113,11 @@ customElements.define(
       schedule();
     }
 
+    // Through `offer` like every other injected control, so the markers and the
+    // element are the runtime's one answer rather than this widget's: "✓ Accept" is
+    // a thing to do, and a press is a span (see offer) whatever it says.
     #button(outcome, label) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = `cq-sug-${outcome}`;
-      btn.textContent = label;
+      const btn = offer("button", `cq-sug-${outcome}`, label);
       btn.setAttribute(
         "aria-label",
         `${outcome === "accept" ? "Accept" : "Reject"} the suggested change: ${this.#label()}`,
