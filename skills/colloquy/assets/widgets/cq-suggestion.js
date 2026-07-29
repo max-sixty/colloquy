@@ -17,11 +17,14 @@
  * with only `left` set, so the theme's `main { position: relative }` gives them
  * the column's right edge while their static position keeps them on the line
  * the change starts — the page can reflow freely underneath and they ride
- * along. Two things still have to be measured, both by one observer serving
- * every suggestion on the page: whether the margin is wide enough to hold the
- * controls at all (a narrow window, or the comment panel squeezing the page),
- * where it isn't they dock into flow; and whether two rows land on top of each
- * other, which a translate nudges apart without touching layout. */
+ * along. The room they hang in is the theme's rail, reserved by a page that
+ * carries a row at all; measuring is what finds it, not what makes it. Two
+ * things still have to be measured, both by one observer serving every
+ * suggestion on the page: whether there is margin enough to hold the controls
+ * (inside a card there is none, and below the rail's breakpoint the page keeps
+ * its whole width), where there isn't they dock into flow; and whether two rows
+ * land on top of each other, which a translate nudges apart without touching
+ * layout. */
 import { DECIDED_VERB, offer, once, quoted, says, sendAction, toast } from "/colloquy.js";
 
 // Every row on the page, so one observer serves all of them.

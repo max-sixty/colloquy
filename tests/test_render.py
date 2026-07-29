@@ -1201,7 +1201,12 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     controls back into the text and neither is visible to the lint: a positioned
     ancestor, which `left: 100%` resolves against instead of the column, and a
     window too narrow to have a margin at all. Both must dock the row into flow
-    rather than leave it overlapping the page."""
+    rather than leave it overlapping the page.
+
+    The margin the row hangs in is reserved, not left over, and the posture that
+    proves it is the one a reviewer reads in: with the comment panel open, a
+    centred column left too little beside it and every row docked — above the
+    change it decides, which reads as the paragraph before's."""
     page, errors = open_page(browser, serve(SUGGESTION_PAGE))
     assert errors == []
     column = page.locator("main").evaluate("el => el.getBoundingClientRect().right")
@@ -1224,7 +1229,27 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     card = page.locator("#card-heater").evaluate(box)
     assert docked.evaluate(box)["right"] <= card["right"] + 1
 
+    # The panel takes the right of the window, and the rail survives it: the rows
+    # keep their line, clear of the column on one side and of the panel on the
+    # other. Measured after the layout has moved, since opening the panel resizes
+    # the page and the rows re-place on the frame after that.
+    page.get_by_role("button", name="Comments", exact=False).click()
+    page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
+    page.wait_for_function(
+        "() => [...document.querySelectorAll("
+        "'#sug-refill .cq-sug-actions, #sug-thistle .cq-sug-actions')]"
+        ".every(r => !r.classList.contains('cq-docked'))"
+    )
+    narrowed = page.locator("main").evaluate("el => el.getBoundingClientRect().right")
+    room = page.evaluate("() => document.body.getBoundingClientRect().right")
+    for i in range(2):
+        rect = margin_rows.nth(i).evaluate(box)
+        assert rect["left"] > narrowed and rect["right"] <= room, (
+            "with the panel open the row must still hang between column and panel"
+        )
+
     # No margin anywhere: every row docks, and nothing spills sideways.
+    page.get_by_role("button", name="Close comments").click()
     page.set_viewport_size({"width": 820, "height": 900})
     page.wait_for_function(
         "() => [...document.querySelectorAll('.cq-sug-actions')]"

@@ -14,6 +14,7 @@
   --accent: #2563eb; --ok: #16a34a;   --warn: #d97706;   --danger: #dc2626;
   --r: 8px;
   --sp-1: 4px; --sp-2: 8px; --sp-3: 16px; --sp-4: 24px;
+  --rail: 168px;     /* the review margin: the widest control row, plus its gap */
   --t-6: 11px; --t-5: 13.5px; --t-4: 16px; --t-3: 19px;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
@@ -518,6 +519,31 @@ cq-suggestion[data-cq-state="rejected"]:not(:has(cq-old)) { display: none; }
 .cq-sug-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cq-sug-actions .cq-sug-accept:hover { border-color: var(--ok); color: var(--ok-ink); }
 .cq-sug-actions .cq-sug-reject:hover { border-color: var(--danger); color: var(--danger-ink); }
+/* A page carrying a change to decide gives the rail up out of its own width,
+ * rather than hanging the controls in whatever centring happens to leave over.
+ * Leftovers ran out in the posture a reviewer actually reads in: the open comment
+ * panel takes the right of the window, the margin thins below the row, and every
+ * row docked above the change it decides — which reads as belonging to the
+ * paragraph before it. Reserved here, the column simply centres in what remains,
+ * and the row keeps the line it hangs beside. The rail is a strip of body's
+ * padding rather than a narrower column, so it survives the panel's own margin
+ * (syncLayout) without the two having to agree about anything. It is keyed on the
+ * row and not on cq-suggestion, so a page whose only changes are exhibits — a
+ * specimen grows no controls — spends nothing on it, and a page that has settled
+ * every change keeps the rail it started with rather than shifting under the
+ * reviewer at the last decision. Below the breakpoint no strip is worth the
+ * column it costs, and the widget docks as it always has; on paper the controls
+ * are gone, so their room would be a blank margin.
+ *
+ * What the row can't say is whether it will use the rail: a change inside a card
+ * docks there whatever the page's width, so a page whose only change is one of
+ * those reserves a strip nothing hangs in. The alternative is to ask, and the
+ * question feeds back on itself — a row docks because it found no room, and the
+ * room is what the answer would reserve, so a rail granted only to rows that
+ * aren't docked is a rail no row is ever granted. */
+@media screen and (min-width: 900px) {
+  body:has(.cq-sug-actions) { padding-right: var(--rail); }
+}
 /* cq-specimen: quoted material — a widget or section the page exhibits rather
  * than speaks (a sample decision, a demo board). It wears the quotation idiom,
  * blockquote's muted hairline gutter opened by a small-caps label — not the
