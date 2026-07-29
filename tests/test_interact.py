@@ -1532,17 +1532,121 @@ def test_a_quote_may_not_run_across_a_widgets_parts(page_dir):
     assert comment(page_dir, "--quote", "The cutoff lives in", "--text", "x").exit_code == 0
 
 
+DRAFTED = PAGE.replace(
+    "<h2>Plan</h2>",
+    '<h2>Plan</h2>\n  <cq-draft id="note">\nAdds --dry-run to every mutating command.\n  </cq-draft>',
+)
+
+
+def drafted(page_dir):
+    """A published v1 carrying the note draft, its body still Claude's."""
+    (page_dir / "versions" / "v1.html").write_text(DRAFTED)
+    return published(page_dir)
+
+
+def edit(page_dir, text, widget="note", version=1):
+    interact.append_event(
+        page_dir,
+        {"kind": "action", "author": "user", "version": version, "widget": widget,
+         "action": "edit", "detail": {"text": text}},
+    )
+
+
 def test_a_verbatim_body_is_quotable_where_a_source_body_is_not(page_dir):
     """The registry draws the line: cq-draft renders the authored text into a plain div
     the anchor pass can see (x-verbatim), and cq-diagram renders a picture instead."""
-    drafted = PAGE.replace(
-        "</cq-options>",
-        "</cq-options>\n  <cq-draft id=\"note\">\nAdds --dry-run to every mutating command.\n  </cq-draft>",
-    )
-    (page_dir / "versions" / "v1.html").write_text(drafted)
-    result = comment(published(page_dir), "--quote", "every mutating command", "--text", "which ones?")
+    result = comment(drafted(page_dir), "--quote", "every mutating command", "--text", "which ones?")
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["anchor"]["section"] == "note"
+
+
+def test_an_edited_draft_reads_as_the_reviewers_words(page_dir):
+    """An `edit` is absolute — the log carries the whole new body, and replay writes
+    exactly that into the DOM the anchor pass searches — so the reading `comment`
+    captures against holds the reviewer's words in the authored body's place:
+    quotable, collapsed like any passage, genuinely adjacent to the prose around
+    them (no fence — the screen shows that adjacency too)."""
+    drafted(page_dir)
+    edit(page_dir, "Adds --dry-run to purge\nand rebuild only.")
+    result = comment(page_dir, "--quote", "purge and rebuild only", "--text", "x")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["anchor"]["section"] == "note"
+    across = comment(page_dir, "--quote", "Plan Adds --dry-run to purge", "--text", "x")
+    assert across.exit_code == 0, across.output
+
+
+def test_a_quote_of_words_an_edit_replaced_is_refused_naming_the_edit(page_dir):
+    """The authored body is still in the file, but the reviewer is no longer reading
+    it — posted, the comment would detach in front of them. Refused at write time
+    naming what removed the words, the retired slot's own treatment; a quote merely
+    reaching into the replaced body from outside is the same detachment."""
+    drafted(page_dir)
+    edit(page_dir, "Adds --dry-run to purge and rebuild only.")
+    result = comment(page_dir, "--quote", "every mutating command", "--text", "x")
+    assert result.exit_code != 0
+    assert "rewrote § note" in result.output and "their edit" in result.output
+    across = comment(page_dir, "--quote", "Plan Adds --dry-run to every", "--text", "x")
+    assert across.exit_code != 0 and "rewrote § note" in across.output
+
+
+def test_a_restated_draft_takes_the_pen_back_from_the_reading(page_dir):
+    """`restated` retracts the edit, so replay stops painting it and the reading
+    returns to the version as authored: the new body quotable, the retracted edit's
+    text nowhere — not even a refusal names it, since nothing removed it from this
+    version's page. A fresh edit on the new version stands again."""
+    drafted(page_dir)
+    edit(page_dir, "Adds --dry-run to purge and rebuild only.")
+    revised = DRAFTED.replace(
+        '<cq-draft id="note">\nAdds --dry-run to every mutating command.',
+        '<cq-draft id="note" restated>\nOnly purge gets a dry-run; the rest apply live.',
+    )
+    (page_dir / "versions" / "v2.html").write_text(revised)
+    noted = CliRunner().invoke(
+        interact.cli, ["note", str(page_dir), "--version", "2", "--text", "took the pen back"]
+    )
+    assert noted.exit_code == 0, noted.output
+    kept = comment(page_dir, "--quote", "the rest apply live", "--text", "x")
+    assert kept.exit_code == 0, kept.output
+    gone = comment(page_dir, "--quote", "purge and rebuild only", "--text", "x")
+    assert gone.exit_code != 0 and "doesn't say" in gone.output
+    edit(page_dir, "Fine, but default the flag on.", version=2)
+    again = comment(page_dir, "--quote", "default the flag on", "--text", "x")
+    assert again.exit_code == 0, again.output
+
+
+def test_a_verb_the_registry_no_longer_speaks_moves_nothing(page_dir):
+    """The registry is the gate, not the payload's shape: a logged action whose
+    verb this page's vendored x-state doesn't declare — a verb a later layer
+    retired — folds to nothing, so the reading stays the version as authored
+    rather than trusting whatever text the event carried."""
+    drafted(page_dir)
+    interact.append_event(
+        page_dir,
+        {"kind": "action", "author": "user", "version": 1, "widget": "note",
+         "action": "scribble", "detail": {"text": "Words no layer speaks."}},
+    )
+    kept = comment(page_dir, "--quote", "every mutating command", "--text", "x")
+    assert kept.exit_code == 0, kept.output
+    gone = comment(page_dir, "--quote", "Words no layer speaks", "--text", "x")
+    assert gone.exit_code != 0 and "doesn't say" in gone.output
+
+
+def test_an_unhonored_edit_outlives_a_republish(page_dir):
+    """v2 re-emits the authored body with no `restated`, so the reviewer's words
+    still stand over it — replay carries them, and the reading follows: silence
+    retracts nothing. This is the drift the whole mechanism closes: the file holds
+    words the page stopped showing a version ago."""
+    drafted(page_dir)
+    edit(page_dir, "Adds --dry-run to purge and rebuild only.")
+    (page_dir / "versions" / "v2.html").write_text(DRAFTED)
+    noted = CliRunner().invoke(
+        interact.cli, ["note", str(page_dir), "--version", "2", "--text", "changes elsewhere"]
+    )
+    assert noted.exit_code == 0, noted.output
+    kept = comment(page_dir, "--quote", "purge and rebuild only", "--text", "x")
+    assert kept.exit_code == 0, kept.output
+    gone = comment(page_dir, "--quote", "every mutating command", "--text", "x")
+    assert gone.exit_code != 0 and "rewrote § note" in gone.output
 
 
 def test_a_widgets_x_says_attribute_is_quotable_like_any_other_passage(page_dir):

@@ -3057,6 +3057,38 @@ def test_a_decision_claude_has_seen_still_survives_the_next_version(browser, ser
     page.close()
 
 
+def test_a_comment_written_on_an_edited_draft_lands_on_their_words(browser, serve):
+    """`comment` reads the version file plus the log; the reviewer's tab reads the
+    DOM replay builds from the same two. An edited draft is where those readings
+    used to drift — the file holds words the page stopped showing — so write the
+    anchor blind, on the reviewer's own words, and prove the page paints it. The
+    words the edit replaced are refused at the CLI, naming the edit, because posted
+    they would detach in front of the reviewer."""
+    url = serve(JOURNEY_V1)
+    d = serve.page_dir
+    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
+                              "widget": "draft-ops", "action": "edit",
+                              "detail": {"text": DRAFT_EDITED}})
+    refused = CliRunner().invoke(
+        interact.cli, ["comment", str(d), "--quote", "It is online.", "--text", "x"]
+    )
+    assert refused.exit_code != 0 and "rewrote § draft-ops" in refused.output
+    written = CliRunner().invoke(
+        interact.cli,
+        ["comment", str(d), "--quote", "It takes about a minute.", "--text", "Measured where?"],
+        catch_exceptions=False,
+    )
+    assert written.exit_code == 0, written.output
+
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    thread = page.locator(".cq-thread .cq-quote").first
+    expect(thread).not_to_have_class(re.compile(r"\bdetached\b"))
+    assert painted(page, "cq-mark") == "It takes about a minute."
+    assert errors == []
+    page.close()
+
+
 def test_restating_a_widget_is_how_a_version_takes_the_pen_back(browser, serve):
     """The other end of the rule above. Since the log outranks the markup, a
     version cannot revise a draft the reviewer has rewritten — replay would paint

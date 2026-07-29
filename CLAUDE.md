@@ -104,7 +104,13 @@ the page holds too — where a module replaces what the file holds, the reading 
 and everywhere else a module only adds. The file alone is not enough: a reviewer's
 decision moves the page's reading too, retiring a settled suggestion's losing slot, so
 `comment` reads the log and retires the same slot from its reading (`x-retired-when` in
-the registry), refusing a quote into one by naming the decision that removed it.
+the registry), refusing a quote into one by naming the decision that removed it. Their
+edit moves it the other way: an `edit` carries the whole new body and replay paints
+exactly that, so the reading puts their words where the authored body was (`x-state`'s
+body record, read through the fold) — quotable like any passage, adjacent to its neighbours,
+with the words the edit replaced refused by naming it. Retirement drops and rewriting
+substitutes because that is what each leaves on the screen; a fence would say the
+reading doesn't know what stands there, and in both cases it knows exactly.
 
 Keeping that true is not free, and the first draft wasn't. A board's module prepends each
 column's heading, so a quote running from the lede into the first card matched a file the

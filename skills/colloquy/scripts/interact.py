@@ -792,8 +792,8 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
     """Open a thread on a passage, as the reviewer's own selection does. The anchor is
     captured against the version they are looking at — the newest published one, since a
     version no `note` has released is a passage nobody can be pointed at — and read as
-    they see it: a slot their decision retired is off the page, so a quote into one is
-    refused here rather than detaching there."""
+    they see it: a slot their decision retired is off the page, and a draft they edited
+    holds their words, so a quote is met here the way it would land there."""
     if not quote and not section:
         sys.exit("a comment points at something: pass --quote, --section, or both")
     published = published_versions(page_dir)
@@ -801,9 +801,12 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
         sys.exit("no published version to anchor in; `note` one first")
     version = version_num(published[-1])
     html = (page_dir / "versions" / published[-1]).read_text(encoding="utf-8")
-    decided = suggestion_outcomes(read_events(page_dir), version)
+    events = read_events(page_dir)
+    registry = load_registry(page_dir)
+    decided = suggestion_outcomes(events, version)
+    edited = rewritten_bodies(html, events, registry, version)
     try:
-        anchor = capture_anchor(html, load_registry(page_dir), quote, section, decided)
+        anchor = capture_anchor(html, registry, quote, section, decided, edited)
     except ValueError as err:
         sys.exit(f"can't anchor in v{version}: {err}")
     body = read_text_arg(text)
@@ -1304,6 +1307,12 @@ class _StructParser(HTMLParser):
 #               suggestion's losing slot. The browser builds its anchor pass's skip
 #               list from this key too (unquotable in colloquy.js), so a reading given
 #               the log's outcomes drops here exactly what drops there.
+#   x-state, record kind "body"  the verb whose detail text becomes this element's
+#               body once the reviewer sends one (cq-draft's `edit`): replay writes
+#               the newest surviving one into the DOM verbatim (applyAction is
+#               absolute), so a reading given the fold's word (rewritten_bodies)
+#               holds their words in the authored body's place. It asks nothing of
+#               the browser, whose page already shows the text this substitutes.
 #
 # A module writes between the children of the element it upgrades — a column's heading, a
 # milestone's chips, a diff's gutters — so an opaque element and each of its children is
@@ -1338,18 +1347,23 @@ class _PassageParser(HTMLParser):
     `decided` is the accept/reject each suggestion stands under (`suggestion_outcomes`).
     A decision retires a slot — the registry's `x-retired-when` names which outcome —
     and the browser's anchor pass builds its skip list from the same key (unquotable in
-    colloquy.js), so this reading drops it the same way. Without `decided`, the reading
-    is the version as authored, every slot still pending."""
+    colloquy.js), so this reading drops it the same way. `rewrites` is the reviewer's
+    standing text per element whose registry entry records a verb as the body
+    (`rewritten_bodies`): their words stand in the authored body's place, because
+    replay writes exactly that into the DOM. Without either, the reading is the
+    version as authored — every slot pending, every body Claude's."""
 
-    def __init__(self, registry=None, decided=None):
+    def __init__(self, registry=None, decided=None, rewrites=None):
         super().__init__(convert_charrefs=True)
         self.registry = registry or {}
         self.decided = decided or {}
+        self.rewrites = rewrites or {}
         self.text = ""
         self.owner = []  # per character: the tuple of enclosing ids
         self.fences = set()  # indices a quote may not span
         self.retired = {}  # id under a retired slot → the suggestion whose decision did it
-        self.stack = []  # [{"tag", "id", "ids", "skip", "opaque", "fenced", "retired_by", "tb", "block", "tail"}]
+        self.rewritten = {}  # id whose body the reviewer rewrote → the verb that did it
+        self.stack = []  # [{"tag", "id", "ids", "skip", "sub", "opaque", "fenced", "retired_by", "tb", "block", "tail"}]
         self._uid = 0
         self._block = None  # the block the last character came from
         self._space = False  # a separator waiting for a character to follow it
@@ -1418,17 +1432,25 @@ class _PassageParser(HTMLParser):
             and self.decided.get(parent["id"]) == entry["x-retired-when"]
             else None
         )
+        # Silenced from above: the element shows nothing of its own, so a rewrite of
+        # its body has nothing to stand in for — an edited draft inside a slot the
+        # reviewer accepted away left the page with the slot.
+        silenced = bool(
+            (parent and parent["skip"])
+            or retired_by
+            or tag in UNQUOTABLE_TAGS
+            or "cq-ui" in (attrs_d.get("class") or "").split()
+        )
+        # A body the reviewer rewrote. `rewritten_bodies` already resolved the verb
+        # through this element's x-state, so an id in the dict is the whole test:
+        # the fold decides, this pass only applies.
+        sub = self.rewrites.get(attrs_d.get("id")) if not silenced else None
         frame = {
             "tag": tag,
             "id": attrs_d.get("id"),
             "ids": (parent["ids"] if parent else ()) + ((attrs_d["id"],) if attrs_d.get("id") else ()),
-            "skip": bool(
-                (parent and parent["skip"])
-                or retired_by
-                or tag in UNQUOTABLE_TAGS
-                or "cq-ui" in (attrs_d.get("class") or "").split()
-                or (opaque and entry.get("x-content") == "data")
-            ),
+            "skip": silenced or sub is not None or (opaque and entry.get("x-content") == "data"),
+            "sub": sub,
             "retired_by": retired_by,
             "opaque": opaque,
             "fenced": opaque or bool(parent and parent["opaque"]),
@@ -1457,6 +1479,12 @@ class _PassageParser(HTMLParser):
         self.stack.append(frame)
         if not frame["skip"]:
             self._said(frame, head)
+        elif sub is not None:
+            # The body's own write path, so a quote across the element's edge sees
+            # the same adjacency the screen shows — no fence, nothing withheld.
+            verb, their_text = sub
+            self._write(their_text, frame["block"], frame["ids"])
+            self.rewritten[frame["id"]] = verb
 
     def handle_data(self, data):
         frame = self.stack[-1] if self.stack else None
@@ -1482,13 +1510,14 @@ class Passages(NamedTuple):
     owner: list  # per character: the tuple of enclosing ids, outermost first
     fences: set  # indices a quote may not span: where a module may write
     retired: dict  # id under a retired slot → the suggestion whose decision did it
+    rewritten: dict  # id whose body the reviewer rewrote → the verb that did it
 
 
-def page_passages(html: str, registry=None, decided=None) -> Passages:
-    parser = _PassageParser(registry, decided)
+def page_passages(html: str, registry=None, decided=None, rewrites=None) -> Passages:
+    parser = _PassageParser(registry, decided, rewrites)
     parser.feed(html)
     parser.close()
-    return Passages(parser.text, parser.owner, parser.fences, parser.retired)
+    return Passages(parser.text, parser.owner, parser.fences, parser.retired, parser.rewritten)
 
 
 def section_span(owner: list, section: str):
@@ -1559,15 +1588,16 @@ def occurrences(text: str, quote: str, lo: int, hi: int, fences=frozenset()) -> 
     return found
 
 
-def capture_anchor(html: str, registry, quote: str, section: str, decided=None) -> dict:
+def capture_anchor(html: str, registry, quote: str, section: str, decided=None, rewrites=None) -> dict:
     """The anchor a quote makes, written the way a selection's is. Raises ValueError with
     what to do about it — a quote the file doesn't hold, or holds twice, is a question
     with an answer, and asking now beats posting a comment that lands nowhere.
 
-    `decided` makes this the reading the reviewer is looking at rather than the version
-    as authored: a slot their decision retired is off the page, so an anchor naming one
-    is refused here instead of detaching there."""
-    text, owner, fences, retired = page_passages(html, registry, decided)
+    `decided` and `rewrites` make this the reading the reviewer is looking at rather
+    than the version as authored: a slot their decision retired is off the page, and a
+    body their edit rewrote holds their words — so an anchor is met here the way it
+    would land there, instead of detaching in front of them."""
+    text, owner, fences, retired, rewritten = page_passages(html, registry, decided, rewrites)
     if section:
         # Against the structure, not the text: an element anchor is the one a click makes
         # on a diagram or an image, and those hold no text to look for.
@@ -1605,13 +1635,9 @@ def capture_anchor(html: str, registry, quote: str, section: str, decided=None) 
                 "diagram in place of its source. Quote within one part, or --section the "
                 "widget to point at the whole of it."
             )
-        was = _retired_holder(html, registry, wanted, section, decided)
+        was = _removed_by(html, registry, wanted, section, decided or {}, rewritten)
         if was:
-            sid, verb = was
-            raise ValueError(
-                f"{where} said {wanted!r} until the reviewer {verb} § {sid} — that "
-                "decision retired these words from the page. Quote it as it now stands."
-            )
+            raise ValueError(f"{where} said {wanted!r} until {was}")
         raise ValueError(
             f"{where} doesn't say {wanted!r} — quote it as the version file holds it. A "
             "widget's data body is the widget's source, not its words (a diagram's body "
@@ -1650,11 +1676,12 @@ def capture_anchor(html: str, registry, quote: str, section: str, decided=None) 
     }
 
 
-def _retired_holder(html, registry, wanted: str, section: str, decided):
-    """The suggestion whose decision retired `wanted` from the page, if any. The
-    version as authored still holds the quote, and naming the decision that removed
-    it beats telling the writer the page never said it."""
-    if not decided:
+def _removed_by(html, registry, wanted: str, section: str, decided, rewritten):
+    """What took `wanted` off the reviewer's page, when the version as authored still
+    holds it: the decision that retired the slot it sat in, or the edit that rewrote
+    the element saying it. Naming that act beats telling the writer the page never
+    said it."""
+    if not (decided or rewritten):
         return None
     p = page_passages(html, registry)
     lo, hi = 0, len(p.text)
@@ -1667,7 +1694,16 @@ def _retired_holder(html, registry, wanted: str, section: str, decided):
         for ids in p.owner[at:at + len(wanted)]:
             sid = next((wid for wid in ids if wid in decided), None)
             if sid:
-                return sid, DECIDED_VERB[decided[sid]]
+                return (
+                    f"the reviewer {DECIDED_VERB[decided[sid]]} § {sid} — that decision "
+                    "retired these words from the page. Quote it as it now stands."
+                )
+            wid = next((wid for wid in ids if wid in rewritten), None)
+            if wid:
+                return (
+                    f"the reviewer rewrote § {wid} — their {rewritten[wid]} replaced "
+                    "these words. Quote the text as they left it."
+                )
     return None
 
 
@@ -2036,6 +2072,35 @@ def folded_facet(e: dict, spec: dict):
     return value
 
 
+def page_fold(html: str, events: list, registry: dict, upto):
+    """state_fold asked of one page: its elements, its words, and the log windowed
+    to `upto` — one construction, so its readers (`record_lag`, `rewritten_bodies`)
+    cannot drift on floors or window. Returns (fold, byid, spk); the extras are the
+    page readings the fold was built from, for a caller comparing it back against
+    the markup."""
+    parser = _StructParser()
+    parser.feed(html)
+    parser.close()
+    byid = {r["attrs"]["id"]: r for r in parser.cq_elements if r["attrs"].get("id")}
+    spk = spoken(html, registry)
+    return state_fold(events, byid, spk, registry, upto, retractions(events, upto)), byid, spk
+
+
+def rewritten_bodies(html: str, events: list, registry: dict, version) -> dict:
+    """id → (verb, text): the reviewer's standing rewrite of each element whose
+    registry entry records a verb as the body (x-state record kind "body"), as
+    replay leaves it on `version`. The fold is state_fold's — the last surviving
+    action per unit under the retraction floors — read here for the one record
+    kind whose state is words rather than markup, so the passage reading can hold
+    them where the authored body was."""
+    fold, _, _ = page_fold(html, events, registry, version)
+    return {
+        unit: (e["action"], e["detail"][spec["record"]["value"]])
+        for unit, (e, spec) in fold.items()
+        if (spec.get("record") or {}).get("kind") == "body"
+    }
+
+
 def record_lag(html: str, events: list, registry: dict) -> list:
     """Units whose markup lags the reviewer's standing state — the record debt a
     log-less reader would miss. Advice, never errors: a version is free to stay
@@ -2044,12 +2109,7 @@ def record_lag(html: str, events: list, registry: dict) -> list:
     to read right without the log."""
     if not registry:
         return []
-    parser = _StructParser()
-    parser.feed(html)
-    parser.close()
-    byid = {r["attrs"]["id"]: r for r in parser.cq_elements if r["attrs"].get("id")}
-    spk = spoken(html, registry)
-    fold = state_fold(events, byid, spk, registry, None, retractions(events))
+    fold, byid, spk = page_fold(html, events, registry, None)
     lag = []
     for unit in sorted(fold):
         e, spec = fold[unit]
