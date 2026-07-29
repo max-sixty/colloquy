@@ -22,6 +22,19 @@ stands alone.
       stray process rather than a misled reviewer. Closing it properly means deciding
       whether a server may outlive the session that started it at all — a fresh
       session `serve`-ing an old page is the case that says yes.
+- [ ] A comment delivered mid-work reads as a dropped pickup. `wait` stamps `handoff` on
+      the status as it delivers, and the banner gives that mark a two-minute rope rather
+      than the working state's fifteen, because Claude's first act on waking is its own
+      `status` — a handoff mark still standing minutes later is a pickup that never
+      happened. The skill now has Claude keep `wait` running while it works, so a
+      delivery can land in the middle of a step with no wake behind it and nothing to
+      refresh the status until that step ends; two minutes on, the banner tells the
+      reviewer "Claude last checked in 3 minutes ago. 1 comment waiting. Nudge it in the
+      terminal" — wrong about what is happening, and inviting an interruption of the work
+      it is wrong about. The mark measures the gap between delivery and pickup, which is
+      only a gap when the delivery was the wake, so `wait` could leave a page it found
+      `working` as it found it. The cost is the other direction: a pickup genuinely
+      dropped mid-work would then take fifteen minutes to surface instead of two.
 - [ ] Opt-in tunnel for remote sessions (`cloudflared`/`tailscale` when present),
       gated behind an auth token added to the server first.
 - [ ] A written anchor can't quote across a widget's parts, or reach a label a module
