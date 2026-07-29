@@ -1702,6 +1702,57 @@ def test_a_section_inside_a_retired_slot_is_refused(page_dir):
     assert "accepted" in result.output and "sug-refill" in result.output
 
 
+def test_a_decision_that_empties_its_widget_takes_it_off_sections_reach(page_dir):
+    """A deletion accepted and an insertion refused both settle to nothing: the
+    wrapper's markup is still in the file, but the reviewer's screen shows nothing
+    there, so an element anchor on it would read attached while outlining nothing.
+    Pending, the wrapper answers like any element; settled empty, the refusal names
+    the decision that emptied it."""
+    lone = PAGE.replace(
+        "<cq-options>",
+        '<cq-suggestion id="sug-drop">\n'
+        "  <cq-old><p>The manual sightings log.</p></cq-old>\n"
+        "</cq-suggestion>\n"
+        '<cq-suggestion id="sug-add">\n'
+        "  <cq-new><p>Switch the north feeder to thistle.</p></cq-new>\n"
+        "</cq-suggestion>\n<cq-options>",
+    )
+    (page_dir / "versions" / "v1.html").write_text(lone)
+    published(page_dir)
+    for wid in ("sug-drop", "sug-add"):
+        ok = comment(page_dir, "--section", wid, "--text", "x")
+        assert ok.exit_code == 0, ok.output
+    decide(page_dir, "accept", widget="sug-drop")
+    decide(page_dir, "reject", widget="sug-add")
+    for wid, verb in (("sug-drop", "accepted"), ("sug-add", "rejected")):
+        gone = comment(page_dir, "--section", wid, "--text", "x")
+        assert gone.exit_code != 0
+        assert "settled to nothing" in gone.output and verb in gone.output
+
+
+def test_a_settled_replacement_still_answers_an_element_anchor(page_dir):
+    """Deciding a replacement keeps a slot on screen, so the wrapper is still a thing
+    to point at — only a decision that leaves nothing takes the element away."""
+    suggested(page_dir)
+    decide(page_dir, "accept")
+    ok = comment(page_dir, "--section", "sug-refill", "--text", "x")
+    assert ok.exit_code == 0, ok.output
+
+
+def test_a_decision_verb_the_registry_no_longer_speaks_settles_nothing(page_dir):
+    """The decisions gate is the fold's, the same one the edit gate above reads: an
+    outcome whose verb this page's vendored x-state doesn't declare folds to nothing,
+    so the reading stays pending — matching a vendored layer whose widgets no longer
+    speak the verb — rather than trusting the log's word alone."""
+    suggested(page_dir)
+    registry = json.loads((page_dir / "registry.json").read_text())
+    del registry["cq-suggestion"]["x-state"]["accept"]
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+    decide(page_dir, "accept")
+    kept = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
+    assert kept.exit_code == 0, kept.output
+
+
 def test_a_decision_settles_which_copy_a_quote_names(page_dir):
     """The browser counts occurrences on the page as decided, so the file has to
     count the same way — otherwise a passage unique in front of the reviewer reads

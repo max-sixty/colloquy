@@ -803,8 +803,9 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
     html = (page_dir / "versions" / published[-1]).read_text(encoding="utf-8")
     events = read_events(page_dir)
     registry = load_registry(page_dir)
-    decided = suggestion_outcomes(events, version)
-    edited = rewritten_bodies(html, events, registry, version)
+    fold, _, _ = page_fold(html, events, registry or {}, version)
+    decided = decisions(fold, registry or {})
+    edited = rewritten_bodies(fold)
     try:
         anchor = capture_anchor(html, registry, quote, section, decided, edited)
     except ValueError as err:
@@ -1306,7 +1307,10 @@ class _StructParser(HTMLParser):
 #   x-retired-when  the outcome under which this element leaves the page: a decided
 #               suggestion's losing slot. The browser builds its anchor pass's skip
 #               list from this key too (unquotable in colloquy.js), so a reading given
-#               the log's outcomes drops here exactly what drops there.
+#               the log's outcomes drops here exactly what drops there — and a widget
+#               whose decision leaves nothing showing goes with its slots (settledAway
+#               there, `gone` here). Its values are also the vocabulary's decision
+#               verbs, which is where `decisions` reads them from.
 #   x-state, record kind "body"  the verb whose detail text becomes this element's
 #               body once the reviewer sends one (cq-draft's `edit`): replay writes
 #               the newest surviving one into the DOM verbatim (applyAction is
@@ -1344,10 +1348,13 @@ class _PassageParser(HTMLParser):
     the way a captured quote is; `owner[i]` is the ids enclosing text[i], outermost
     first, so a match can name the section it fell in and be re-read within it.
 
-    `decided` is the accept/reject each suggestion stands under (`suggestion_outcomes`).
+    `decided` is the accept/reject each suggestion stands under (`decisions`).
     A decision retires a slot — the registry's `x-retired-when` names which outcome —
     and the browser's anchor pass builds its skip list from the same key (unquotable in
-    colloquy.js), so this reading drops it the same way. `rewrites` is the reviewer's
+    colloquy.js), so this reading drops it the same way. A decision that leaves its
+    widget with nothing — a deletion accepted, an insertion refused — empties the
+    wrapper too (`gone`), because an element showing nothing is one nobody can point
+    at, however present its markup. `rewrites` is the reviewer's
     standing text per element whose registry entry records a verb as the body
     (`rewritten_bodies`): their words stand in the authored body's place, because
     replay writes exactly that into the DOM. Without either, the reading is the
@@ -1363,6 +1370,8 @@ class _PassageParser(HTMLParser):
         self.fences = set()  # indices a quote may not span
         self.retired = {}  # id under a retired slot → the suggestion whose decision did it
         self.rewritten = {}  # id whose body the reviewer rewrote → the verb that did it
+        self.gone = {}  # decided id whose decision left it empty → the outcome that did it
+        self.bearing = set()  # ids still showing something: text under them, or a surviving child
         self.stack = []  # [{"tag", "id", "ids", "skip", "sub", "opaque", "fenced", "retired_by", "tb", "block", "tail"}]
         self._uid = 0
         self._block = None  # the block the last character came from
@@ -1374,6 +1383,8 @@ class _PassageParser(HTMLParser):
 
     def _write(self, data: str, block: int, ids: tuple) -> None:
         """Text into the collapsed run, one space per whitespace run and none leading."""
+        if data.strip():
+            self.bearing.update(ids)
         if self.text and block != self._block:
             self._space = True
         self._block = block
@@ -1407,6 +1418,11 @@ class _PassageParser(HTMLParser):
             self._said(frame, frame["tail"])
         if frame["fenced"]:
             self._fence()
+        # A decided element closing with nothing shown left the page with its decision:
+        # a deletion accepted, an insertion refused. Everything it held is either a
+        # retired slot or silent, so there is nothing on screen for an anchor to reach.
+        if frame["id"] in self.decided and not frame["skip"] and frame["id"] not in self.bearing:
+            self.gone[frame["id"]] = self.decided[frame["id"]]
 
     def handle_starttag(self, tag, attrs):
         attrs_d = dict(attrs)
@@ -1441,6 +1457,11 @@ class _PassageParser(HTMLParser):
             or tag in UNQUOTABLE_TAGS
             or "cq-ui" in (attrs_d.get("class") or "").split()
         )
+        # A surviving child keeps its parent on the page even where it holds no text —
+        # a kept slot whose only content is an image. The text case marks every
+        # enclosing id in _write.
+        if parent and not silenced:
+            self.bearing.add(parent["id"])
         # A body the reviewer rewrote. `rewritten_bodies` already resolved the verb
         # through this element's x-state, so an id in the dict is the whole test:
         # the fold decides, this pass only applies.
@@ -1511,13 +1532,16 @@ class Passages(NamedTuple):
     fences: set  # indices a quote may not span: where a module may write
     retired: dict  # id under a retired slot → the suggestion whose decision did it
     rewritten: dict  # id whose body the reviewer rewrote → the verb that did it
+    gone: dict  # decided id whose decision left it empty → the outcome that did it
 
 
 def page_passages(html: str, registry=None, decided=None, rewrites=None) -> Passages:
     parser = _PassageParser(registry, decided, rewrites)
     parser.feed(html)
     parser.close()
-    return Passages(parser.text, parser.owner, parser.fences, parser.retired, parser.rewritten)
+    return Passages(
+        parser.text, parser.owner, parser.fences, parser.retired, parser.rewritten, parser.gone
+    )
 
 
 def section_span(owner: list, section: str):
@@ -1597,7 +1621,7 @@ def capture_anchor(html: str, registry, quote: str, section: str, decided=None, 
     than the version as authored: a slot their decision retired is off the page, and a
     body their edit rewrote holds their words — so an anchor is met here the way it
     would land there, instead of detaching in front of them."""
-    text, owner, fences, retired, rewritten = page_passages(html, registry, decided, rewrites)
+    text, owner, fences, retired, rewritten, gone = page_passages(html, registry, decided, rewrites)
     if section:
         # Against the structure, not the text: an element anchor is the one a click makes
         # on a diagram or an image, and those hold no text to look for.
@@ -1611,6 +1635,12 @@ def capture_anchor(html: str, registry, quote: str, section: str, decided=None, 
                 f"§ {section} left the page when the reviewer {DECIDED_VERB[decided[sid]]} "
                 f"§ {sid} — a decided suggestion's losing slot is retired, and an anchor "
                 "on it would reach nobody. Anchor on the settled text instead."
+            )
+        if section in gone:
+            raise ValueError(
+                f"§ {section} settled to nothing when the reviewer {DECIDED_VERB[gone[section]]} "
+                "it — the decision removed everything it held from the page, and an anchor "
+                "on it would reach nobody. Anchor on the surrounding text instead."
             )
     if not quote:
         return {"section": section}
@@ -1908,7 +1938,7 @@ def suggestion_errors(suggestions: list, comment_ids: set) -> list:
     return errors
 
 
-def retirable_ids(suggestions: list, events: list, dropped: set) -> set:
+def retirable_ids(suggestions: list, events: list, dropped: set, outcomes: dict) -> set:
     """Ids the previous version's suggestions let the next one drop, given what
     it actually dropped. A logged outcome settles a suggestion: accepting
     retires the markup it replaced, rejecting retires the proposal, and either
@@ -1917,10 +1947,10 @@ def retirable_ids(suggestions: list, events: list, dropped: set) -> set:
     proposal inside it, so a version can't quietly keep an unanswered proposal
     as settled content, and not while an unresolved thread is anchored in it.
 
-    The outcomes are replay's own (`suggestion_outcomes`), so a decision a later
-    version restated away settles nothing here either — replay hands the
-    suggestion back as pending, and the slots stay needed."""
-    outcomes = suggestion_outcomes(events)
+    The outcomes are replay's own (`decisions`, folded over the version these
+    suggestions are on), so a decision a later version restated away settles
+    nothing here either — replay hands the suggestion back as pending, and the
+    slots stay needed."""
     anchored = anchored_ids(events)
     licensed = set()
     for s in suggestions:
@@ -2074,10 +2104,10 @@ def folded_facet(e: dict, spec: dict):
 
 def page_fold(html: str, events: list, registry: dict, upto):
     """state_fold asked of one page: its elements, its words, and the log windowed
-    to `upto` — one construction, so its readers (`record_lag`, `rewritten_bodies`)
-    cannot drift on floors or window. Returns (fold, byid, spk); the extras are the
-    page readings the fold was built from, for a caller comparing it back against
-    the markup."""
+    to `upto` — one construction, so its readers (`record_lag`, and the readings
+    `decisions` and `rewritten_bodies` give `comment` and `check`) cannot drift on
+    floors or window. Returns (fold, byid, spk); the extras are the page readings
+    the fold was built from, for a caller comparing it back against the markup."""
     parser = _StructParser()
     parser.feed(html)
     parser.close()
@@ -2086,19 +2116,29 @@ def page_fold(html: str, events: list, registry: dict, upto):
     return state_fold(events, byid, spk, registry, upto, retractions(events, upto)), byid, spk
 
 
-def rewritten_bodies(html: str, events: list, registry: dict, version) -> dict:
+def rewritten_bodies(fold: dict) -> dict:
     """id → (verb, text): the reviewer's standing rewrite of each element whose
     registry entry records a verb as the body (x-state record kind "body"), as
-    replay leaves it on `version`. The fold is state_fold's — the last surviving
-    action per unit under the retraction floors — read here for the one record
-    kind whose state is words rather than markup, so the passage reading can hold
-    them where the authored body was."""
-    fold, _, _ = page_fold(html, events, registry, version)
+    replay leaves it. The fold is state_fold's — the last surviving action per
+    unit under the retraction floors — read here for the one record kind whose
+    state is words rather than markup, so the passage reading can hold them
+    where the authored body was."""
     return {
         unit: (e["action"], e["detail"][spec["record"]["value"]])
         for unit, (e, spec) in fold.items()
         if (spec.get("record") or {}).get("kind") == "body"
     }
+
+
+def decisions(fold: dict, registry: dict) -> dict:
+    """widget id → the accept/reject it stands under, read from the same fold every
+    other consumer of declared state reads. Which verbs decide is the registry's word
+    too: `x-retired-when` names the outcome under which an element leaves the page, so
+    its values are the vocabulary's decision verbs — nothing here knows a widget or a
+    verb by name, and a verb a later layer retires folds to nothing rather than
+    standing on trust."""
+    deciding = {e["x-retired-when"] for e in registry.values() if "x-retired-when" in e}
+    return {unit: e["action"] for unit, (e, _) in fold.items() if e["action"] in deciding}
 
 
 def record_lag(html: str, events: list, registry: dict) -> list:
@@ -2123,24 +2163,6 @@ def record_lag(html: str, events: list, registry: dict) -> list:
             f"the markup still shows {f_cur!r}"
         )
     return lag
-
-
-def suggestion_outcomes(events: list, version=None) -> dict:
-    """suggestion id → the accept/reject it stands under, as replay applies it
-    (applyActions in colloquy.js): an outcome recorded after `version` hasn't
-    happened there yet, and one whose suggestion a later version restated is
-    taken back rather than standing. With no version, the whole log's word."""
-    # A reply or resolve names no version — nothing here rests on one — so the
-    # filter reads them as version 0 rather than the kinds that do carry it.
-    considered = [e for e in events if version is None or e.get("version", 0) <= version]
-    taken_back = retractions(considered)
-    return {
-        e["widget"]: e["action"]
-        for e in considered
-        if e["kind"] == "action"
-        and e["action"] in ("accept", "reject")
-        and taken_back.get(e["widget"], 0) <= e["version"]
-    }
 
 
 def restatement_errors(cur, prev, was: dict, now: dict, events: list, prev_num: int, registry: dict) -> list:
@@ -2391,7 +2413,10 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
         # An id may retire when the log has settled what holds it; everything
         # else must survive, or the anchors on it break.
         gone = prev.ids - parser.ids
-        dropped = sorted(gone - retirable_ids(prev.suggestions, events, gone))
+        fold, _, _ = page_fold(prev_html, events, registry or {}, None)
+        dropped = sorted(
+            gone - retirable_ids(prev.suggestions, events, gone, decisions(fold, registry or {}))
+        )
         if dropped:
             errors.append(
                 f"ids present in {prev_name} but dropped in {name} "

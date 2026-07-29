@@ -932,14 +932,38 @@ function renderPanel() {
 // wrong — before it, nothing has upgraded and so no element carries a decision, and the
 // bare list is already the whole answer. On a page that vendored no registry it stays
 // the whole answer, since nothing there ever upgrades.
-function unquotable() {
-  const retired = Object.entries(registry ?? {})
+const retiredSlots = () =>
+  Object.entries(registry ?? {})
     .filter(([, entry]) => entry["x-retired-when"])
     .map(
       ([tag, entry]) =>
         `${entry["x-parent"]}[data-cq-state="${DECIDED_VERB[entry["x-retired-when"]]}"] > ${tag}`,
-    );
-  return [".cq-ui", "script", "style", ...retired].join(", ");
+    )
+    .join(", ");
+function unquotable() {
+  const retired = retiredSlots();
+  return [".cq-ui", "script", "style", ...(retired ? [retired] : [])].join(", ");
+}
+
+// An element the reviewer's decision took off the page, asked of an element rather
+// than of text: a retired slot (or anything inside one), or a decided element the
+// retirement emptied — a deletion accepted, an insertion refused — whose every child
+// is now a retired slot or the runtime's own chrome, with no text of its own. The
+// same declaration the anchor pass skips text by answers both, so an element anchor
+// and a quote cannot disagree about what left the page.
+function settledAway(el) {
+  const retired = retiredSlots();
+  if (!retired) return false;
+  if (el.closest(retired)) return true;
+  const nodes = [...el.childNodes];
+  return (
+    nodes.some((n) => n.nodeType === 1 && n.matches(retired)) &&
+    nodes.every((n) =>
+      n.nodeType === 1
+        ? n.matches(retired) || n.matches(".cq-ui")
+        : n.nodeType !== 3 || !n.data.trim(),
+    )
+  );
 }
 const GENERATED = ".cq-ui, [data-cq-gen]";
 // The same question one node at a time: is this the runtime's own chrome rather than the
@@ -1252,11 +1276,14 @@ function restoreView(view) {
 const sectionOf = (anchor) =>
   anchor.section ? document.getElementById(anchor.section) : null;
 function resolveAnchor(anchor, text) {
-  // An element anchor asks a different question — whether the section exists at all — and
-  // the whole page is not an answer to it.
+  // An element anchor asks a different question — whether the section is still on the
+  // reviewer's page — and the whole page is not an answer to it. Existence alone isn't
+  // either: a decided element whose markup settles to nothing is present in the
+  // document and absent from the screen, and an anchor held to it read as attached
+  // while outlining nothing.
   if (!anchor.quote) {
     const section = sectionOf(anchor);
-    return section ? { element: section } : null;
+    return section && !settledAway(section) ? { element: section } : null;
   }
   const segments = findQuote(text, anchor.quote, anchor, sectionOf(anchor));
   return segments.length ? { segments } : null;

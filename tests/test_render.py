@@ -1446,6 +1446,28 @@ def test_a_decision_already_in_the_log_retires_its_slot_at_load(browser, serve):
     page.close()
 
 
+def test_a_decision_that_empties_its_widget_detaches_the_element_anchor(browser, serve):
+    """An element anchor asks whether its section is still on the reviewer's page,
+    and for a suggestion that settles to nothing — an insertion refused — the
+    markup's presence is the wrong answer: the thread read as attached while its
+    outline drew nothing. Pending, the wrapper is a thing to point at; refused, the
+    thread detaches like any passage the decision removed."""
+    url = serve(SUGGESTION_PAGE)
+    interact.append_event(serve.page_dir, {"kind": "comment", "author": "user", "version": 1,
+                                           "text": "Is thistle worth a feeder?",
+                                           "anchor": {"section": "sug-thistle"}})
+    page, errors = open_page(browser, url)
+    thread = page.locator(".cq-thread .cq-quote").first
+    expect(thread).not_to_have_class(re.compile(r"\bdetached\b"))
+    expect(page.locator("#sug-thistle")).to_have_class(re.compile(r"\bcq-mark-el\b"))
+
+    page.locator("#sug-thistle .cq-sug-reject").click()
+    expect(thread).to_have_class(re.compile(r"\bdetached\b"))
+    expect(page.locator("#sug-thistle")).not_to_have_class(re.compile(r"\bcq-mark-el\b"))
+    assert errors == []
+    page.close()
+
+
 def test_a_reply_widget_replays_its_action_when_the_page_loads(browser, serve):
     """A widget inside a reply exists only once the panel has rendered the log,
     which is later than everything on the page — so the replay runs at the end of

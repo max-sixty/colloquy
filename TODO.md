@@ -130,11 +130,6 @@ stands alone.
       structural fix is validation at the POST edge — the server would need the
       version's markup to map widget id → tag, which is why it is here rather
       than done.
-- [ ] `retirable_ids` keeps its unwindowed read of accept/reject outcomes beside
-      the state fold's retraction-floored one — sharing the fold would mean a
-      restated suggestion's accept stops licensing retirement, probably correctly,
-      but that is a behavior change to heavily-tested suggestion rules, not a
-      refactor. Decide when the corner actually arises.
 - [ ] Widget-aware suggestions: `cq-suggestion` proposes markup, so a change to a
       widget's own state (a card moved between columns, an option marked `chosen`)
       has no form yet — proposing it means re-stating the whole widget in both

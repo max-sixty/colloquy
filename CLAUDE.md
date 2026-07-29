@@ -104,7 +104,10 @@ the page holds too — where a module replaces what the file holds, the reading 
 and everywhere else a module only adds. The file alone is not enough: a reviewer's
 decision moves the page's reading too, retiring a settled suggestion's losing slot, so
 `comment` reads the log and retires the same slot from its reading (`x-retired-when` in
-the registry), refusing a quote into one by naming the decision that removed it. Their
+the registry), refusing a quote into one by naming the decision that removed it — and
+where the decision empties its widget (a deletion accepted, an insertion refused), the
+wrapper goes with the slot in both runtimes, because an element anchor asks what is on
+the screen, which the markup's presence does not answer. Their
 edit moves it the other way: an `edit` carries the whole new body and replay paints
 exactly that, so the reading puts their words where the authored body was (`x-state`'s
 body record, read through the fold) — quotable like any passage, adjacent to its neighbours,
