@@ -19,9 +19,10 @@ A page directory holds:
                          browser.
     colloquy.js          the runtime (widget layer + comment layer), served at /colloquy.js
     theme.css            tokens, element styles, class idioms, element-widget CSS
-    registry.json        the widget vocabulary: JSON Schema per cq-* tag, plus $idioms —
-                         and the page's vocabulary stamp ($events, x-state): the one
-                         statement of what this page's vendored runtime speaks
+    registry.json        the widget vocabulary: JSON Schema per cq-* tag, plus the
+                         layer-wide facts under $ — $idioms, $languages, and the page's
+                         vocabulary stamp ($events, x-state): the one statement of what
+                         this page's vendored runtime speaks
     widgets/             one ES module per upgraded widget (cq-ref.js, cq-diagram.js)
     vendor/              vendored third-party assets (mermaid.min.js, sortable.esm.js)
     media/               images the page shows, each named by the hash of its bytes
@@ -86,6 +87,11 @@ Schema has no vocabulary for rides in x- keywords:
                 The runtime renders them as real text there, because a reviewer
                 can only quote what a text node holds — the theme's matching
                 `content: attr()` is the same words for a page with no script.
+    x-language  the attribute whose value names a code language. The layer colors
+                what $languages.names holds, so a widget taking one declares which
+                attribute carries it and `check` validates every such attribute
+                against that list — the same list a plain <pre><code
+                class="language-*"> is held to.
     x-upgrade   true when the runtime imports /widgets/<tag>.js for it
     x-verbatim  true when an upgraded element's body reaches the reader as its own
                 words. Otherwise a module may render anything in place of them, so
@@ -822,7 +828,7 @@ def check_thread_markup(page_dir: Path, kind: str, body: str) -> None:
     registry = load_registry(page_dir)
     if registry is None:
         sys.exit(f"{kind} carries widget markup but the page has no registry.json; run `init`")
-    errs = fragment_errors(body, registry)
+    errs = fragment_errors(body, registry, vendored_languages(page_dir))
     if errs:
         sys.exit(f"{kind} widget markup doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs))
     frag = _StructParser()
@@ -1010,6 +1016,8 @@ CATALOG_PREAMBLE = """\
 # select and comment on them like any other text on the page. x-verbatim marks
 # an upgraded element whose body reaches the reader as its own words, which is
 # what makes it quotable — a body without it is source the widget renders.
+# x-language names the attribute carrying a code language, which is checked
+# against the one list this page colors from (printed below).
 """
 
 
@@ -1027,6 +1035,10 @@ def cmd_catalog(page_dir: Path) -> None:
     if state:
         print("\n# x-state — how a widget's action verbs and their record forms are declared.\n")
         print(json.dumps(state, indent=2, ensure_ascii=False))
+    languages = reg.get("$languages")
+    if languages:
+        print("\n# The languages this page colors, in a code block's class or an x-language attribute.\n")
+        print(json.dumps(languages, indent=2, ensure_ascii=False))
     idioms = reg.get("$idioms")
     if idioms:
         print("\n# Theme idioms — shapes the theme styles directly; no registry entry, no JS.\n")
@@ -2093,9 +2105,12 @@ def language_errors(blocks: list, cq_elements: list, registry: dict, known: list
     widget's: a plain <pre><code class="language-…"> belongs to no widget at all, and a
     tag that takes the word says which of its attributes carries it (x-language) instead
     of being known here by name. The vendored bundle is built from the same list, so a
-    page cannot be told a language its own layer doesn't speak."""
-    if not known:
-        return []
+    page cannot be told a language its own layer doesn't speak.
+
+    The list is indexed rather than tested: a layer naming none colors none, so a word
+    declared to it is still one it can't honor, and the placement rule never depended on
+    the list at all. A check whose two failures are both invisible on the page is the
+    last one that should be able to pass by finding nothing to check against."""
     errors = []
     for block in blocks:
         where = f'class="language-{block["lang"]}" (line {block["line"]})'
@@ -2517,13 +2532,20 @@ def structure_errors(parser: _StructParser) -> list:
     return errors
 
 
-def fragment_errors(html: str, registry: dict) -> list:
+def fragment_errors(html: str, registry: dict, known: list) -> list:
     """Structural + registry validation of a markup fragment (a Claude reply
-    carrying widgets): the discussion-side analog of `check`."""
+    carrying widgets): the discussion-side analog of `check`. The language check
+    comes along because the schema stopped carrying the list: a reply's
+    <cq-code lang=…> is colored by the same tokenizer a version's is, and nothing
+    else would now refuse it a word that tokenizer doesn't know."""
     parser = _StructParser()
     parser.feed(html)
     parser.close()
-    return structure_errors(parser) + widget_errors(parser.cq_elements, registry)
+    return (
+        structure_errors(parser)
+        + widget_errors(parser.cq_elements, registry)
+        + language_errors(parser.language_blocks, parser.cq_elements, registry, known)
+    )
 
 
 def cmd_check(page_dir: Path, version, render: bool = False) -> int:

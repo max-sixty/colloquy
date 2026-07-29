@@ -275,6 +275,16 @@ needs loading. The bar is real — an `x-` key the log records is a forever-cont
 vendored-layer stamp then carries (`$events`) — which is an argument for finding the
 general shape, not for reaching past the registry.
 
+A fact the whole layer shares belongs to the layer, under a `$` key, rather than to
+whichever widget first needed it. The vendored tokenizer's language list lived in
+`cq-code`'s `lang` enum, and from there the only way for the lint to read it was to name
+`cq-code`: the wrong home was the cause and the reach by name only the symptom, which is
+why moving the list (`$languages`) is what let the widgets declare instead (`x-language`
+names the attribute carrying one). The tell is a consumer indexing past the entry it was
+handed — and the second tell is what such a consumer does when the reach comes up empty,
+because a list read from the wrong place is a list that can move, and a check standing
+down on `if not known` retires itself the day it does.
+
 A widget module gets the helper surface `colloquy.js` exports, and no more until one
 genuinely needs it. Widgets never register keys with a dispatcher: focus-scoped keys
 belong to the focused control, and the global table (`KEYS`) is also the source of the `?`

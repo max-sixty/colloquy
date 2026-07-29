@@ -3947,3 +3947,64 @@ def test_a_written_comment_opens_a_thread_the_reviewer_answers(browser, serve):
     assert ("reply", "user") in kinds and ("resolve", "user") in kinds
     assert errors == []
     page.close()
+
+
+PICTURE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pictures</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Pictures</h1>
+<p id="p">Two renderings, neither of them the page's own words.</p>
+<cq-diagram id="flow">
+graph LR
+  A --> B
+</cq-diagram>
+<cq-tree id="tree">
+feeders/
+  mount.py  +2 -2
+</cq-tree>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_widget_declaring_it_renders_a_picture_takes_a_click(browser, serve):
+    """A rendering has no text of the page's in it to select, so the click anchors on the
+    whole element. Which widgets those are is theirs to declare (x-visual): the runtime
+    names none of them, so a widget added to the vocabulary is clickable on the strength
+    of its entry — the failure this rules out is the quiet one, where a consumer taught
+    one widget by name keeps working on that widget and does nothing for the next."""
+    url = serve(PICTURE_PAGE)
+    registry = json.loads((serve.page_dir / "registry.json").read_text())
+    assert registry["cq-diagram"]["x-visual"], "this test needs the shipped declaration"
+    registry["cq-tree"]["x-visual"] = True  # a widget the runtime has never heard of
+    (serve.page_dir / "registry.json").write_text(json.dumps(registry))
+    page, errors = open_page(browser, url)
+
+    # The inner svg is mermaid's, carrying a generated id; the anchor belongs to the
+    # widget that holds it, which is the element the page gave a name.
+    page.locator("#flow svg").click()
+    page.locator(".cq-fab").click()
+    page.locator("#flow.cq-mark-el.cq-pending").wait_for()
+    assert not composer_quote(page)["shown"], "a picture has no words to quote back"
+    page.get_by_role("button", name="Cancel").click()
+
+    page.locator("#tree").click()
+    page.locator(".cq-fab").click()
+    page.locator("#tree.cq-mark-el.cq-pending").wait_for()
+    page.get_by_role("button", name="Cancel").click()
+
+    # And a paragraph is still text: the click reaches no picture and raises nothing.
+    page.locator("#p").click()
+    assert not page.locator(".cq-fab").is_visible(), (
+        "a click on prose was read as a click on a picture"
+    )
+    assert errors == []
+    page.close()

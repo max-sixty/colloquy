@@ -155,13 +155,13 @@ const loadHljs = () => (hljsReady ??= import("/vendor/highlight.esm.js").then((m
 // null where the block's own ink is the answer. A list rather than markup because the two
 // callers build different DOM from it: a plain <pre> emits one span per token, cq-code
 // interleaves the line spans it numbers. `lang` is validated by `check` against the
-// registry's enum, so an unknown one here means the vendored bundle was built from a
-// different list — thrown, caught by the caller's failSoft, and reported by the render
-// gate, which fails on a console error.
+// registry's $languages.names, so an unknown one here means the vendored bundle was built
+// from a different list — thrown, caught by the caller's failSoft, and reported by the
+// render gate, which fails on a console error.
 export async function syntax(source, lang) {
   const hljs = await loadHljs();
   if (!hljs.getLanguage(lang))
-    throw new Error(`no ${lang} in /vendor/highlight.esm.js — rebuild it from the registry's lang enum`);
+    throw new Error(`no ${lang} in /vendor/highlight.esm.js — rebuild it from registry.json's $languages.names`);
   const holder = document.createElement("template");
   holder.innerHTML = hljs.highlight(source, { language: lang, ignoreIllegals: true }).value;
   const tokens = [];
@@ -280,14 +280,14 @@ export function refUrl(path, line) {
 export const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 export const SCROLL = REDUCED ? "instant" : "smooth";
 
-// Mention, not use: a widget inside <cq-specimen> is quoted material. An
-// interactive widget consults this before wiring anything that would carry
-// input back (cq-options' choose path, cq-board's grips and drags), so an
-// exhibit never takes the reader's edits. Presentational upgrades and view
-// state run regardless — a quoted diagram still renders, a quoted settled
-// group still collapses.
+// Mention, not use: a widget inside one the registry marks x-exhibit is quoted
+// material. An interactive widget consults this before wiring anything that would carry
+// input back (a choose path, a drag grip), so an exhibit never takes the reader's edits.
+// Presentational upgrades and view state run regardless — a quoted diagram still
+// renders, a quoted settled group still collapses.
 export function quoted(el) {
-  return el.closest("cq-specimen") !== null;
+  const exhibits = tagsDeclaring((entry) => entry["x-exhibit"]);
+  return exhibits.length > 0 && el.closest(exhibits.join(",")) !== null;
 }
 
 // The chrome a widget injects: a control, or the box that holds controls. Three
@@ -393,6 +393,17 @@ function reveal(el) {
 // The vocabulary, vendored per page: which tags a module upgrades, and which of their
 // attributes are words the page says (see renderSaid).
 let registry = null;
+
+// Which widgets answer a question the way the caller means it, read from what they
+// declare. Nothing out here names a widget: a behaviour some widgets want is an x- key
+// they carry, so the twelfth widget is covered by its entry alone — the alternative
+// keeps working perfectly on the widget it was taught and silently does nothing for the
+// next one. Read per call, like retiredSlots(): before the registry lands nothing has
+// upgraded, and the empty answer is the right one.
+const tagsDeclaring = (holds) =>
+  Object.entries(registry ?? {})
+    .filter(([tag, entry]) => tag.startsWith("cq-") && holds(entry))
+    .map(([tag]) => tag);
 
 async function upgradeWidgets() {
   try {
@@ -1805,7 +1816,9 @@ document.addEventListener("mousedown", (ev) => {
 // midComposition() reads, so the page quietly stopped following new versions. The rule this
 // file already carries covers it: a guard that reads state another function wrote is a sign
 // the two are one function.
-const VISUAL = "cq-diagram, svg, img, figure";
+// What a click anchors on whole, because there is no text in it to select: the page's
+// own pictures, and every widget that declares it renders as one.
+const visualSel = () => [...tagsDeclaring((e) => e["x-visual"]), "svg", "img", "figure"].join(",");
 document.addEventListener("click", (ev) => {
   if (inUi(ev.target)) return;
   const threadId = markAt(ev.clientX, ev.clientY);
@@ -1820,11 +1833,12 @@ document.addEventListener("click", (ev) => {
     return;
   }
   if (ev.target.closest?.("a")) return;
-  let visual = ev.target.closest?.(VISUAL);
+  const sel = visualSel();
+  let visual = ev.target.closest?.(sel);
   if (!visual) return;
   // Outermost visual: a rendered diagram's inner svg carries a generated id;
   // the anchor belongs to the widget (or figure) that holds it.
-  while (visual.parentElement?.closest(VISUAL)) visual = visual.parentElement.closest(VISUAL);
+  while (visual.parentElement?.closest(sel)) visual = visual.parentElement.closest(sel);
   const id = visual.closest("[id]:not(.cq-ui)")?.id;
   if (!id) return;
   updateFab({ id, x: ev.clientX, y: ev.clientY });
@@ -2117,13 +2131,27 @@ acceptAllBtn.onclick = async () => {
 // "Changes since vN": blocks (paragraphs, list items, widget items) whose text
 // isn't present in the base version get a tinted marker, so re-reviewing a
 // revision is cheap. Block-level and additions-only — deleted text has no home
-// to mark — and data-widget bodies (diagram, diff, tree, code) are opaque to
-// it. The base is the previous published version.
-const DIFF_BLOCK =
-  TEXT_BLOCK + ",aside,cq-option,cq-milestone,cq-event,cq-variant,cq-metric,cq-card";
-// A suggestion is already its own mark, and its slots hold two versions of the
-// same passage — so the diff treats the whole element as one opaque unit.
-const DIFF_OPAQUE = "cq-diagram,cq-diff,cq-tree,cq-code,cq-suggestion,svg";
+// to mark — and a widget that renders its own body is opaque to it. The base is
+// the previous published version.
+//
+// Which blocks and which widgets is the registry's answer both times, so a widget added
+// to the vocabulary diffs on the strength of its entry: a widget item whose content
+// model is prose is a block of the page's prose the same way a paragraph is.
+const diffBlockSel = () =>
+  [
+    TEXT_BLOCK,
+    "aside",
+    ...tagsDeclaring((e) => e["x-parent"] && (e["x-content"] ?? "prose") === "prose"),
+  ].join(",");
+// Opaque: a widget whose upgrade renders its data body, so the text on screen is the
+// module's and can't compare; and one whose slots a decision retires, which holds two
+// versions of one passage and is already its own mark. Plus svg, drawn by either.
+const diffOpaqueSel = () =>
+  [
+    ...tagsDeclaring((e) => e["x-upgrade"] && !e["x-verbatim"] && e["x-content"] === "data"),
+    ...new Set(tagsDeclaring((e) => e["x-retired-when"]).map((tag) => registry[tag]["x-parent"])),
+    "svg",
+  ].join(",");
 let diffBase = ""; // previous version's file name, set by renderVersions
 let diffOn = false;
 const diffMarked = [];
@@ -2131,17 +2159,18 @@ const diffMarked = [];
 const blockKey = (b) => quoteFrom(textNodesUnder(b, GENERATED));
 function diffBlocks(root) {
   const pairs = [];
-  for (const b of root.querySelectorAll(DIFF_BLOCK)) {
-    if (b.closest(".cq-ui") || b.closest(DIFF_OPAQUE)) continue;
-    if (b.querySelector(DIFF_BLOCK)) continue; // leaf blocks only, or nesting double-marks
+  const [blocks, opaque] = [diffBlockSel(), diffOpaqueSel()];
+  for (const b of root.querySelectorAll(blocks)) {
+    if (b.closest(".cq-ui") || b.closest(opaque)) continue;
+    if (b.querySelector(blocks)) continue; // leaf blocks only, or nesting double-marks
     const key = blockKey(b);
     if (key) pairs.push([b, key]);
   }
   // Opaque widgets key by identity, not body: an upgrade rewrote the live body,
   // so text can't compare — but a widget the base didn't have still marks.
-  for (const w of root.querySelectorAll(DIFF_OPAQUE)) {
+  for (const w of root.querySelectorAll(opaque)) {
     // parentElement, not w itself: an svg a widget rendered stays its widget's.
-    if (w.closest(".cq-ui") || w.parentElement?.closest(DIFF_OPAQUE)) continue;
+    if (w.closest(".cq-ui") || w.parentElement?.closest(opaque)) continue;
     pairs.push([w, ` ${w.tagName}#${w.id}`]);
   }
   return pairs;

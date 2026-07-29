@@ -77,7 +77,7 @@ uv run --with pytest --with click --with jsonschema --with tinycss2 --with playw
 Code blocks are colored in the browser from `assets/vendor/highlight.esm.js`, which
 upstream doesn't ship in a form a page can import — so it is bundled here.
 `scripts/vendor-highlight.sh` rebuilds it, reading the language list out of the
-registry's `lang` enum so the bundle can't offer a language the lint rejects. Add a
+registry's `$languages.names` so the bundle can't offer a language the lint rejects. Add a
 language there, then rerun the script.
 
 ## Recording the demo

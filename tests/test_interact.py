@@ -177,6 +177,50 @@ def test_check_rejects_a_language_nothing_will_color(page_dir):
     assert out.count('class="language-python"') == 1
 
 
+def test_a_widget_that_declares_a_language_is_checked_by_that_alone(page_dir):
+    """The list is the layer's fact, not one widget's, so nothing in the lint knows
+    which widget takes a language: a tag whose entry declares x-language is held to
+    $languages on the strength of the declaration. A thirteenth widget that colors
+    something — a terminal transcript, a diff — is covered without the lint moving."""
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry["cq-tree"]["properties"]["dialect"] = {"type": "string"}
+    registry["cq-tree"]["x-language"] = "dialect"
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace(
+            "<h2>Plan</h2>",
+            '<h2>Plan</h2>\n<cq-tree id="t" dialect="lisp">\nfeeders/\n</cq-tree>',
+        )
+    )
+    result = check(page_dir)
+    assert result.exit_code == 1
+    assert '<cq-tree dialect="lisp">' in result.output
+    assert "not a language this page's layer speaks" in result.output
+
+
+def test_a_layer_naming_no_languages_refuses_every_word_rather_than_none(page_dir):
+    """A layer that names none colors none, so a page declaring one is asking for
+    something it cannot get. The list is therefore read and indexed, never tested for
+    emptiness: an empty list that stood the check down would be a check retiring itself
+    the moment its list moved — and this is the check whose failures the reviewer can't
+    see either way, so silence is the one outcome it must not have."""
+    registry = json.loads((page_dir / "registry.json").read_text())
+    del registry["$languages"]
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace(
+            "<h2>Plan</h2>",
+            '<h2>Plan</h2>\n<pre><code class="language-python">x = 1</code></pre>\n'
+            '<div class="note language-python">not a code block</div>',
+        )
+    )
+    result = check(page_dir)
+    assert result.exit_code == 1
+    assert "not a language this page's layer speaks" in result.output
+    # The placement rule never rested on the list, so it reports here too.
+    assert "only <pre><code> is colored" in result.output
+
+
 def test_check_rejects_loose_content_in_items_container(page_dir):
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<cq-options>", "<cq-options>\nloose text\n<p>stray</p>\n<br/>")
@@ -1378,6 +1422,7 @@ def test_choose_requires_an_id(page_dir):
     errs = interact.fragment_errors(
         '<cq-options choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>',
         registry,
+        interact.vendored_languages(page_dir),
     )
     assert errs and "'id' is a dependency of 'choose'" in " ".join(errs)
 
@@ -1394,6 +1439,7 @@ def test_specimen_admits_interactive_widgets(page_dir):
         '<cq-card id="k"><strong>Card</strong></cq-card></cq-column></cq-board>'
         "</cq-specimen>",
         registry,
+        interact.vendored_languages(page_dir),
     )
     assert errs == []
 
@@ -1409,6 +1455,7 @@ def test_settling_a_decision_drops_no_ids(page_dir):
         interact.fragment_errors(
             '<cq-options settled><cq-option id="o1"><strong>A</strong></cq-option></cq-options>',
             registry,
+            interact.vendored_languages(page_dir),
         )
     )
 
@@ -1432,7 +1479,7 @@ def test_registry_examples_validate(page_dir):
     examples = {t: e["x-example"] for t, e in reg.items() if t.startswith("cq-") and "x-example" in e}
     assert examples  # the shipped registry documents by example
     for tag, example in examples.items():
-        errs = interact.fragment_errors(example, registry)
+        errs = interact.fragment_errors(example, registry, interact.vendored_languages(page_dir))
         assert not errs, f"{tag} x-example doesn't validate: {errs}"
 
 
