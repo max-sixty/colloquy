@@ -83,8 +83,12 @@
  * how a widget's own keys shadow the table. Focus-scoped keys belong to the focused
  * control itself — panel threads here, grips and pick buttons in widget modules —
  * with no registration: the only keyboard exports widgets need are announce() (the
- * live region) and keyHelp() (rows for the overlay). Escape alone crosses into typing
- * context, backing out one layer per press without ever eating text.
+ * live region) and keyHelp() (rows for the overlay). One sequence exists: g arms a
+ * short leader window in which a digit addresses the nth open thread's reply box —
+ * the address each thread wears as a corner badge and its box's placeholder speaks —
+ * and any other key disarms the window and keeps its ordinary meaning. Escape alone
+ * crosses into typing context, backing out one layer per press without ever eating
+ * text.
  *
  * Claude's replies may carry widget markup (`review reply` validates it against the vendored
  * registry at post time), rendered live in the thread; user comments stay plain text. */
@@ -695,9 +699,14 @@ style.textContent = `
        behind it — one wheel gesture moves one region. */
     .cq-threads { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px; }
     .cq-empty { color: var(--muted); padding: 18px 4px; }
-    .cq-thread { border: 1px solid var(--rule); border-radius: var(--r); padding: 10px; margin-bottom: 12px; }
+    .cq-thread { position: relative; border: 1px solid var(--rule); border-radius: var(--r); padding: 10px; margin-bottom: 12px; }
     .cq-thread.flash { animation: cq-runtime-4f3c2a8d-flash 1.2s ease-out; }
     .cq-thread:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    /* The g leader's address badge; .cq-leader-armed renders the armed window. */
+    .cq-thread-num { position: absolute; top: -8px; left: -8px; width: 17px; height: 17px;
+      border: 1px solid var(--rule); border-radius: 50%; background: var(--card);
+      color: var(--muted); font-size: 11px; line-height: 15px; text-align: center; }
+    .cq-leader-armed .cq-thread-num { border-color: var(--accent); color: var(--accent); }
     .cq-quote { margin: 0 0 8px; padding: 2px 8px; border-left: 3px solid var(--quote-bar); color: var(--muted); font-style: italic; cursor: pointer; overflow-wrap: anywhere; }
     .cq-quote:hover { color: var(--ink-2); }
     .cq-quote.detached { border-left-style: dashed; border-left-color: var(--border-2); color: var(--muted-2); cursor: default; }
@@ -1003,15 +1012,27 @@ async function post(event) {
 const SEND_KEYS = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
   ? "⌘⏎"
   : "Ctrl+⏎";
-function wireInput(ta, { hint, save, send, sendBtn }) {
-  // The shortcut goes in the placeholder, where it's visible exactly while the box is
-  // empty and can't be found any other way; the button's tooltip spells it out.
-  ta.placeholder = `${hint} · ${SEND_KEYS}`;
+function wireInput(ta, { hint, address, save, send, sendBtn }) {
+  // The hint goes in the placeholder, where it's visible exactly while the box is
+  // empty and can't be found any other way; the button's tooltip spells the send key
+  // out. The send shortcut is focus-scoped, so only the focused box may claim it —
+  // unfocused, the placeholder carries the box's own address instead (the leader
+  // sequence that reaches it), where the box has one. hint is a function where the
+  // label changes under a live box (the composer's suggest mode).
+  const label = () => (typeof hint === "function" ? hint() : hint);
+  const paint = () => {
+    const suffix = document.activeElement === ta ? SEND_KEYS : address;
+    ta.placeholder = suffix ? `${label()} · ${suffix}` : label();
+  };
+  ta.addEventListener("focus", paint);
+  ta.addEventListener("blur", paint);
   sendBtn.title = `Send (${SEND_KEYS})`;
   let sending = false;
   const sync = () => {
+    paint();
     sendBtn.disabled = sending || !ta.value.trim();
   };
+  paint();
   const submit = async () => {
     if (sending || !ta.value.trim()) return;
     sending = true;
@@ -1115,10 +1136,18 @@ function msgNode(m) {
 const anchorLabel = (anchor) =>
   anchor?.quote ? `“${anchor.quote}”` : anchor?.section ? `§ ${anchor.section}` : "";
 
-function threadNode(t, syncs) {
+function threadNode(t, syncs, num) {
   const div = el("div", "cq-thread");
   div.tabIndex = -1; // j/k focus target; Enter (below) drops into its reply box
   div.dataset.id = t.root.id;
+  if (num) {
+    // The thread's address under the g leader, worn as a corner badge. The reply
+    // box's placeholder speaks the same address ("Reply · g 2"), which is what a
+    // screen reader hears — the badge is the eye's copy, so it stays out of the tree.
+    const badge = el("span", "cq-thread-num", String(num));
+    badge.setAttribute("aria-hidden", "true");
+    div.append(badge);
+  }
   const label = anchorLabel(t.root.anchor);
   if (label) {
     const quote = el("blockquote", "cq-quote", label);
@@ -1136,6 +1165,7 @@ function threadNode(t, syncs) {
     syncs.push(
       wireInput(input, {
         hint: "Reply",
+        address: num ? `g ${num}` : "",
         sendBtn: send,
         save: (v) => saveDraft(draftCtx, v),
         send: async (text) => {
@@ -1183,7 +1213,9 @@ function renderThreads() {
         "No comments yet. Select any text on the page to comment on it, or use the box below.",
       ),
     );
-  open.forEach((t) => threadsBox.append(threadNode(t, syncs)));
+  // The first nine open threads are addressable (g 1–9), in the order j/k walk;
+  // past nine, digits stop and j/k still reach everything.
+  open.forEach((t, i) => threadsBox.append(threadNode(t, syncs, i < 9 ? i + 1 : 0)));
   for (const e of events)
     if (e.kind === "done")
       threadsBox.append(el("div", "cq-system", `✓ Approved ${ago(e.ts)}`));
@@ -2254,7 +2286,7 @@ const saveComposerDraft = () =>
       : "",
   );
 const syncComposer = wireInput(composerInput, {
-  hint: "Your comment",
+  hint: () => (suggestCheck.checked ? "Replacement text" : "Your comment"),
   sendBtn: composerSend,
   save: saveComposerDraft,
   send: async (text) => {
@@ -2268,12 +2300,11 @@ const syncComposer = wireInput(composerInput, {
 });
 // The composer's suggest-mode rendering — button label and placeholder — derived
 // from the checkbox in one place, so the three paths that set the checkbox
-// (toggle, open, close) can't each restate half of it.
+// (toggle, open, close) can't each restate half of it. The placeholder itself is
+// wireInput's to write; syncComposer repaints it from the hint above.
 function syncSuggestMode() {
   composerSend.textContent = suggestCheck.checked ? "Suggest" : "Comment";
-  composerInput.placeholder = suggestCheck.checked
-    ? `Replacement text · ${SEND_KEYS}`
-    : `Your comment · ${SEND_KEYS}`;
+  syncComposer();
 }
 suggestCheck.onchange = () => {
   // Entering suggestion mode seeds the box with the passage to edit in place.
@@ -2367,18 +2398,42 @@ approveBtn.onclick = () =>
 // from behavior. Rows without a key are display-only — focus-scoped (the thread's
 // Enter, ⌘⏎) or dispatched before the table (Esc, the one key that crosses typing
 // contexts); rows without `does` ride the previous row's label (k under "j / k").
+// The leader: g arms a short window in which a digit is an address — the nth open
+// thread's reply box, in the order j/k walk and the corner badges show. While armed
+// the badges brighten (the class is a rendering of leaderTimer, never read back). A
+// digit consumes the window; any other key disarms it and keeps its ordinary meaning,
+// so a mistyped g costs nothing; Esc and the timeout disarm too.
+const LEADER_MS = 1500;
+let leaderTimer = null;
+function setLeader(on) {
+  if (leaderTimer) clearTimeout(leaderTimer);
+  leaderTimer = on ? setTimeout(() => setLeader(false), LEADER_MS) : null;
+  panel.classList.toggle("cq-leader-armed", on);
+}
+// What a digit does with the window: stepThread-to-nth and its Enter in one press.
+function replyTo(n) {
+  if (!panelOpen) setPanel(true);
+  const thread = threadsBox.querySelectorAll(":scope > .cq-thread")[n - 1];
+  const ta = thread?.querySelector("textarea");
+  if (!ta) return;
+  ta.focus({ preventScroll: true });
+  thread.scrollIntoView({ behavior: SCROLL, block: "nearest" });
+  scrollToThread(thread.dataset.id);
+}
+
 const KEYS = [
   { key: "c", label: "c", does: "Comment on the selection — or toggle the panel", run: commentKey },
   { key: "j", label: "j / k", does: "Next / previous open thread", run: () => stepThread(1) },
   { key: "k", run: () => stepThread(-1) },
   { label: "Enter", does: "On a focused thread: write a reply" },
+  { key: "g", label: "g 1–9", does: "Reply to the nth open thread", run: () => setLeader(true) },
   { key: "d", label: "d", does: "Highlight changes since the previous version",
     run: () => diffBase && diffBtn.onclick() },
   { key: "[", label: "[ / ]", does: "Older / newer version", run: () => stepVersion(-1) },
   { key: "]", run: () => stepVersion(1) },
   { key: "?", label: "?", does: "This key reference", run: toggleHelp },
-  { label: "Esc", does: "Back out one layer: help, composer, reply, panel" },
-  { label: SEND_KEYS, does: "Send, in any composer" },
+  { label: "Esc", does: "Back out one layer: an armed g, help, composer, reply, panel" },
+  { label: SEND_KEYS, does: "Send, in the focused composer" },
 ];
 
 // Pages are authored documents where typing can start at any moment, so single
@@ -2394,7 +2449,19 @@ const editable = (node) =>
 document.addEventListener("keydown", (ev) => {
   if (ev.isComposing || ev.defaultPrevented) return;
   if (ev.key === "Escape") return escapeKey();
-  if (ev.metaKey || ev.ctrlKey || ev.altKey || editable(ev.target)) return;
+  if (ev.metaKey || ev.ctrlKey || ev.altKey || editable(ev.target)) {
+    if (leaderTimer) setLeader(false); // any key ends the window, chords included
+    return;
+  }
+  if (leaderTimer) {
+    setLeader(false);
+    if (/^[1-9]$/.test(ev.key)) {
+      ev.preventDefault();
+      return replyTo(+ev.key);
+    }
+    // Any other key disarms and falls through to its ordinary meaning: g j is a
+    // thread step, and g g re-arms.
+  }
   const bound = KEYS.find((b) => b.key === ev.key);
   if (!bound) return;
   ev.preventDefault();
@@ -2404,7 +2471,8 @@ document.addEventListener("keydown", (ev) => {
 // Escape's ladder, top layer first. Backing out of a reply returns focus to its
 // thread, so Esc then Enter round-trips; drafts are kept at every rung.
 function escapeKey() {
-  if (helpOpen) showHelp(false);
+  if (leaderTimer) setLeader(false);
+  else if (helpOpen) showHelp(false);
   else if (composerOpen) {
     hideComposer();
     showFab(null);

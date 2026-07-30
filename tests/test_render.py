@@ -2675,6 +2675,60 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
     page.close()
 
 
+def test_the_leader_key_addresses_reply_boxes(browser, serve):
+    """A reply box's send shortcut is focus-scoped, so only the focused box claims it:
+    unfocused, the placeholder carries the box's own address — g plus the number its
+    thread wears in the corner — and that sequence reaches the box from anywhere
+    outside a typing context. Inside one, g and digits are just letters; a non-digit
+    after g disarms the leader and keeps its ordinary meaning."""
+    url = serve(NOTED_PAGE)
+    d = serve.page_dir
+
+    def comment(anchor, text):
+        return interact.append_event(
+            d, {"kind": "comment", "author": "user", "version": 1, "text": text,
+                "anchor": anchor})["id"]
+
+    c1 = comment({"quote": "first passage"}, "Sharpen this.")
+    c2 = comment({"quote": "two separate remarks"}, "Second thought.")
+    c3 = comment({"section": "fig"}, "The figure too.")
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => document.querySelectorAll('.cq-thread').length === 3")
+
+    # g then a digit lands in that thread's reply box, opening the panel on the way.
+    page.keyboard.press("g")
+    page.keyboard.press("2")
+    ta2 = page.locator(f'.cq-thread[data-id="{c2}"] textarea')
+    expect(ta2).to_be_focused()
+    # The focused box claims the send keys; an unfocused one its own address, which
+    # its thread also wears as the corner badge.
+    expect(ta2).to_have_attribute("placeholder", re.compile(r"Reply · (⌘⏎|Ctrl\+⏎)$"))
+    ta1 = page.locator(f'.cq-thread[data-id="{c1}"] textarea')
+    expect(ta1).to_have_attribute("placeholder", "Reply · g 1")
+    expect(page.locator(f'.cq-thread[data-id="{c1}"] .cq-thread-num')).to_have_text("1")
+
+    # A digit with no leader is nothing: Esc backs out to the thread, and 3 stays put.
+    page.keyboard.press("Escape")
+    expect(page.locator(f'.cq-thread[data-id="{c2}"]')).to_be_focused()
+    page.keyboard.press("3")
+    expect(page.locator(f'.cq-thread[data-id="{c2}"]')).to_be_focused()
+
+    # A non-digit disarms the leader and keeps its ordinary meaning: g j is a thread step.
+    page.keyboard.press("g")
+    page.keyboard.press("j")
+    expect(page.locator(f'.cq-thread[data-id="{c3}"]')).to_be_focused()
+
+    # Typing contexts are untouched: in a box, g and 1 are text, and focus stays put.
+    page.keyboard.press("Enter")
+    ta3 = page.locator(f'.cq-thread[data-id="{c3}"] textarea')
+    expect(ta3).to_be_focused()
+    page.keyboard.type("g1")
+    expect(ta3).to_have_value("g1")
+    expect(ta3).to_be_focused()
+    assert errors == []
+    page.close()
+
+
 def test_the_composer_never_stands_on_its_own_mark(browser, serve):
     """The mark is the only thing naming the passage the box is about, so a box covering
     all of it is a box about nothing. That is not hypothetical: a restored draft reappears
