@@ -1,6 +1,5 @@
 {
   "name": "colloquy",
-  "version": "0.3.1",
   "description": "Collaborate through a commentable HTML page on localhost: present plans, findings, and work in progress, then carry the reviewer's anchored feedback back into the session.",
   "author": {
     "name": "Maximilian Roos",

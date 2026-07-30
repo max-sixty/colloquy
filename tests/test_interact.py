@@ -291,7 +291,8 @@ def test_claude_and_codex_load_the_same_plugin_payload():
         "authentication": "ON_INSTALL",
     }
     assert claude_manifest["name"] == codex_manifest["name"] == "colloquy"
-    assert claude_manifest["version"] == codex_manifest["version"]
+    assert "version" not in claude_manifest
+    assert "version" not in codex_manifest
     for relative in [
         "bin/colloquy",
         "hooks/hooks.json",

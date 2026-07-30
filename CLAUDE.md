@@ -522,8 +522,10 @@ and outside clicks hide, they don't discard. Cancel is the only discard.
 - **Merge locally.** The project isn't at the stage of PRs: a finished branch lands with
   `wt merge`, a direct squash merge to main. That holds for background jobs too, whose
   harness default is to push and open a draft PR.
-- **The main checkout is the marketplace source.** Both repo-root marketplaces point at
-  `plugins/colloquy/`, and both hosts install a copy into their plugin cache. Keep the
-  two manifest versions equal and bump them together after changing the payload (a
-  cachebusting version is fine), then run `claude plugin update colloquy@colloquy` and
-  `codex plugin add colloquy@colloquy`; a new session loads the refreshed copy.
+- **A session loads each host's cached copy, not the checkout.** Both repo-root
+  marketplaces point at `plugins/colloquy/`. `codex plugin add colloquy@colloquy` copies
+  from the main checkout every time; `claude plugin update colloquy@colloquy` copies from
+  GitHub main, so a payload change reaches it only once pushed. Neither manifest declares
+  a version, because that string is Claude Code's cache key: an unchanged one leaves the
+  old copy in place and the update reports it as the latest. Without one the key is the
+  commit.

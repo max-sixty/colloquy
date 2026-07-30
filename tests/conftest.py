@@ -32,6 +32,7 @@ def isolated_session(tmp_path_factory, monkeypatch):
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("CLAUDE_PID", raising=False)
     monkeypatch.delenv("COLLOQUY_SESSION_ID", raising=False)
     monkeypatch.delenv("COLLOQUY_SESSION_PID", raising=False)
     monkeypatch.delenv("COLLOQUY_AGENT", raising=False)
