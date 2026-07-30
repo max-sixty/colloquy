@@ -45,12 +45,13 @@
  *
  * Chrome is injected through the runtime's `offer`, which marks it .cq-ui for the chrome
  * look, data-cq-gen so the diff ignores it, and data-cq-offer for a thing to work — which
- * is what keeps it off the printed page and out of the anchor pass, this widget declaring
- * no label the page speaks through; the class also earns the edit box the runtime's one
- * textarea rule. Presentation is theme CSS, the swap between the two views included: an
- * open edit is the box being in the document, so the CSS reads that and this module
- * writes no display state at all. Which is also what lets paper disagree — it drops the
- * box and keeps the words. Authored content is never discarded, so there is no failSoft.
+ * is what keeps it off the printed page, out of the anchor pass (this widget declaring no
+ * label the page speaks through), and out of the way of the double-click below; the class
+ * also earns the edit box the runtime's one textarea rule. Presentation is theme CSS, the
+ * swap between the two views included: an open edit is the box being in the document, so
+ * the CSS reads that and this module writes no display state at all. Which is also what
+ * lets paper disagree — it drops the box and keeps the words. Authored content is never
+ * discarded, so there is no failSoft.
  */
 import { once, offer, quoted, sendAction, toast, keyHelp, saveDraft, loadDraft } from "/colloquy.js";
 
@@ -138,8 +139,12 @@ customElements.define(
 
       // The fast path, taken before the browser paints the selection this gesture
       // would have made (see above). The word it aimed at opens selected in the box.
+      // A double-click on the widget's own chrome belongs to that control — above all
+      // to the edit box, whose word selection this preventDefault would swallow. What
+      // the guard means is "a thing to work", so it reads the marker that says so and
+      // not the chrome face, which is a look and would answer by coincidence.
       this.addEventListener("mousedown", (ev) => {
-        if (ev.detail !== 2 || ev.target.closest(".cq-ui")) return;
+        if (ev.detail !== 2 || ev.target.closest("[data-cq-offer]")) return;
         ev.preventDefault();
         this.#open(undefined, wordAt(this.#body, ev.clientX, ev.clientY));
       });

@@ -1246,6 +1246,13 @@ const inUi = (node) => {
   const near = (node?.nodeType === 1 ? node : node?.parentElement)?.closest(`.cq-ui, ${SAID}`);
   return Boolean(near) && !near.matches(SAID);
 };
+// A different question the class also used to answer, and not a question about looks at
+// all: which document is this element in? The runtime's layer is one container, so a
+// widget inside a reply — markup frozen in the log, carried by no version — is exactly
+// what that container holds, and the reading position is a place in the page rather than
+// in the panel over it. `.cq-ui` reached those elements and a widget's own controls out
+// on the page besides, which is the look standing in for the place.
+const inChrome = (node) => Boolean(node?.closest(".cq-chrome"));
 const TEXT_BLOCK = "p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dd,dt,figcaption,summary";
 // The two readings, each one predicate over a text node and named for the question it
 // answers. Anchoring reads what the reviewer can point at: not the runtime's own words —
@@ -1502,12 +1509,12 @@ function captureView() {
     // [hidden] needs an explicit skip: hidden="until-found" resolves to
     // content-visibility, under which descendants still report real rects —
     // but what's behind an inactive tab isn't what the reader is reading.
-    if (block.closest(".cq-ui, [hidden]")) continue;
+    if (inChrome(block) || block.closest("[hidden]")) continue;
     const range = document.createRange();
     range.selectNodeContents(block);
     const rect = range.getBoundingClientRect();
     if (!rect.height || rect.bottom <= 42) continue; // 42 = banner height
-    const section = block.closest("[id]:not(.cq-ui)");
+    const section = block.closest("[id]");
     if (!view.section && section) {
       // The first on-screen block's section, kept only until a quotable block supplies
       // its own: a page with nothing quotable on screen still has somewhere to land.
@@ -2307,7 +2314,7 @@ function diffBlocks(root) {
   const pairs = [];
   const [blocks, opaque] = [diffBlockSel(), diffOpaqueSel()];
   for (const b of root.querySelectorAll(blocks)) {
-    if (b.closest(".cq-ui") || b.closest(opaque)) continue;
+    if (inChrome(b) || b.closest(opaque)) continue;
     if (b.querySelector(blocks)) continue; // leaf blocks only, or nesting double-marks
     const key = blockKey(b);
     if (key) pairs.push([b, key]);
@@ -2316,7 +2323,7 @@ function diffBlocks(root) {
   // so text can't compare — but a widget the base didn't have still marks.
   for (const w of root.querySelectorAll(opaque)) {
     // parentElement, not w itself: an svg a widget rendered stays its widget's.
-    if (w.closest(".cq-ui") || w.parentElement?.closest(opaque)) continue;
+    if (inChrome(w) || w.parentElement?.closest(opaque)) continue;
     pairs.push([w, ` ${w.tagName}#${w.id}`]);
   }
   return pairs;
@@ -2347,7 +2354,7 @@ async function applyDiff(baseName) {
   for (const [tag, spec] of stateSpecs()) {
     if (!spec.record || spec.record.kind === "body") continue;
     for (const widget of document.body.querySelectorAll(tag)) {
-      if (widget.closest(".cq-ui") || quoted(widget)) continue;
+      if (inChrome(widget) || quoted(widget)) continue;
       const units =
         spec.unit === "widget" || !spec.unit
           ? widget.id
@@ -2619,9 +2626,9 @@ function applyActions() {
     if (!el?.applyAction) continue;
     // A pinned older version is a historical view, so it shows what the reviewer
     // had done by then and not what they did later. A widget inside the comment
-    // layer (.cq-ui — a reply's inline question) has no version at all: its markup
-    // is frozen in the log, and no version can rewrite or retract it.
-    if (!el.closest(".cq-ui")) {
+    // layer (a reply's inline question) has no version at all: its markup is
+    // frozen in the log, and no version can rewrite or retract it.
+    if (!inChrome(el)) {
       if (e.version > VNUM) continue;
       const gone = restsOn(e, el).filter((id) => (takenBack.get(id) ?? 0) > e.version);
       if (gone.length) {
@@ -2648,11 +2655,9 @@ function applyActions() {
     // What the batch wrote — the ids whose shallow state its calls changed —
     // recorded on the body, where check --render reads it. A no-op says the
     // markup already held the state; only a page widget can contradict its
-    // version, so a reply's widget (.cq-ui, no version) goes unrecorded.
+    // version, so a reply's widget (no version at all) goes unrecorded.
     const wrote = [...new Set([...before.keys(), ...now.keys()])].filter(
-      (id) =>
-        before.get(id) !== now.get(id) &&
-        !document.getElementById(id)?.closest(".cq-ui"),
+      (id) => before.get(id) !== now.get(id) && !inChrome(document.getElementById(id)),
     );
     if (wrote.length) {
       const prior = document.body.dataset.cqReplayWrote?.split(" ") ?? [];
@@ -2733,7 +2738,7 @@ function stateFold(upto) {
   for (const e of events) {
     if (e.kind !== "action" || e.version > upto) continue;
     const el = document.getElementById(e.widget);
-    if (!el?.applyAction || el.closest(".cq-ui")) continue;
+    if (!el?.applyAction || inChrome(el)) continue;
     const spec = registry?.[el.tagName.toLowerCase()]?.["x-state"]?.[e.action];
     if (!spec) continue;
     if (restsOn(e, el).some((id) => (floors.get(id) ?? 0) > e.version)) continue;

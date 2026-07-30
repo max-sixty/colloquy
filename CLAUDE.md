@@ -411,6 +411,17 @@ controls wear on purpose, and the marks the runtime paints onto the page's own
 elements. A global rule is a widening of that vocabulary; the render suite pins the
 list so widening is a decision rather than a leak.
 
+The container answers in script too, and the class had been answering for it. Whether
+a widget's state has a version to contradict, and which block the reader's eye rests
+on, are questions about *which document* an element is in; the layer is one container,
+so they ask `.cq-chrome`. Asking `.cq-ui` was the same substitution the anchoring norm
+above is about, and it worked for the same reason — the layer wears that face — right
+up until a widget's own chrome, out on the page, wraps something of the page's. Where a
+marker does own the question it still answers it: the class for the composer's quote,
+the one injected element carrying an id (`[id]:not(.cq-ui)`), and `data-cq-offer` for a
+thing to work, which is what a draft's double-click asks before it swallows the
+browser's word selection.
+
 ### The document is the state, and the log outranks it
 
 A reviewer's edit (a dragged card, a pick) posts an `action`, and every action replays
