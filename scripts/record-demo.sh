@@ -10,7 +10,7 @@ IX="uv run $HERE/skills/colloquy/scripts/interact.py"
 DIR="${TMPDIR:-/tmp}/colloquy-demo"
 
 rm -rf "$DIR"
-$IX init "$DIR" >/dev/null
+$IX page init "$DIR" >/dev/null
 
 cat > "$DIR/versions/v1.html" <<'HTML'
 <!doctype html>
@@ -56,10 +56,10 @@ graph LR
 </main><script type="module" src="/colloquy.js"></script></body></html>
 HTML
 
-$IX check "$DIR" >/dev/null
-$IX note "$DIR" --version 1 --text "the plan" >/dev/null
-$IX status "$DIR" waiting >/dev/null
-URL=$($IX serve "$DIR" & sleep 1; cat "$DIR/server.json" | python3 -c 'import sys,json;print(json.load(sys.stdin)["url"])')
+$IX version check "$DIR" >/dev/null
+$IX version publish "$DIR" --version 1 --text "the plan" >/dev/null
+$IX review state "$DIR" waiting >/dev/null
+URL=$($IX server run "$DIR" & sleep 1; cat "$DIR/server.json" | python3 -c 'import sys,json;print(json.load(sys.stdin)["url"])')
 
 cat <<EOF
 
@@ -71,9 +71,9 @@ Shot list for docs/demo.gif (~30s, keep it tight):
   2. Select the text "one weekend of downtime" and comment:
        "Can we avoid the downtime window entirely?"
   3. In another terminal, drive Claude to reply + ship v2:
-       $IX reply "$DIR" --to <id> --text "Yes: phase 3 becomes an online swap."
+       $IX review reply "$DIR" --to <id> --text "Yes: phase 3 becomes an online swap."
        (write versions/v2.html changing phase 3, then:)
-       $IX note "$DIR" --version 2 --text "Phase 3 is now an online swap, no downtime"
+       $IX version publish "$DIR" --version 2 --text "Phase 3 is now an online swap, no downtime"
   4. Back in the browser: the banner flips to "working", the picker gains v2,
      and the reply lands in the thread.
   5. Drag "Staff the on-call rota" into the During column by its grip — the

@@ -40,17 +40,17 @@ whatever the session is currently about.
 edit the examples, not it). Serve one against the shipped layer to try it:
 
 ```
-uv run skills/colloquy/scripts/interact.py init /tmp/demo
+uv run skills/colloquy/scripts/interact.py page init /tmp/demo
 cp examples/triage-board.html /tmp/demo/versions/v1.html
-uv run skills/colloquy/scripts/interact.py note /tmp/demo --version 1 --text "demo"
-uv run skills/colloquy/scripts/interact.py serve /tmp/demo
+uv run skills/colloquy/scripts/interact.py version publish /tmp/demo --version 1 --text "demo"
+uv run skills/colloquy/scripts/interact.py server run /tmp/demo
 ```
 
 ## Developing
 
 The suite is integration tests over the real thing. `test_interact.py` exercises the
 lint, vendoring, publishing, catalog, export, thread-markup validation, and the anchors
-`comment` writes by reading a version file. `test_render.py`
+`review comment` writes by reading a version file. `test_render.py`
 loads the shipped examples in a real browser (both color schemes) and asserts what a
 static lint can't reach: every widget upgrades into a box with usable size, the document
 and the comment panel scroll in separate regions, and the comment box grows without any
@@ -59,10 +59,10 @@ script sizing it. One journey test drives the whole review loop through the real
 anchored) and pins the event log it leaves. `test_product_page.py` holds the pages under
 `docs/` to the shipped theme and widget registry. Playwright attaches to the Chrome
 already installed (`channel="chrome"`), so there is no browser download and still no
-build step. Driving a page by hand to check a change works the same way: `init` the
-directory, then serve it from `interact.handler_for(page_dir)` in-process as the fixtures
-do. `serve` instead puts a live review behind the session, and the review-loop hooks then
-hold it to watching that page.
+build step. Driving a page by hand to check a change works the same way: run `page init`
+for the directory, then serve it from `interact.handler_for(page_dir)` in-process as the
+fixtures do. `server run` instead puts a live review behind the session, and the
+review-loop hooks then hold it to watching that page.
 
 ```
 uv run --with pytest --with click --with jsonschema --with tinycss2 --with playwright python -m pytest tests

@@ -110,7 +110,7 @@ customElements.define(
       // marks the theme draws and never grows controls to decide it with.
       if (quoted(this)) return;
       // The line the change starts on, named for the row to hang from. Empty, so
-      // it takes no space and says nothing; ids match [a-z0-9-] and `check` keeps
+      // it takes no space and says nothing; ids match [a-z0-9-] and `version check` keeps
       // them unique, so the id is already the dashed-ident the name needs.
       this.#anchor = offer("span", "cq-sug-line");
       this.#anchor.style.anchorName = `--sug-${this.id}`;
@@ -143,7 +143,7 @@ customElements.define(
     // The row belongs to the column rather than to the change, so that `left:
     // 100%` means the page margin (see the header). It goes after the change's
     // own top-level block, which is the reader's and the tab order's place for
-    // it. A suggestion authored outside the column — `check` accepts prose
+    // it. A suggestion authored outside the column — `version check` accepts prose
     // anywhere in body — has none of that margin to reach, and keeps its row
     // beside itself; the measurement then docks it like any row without room.
     #hang() {

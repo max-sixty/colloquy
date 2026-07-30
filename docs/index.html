@@ -91,7 +91,7 @@ replacement text that Claude takes verbatim or answers with why not. Claude open
 threads the same way — a question about one sentence arrives in the margin beside
 it, not in the terminal.</li>
 <li id="loop-wake"><strong>Your comment wakes Claude.</strong> The session's turn
-ends on a background <code>wait</code> that exits the moment an event lands,
+ends on a background <code>review wait</code> that exits the moment an event lands,
 re-invoking Claude. Nothing runs between rounds.</li>
 <li id="loop-revise"><strong>A revision ships.</strong> Versions are immutable,
 each with a one-line changelog. The page follows the newest while keeping your
@@ -99,7 +99,7 @@ place on it, and the Δ toggle marks every passage that changed since the versio
 before.</li>
 <li id="loop-signoff"><strong>Sign off.</strong> "✓ Looks good" closes the review;
 pages that seek approval carry the button, informational ones take comments only.
-<code>export</code> prints the whole thread as Markdown for a PR
+<code>review transcript</code> prints the whole thread as Markdown for a PR
 description.</li>
 </ol>
 </section>

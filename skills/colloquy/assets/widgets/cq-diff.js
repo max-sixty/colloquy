@@ -118,7 +118,7 @@ async function colorHunks(file, lang) {
     } catch (err) {
       // The partition promise broke, or the bundle lacks a language $languages names.
       // Either way these tokens can't be trusted to line up, so this run stays plain and
-      // says so — the console error is what `check --render` fails on. Per run rather
+      // says so — the console error is what `version check --render` fails on. Per run rather
       // than per diff, the way highlightBlocks fails per block: the diff itself parsed.
       console.error(`colloquy: cq-diff could not color a ${lang} hunk`, err);
       continue;

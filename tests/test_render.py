@@ -360,7 +360,7 @@ def serve(tmp_path, monkeypatch):
     def go(html, comments=0, anchored=()):
         monkeypatch.chdir(tmp_path)  # keep the project layer out of the overlay
         d = tmp_path / "page"
-        assert CliRunner().invoke(interact.cli, ["init", str(d)]).exit_code == 0
+        assert CliRunner().invoke(interact.cli, ["page", "init", str(d)]).exit_code == 0
         (d / "versions" / "v1.html").write_text(html)
         interact.append_event(d, {"kind": "note", "author": "claude", "version": 1, "text": "t"})
         for i in range(comments):
@@ -405,7 +405,7 @@ def test_example_renders(browser, serve, example):
     space, no sideways scroll, no words on screen a selection can't reach. A
     widget that upgrades into a 1x1 box, or a heading painted by a pseudo-element,
     is the shape of failure a static lint cannot see. The invariants live in
-    interact.render_version — the pass `check --render` runs on agent-authored
+    interact.render_version — the pass `version check --render` runs on agent-authored
     pages — so this sweep also proves the gate a reviewer's page goes through."""
     assert interact.render_version(browser, serve(example.read_text())) == []
 
@@ -427,17 +427,25 @@ def test_the_gate_passes_a_page_that_carries_a_comment(browser, serve):
 
 
 def test_check_render_refuses_what_only_a_browser_can_see(serve):
-    """`check --render` end to end, as the agent runs it: the static lint passes
-    both of these versions, and only the one that renders clean may reach a
-    reviewer. The broken version is deliberately unnoted — refusing it before
-    `note` publishes it is the gate's whole job, so the preview server has to
-    expose what no reviewer-facing server would."""
+    """`version check --render` end to end, as the agent runs it: the static lint
+    passes both versions, and only the one that renders clean may reach a reviewer.
+    The broken version is deliberately unpublished — refusing it before
+    `version publish` exposes it is the gate's whole job, so the preview server
+    has to expose what no reviewer-facing server would."""
     serve(LONG_PAGE)
     d = serve.page_dir
 
     def gate(*args):
         return subprocess.run(
-            [sys.executable, str(interact.__file__), "check", str(d), "--render", *args],
+            [
+                sys.executable,
+                str(interact.__file__),
+                "version",
+                "check",
+                str(d),
+                "--render",
+                *args,
+            ],
             capture_output=True,
             text=True,
             check=False,  # both exit codes are the subject
@@ -655,11 +663,11 @@ def test_the_shim_runs_the_gate_from_anywhere(serve, tmp_path):
     the error box, which is why the gate is worth its couple of seconds."""
     serve(UNPARSEABLE_DIAGRAM)
     d = serve.page_dir
-    assert CliRunner().invoke(interact.cli, ["check", str(d)]).exit_code == 0
+    assert CliRunner().invoke(interact.cli, ["version", "check", str(d)]).exit_code == 0
 
     shim = Path(__file__).parent.parent / "bin" / "colloquy"
     run = subprocess.run(
-        [str(shim), "check", str(d), "--render"],
+        [str(shim), "version", "check", str(d), "--render"],
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -2960,11 +2968,11 @@ def test_a_quote_finds_its_passage_whatever_its_whitespace(browser, serve):
 
 def test_the_captured_quote_is_prose_a_file_can_hold(browser, serve):
     """A quote is read back as prose — seeded into the suggestion box, printed in the
-    panel, emitted into a Markdown blockquote by `export` — and written to a UTF-8 file
-    on the way. Source text is neither: it carries the author's line wraps, which break
-    a blockquote open, and cutting it to length by UTF-16 unit can halve a character,
-    which no UTF-8 file can hold. The server refuses that write and the reader is told
-    it is offline, with no way to ever send the comment."""
+    panel, emitted into a Markdown blockquote by `review transcript` — and written to a
+    UTF-8 file on the way. Source text is neither: it carries the author's line wraps,
+    which break a blockquote open, and cutting it to length by UTF-16 unit can halve a
+    character, which no UTF-8 file can hold. The server refuses that write and the
+    reader is told it is offline, with no way to ever send the comment."""
     url = serve(INLINE_PAGE)
     page, errors = open_page(browser, url)
 
@@ -3109,7 +3117,7 @@ def bucket_key(request):
 <pre><code class="language-bash"># apply the migration, then run the marked suite
 cd gateway &amp;&amp; alembic upgrade head</code></pre>
 <cq-code id="plain-code">
-$ colloquy check --render ./page
+$ colloquy version check ./page --render
 v1.html: renders clean
 </cq-code>
 </section>
@@ -3123,12 +3131,13 @@ def test_code_is_colored_without_a_word_moving(browser, serve):
     """Colouring is spans, and the anchor pass is what spans break: the version file holds
     one run of characters where the DOM now holds a dozen nodes. A <span> is no text block,
     so both readings collapse to the same string — which is what lets the runtime color a
-    block the file knows nothing about, and what keeps `comment` able to quote into one.
+    block the file knows nothing about, and what keeps `review comment` able to quote
+    into one.
 
     One pass serves both shapes a page has for code, cq-code's `lang` and a plain
     <pre><code class="language-*">, and neither guesses: a cq-code with no `lang` stays
-    the color of its own ink. The quote below is written the way `comment` writes one —
-    against the file — and spans a token boundary on its way back."""
+    the color of its own ink. The quote below is written the way `review comment` writes
+    one — against the file — and spans a token boundary on its way back."""
     url = serve(CODE_PAGE)
     page, errors = open_page(browser, url)
     page.wait_for_function("() => document.querySelector('cq-code.cq-rendered') !== null")
@@ -4019,12 +4028,12 @@ def _draft_says(html, text, attrs=""):
 
 
 def _publish(page_dir, version, html, note):
-    """Write a version and publish it the way Claude does — through `note`, which
-    lints it and records what it says about the reviewer's decisions."""
+    """Write a version and publish it through `version publish`, which lints it
+    and records a `note` event with what it says about the reviewer's decisions."""
     (page_dir / "versions" / f"v{version}.html").write_text(html)
     result = CliRunner().invoke(
         interact.cli,
-        ["note", str(page_dir), "--version", str(version), "--text", note],
+        ["version", "publish", str(page_dir), "--version", str(version), "--text", note],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -4293,7 +4302,7 @@ def test_a_foreign_edit_waits_for_a_live_draft_and_replays_in_order(browser, ser
 
 
 def test_a_decision_claude_has_seen_still_survives_the_next_version(browser, serve):
-    """The round trip above, differing in one fact: `wait` has handed the actions
+    """The round trip above, differing in one fact: `review wait` has handed the actions
     to Claude before v2 publishes. That is the ordinary case — Claude writes a
     version *because* it was handed the reviewer's edits — and it used to be the
     one that lost them: replay stopped at the delivery cursor, on the premise
@@ -4312,7 +4321,7 @@ def test_a_decision_claude_has_seen_still_survives_the_next_version(browser, ser
     interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
                               "widget": "draft-ops", "action": "edit",
                               "detail": {"text": DRAFT_EDITED}})
-    # What `wait` writes on its way out: everything so far is Claude's to answer.
+    # What `review wait` writes on its way out: everything so far is Claude's to answer.
     interact.write_json(d / "cursor.json", {"seq": len(interact.read_events(d))})
     # And Claude answers with a version that carries neither — the page generator
     # emitting its own idea of the board and the draft, as one did for five
@@ -4331,24 +4340,24 @@ def test_a_decision_claude_has_seen_still_survives_the_next_version(browser, ser
 
 
 def test_a_comment_written_on_an_edited_draft_lands_on_their_words(browser, serve):
-    """`comment` reads the version file plus the log; the reviewer's tab reads the
-    DOM replay builds from the same two. An edited draft is where those readings
-    used to drift — the file holds words the page stopped showing — so write the
-    anchor blind, on the reviewer's own words, and prove the page paints it. The
-    words the edit replaced are refused at the CLI, naming the edit, because posted
-    they would detach in front of the reviewer."""
+    """`review comment` reads the version file plus the log; the reviewer's tab reads
+    the DOM replay builds from the same two. An edited draft is where those readings
+    used to drift — the file holds words the page stopped showing — so write the anchor
+    blind, on the reviewer's own words, and prove the page paints it. The words the edit
+    replaced are refused at the CLI, naming the edit, because posted they would detach
+    in front of the reviewer."""
     url = serve(JOURNEY_V1)
     d = serve.page_dir
     interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
                               "widget": "draft-ops", "action": "edit",
                               "detail": {"text": DRAFT_EDITED}})
     refused = CliRunner().invoke(
-        interact.cli, ["comment", str(d), "--quote", "It is online.", "--text", "x"]
+        interact.cli, ["review", "comment", str(d), "--quote", "It is online.", "--text", "x"]
     )
     assert refused.exit_code != 0 and "rewrote § draft-ops" in refused.output
     written = CliRunner().invoke(
         interact.cli,
-        ["comment", str(d), "--quote", "It takes about a minute.", "--text", "Measured where?"],
+        ["review", "comment", str(d), "--quote", "It takes about a minute.", "--text", "Measured where?"],
         catch_exceptions=False,
     )
     assert written.exit_code == 0, written.output
@@ -4495,7 +4504,7 @@ def test_a_retraction_outlives_the_version_that_made_it(browser, serve):
         _draft_says(JOURNEY_V2, corrected, " restated")
     )
     result = CliRunner().invoke(
-        interact.cli, ["note", str(d), "--version", "4", "--text", "again"]
+        interact.cli, ["version", "publish", str(d), "--version", "4", "--text", "again"]
     )
     assert result.exit_code != 0
     assert "v2 already took that back" in result.output
@@ -4774,7 +4783,7 @@ def dead_pid():
 
 @contextmanager
 def live_watcher(page_dir):
-    """Bump heartbeat.json for the duration of the block, as a running `wait` does."""
+    """Bump heartbeat.json for the duration of the block, as `review wait` does."""
     stop = threading.Event()
 
     def pump():
@@ -4823,8 +4832,8 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
         "Claude isn't watching right now. 1 comment waiting. It picks them up next turn."
     )
 
-    # The failure the whole mechanism exists for: `wait` delivered, set this status,
-    # and Claude never came back. The handoff mark is what dates it.
+    # The failure the whole mechanism exists for: `review wait` delivered, set this
+    # status, and Claude never came back. The handoff mark is what dates it.
     declare("working", "picking up 1 update", handoff=True, quiet_for=20 * 60)
     expect(text).to_have_text(
         "Claude last checked in 20m ago. 1 comment waiting. Nudge it in the terminal."
@@ -4848,16 +4857,17 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
 
 
 # ---------- anchors written without a browser ----------
-# `comment` writes an anchor by reading the version file; the runtime resolves it against
-# the DOM that file becomes. Nothing static can check that those two readings agree, and
-# every way they can come apart — a widget's upgrade, an attribute rendered as text, the
-# space a block boundary stands for — only exists once the page is loaded.
+# `review comment` writes an anchor by reading the version file; the runtime resolves it
+# against the DOM that file becomes. Nothing static can check that those two readings
+# agree, and every way they can come apart — a widget's upgrade, an attribute rendered
+# as text, the space a block boundary stands for — only exists once the page is loaded.
 
 
 def written_anchors(page_dir, html, limit=40):
-    """Anchors `comment` would write for windows over a page's own prose. A window the
-    page says twice, or one crossing a fence, is refused on purpose — skipping those here
-    is that refusal, and what survives is exactly what the command promises to place."""
+    """Anchors `review comment` would write for windows over a page's own prose. A
+    window the page says twice, or one crossing a fence, is refused on purpose —
+    skipping those here is that refusal, and what survives is exactly what the command
+    promises to place."""
     registry = interact.load_registry(page_dir)
     text = interact.page_passages(html, registry).text
     words = text.split(" ")
@@ -4877,11 +4887,11 @@ def written_anchors(page_dir, html, limit=40):
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
 def test_an_anchor_written_from_the_file_lands_on_the_page(browser, serve, example):
-    """The claim `comment` makes is that a quote read out of the version file names the
-    same passage in the browser. Checked on the pages people actually write, because the
-    ways it can fail are all theirs: a diagram that renders to a picture, an attribute the
-    runtime turns into text, two paragraphs whose join is a space in one reading and
-    nothing in the other."""
+    """The claim `review comment` makes is that a quote read out of the version file
+    names the same passage in the browser. Checked on the pages people actually write,
+    because the ways it can fail are all theirs: a diagram that renders to a picture, an
+    attribute the runtime turns into text, two paragraphs whose join is a space in one
+    reading and nothing in the other."""
     html = example.read_text()
     url = serve(html)
     d = serve.page_dir
@@ -4946,7 +4956,7 @@ def test_a_written_anchor_keeps_its_copy_when_the_page_grows_another(browser, se
     d = serve.page_dir
     result = CliRunner().invoke(
         interact.cli,
-        ["comment", str(d), "--quote", "The version stamp never lands", "--text", "capped where?"],
+        ["review", "comment", str(d), "--quote", "The version stamp never lands", "--text", "capped where?"],
     )
     assert result.exit_code == 0, result.output
     anchor = json.loads(result.output)["anchor"]
@@ -4973,7 +4983,7 @@ def test_a_written_comment_opens_a_thread_the_reviewer_answers(browser, serve):
     d = serve.page_dir
     assert CliRunner().invoke(
         interact.cli,
-        ["comment", str(d), "--quote", "Retries are capped at three", "--text", "is three right?"],
+        ["review", "comment", str(d), "--quote", "Retries are capped at three", "--text", "is three right?"],
     ).exit_code == 0
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")

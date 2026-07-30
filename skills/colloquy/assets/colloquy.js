@@ -10,13 +10,13 @@
  * they need from here.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
- * through it as an `action` event — sendAction posts it, `wait` delivers it. The live
+ * through it as an `action` event — sendAction posts it, `review wait` delivers it. The live
  * view is the version plus every action recorded up to it, replayed on each poll:
  * authored markup is what a widget was before anyone touched it, the log is every
  * transition since, and the log wins. A decision therefore outlives the version it
  * was made on, without the page's author having to copy it into the next one by
  * hand. When a version does mean to overrule one — the content the decision was
- * about got rewritten — `check` makes the author say so (see restatement_errors in
+ * about got rewritten — `version check` makes the author say so (see restatement_errors in
  * interact.py); it is never inferred from the markup's silence. Widgets opt in via an
  * applyAction(action, detail) method stating an absolute value, so a reload keeps the
  * reviewer's drag and a second tab follows along live.
@@ -86,7 +86,7 @@
  * live region) and keyHelp() (rows for the overlay). Escape alone crosses into typing
  * context, backing out one layer per press without ever eating text.
  *
- * Claude's replies may carry widget markup (`reply` validates it against the vendored
+ * Claude's replies may carry widget markup (`review reply` validates it against the vendored
  * registry at post time), rendered live in the thread; user comments stay plain text. */
 
 // ---------- widget layer ----------
@@ -158,7 +158,7 @@ const loadHljs = () => (hljsReady ??= import("/vendor/highlight.esm.js").then((m
 // Code as [{text, role}] — a flat run in source order, roles from the table above and
 // null where the block's own ink is the answer. A list rather than markup because the two
 // callers build different DOM from it: a plain <pre> emits one span per token, cq-code
-// interleaves the line spans it numbers. `lang` is validated by `check` against the
+// interleaves the line spans it numbers. `lang` is validated by `version check` against the
 // registry's $languages.names, so an unknown one here means the vendored bundle was built
 // from a different list — thrown, caught by the caller's failSoft, and reported by the
 // render gate, which fails on a console error.
@@ -241,7 +241,7 @@ export const langForPath = (path) =>
   registry.$languages.paths[path.split("/").pop().split(".").slice(1).pop()?.toLowerCase()];
 
 // The page's own code blocks: <pre><code class="language-python">. The class is the
-// universal one — what every Markdown renderer emits, and what `check` validates — so a
+// universal one — what every Markdown renderer emits, and what `version check` validates — so a
 // block Claude wrote anywhere else needs no translation to land here. cq-code declares
 // `lang` instead, because a custom element's vocabulary is the registry's to state.
 //
@@ -1017,8 +1017,8 @@ function msgNode(m) {
   let body = msgBodies.get(m.id);
   if (!body) {
     body = el("p", "");
-    // Claude's messages may carry widget markup, validated server-side by `comment`
-    // and `reply`; already-defined widgets upgrade on insertion.
+    // Claude's messages may carry widget markup, validated server-side by
+    // `review comment` and `review reply`; already-defined widgets upgrade on insertion.
     // User text is always plain.
     if (m.author === "claude" && /<cq-[a-z]/.test(m.text)) {
       body.innerHTML = m.text;
@@ -2428,7 +2428,7 @@ diffBtn.onclick = async () => {
 // "Claude is working" is a claim in status.json, and nothing revises a claim once the
 // session behind it walks away — so a page nobody is watching reads exactly like a page
 // whose reviewer has said nothing yet. The banner asks whether anyone is attending, and
-// only two things answer yes: Claude is credibly busy, or a `wait` is live. Everything
+// only two things answer yes: Claude is credibly busy, or a `review wait` is live. Everything
 // else is absence, where the reason and the remedy are all that vary.
 const HANDOFF_GRACE_MS = 2 * 60 * 1000;
 const WORKING_GRACE_MS = 15 * 60 * 1000;
@@ -2444,9 +2444,9 @@ function renderStatus(state) {
   // The one hard fact here is the owning process. Unknown counts as alive: a page
   // nothing claimed (interact.py run outside Claude Code) isn't an abandoned one.
   const alive = session_alive !== false;
-  // How long the claim has gone unrefreshed. The rope is short for the status `wait`
-  // writes as it delivers, because Claude's first act on waking is its own `status` —
-  // that mark outliving minutes is a dropped pickup, not a long turn.
+  // How long the claim has gone unrefreshed. The rope is short for the status
+  // `review wait` writes as it delivers, because Claude's first act on waking is its
+  // own `review state` — that mark outliving minutes is a dropped pickup, not a long turn.
   const grace = status.handoff ? HANDOFF_GRACE_MS : WORKING_GRACE_MS;
   const quiet = Boolean(status.ts) && Date.now() - new Date(status.ts).getTime() > grace;
   let cls = "away",
@@ -2561,7 +2561,7 @@ latestChip.onclick = () => (location.href = "/");
 // cost to learn. Replay used to stop at the delivery cursor, on the premise that
 // a version written after Claude was handed an action encoded it — a premise
 // nothing checked, and delivery is not assent. Only a version can say what
-// Claude did with an action, and saying it is `check`'s business now
+// Claude did with an action, and saying it is `version check`'s business now
 // (restatement_errors), not something inferred here from silence.
 const appliedActions = new Set();
 // What an action rests on: the widget that sent it, and the parts of that widget
@@ -2597,7 +2597,7 @@ function retractionFloors(upto) {
 // its marks' classes, its data-cq bookkeeping — is absent too: no version can
 // assert those, and looking away from them keeps a reading taken from the live
 // DOM equal to one taken from the file. Diffed around each replay batch to
-// record what replay wrote, and imported by check --render to read the version
+// record what replay wrote, and imported by version check --render to read the version
 // files with the same eyes, so the two readings cannot drift.
 export function shallowSigs(root) {
   const sigs = new Map();
@@ -2669,7 +2669,7 @@ function applyActions() {
   if (applied) {
     const now = shallowSigs(document.body);
     // What the batch wrote — the ids whose shallow state its calls changed —
-    // recorded on the body, where check --render reads it. A no-op says the
+    // recorded on the body, where version check --render reads it. A no-op says the
     // markup already held the state; only a page widget can contradict its
     // version, so a reply's widget (.cq-chrome, no version) goes unrecorded.
     const wrote = [...new Set([...before.keys(), ...now.keys()])].filter(
@@ -2689,7 +2689,7 @@ function applyActions() {
   }
   paintPending();
   // Every action in the log is now decided (applied, skipped, or retired), and
-  // the stamp says so — it is what check --render awaits before reading the
+  // the stamp says so — it is what version check --render awaits before reading the
   // replay's record, so the gate never reads a page mid-replay.
   document.body.dataset.cqApplied = String(appliedActions.size);
 }
@@ -2884,7 +2884,7 @@ upgradeWidgets().then(() => {
   poll();
   setInterval(poll, POLL_MS);
   // Every widget has upgraded and every async one has settled, so the geometry and
-  // the drawn SVG are final. `export` copies the page at this moment and has no
+  // the drawn SVG are final. `version export` copies the page at this moment and has no
   // other way to know it arrived: a load event fires before the modules run, and
   // networkidle only says a bundle finished downloading, not that it finished
   // drawing. The stamp says the document is done becoming itself.

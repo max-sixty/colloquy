@@ -16,11 +16,11 @@ stands alone.
       already reports the page as orphaned (the owning pid is gone), so this costs a
       stray process rather than a misled reviewer. Closing it properly means deciding
       whether a server may outlive the session that started it at all — a fresh
-      session `serve`-ing an old page is the case that says yes.
+      session running an old page's server is the case that says yes.
 - [ ] Opt-in tunnel for remote sessions (`cloudflared`/`tailscale` when present),
       gated behind an auth token added to the server first.
 - [ ] A written anchor can't quote across a widget's parts, or reach a label a module
-      writes. `comment` reads the version
+      writes. `review comment` reads the version
       file, so it can't know the words a module writes between an element's children — a
       milestone's chips sit after its title, a tab's name sits in the strip and a settled
       group's summary in its disclosure row, and no registry keyword can say where a
@@ -31,9 +31,9 @@ stands alone.
       Fences make that a refusal rather than
       an anchor that detaches in the reviewer's browser, so the cost is a quote Claude
       has to shorten. Closing it properly means either a placement vocabulary richer than
-      two edges, or resolving the anchor in the browser at post time, which `comment`
-      can't afford — it runs every round of the loop, and the browser is `check --render`'s
-      once-per-page budget.
+      two edges, or resolving the anchor in the browser at post time, which
+      `review comment` can't afford — it runs every round of the loop, and the browser
+      is `version check --render`'s once-per-page budget.
 - [ ] A comment on a repeated passage goes back to naming the first copy once the page is
       revised around it. Context places a comment only where the neighbours it stored are
       still there in full on both sides; anything less falls back to document order — right
@@ -50,13 +50,14 @@ stands alone.
       lower bar. Two copies that are identical *and* identically surrounded can't be told
       apart at all, and no page here has a pair.
 - [ ] The two captures stop at different walls. The browser's reads a passage's
-      neighbours straight through a fence, while `comment`'s stops at one — the fence is
-      where the file stops modelling the page, so the file-side capture has nothing to
-      read past it. Beside a widget's seam the same passage therefore stores longer
-      context from the browser than from `comment`, and the norm that both captures
-      write the same text under the same rules is false by exactly that margin. The only
-      alignment on offer is the browser stopping at fences too, since the file cannot
-      learn to read through one; the cost is context the browser could legitimately use.
+      neighbours straight through a fence, while `review comment`'s stops at one — the
+      fence is where the file stops modelling the page, so the file-side capture has
+      nothing to read past it. Beside a widget's seam the same passage therefore stores
+      longer context from the browser than from `review comment`, and the norm that both
+      captures write the same text under the same rules is false by exactly that margin.
+      The only alignment on offer is the browser stopping at fences too, since the file
+      cannot learn to read through one; the cost is context the browser could
+      legitimately use.
 - [ ] The hidden line that tells a screen reader a block carries a comment can't be
       followed to the thread it counts: whoever hears "2 comments" goes to the panel to
       find which passage each one is on. Making it followable means a focusable element

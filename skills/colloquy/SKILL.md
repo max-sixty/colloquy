@@ -42,40 +42,41 @@ time the state moves — an item to `active`, then `done`; a finding added as yo
 and the reviewer watches it happen instead of reading about it afterwards. Their browser
 follows each new version by itself, deferring only while they are mid-comment or
 mid-drag, so a version costs them nothing. Ship one when an item's state actually
-changes rather than at every step it took, and let `status working "<detail>"` carry the
-finer grain in between. Keep `wait` running while you work, restarting it as soon as it
-delivers: a comment that lands mid-flight ("skip that one") then reaches you at the next
-step rather than at the end, and the banner reads as working throughout.
+changes rather than at every step it took, and let
+`review state <page> working "<detail>"` carry the finer grain in between. Keep
+`review wait <page>` running while you work, restarting it as soon as it delivers: a
+comment that lands mid-flight ("skip that one") then reaches you at the next step
+rather than at the end, and the banner reads as working throughout.
 
 ## Setup
 
 The page lives in its own directory, conventionally
 `~/.local/state/colloquy/pages/<slug>/`, where `<slug>` is a short kebab-case name
-for the topic (`migration-options`, `auth-diagnosis`) — every command takes the
-directory explicitly, so any location works. The directory survives the session and
-is where every version, the event log, and the vendored widget layer live. It is
+for the topic (`migration-options`, `auth-diagnosis`) — every leaf command takes the
+page directory explicitly, so any location works. The directory survives the session
+and is where every version, the event log, and the vendored widget layer live. It is
 review state, not an archive: content with a life beyond the review leaves through
-`export` or a copied version, to wherever that content belongs.
+`version export` or a copied version, to wherever that content belongs.
 
 `colloquy` mediates everything, and is on PATH because Claude Code puts each enabled
 plugin's `bin/` there. Nothing below has a path to resolve or a variable to expand, so
 it runs verbatim in any shell.
 
 ```bash
-colloquy init <dir>                          # create layout, vendor the widget layer
-colloquy catalog <dir>                       # the page's vocabulary: widgets + theme idioms
-colloquy media <dir> <file>…                 # put images in the page; prints each src to write
-colloquy serve <dir>                         # background task; prints the URL
-colloquy status <dir> working "<detail>"     # or: waiting, idle
-colloquy wait <dir>                          # background task; exits on new user events
-colloquy comment <dir> --quote "<passage>" --text "…"   # open a thread on a passage
-colloquy reply <dir> --to <id> --text "…"
-colloquy note <dir> --version 1 --text "<one-line changelog>"   # lints, then publishes vNNN.html
-colloquy check --render <dir>                # the browser gate, once per page (see below)
-colloquy events <dir>                        # reprint the full thread
-colloquy transcript <dir>                    # the review thread as Markdown
-colloquy export <dir> -o <file>              # the page as one standalone HTML file
-colloquy stop <dir>                          # stop the server; its background task exits 143 (SIGTERM — normal)
+colloquy page init <page>                    # create layout, vendor the widget layer
+colloquy page catalog <page>                 # widgets and theme idioms
+colloquy page media <page> <file>…           # add images; print each page path
+colloquy version check <page> --render       # browser gate, once per page
+colloquy version publish <page> --version 1 --text "<changelog>"
+colloquy version export <page> -o <file>     # standalone HTML copy
+colloquy server run <page>                   # background task; prints the URL
+colloquy server stop <page>                  # stop the server
+colloquy review state <page> working "<detail>"  # or: waiting, idle
+colloquy review wait <page>                  # background task; exits on reviewer events
+colloquy review comment <page> --quote "<passage>" --text "…"
+colloquy review reply <page> --to <id> --text "…"
+colloquy review events <page>                # full event log
+colloquy review transcript <page>            # review as Markdown
 ```
 
 `command not found` means colloquy isn't installed as a plugin — say so rather than
@@ -84,35 +85,36 @@ hunting for the script. From a checkout of the repo the same command is
 the page directory's layout, and its PEP 723 header is why `uv` is the plugin's one
 prerequisite.
 
-1. `init`, then read `catalog <dir>` — it prints the vendored registry (widget schemas
-   with examples) and the theme's class idioms, which vary per project.
-2. Write the page as `<dir>/versions/v1.html` (conventions below).
-3. `serve` as a background task (`run_in_background`). The port is stable per directory
-   and a live server is reused, so the URL survives restarts.
-4. `note` the version — the server exposes a version only once its note lands, and
-   `note` lints first and refuses a failing version, so a half-written or broken file is
-   never live in the reviewer's browser. Before the URL first goes out, run the browser
-   gate too: `check --render` (see "Before the URL goes out"). Then hand the user the
-   URL with a one-line orientation (select text to comment; on a sign-off page,
-   "✓ Looks good" approves) and enter the review loop.
+1. Run `page init <page>`, then read `page catalog <page>`. It prints the vendored
+   registry (widget schemas with examples) and the theme's class idioms, which vary per
+   project.
+2. Write the page as `<page>/versions/v1.html` (conventions below).
+3. Run `server run <page>` as a background task (`run_in_background`). The port is
+   stable per directory and a live server is reused, so the URL survives restarts.
+4. Run `version publish <page> --version 1 --text "<changelog>"`. Publishing checks
+   the version first and refuses a failure, so a half-written or broken file is never
+   live in the reviewer's browser. Before the URL first goes out, run the browser gate
+   too: `version check <page> --render` (see "Before the URL goes out"). Then hand the
+   user the URL with a one-line orientation (select text to comment; on a sign-off
+   page, "✓ Looks good" approves) and enter the review loop.
 
 ## When the deliverable is the file
 
 `--export` in the argument asks for the page rather than the review: steps 1, 2 and 4
-as above, then `export <dir> -o <file>` and hand back the `file://` URL. No `serve`, no
-`wait`, no review loop — the page directory is still built, so the same page can be
-served and reviewed later without being rewritten, and the Stop hook covers only pages
-that were served or waited on, so it has nothing to say about this one. Write the file
-wherever the project puts things for the user to open.
+as above, then `version export <page> -o <file>` and hand back the `file://` URL. No
+`server run`, no `review wait`, no review loop — the page directory is still built, so
+the same page can be served and reviewed later without being rewritten, and the Stop
+hook covers only pages that were served or waited on, so it has nothing to say about
+this one. Write the file wherever the project puts things for the user to open.
 
-Mid-review the same command answers "give me a copy": `export` any published version,
-as many times as asked, and the review carries on around it. The copy is the page as
-the browser drew it, with the reviewer's decisions replayed onto it and the comment
-layer left behind.
+Mid-review the same command answers "give me a copy": `version export` writes any
+published version, as many times as asked, and the review carries on around it. The
+copy is the page as the browser drew it, with the reviewer's decisions replayed onto it
+and the comment layer left behind.
 
 ## Page conventions
 
-- Pages are complete HTML documents. `check` enforces the scaffold — exactly one
+- Pages are complete HTML documents. `version check` enforces the scaffold — exactly one
   stylesheet link (`/theme.css`) and one external script (the `/colloquy.js` module);
   the rest of the head (title, charset, the `cq-*` metas below) is yours:
 
@@ -176,7 +178,7 @@ layer left behind.
   work — declares `<meta name="cq-review" content="sign-off">` in the head, and the
   banner offers "✓ Looks good". A page that only informs (a status report, an
   incident chronicle) omits it: its review is comments only, with nothing to approve.
-  `check` rejects unknown `cq-*` metas and any other `cq-review` value.
+  `version check` rejects unknown `cq-*` metas and any other `cq-review` value.
 - **Announce interactivity in prose.** A fresh reviewer won't guess from a grip glyph
   or a hover cursor that a board takes drags or an options group takes clicks — the
   sentence introducing the widget says it ("drag cards to reprioritize; your edits
@@ -193,12 +195,12 @@ layer left behind.
   is for: `<pre><code class="language-python">` for a literal the reader selects and
   quotes — a command, a config, a snippet of output — and `<cq-code lang="python">` for
   a walkthrough, which adds line numbers, `hi` ranges, and `cq-note` remarks anchored at
-  a line. The language names are the same set either way, `catalog` lists them, and
-  `check` refuses one outside it. Nothing is inferred from the text, so a block whose
-  body isn't source — a transcript, a stack trace, a log — simply says nothing and stays
-  plain. A `cq-diff` needs no language and takes none: a unified diff spans files, so
-  each file's own path says what it holds, and a path naming nothing leaves that file
-  plain like any undeclared block.
+  a line. The language names are the same set either way, `page catalog` lists them, and
+  `version check` refuses one outside it. Nothing is inferred from the text, so a block
+  whose body isn't source — a transcript, a stack trace, a log — simply says nothing
+  and stays plain. A `cq-diff` needs no language and takes none: a unified diff spans
+  files, so each file's own path says what it holds, and a path naming nothing leaves
+  that file plain like any undeclared block.
 - **Make references clickable.** Write source locations as ordinary semantic links,
   such as `<a href="https://host/repo/blob/main/path/to/file.py#L88"><code>path/to/file.py:88</code></a>`.
   Render ticket keys, MR/PR numbers, and URLs as real `<a>` links, not plain text.
@@ -207,14 +209,16 @@ layer left behind.
   layer anchors to on-screen text, so a page that scrolls sideways is hard to review.
   Give any element that can overflow (a `<pre>`, a `<table>`, an `<svg>`)
   `max-width: 100%` or `overflow-x: auto`, and size diagrams responsively rather than a
-  fixed pixel width wider than the column. `check` flags fixed widths that exceed it.
-- **Images come in by reference, never inline.** `colloquy media <dir> <file>…` copies
-  files into the page directory and prints the `src` to write; that path is the only
-  form an image takes on a page, because a base64 `data:` URI is more bytes than you
-  can usefully type and it would sit in every version forever. Each file is named by
-  the hash of its bytes, so two versions showing one screenshot share one copy and a
-  version the reader approved cannot come to show them something else. `check` refuses
-  a `/media/` reference the directory can't answer.
+  fixed pixel width wider than the column. `version check` flags fixed widths that
+  exceed it.
+- **Images come in by reference, never inline.**
+  `colloquy page media <page> <file>…` copies files into the page directory and prints
+  the `src` to write; that path is the only form an image takes on a page, because a
+  base64 `data:` URI is more bytes than you can usefully type and it would sit in every
+  version forever. Each file is named by the hash of its bytes, so two versions showing
+  one screenshot share one copy and a version the reader approved cannot come to show
+  them something else. `version check` refuses a `/media/` reference the directory
+  can't answer.
   Where the deliverable is a change to a UI with a real *before* state, let the reader
   compare the renders rather than describing what moved: a `cq-shot` holds the pair and
   flips between them in place. Capture both states at the same viewport (the
@@ -235,8 +239,8 @@ layer left behind.
   page that keeps rendering four options at full height after one of them shipped is
   spending its best space on a question nobody is still asking. Mark the group
   `settled` and it collapses to one line naming the pick, with every card still there
-  behind a disclosure — no id is dropped, so the anchors riding them and `check` both
-  hold, and the reader can open it, disagree, and pick again. Settling is a
+  behind a disclosure — no id is dropped, so the anchors riding them and `version check`
+  both hold, and the reader can open it, disagree, and pick again. Settling is a
   later moment than honoring: a decision stays live while you're applying it, and
   settles once nothing is revisiting it, which is usually a version or two on. The
   same instinct applies without the widget — a section that has served its purpose
@@ -244,31 +248,32 @@ layer left behind.
 
 ## The review loop
 
-Whenever you hand over the URL or finish a round of work: `status <dir> waiting`, start
-`wait <dir>` as a background task, and end your turn. While `wait` runs, the banner
-shows "Claude is listening"; it exits — re-invoking you — when the user comments,
-replies, resolves, approves, or edits an interactive widget (a drag on a `cq-board`
-arrives as an `action` event), printing the new events as JSON. `wait` delivers
-everything no previous `wait` has delivered — including events posted while you were
-working, so comments never get lost between rounds; reading the log another way
-(`events`) doesn't count as delivery. User comments exist only through the browser —
-`comment` posts as you, never as them. A delivery while the page already says
-`working` leaves that status untouched; `handoff` dates only a pickup from a
-non-working state.
+Whenever you hand over the URL or finish a round of work, run
+`review state <page> waiting`, start `review wait <page>` as a background task, and end
+your turn. While `review wait` runs, the banner shows "Claude is listening"; it exits
+— re-invoking you — when the user comments, replies, resolves, approves, or edits an
+interactive widget (a drag on a `cq-board` arrives as an `action` event), printing the
+new events as JSON. `review wait` delivers everything no previous `review wait` has
+delivered, including events posted while you were working, so comments never get lost
+between rounds. Reading the log with `review events` doesn't count as delivery. User
+comments exist only through the browser; `review comment` posts as you, never as them.
+A delivery while the page already says `working` leaves that status untouched;
+`handoff` dates only a pickup from a non-working state.
 
 On wake:
 
-1. `status <dir> working "<what you're doing>"` — refresh the detail at each milestone;
-   the banner shows it live, and reads a status left unrefreshed long enough as Claude
-   having gone quiet.
-2. Address every event `wait` printed (each is JSON carrying the server-minted `id`
-   that `reply --to` takes):
-   - **A comment**: `reply` in-thread, and change the page where the comment warrants
-     it — usually both. A reply is brief plain text, or may carry widget markup (a
-     small `cq-diagram` explaining a fix renders live in the thread); `reply`
-     validates widgets against the vendored registry and rejects what `check` would,
-     and their ids must be fresh — `reply` refuses ids the page or an earlier reply
-     already uses, and `check` keeps later versions off a reply's.
+1. Run `review state <page> working "<what you're doing>"` and refresh the detail at
+   each milestone. The banner shows it live, and reads a state left unrefreshed long
+   enough as Claude having gone quiet.
+2. Address every event `review wait` printed. Each is JSON carrying the server-minted
+   `id` that `review reply --to` takes:
+   - **A comment**: `review reply` in-thread, and change the page where the comment
+     warrants it — usually both. A reply is brief plain text, or may carry widget
+     markup (a small `cq-diagram` explaining a fix renders live in the thread);
+     `review reply` validates widgets against the vendored registry and rejects what
+     `version check` would, and their ids must be fresh — `review reply` refuses ids
+     the page or an earlier reply already uses, and `version check` keeps later
+     versions off a reply's.
    - **A suggestion** (a comment with `"suggestion": true`) proposes replacement text
      for its quoted passage: take it verbatim into the next version, or reply with
      why not — never silently rewrite it.
@@ -285,64 +290,64 @@ On wake:
      (and `settled` once the decision has stopped being live), replace an accepted
      suggestion with its `cq-new` markup and a rejected one with its `cq-old`,
      keeping the old id where the passage survives — so the page reads right to
-     someone who never saw the log. `check` says where the record is behind
+     someone who never saw the log. `version check` says where the record is behind
      ("record behind the log", advice on a passing run), and until a version
      carries a decision the page marks that widget as decided-and-unhonored.
 
      Declining means putting different words there — yours, or the originals
      back — and that takes `restated` on the element plus the reason in the note
-     (`catalog`'s `$restated` has the rest). Without it replay paints their words
-     over yours, so `check` refuses the version rather than let the two disagree
-     in silence. It guards the other end
-     too — a version may retire
-     ids only where the log settled the suggestion holding them, so an undecided
-     proposal is carried, withdrawn whole, or left alone, never quietly kept as
-     settled content.
+     (`page catalog`'s `$restated` has the rest). Without it replay paints their words
+     over yours, so `version check` refuses the version rather than let the two
+     disagree in silence. It guards the other end too: a version may retire ids only
+     where the log settled the suggestion holding them, so an undecided proposal is
+     carried, withdrawn whole, or left alone, never quietly kept as settled content.
    - **A thread-widget action**: a `cq-options choose` group in one of your replies
      is an inline question (announce it there too — "click an option to answer");
      the user's pick is the answer, so acknowledge it with a reply in the same
      thread. Reply markup is frozen in the log — versions neither carry nor revert
      it, and the picked state stays put on its own.
 3. Page changes go in the next version: Write `versions/v2.html` (incrementing; never
-   rewrite a version the user has seen — the picker is the history), then `note` its
-   changelog — brief, though a decline's why can take a sentence or two — which lints it
-   and publishes it; the browser follows automatically.
-4. Back to `status waiting` + `wait`.
+   rewrite a version the user has seen — the picker is the history), then run
+   `version publish <page> --version 2 --text "<changelog>"`. Keep the changelog brief,
+   though a decline's why can take a sentence or two. The browser follows the published
+   version automatically.
+4. Return to `review state <page> waiting` and `review wait <page>`.
 
 A `done` event is sign-off — it arrives only from a page declaring it (see the
-conventions): `status <dir> idle`, don't restart `wait`, and carry the approval back
-into the main task — `transcript` prints the whole review as Markdown when a PR
-description wants it, and `export` writes the page itself as one file when that is
-what outlives the review. A review ending with record debt publishes one final honoring
-version first — the final version is the page that has to read right without the
-log, and `transcript` lists what still lags on stderr. A comments-only page has no terminal event; when the discussion
-has served its purpose, set `status idle` yourself. Either way, `stop` the server once
-the page won't be revisited.
+conventions). Run `review state <page> idle`, don't restart `review wait`, and carry the
+approval back into the main task. `review transcript` prints the whole review as
+Markdown when a PR description wants it, and `version export` writes the page itself as
+one file when that is what outlives the review. A review ending with record debt
+publishes one final honoring version first — the final version is the page that has to
+read right without the log, and `review transcript` lists what still lags on stderr. A
+comments-only page has no terminal event; when the discussion has served its purpose,
+set `review state <page> idle` yourself. Either way, run `server stop <page>` once the
+page won't be revisited.
 
 Between turns a page is either watched or idle, and a `Stop` hook holds you to it:
-ending a turn with a page still `waiting` under no live `wait`, or holding events you
-never picked up, is blocked and names the page. The invariant is what the reviewer is
-owed — from the browser, a page nobody is listening to looks exactly like a page whose
-reviewer simply hasn't commented yet, so without it they find out by asking. It covers
-the pages you `serve` or `wait` on, the two acts that put a reviewer on the other end,
-so a directory you only built or linted is outside it. `status idle` ends a review and
-so refuses while events sit unread: pick them up first with `wait`, which returns at
-once when events are already there. `wait`
-also restarts a server that died under it and reports the restart on stderr; exit 2
-means it couldn't, and the page stays down until `serve`.
+ending a turn with a page still `waiting` under no live `review wait`, or holding events
+you never picked up, is blocked and names the page. The invariant is what the reviewer
+is owed — from the browser, a page nobody is listening to looks exactly like a page
+whose reviewer simply hasn't commented yet, so without it they find out by asking. It
+covers the pages you run `server run` or `review wait` on, the two acts that put a
+reviewer on the other end, so a directory you only built or linted is outside it.
+`review state <page> idle` ends a review and refuses while events sit unread: pick them
+up first with `review wait`, which returns at once when events are already there.
+`review wait` also restarts a server that died under it and reports the restart on
+stderr; exit 2 means it couldn't, and the page stays down until `server run`.
 
 ## Pointing at a passage yourself
 
-`comment` opens a thread the way the reviewer's selection does — same anchor, same panel,
-same reply box, labelled Claude instead of You. Reach for it when what you have to say is
-about one passage and you can't settle it yourself: a sentence that reads two ways, an
-assumption the paragraph rests on, a line only they have the fact to fix. Anything you
-can settle, settle — ship the fix. In chat, the reader has to find the passage again;
-in the margin it is already beside them.
+`review comment` opens a thread the way the reviewer's selection does — same anchor,
+same panel, same reply box, labelled Claude instead of You. Reach for it when what you
+have to say is about one passage and you can't settle it yourself: a sentence that
+reads two ways, an assumption the paragraph rests on, a line only they have the fact to
+fix. Anything you can settle, settle — ship the fix. In chat, the reader has to find
+the passage again; in the margin it is already beside them.
 
 ```bash
-colloquy comment <dir> --quote "<the passage, as the version file holds it>" --text "…"
-colloquy comment <dir> --section <element id> --text "…"    # a diagram, an image
+colloquy review comment <page> --quote "<passage from the version file>" --text "…"
+colloquy review comment <page> --section <element-id> --text "…"  # diagram or image
 ```
 
 It anchors in the newest published version, deriving the section the way the browser
@@ -367,20 +372,20 @@ knows that happened.
 
 ## Customizing the widget layer
 
-`init` vendors the layer into the page directory from colloquy's shipped defaults, then
-the user's `~/.config/colloquy/`, then the project's `.claude/colloquy/`. Each layer
-mirrors the same layout (`theme.css`, `registry.json`, `widgets/`, `vendor/`). Files
-replace by path; registry files merge by top-level entry, with a later layer replacing
-one complete entry. A custom widget therefore adds its entry without copying the shipped
-registry, while overriding a tag supplies its whole schema. The merged vocabulary is
-validated before vendoring, and its `x-state.detail` schema validates every action at
-`POST /api/event`. `catalog` reflects the result.
+`page init` vendors the layer into the page directory from colloquy's shipped defaults,
+then the user's `~/.config/colloquy/`, then the project's `.claude/colloquy/`. Each
+layer mirrors the same layout (`theme.css`, `registry.json`, `widgets/`, `vendor/`).
+Files replace by path; registry files merge by top-level entry, with a later layer
+replacing one complete entry. A custom widget therefore adds its entry without copying
+the shipped registry, while overriding a tag supplies its whole schema. The merged
+vocabulary is validated before vendoring, and its `x-state.detail` schema validates
+every action at `POST /api/event`. `page catalog` reflects the result.
 
 The page directory is self-contained: an approved version can't change under its
-reviewer. Re-running `init` on a live page is the explicit re-vendor; note it in the
-next version's changelog. It refuses when the incoming layer no longer accepts a logged
-event kind or action contract (tag, verb, and detail), since that event would stop
-replaying.
+reviewer. Re-running `page init` on a live page is the explicit re-vendor; note it in
+the next version's changelog. It refuses when the incoming layer no longer accepts a
+logged event kind or action contract (tag, verb, and detail), since that event would
+stop replaying.
 
 ## When the browser can't reach the server
 
@@ -394,19 +399,20 @@ tunnel is on the backlog.
 
 Three passes stand between a version and its reviewer.
 
-**The lint.** `note` runs it on every version and refuses to publish one that fails, so
-the workflow holds no separate `check` call and a failing version never reaches the
-reviewer. It is deterministic and needs no browser, and a failure names what to fix —
-the markup's structure, the registry's rules, and the id-survival rule above.
+**The lint.** `version publish` runs `version check` on every version and refuses a
+failure, so the workflow needs no separate static check and a failing version never
+reaches the reviewer. It is deterministic and needs no browser, and a failure names
+what to fix — the markup's structure, the registry's rules, and the id-survival rule
+above.
 
 **The render gate**, once, before the page's URL first reaches the user:
 
 ```bash
-colloquy check --render <dir>
+colloquy version check <page> --render
 ```
 
 It loads the version in the machine's installed Chrome (a couple of seconds, and works
-before the version is noted) and fails, in both color schemes, on what a static lint
+before the version is published) and fails, in both color schemes, on what a static lint
 cannot see: a console error, a widget upgraded into a box of no size, a page that
 scrolls sideways, a `cq-diagram` whose mermaid source doesn't parse, words on screen
 that no selection can reach, words the screen shows and a printout drops, a version
@@ -417,9 +423,9 @@ decision stands, so carry it in the markup or rewrite the passage and declare
 in its body, so a typo there would otherwise reach the reader as an error box; and it
 can't see a heading rendered as CSS generated content, or left under `.cq-ui` with
 nothing said about whose words these are, which leaves the reader looking at text they can't
-comment on. When Chrome isn't installed, the gate says so on stderr and
-lets the lint's result stand. It is the page's whole browser budget; a screenshot after
-it reads neither the console nor the second scheme.
+comment on. When Chrome isn't installed, the gate fails and says so on stderr. It is
+the page's whole browser budget; a screenshot after it reads neither the console nor
+the second scheme.
 
 **Then read the page yourself.** Nothing above has an opinion about any of this:
 

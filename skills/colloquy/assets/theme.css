@@ -1,9 +1,9 @@
-/* Colloquy default theme, vendored into each page directory by `init` and served
+/* Colloquy default theme, vendored into each page directory by `page init` and served
  * at /theme.css. Four tiers, cheapest first: tokens, element styles for plain
  * semantic HTML, class idioms (one rule + one catalog line each), and
  * element-widgets (cq-* tags rendered entirely by CSS). Customization is the
  * same cascade: override a token, then a widget's rule, then replace the file
- * via a project or user layer (see interact.py `init`).
+ * via a project or user layer (see interact.py `page init`).
  *
  * Every surface rides a token, so the dark palette is exactly one more token
  * block — nothing else in this file (or the runtime, which styles its UI from
@@ -296,7 +296,7 @@ cq-options[open] > .cq-settled::before { content: "▾"; }
     cq-options[settled] > cq-option[hidden]:not([hidden="until-found"]) { display: none; }
   }
 }
-/* Paper cannot edit the document the way `export` does, so the collapsed cards keep
+/* Paper cannot edit the document the way `version export` does, so collapsed cards keep
  * their hidden attribute and the content-visibility it carries is undone here. */
 @media print {
   cq-options[settled] > cq-option { content-visibility: visible !important; }
@@ -460,7 +460,7 @@ cq-tabs.cq-rendered > cq-tab { margin-top: 14px; }
     cq-tabs.cq-rendered > cq-tab[hidden]:not([hidden="until-found"]) { display: none; }
   }
 }
-/* Paper cannot edit the document the way `export` does, so the inactive panels keep
+/* Paper cannot edit the document the way `version export` does, so inactive panels keep
  * their hidden attribute and the content-visibility it carries is undone here. */
 @media print {
   cq-tabs.cq-rendered > cq-tab { content-visibility: visible !important; }

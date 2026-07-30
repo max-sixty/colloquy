@@ -7,16 +7,16 @@
 
 A `uv` script: the PEP 723 header above declares the dependencies, and `uv` is
 the one prerequisite for the whole plugin — no venv to create, no build step.
-Run it with `uv run interact.py <command> …`, or as `colloquy <command> …`: the
-plugin ships `bin/colloquy`, which Claude Code puts on PATH, so the skill can
-hand an agent a command that resolves nothing and expands nothing.
+Run it with `uv run interact.py <group> <command> …`, or as
+`colloquy <group> <command> …`: the plugin ships `bin/colloquy`, which Claude
+Code puts on PATH, so the skill can hand an agent a command that resolves
+nothing and expands nothing.
 
 A page directory holds:
     versions/v1.html…    immutable page versions (Claude writes them). The server
-                         exposes a version only once its `note` lands, and `note`
-                         itself runs `check` and refuses a failing version — so a
-                         half-written or broken file is never live to an open
-                         browser.
+                         exposes a version only once `version publish` lands its
+                         note, after `version check` passes, so a half-written or
+                         broken file is never live to an open browser.
     colloquy.js          the runtime (widget layer + comment layer), served at /colloquy.js
     theme.css            tokens, element styles, class idioms, element-widget CSS
     registry.json        the widget vocabulary: JSON Schema per cq-* tag, plus the
@@ -26,18 +26,21 @@ A page directory holds:
     widgets/             one ES module per upgraded widget (cq-tabs.js, cq-diagram.js)
     vendor/              vendored third-party assets (mermaid.min.js, sortable.esm.js)
     media/               images the page shows, each named by the hash of its bytes
-                         (`media`). Not vendored — this is the page's content, not the
-                         layer's — but served the same way, and content-addressing is
-                         what lets content live here at all: a name means one set of
-                         bytes forever, so a version the reviewer approved cannot show
-                         them different pixels later, and two versions showing the same
-                         screenshot share the one file rather than a copy each
+                         (`page media`). Not vendored — this is the page's content,
+                         not the layer's — but served the same way, and
+                         content-addressing is what lets content live here at all: a
+                         name means one set of bytes forever, so a version the
+                         reviewer approved cannot show them different pixels later,
+                         and two versions showing the same screenshot share the one
+                         file rather than a copy each
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
     status.json          Claude's declared state: {"state": working|waiting|idle, "detail", "ts"};
-                         when delivery wakes a non-working page, `wait` writes it working
-                         with "handoff": true until Claude's own `status` lands
-    heartbeat.json       watcher liveness, bumped by `wait` while it runs
-    cursor.json          seq of the last event delivered to Claude, written by `wait` on exit
+                         when delivery wakes a non-working page, `review wait` writes
+                         it working with "handoff": true until Claude's own
+                         `review state` lands
+    heartbeat.json       watcher liveness, bumped by `review wait` while it runs
+    cursor.json          seq of the last event delivered to Claude, written by
+                         `review wait` on exit
     server.json          {"port", "pid", "url"} for the running server
     session.json         {"id", "pid"} of the Claude Code session last working on the page
 
@@ -45,41 +48,42 @@ status.json is a claim, and a claim never expires on its own: an agent that
 stopped watching renders exactly like one that is watching and has nothing to
 say, so a comment can sit unread with the page still reading "Claude is
 working". The directory therefore also carries what it can prove — a heartbeat
-only a live `wait` bumps, the delivery cursor, and the owning session's pid —
+only a live `review wait` bumps, the delivery cursor, and the owning session's pid —
 and `/api/state` ships those beside the claim, so the banner can say when the
-claim has outlived them. When delivery wakes a non-working page, `wait` marks
-the status it writes "handoff", which dates it: Claude's first act on waking is
-its own `status`, so the mark surviving is a dropped pickup rather than a long
-turn, and the banner gives it a much shorter rope. A delivery that lands while
-Claude is already working leaves that claim untouched; there is no pickup gap
-to date.
+claim has outlived them. When delivery wakes a non-working page, `review wait`
+marks the status it writes "handoff", which dates it: Claude's first act on
+waking is its own `review state`, so the mark surviving is a dropped pickup
+rather than a long turn, and the banner gives it a much shorter rope. A
+delivery that lands while Claude is already working leaves that claim
+untouched; there is no pickup gap to date.
 
 The `hook` command closes the same gap from the agent's side. Registered on
 Stop, UserPromptSubmit and SessionEnd, it refuses to let a turn end with one of
 this session's pages unwatched, surfaces undelivered comments at the next
 prompt, and idles the pages and stops their servers when the session exits. It
 finds them through ~/.local/state/colloquy/sessions/<session id>.json, which
-`serve` and `wait` write from CLAUDE_CODE_SESSION_ID — absent that (interact.py
-run outside Claude Code), nothing is claimed and the hooks stand down. Undelivered
-events are the one thing `status idle` can't close over: idling is how a review
-ends, and a review can't end on comments nobody read.
+`server run` and `review wait` write from CLAUDE_CODE_SESSION_ID — absent that
+(interact.py run outside Claude Code), nothing is claimed and the hooks stand
+down. Undelivered events are the one thing `review state <page> idle` can't
+close over: idling is how a review ends, and a review can't end on comments
+nobody read.
 
-`init` vendors the runtime, theme, registry, widgets, and vendor assets into the
+`page init` vendors the runtime, theme, registry, widgets, and vendor assets into the
 page directory, overlaying by precedence: colloquy's shipped defaults, then the
 user layer (~/.config/colloquy/), then the project layer
 (./.claude/colloquy/). Files replace files; registry entries merge by top-level
 name, with a later layer replacing one complete entry rather than deep-merging
 its schema. The page directory itself lives wherever the caller says —
 conventionally ~/.local/state/colloquy/pages/<slug>/ — and is self-contained,
-so an approved version can't change under its reviewer; re-running `init` is the
-explicit re-vendor, noted in the next version's changelog.
+so an approved version can't change under its reviewer; re-running `page init`
+is the explicit re-vendor, noted in the next version's changelog.
 
 The registry is shared by the JS runtime, the POST and re-vendor action gates,
-this file's `check` and thread-markup validation, the passage reader `comment`
-anchors through, and the `catalog` the agent reads. Each entry is JSON Schema
-over the instance built from the element's attributes (values as strings, flag
-attributes as True). What JSON Schema has no vocabulary for rides in the custom
-keywords below:
+this file's `version check` and thread-markup validation, the passage reader
+`review comment` anchors through, and the `page catalog` the agent reads. Each
+entry is JSON Schema over the instance built from the element's attributes
+(values as strings, flag attributes as True). What JSON Schema has no
+vocabulary for rides in the custom keywords below:
     x-parent    the tag this element must be a direct child of
     x-content   the content model: "prose" (flow content, widgets welcome),
                 "items" (element children only, no loose text), "data" (a text
@@ -93,13 +97,14 @@ keywords below:
                 `content: attr()` is the same words for a page with no script.
     x-language  the attribute whose value names a code language. The layer colors
                 what $languages.names holds, so a widget taking one declares which
-                attribute carries it and `check` validates every such attribute
-                against that list — the same list a plain <pre><code
+                attribute carries it and `version check` validates every such
+                attribute against that list — the same list a plain <pre><code
                 class="language-*"> is held to.
     x-upgrade   true when the runtime imports /widgets/<tag>.js for it
     x-verbatim  true when an upgraded element's body reaches the reader as its own
                 words. Otherwise a module may render anything in place of them, so
-                `comment` treats the element as opaque and won't quote through it.
+                `review comment` treats the element as opaque and won't quote
+                through it.
     x-state     the widget's action verbs: each verb's detail schema, its fold
                 unit, and the record form its state takes in markup. Every
                 applyAction is absolute, so the reviewer's standing state is a
@@ -107,7 +112,7 @@ keywords below:
                 drives the POST and re-vendor contract gates, check's state gate,
                 the record-lag report, the runtime's pending mark, and the diff's
                 state half (see $state in the registry).
-    x-example   one authored example, printed by `catalog`
+    x-example   one authored example, printed by `page catalog`
 
 Event kinds: comment (optional anchor {section, quote, and the neighbouring
 text as prefix/suffix where there is any, which is what tells two identical
@@ -118,35 +123,40 @@ user editing the document through it — widget=element id, action=verb, detail
 per widget, version the edit was made against), note (claude; per-version
 changelog, carrying `restated`: the element ids whose decisions the publishing
 version took back). The server stamps every browser-posted event author=user;
-`comment`/`reply`/`note` stamp author=claude. A Claude comment or reply may carry widget
-markup — both validate it against the vendored registry, the discussion-side analog of
-`check`; user comments stay plain text.
+`review comment`, `review reply`, and `version publish` stamp author=claude. A
+Claude comment or reply may carry widget markup — both validate it against the
+vendored registry, the discussion-side analog of `version check`; user
+comments stay plain text.
 
 Either side can open a thread, and `author` is the whole difference between them. The
-reviewer selects a passage and the browser writes the anchor from the selection;
-`comment` writes the same anchor from a quote, reading the version the way the anchor
-pass reads the DOM (see "passages" below). Everything downstream already turns on
-`author`: `wait` delivers user events and the banner counts them, so Claude's own
-comment neither wakes its watcher nor reads as unanswered. What Claude cannot do is
-`resolve` — a note's purpose is discharged by being read, and only the reader knows
-that happened; closing one from this side would file it away unread.
+reviewer selects a passage and the browser writes the anchor from the
+selection; `review comment` writes the same anchor from a quote, reading the
+version the way the anchor pass reads the DOM (see "passages" below).
+Everything downstream already turns on `author`: `review wait` delivers user
+events and the banner counts them, so Claude's own comment neither wakes its
+watcher nor reads as unanswered. What Claude cannot do is `resolve` — a note's
+purpose is discharged by being read, and only the reader knows that happened;
+closing one from this side would file it away unread.
 
 Commands:
-    init media serve status wait comment reply note events stop check catalog
-    transcript export
+    page       init catalog media
+    version    check publish export
+    server     run stop
+    review     state wait comment reply events transcript
 
-`check` is a deterministic pre-handover lint (no browser, near-free — `note`
-re-runs it on every version): the HTML parses with balanced tags; the page
-carries exactly one external script (<script type="module" src="/colloquy.js">)
-and one stylesheet link (/theme.css); every cq-* element validates against the
-vendored registry (schema, nesting, no self-closing form); every cq-* meta is a
-known page declaration with an allowed value; each cq-suggestion is well formed
-(at most one of each slot, at least one of them, no nesting, `resolves` naming a
-real comment); ids are unique and every id from the previous version survives
+`version check` is a deterministic pre-handover lint (no browser, near-free;
+`version publish` re-runs it on every version): the HTML parses with balanced
+tags; the page carries exactly one external script
+(<script type="module" src="/colloquy.js">) and one stylesheet link
+(/theme.css); every cq-* element validates against the vendored registry
+(schema, nesting, no self-closing form); every cq-* meta is a known page
+declaration with an allowed value; each cq-suggestion is well formed (at most
+one of each slot, at least one of them, no nesting, `resolves` naming a real
+comment); ids are unique and every id from the previous version survives
 unless the log settled the suggestion holding it; no fixed-pixel-width element
 is wider than the readable column.
 
-`check --render` adds the browser half, run once before a page's URL is first
+`version check --render` adds the browser half, run once before a page's URL is first
 handed over: the version loads in the machine's installed Chrome (Playwright
 `channel="chrome"` — the caller supplies playwright, which `bin/colloquy` does
 on seeing `--render`) and the render invariants the static lint cannot reach run
@@ -155,17 +165,18 @@ widget occupies real space, no sideways scroll, in both color schemes.
 The invariants live in render_version, which tests/test_render.py drives over
 the shipped examples, so the gate and the suite cannot drift apart.
 
-Passages: an anchor is resolved in the browser and written down here, so `comment`
-reads a version the way the anchor pass reads the DOM — text in document order, minus
-the runtime's own words, plus the words a widget says through an x-says attribute, one
-space wherever the enclosing text block changes, whitespace collapsed. What the file
-cannot know is what a widget's module will write, so the reading stops where the
-registry stops telling it: an upgraded element is opaque unless x-verbatim says its
-body reaches the reader as its own words, and an opaque element and each of its
-children is fenced. A quote never spans a fence, so "the page has words here that the
-file doesn't" is a refusal when the comment is written rather than an anchor that
-detaches later in the reviewer's browser. Element-anchor an opaque widget instead
-(`--section`), which is the anchor a click on a diagram makes.
+Passages: an anchor is resolved in the browser and written down here, so
+`review comment` reads a version the way the anchor pass reads the DOM — text
+in document order, minus the runtime's own words, plus the words a widget says
+through an x-says attribute, one space wherever the enclosing text block
+changes, whitespace collapsed. What the file cannot know is what a widget's
+module will write, so the reading stops where the registry stops telling it:
+an upgraded element is opaque unless x-verbatim says its body reaches the
+reader as its own words, and an opaque element and each of its children is
+fenced. A quote never spans a fence, so "the page has words here that the file
+doesn't" is a refusal when the comment is written rather than an anchor that
+detaches later in the reviewer's browser. Element-anchor an opaque widget
+instead (`--section`), which is the anchor a click on a diagram makes.
 """
 
 import base64
@@ -291,7 +302,7 @@ EXTENSION_SCHEMA = {
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 VENDORED_FILES = ("colloquy.js", "theme.css", "registry.json")
 VENDORED_DIRS = ("widgets", "vendor")
-# Images the page shows, named by the hash of their bytes (`media`). Not vendored
+# Images the page shows, named by the hash of their bytes (`page media`). Not vendored
 # — they are the page's content, not the layer's — but served like it, and the
 # naming is what keeps the directory's promise: same name, same bytes, so a
 # version the reviewer approved cannot show them something else later.
@@ -355,7 +366,7 @@ def write_json(path: Path, obj) -> None:
     # Atomic: the serve process reads these files (cursor.json every poll) while
     # wait/status write them; a torn read of cursor.json would replay declined
     # actions in the browser, stickily. The tmp name carries the pid so two
-    # writers (wait's status flip racing a `status` CLI call) can't replace each
+    # writers (wait's status flip racing a `review state` CLI call) can't replace each
     # other's tmp out from under os.replace.
     tmp = path.with_suffix(f".{os.getpid()}.tmp")
     tmp.write_text(json.dumps(obj, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -459,9 +470,9 @@ def list_versions(page_dir: Path) -> list:
 
 
 def published_versions(page_dir: Path, events: list) -> list:
-    """Versions the server exposes: those whose `note` has landed. `note` follows a
-    passing `check`, so a half-written or failing version is never live to an open
-    browser — the file existing is not enough."""
+    """Versions the server exposes: those whose `note` event has landed. `version
+    publish` runs `version check` first, so a half-written or failing version is
+    never live to an open browser — the file existing is not enough."""
     noted = {e["version"] for e in events if e["kind"] == "note"}
     return [version for version in list_versions(page_dir) if version in noted]
 
@@ -503,10 +514,10 @@ def claim_page(page_dir: Path) -> None:
     wherever they live). Claude Code puts the id and its pid in the environment
     of every Bash tool call, so this needs no cooperation from the agent.
 
-    `serve` and `wait` claim; nothing else does. The claim tracks the watch
-    obligation the hooks enforce: `serve` puts the page in front of a reviewer
-    and so incurs it, `wait` takes it up. Authoring — `init`, `check`, `note`,
-    `reply` — neither incurs the obligation nor discharges it, so a directory a
+    `server run` and `review wait` claim; nothing else does. The claim tracks
+    the watch obligation the hooks enforce: `server run` puts the page in front
+    of a reviewer and incurs it, while `review wait` takes it up. Authoring
+    commands neither incur the obligation nor discharge it, so a directory a
     session only wrote to, like a throwaway page for testing the widget layer,
     owes nobody a watcher."""
     sid, pid = os.environ.get("CLAUDE_CODE_SESSION_ID"), os.environ.get("CLAUDE_PID")
@@ -545,7 +556,7 @@ def owned_pages(session_id: str) -> list:
 def undelivered(events: list, cursor: int) -> list:
     """The reviewer's events past the handoff cursor: posted, and not yet in
     Claude's hands. The one predicate for that — the banner's pending count and
-    `wait`'s delivery must agree on which events those are."""
+    `review wait`'s delivery must agree on which events those are."""
     return [e for e in events if e["seq"] > cursor and e["author"] == "user"]
 
 
@@ -555,7 +566,7 @@ def full_state(page_dir: Path, events: list, versions: list) -> dict:
     status = read_json(page_dir / "status.json") or {"state": "idle", "detail": "", "ts": None}
     heartbeat = read_json(page_dir / "heartbeat.json") or {"t": 0}
     session = read_json(page_dir / "session.json")
-    # What `wait` has delivered to Claude: an action past this seq can't have
+    # What `review wait` has delivered to Claude: an action past this seq can't have
     # been seen (so not declined), which is what lets the runtime carry it
     # forward onto versions written without it.
     cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
@@ -629,7 +640,10 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/versions/"):
                 version = version_num(Path(path).name)
                 if version not in self.versions_live(read_events(self.page_dir)):
-                    self._json({"error": "not published yet — `note` the version first"}, 404)
+                    self._json(
+                        {"error": "not published yet; run `colloquy version publish` first"},
+                        404,
+                    )
                     return
             file = self.page_dir / path.lstrip("/")
             # is_file, not exists: the vendor pattern admits "." and "..", which
@@ -729,7 +743,7 @@ class Handler(BaseHTTPRequestHandler):
             if error := action_contract_error(self.page_dir, event, events, registry):
                 self._json({"error": error}, 400)
                 return
-        # A parent names a message in a thread, the same rule `reply` holds Claude
+        # A parent names a message in a thread, the same rule `review reply` holds Claude
         # to. Enforced here so a walk up the log always terminates at a comment.
         if "parent" in event and event["parent"] not in {
             e["id"] for e in events if e["kind"] in {"comment", "reply"}
@@ -871,16 +885,17 @@ def cmd_status(page_dir: Path, state: str, detail: str, handoff: bool = False) -
 
 def revive_server(page_dir: Path) -> bool:
     """Bring a page back up after its server died. The reviewer's browser has
-    been showing "Server offline" since it happened, and `wait` is the only thing
-    positioned to notice — so it restarts the server rather than handing the
-    diagnosis to Claude and the discovery to the reviewer.
+    been showing "Server offline" since it happened, and `review wait` is the
+    only thing positioned to notice — so it restarts the server rather than
+    handing the diagnosis to Claude and the discovery to the reviewer.
 
-    Detached, because the restarted server has to outlive both this `wait` and
-    the background task that started it, exactly as the original `serve` does.
-    sys.executable is the resolved uv environment, so this skips uv entirely."""
+    Detached, because the restarted server has to outlive both this
+    `review wait` and the background task that started it, exactly as the
+    original `server run` does. sys.executable is the resolved uv environment,
+    so this skips uv entirely."""
     (page_dir / "server.json").unlink(missing_ok=True)
     subprocess.Popen(
-        [sys.executable, str(Path(__file__).resolve()), "serve", str(page_dir)],
+        [sys.executable, str(Path(__file__).resolve()), "server", "run", str(page_dir)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
@@ -912,7 +927,7 @@ def cmd_wait(page_dir: Path) -> int:
                 if status["state"] != "working":
                     # Flip before Claude's next turn: the handoff gap between this
                     # exit and pickup must not show "waiting". handoff=True dates
-                    # that claim; Claude's own `status` clears it. Mid-work delivery
+                    # that claim; Claude's own `review state` clears it. Mid-work delivery
                     # has no pickup gap, so leave the existing claim byte-for-byte
                     # untouched instead of shortening its freshness window.
                     # "update", not "comment": a batch may mix comments and actions.
@@ -936,7 +951,10 @@ def cmd_wait(page_dir: Path) -> int:
                     # One revival per wait: a server that dies the moment it comes
                     # up would otherwise respawn every five seconds forever.
                     if revived or not revive_server(page_dir):
-                        print("server is not running; restart it with `serve`", file=sys.stderr)
+                        print(
+                            "server is not running; restart it with `colloquy server run`",
+                            file=sys.stderr,
+                        )
                         return 2
                     revived = True
                     print(
@@ -979,7 +997,7 @@ def action_widget_tags(page_dir: Path, version: int, events: list) -> dict:
     version is newest now. Claude-authored thread widgets are the other live
     document the runtime renders; user messages quote markup as text and do not
     join this map. Both readings use _StructParser, the same structure reading
-    `check` and thread-markup validation already trust.
+    `version check` and thread-markup validation already trust.
     """
     sources = [version_path(page_dir, version).read_text(encoding="utf-8")]
     sources.extend(
@@ -1053,12 +1071,16 @@ def check_thread_markup(
     page_dir: Path, kind: str, body: str, events: list, registry: dict | None
 ) -> None:
     """A comment or reply of Claude's carrying widget markup renders live in the panel, so
-    it validates against the vendored registry at post time — the discussion-side `check`.
-    Exits with what's wrong; returns on plain text, which is most of them."""
+    it validates against the vendored registry at post time — the discussion-side
+    `version check`. Exits with what's wrong; returns on plain text, which is most
+    of them."""
     if "<cq-" not in body:
         return
     if registry is None:
-        sys.exit(f"{kind} carries widget markup but the page has no registry.json; run `init`")
+        sys.exit(
+            f"{kind} carries widget markup but the page has no registry.json; "
+            "run `colloquy page init`"
+        )
     frag = _StructParser()
     frag.feed(body)
     frag.close()
@@ -1091,12 +1113,12 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
     events = read_events(page_dir)
     published = published_versions(page_dir, events)
     if not published:
-        sys.exit("no published version to anchor in; `note` one first")
+        sys.exit("no published version to anchor in; run `colloquy version publish` first")
     version = published[-1]
     html = version_path(page_dir, version).read_text(encoding="utf-8")
     registry = load_registry(page_dir)
     if registry is None:
-        sys.exit(f"no registry.json in {page_dir}; run `init` first")
+        sys.exit(f"no registry.json in {page_dir}; run `colloquy page init` first")
     fold, _, _ = page_fold(html, events, registry, version)
     decided = decisions(fold, registry)
     edited = rewritten_bodies(fold)
@@ -1125,15 +1147,15 @@ def cmd_reply(page_dir: Path, to: str, text) -> None:
     print(json.dumps(event, ensure_ascii=False))
 
 
-def cmd_note(page_dir: Path, version: int, text) -> None:
+def cmd_publish(page_dir: Path, version: int, text) -> None:
     name = version_name(version)
     path = version_path(page_dir, version)
     if not path.is_file():
         sys.exit(f"no v{version}.html in {page_dir / 'versions'}; write the version file first")
-    # `note` publishes (the server exposes only noted versions), so it is the one
-    # gate: a version that fails `check` can't go live.
+    # Publishing makes the note the server's visibility gate, so a version that
+    # fails the check cannot go live.
     if cmd_check(page_dir, version) != 0:
-        sys.exit(f"refusing to publish {name}: `check` failed (issues above)")
+        sys.exit(f"refusing to publish {name}: `colloquy version check` failed (issues above)")
     # Publishing is also where a `restated` declaration becomes a fact. The
     # attribute is how the author says it while writing the version — beside the
     # words they rewrote, where it can't be forgotten — and the log is where it
@@ -1228,7 +1250,7 @@ def cmd_transcript(page_dir: Path) -> None:
 
 
 CATALOG_PREAMBLE = """\
-# Widget vocabulary, vendored for this page — `check` validates against it.
+# Widget vocabulary, vendored for this page — `version check` validates against it.
 #
 # Widgets are cq-* elements in the authored HTML; attributes carry scalars
 # (enums, flags), children carry prose, and an item's title is a leading
@@ -1251,7 +1273,7 @@ CATALOG_PREAMBLE = """\
 def cmd_catalog(page_dir: Path) -> None:
     reg = load_registry(page_dir)
     if reg is None:
-        sys.exit(f"no registry.json in {page_dir}; run `init` first")
+        sys.exit(f"no registry.json in {page_dir}; run `colloquy page init` first")
     print(CATALOG_PREAMBLE)
     print(json.dumps({k: v for k, v in reg.items() if not k.startswith("$")}, indent=2, ensure_ascii=False))
     restated = reg.get("$restated")
@@ -1296,7 +1318,7 @@ def unattended_pages(session_id: str) -> list:
         events = read_events(page_dir)
         state = full_state(page_dir, events, published_versions(page_dir, events))
         if state["listening"]:
-            # A live `wait` is the watch, and it delivers what's pending on its own.
+            # A live `review wait` is the watch, and it delivers what's pending on its own.
             # Reporting the page here would have Claude start a second one, and two
             # waiters race the cursor and deliver the same events twice.
             continue
@@ -1304,12 +1326,13 @@ def unattended_pages(session_id: str) -> list:
         if n:
             reasons.append(
                 f"{page_dir}: {n} user event{'s' if n != 1 else ''} you haven't picked up."
-                " `wait` prints them; address every one."
+                " `colloquy review wait` prints them; address every one."
             )
         elif state["status"]["state"] != "idle":
             reasons.append(
-                f"{page_dir}: no watcher. Start `wait` on it as a background task,"
-                " or `status <dir> idle` if the review is over."
+                f"{page_dir}: no watcher. Start `colloquy review wait` on it as a "
+                "background task, or run `colloquy review state <page> idle` if the "
+                "review is over."
             )
     return reasons
 
@@ -1399,16 +1422,17 @@ PIXEL_WIDTH_TAGS = {"img", "svg", "table", "canvas", "iframe", "video", "object"
 OVERFLOW_PROPS = ("width", "min-width")
 # Page-level declarations the runtime reads from <meta name="cq-*"> in the head,
 # name → allowed content values (None = free-form). A misspelled name or value
-# would silently declare nothing in the browser, so `check` owns this vocabulary
-# the way the registry owns cq-* elements.
+# would silently declare nothing in the browser, so `version check` owns this
+# vocabulary the way the registry owns cq-* elements.
 CQ_META = {"cq-review": frozenset({"sign-off"})}
 
 
 def implicit_closes(open_tags: list, tag: str) -> int:
     """How many elements at the top of an open-element stack this start tag closes,
     under HTML's optional-end-tag rules. Two parsers walk the same documents — the
-    structure lint and the passage reader — and `check` accepts an omitted </p>, so a
-    tree they disagreed about would be a passage one of them puts in the wrong section."""
+    structure lint and the passage reader — and `version check` accepts an omitted
+    </p>, so a tree they disagreed about would be a passage one of them puts in the
+    wrong section."""
     closed = 0
     top = lambda: open_tags[-1 - closed] if closed < len(open_tags) else None
     if tag in P_CLOSERS:
@@ -1422,7 +1446,7 @@ def implicit_closes(open_tags: list, tag: str) -> int:
 
 class _StructParser(HTMLParser):
     """Tracks a tag stack to catch unclosed and mismatched tags, and collects what the
-    rest of `check` reads off a version: element ids, every <script src> tag,
+    rest of `version check` reads off a version: element ids, every <script src> tag,
     stylesheet links, each cq-* element (attributes, direct parent, direct children,
     direct text) for registry validation, the page's title, and everything it says
     about width. Foreign markup inside <svg> is skipped (SVG has its own self-closing
@@ -1646,10 +1670,10 @@ class _StructParser(HTMLParser):
 
 
 # ---------- passages: the text an anchor points at ----------
-# The runtime resolves an anchor against the DOM; `comment` writes one down against the
-# file. The two have to read the same page or the anchor lands somewhere it was never
-# made, so this mirrors colloquy.js's capture rather than approximating it: the same
-# skip list, the same block-boundary space, the same collapse, the same caps.
+# The runtime resolves an anchor against the DOM; `review comment` writes one down
+# against the file. The two have to read the same page or the anchor lands somewhere it
+# was never made, so this mirrors colloquy.js's capture rather than approximating it:
+# the same skip list, the same block-boundary space, the same collapse, the same caps.
 #
 # What the file cannot know is what a widget's module will write, and the registry is
 # where that is declared rather than guessed at per widget. Three keywords carry what
@@ -2390,12 +2414,12 @@ def read_registry(path: Path):
 
 
 def load_registry(page_dir: Path):
-    """The page's complete vendored vocabulary, or None before `init`."""
+    """The page's complete vendored vocabulary, or None before `page init`."""
     return read_registry(page_dir / "registry.json")
 
 
 def incoming_registry(layers: list) -> dict:
-    """The merged registry `init` will vendor.
+    """The merged registry `page init` will vendor.
 
     Layers are additive at the top level. A later entry replaces the earlier
     entry whole; schemas never deep-merge, because a half-old, half-new contract
@@ -2419,7 +2443,7 @@ def incoming_registry(layers: list) -> dict:
 # The registry vendored into a page is also that page's statement of what its
 # runtime speaks: $events names the event kinds and the fields each carries,
 # x-state (per widget) each tag's verbs and detail schemas. Nothing else on disk
-# says so. `init` refuses a re-vendor that would retire or reshape a contract
+# says so. `page init` refuses a re-vendor that would retire or reshape a contract
 # still present in the log.
 
 
@@ -2731,9 +2755,10 @@ def folded_facet(e: dict, spec: dict):
 def page_fold(html: str, events: list, registry: dict, upto):
     """state_fold asked of one page: its elements, its words, and the log windowed
     to `upto` — one construction, so its readers (`record_lag`, and the readings
-    `decisions` and `rewritten_bodies` give `comment` and `check`) cannot drift on
-    floors or window. Returns (fold, byid, spk); the extras are the page readings
-    the fold was built from, for a caller comparing it back against the markup."""
+    `decisions` and `rewritten_bodies` give `review comment` and `version check`)
+    cannot drift on floors or window. Returns (fold, byid, spk); the extras are
+    the page readings the fold was built from, for a caller comparing it back
+    against the markup."""
     parser = _StructParser()
     parser.feed(html)
     parser.close()
@@ -2941,8 +2966,8 @@ def structure_errors(parser: _StructParser) -> list:
 
 def fragment_errors(parser: _StructParser, registry: dict, known: list) -> list:
     """Structural + registry validation of a markup fragment (a Claude reply
-    carrying widgets): the discussion-side analog of `check`. The language check
-    comes along because the schema stopped carrying the list: a reply's
+    carrying widgets): the discussion-side analog of `version check`. The language
+    check comes along because the schema stopped carrying the list: a reply's
     <cq-code lang=…> is colored by the same tokenizer a version's is, and nothing
     else would now refuse it a word that tokenizer doesn't know."""
     return (
@@ -2965,7 +2990,10 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     errors = []
 
     for missing in [f for f in VENDORED_FILES if not (page_dir / f).exists()]:
-        errors.append(f"{missing} missing from the page directory — run `init` to vendor the layer")
+        errors.append(
+            f"{missing} missing from the page directory; run `colloquy page init` "
+            "to vendor the layer"
+        )
 
     parser = _StructParser()
     parser.feed(html)
@@ -3022,7 +3050,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
             if entry["x-upgrade"] and not (page_dir / "widgets" / f"{tag}.js").is_file():
                 errors.append(
                     f"registry marks <{tag}> as upgraded but widgets/{tag}.js "
-                    f"isn't vendored — run `init`"
+                    f"isn't vendored; run `colloquy page init`"
                 )
 
     events = read_events(page_dir)
@@ -3033,8 +3061,8 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     )
 
     # "Previous" is the last *published* version before this one — the page the
-    # reviewer was actually looking at, which is what `comment` anchors against
-    # and what the browser diffs against. The file before it on disk may be an
+    # reviewer was actually looking at, which is what `review comment` anchors
+    # against and what the browser diffs against. The file before it on disk may be an
     # abandoned draft no note ever released: ids nobody saw, words nobody could
     # have decided on. The first published version has no predecessor, so it
     # stands against an empty one: nothing of its can have been dropped and
@@ -3083,7 +3111,9 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     # id.
     for ref in sorted(parser.media_refs):
         if not (page_dir / ref.lstrip("/")).is_file():
-            errors.append(f"{ref} isn't in the page directory — `colloquy media` puts it there")
+            errors.append(
+                f"{ref} isn't in the page directory; `colloquy page media` puts it there"
+            )
 
     theme_css = (page_dir / "theme.css").read_text(encoding="utf-8") if (page_dir / "theme.css").exists() else ""
     column = _column_width(parser.css, theme_css)
@@ -3314,7 +3344,7 @@ def render_version(browser, url: str) -> list:
     says on screen, or draws over each other (print is scheme-blind).
     Returns human-readable failures; [] is a pass.
 
-    One implementation with two callers — `check --render` on the page an agent
+    One implementation with two callers — `version check --render` on the page an agent
     just wrote, and the render suite on the shipped examples
     (tests/test_render.py) — so the gate and the suite hold one set of
     invariants. `browser` is a live Playwright browser; nothing here imports
@@ -3341,7 +3371,7 @@ def render_version(browser, url: str) -> list:
             ]
         # Every reading below is of a settled page. The widget layer writes half the
         # document, so a box measured while it is still drawing belongs to no version of
-        # the page — which is the stamp `export` waits on for the same reason.
+        # the page — which is the stamp `version export` waits on for the same reason.
         try:
             page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
         except PlaywrightTimeout:
@@ -3429,9 +3459,9 @@ def render_version(browser, url: str) -> list:
 def preview_server(page_dir: Path, version: int):
     """The page directory on a loopback port, exposing versions up to this one, for
     the length of a `with`. Two callers need a browser to see a version the reviewer
-    may not have (`check --render` before its note lands, `export` on any published
-    one), and the preview window is what lets them: the server's own liveness rule
-    is the reviewer's, and this widens it for exactly one process."""
+    may not have (`version check --render` before its note lands, `version export`
+    on any published one), and the preview window is what lets them: the server's
+    own liveness rule is the reviewer's, and this widens it for exactly one process."""
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler_for(page_dir, preview_upto=version))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     try:
@@ -3445,18 +3475,20 @@ def render_check(page_dir: Path, version: int) -> int:
     render invariants on this version.
 
     Playwright is the gate's own extra, not the script's: declaring it in the
-    PEP 723 header would put its wheel in every `serve`, `wait`, and `note`, so
-    the import happens here and its absence names the invocation that supplies
-    it. Chrome is part of this gate: if it cannot launch, the gate fails."""
+    PEP 723 header would put its wheel in every `server run`, `review wait`, and
+    `version publish`, so the import happens here and its absence names the
+    invocation that supplies it. Chrome is part of this gate: if it cannot
+    launch, the gate fails."""
     try:
         from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import sync_playwright
     except ImportError:
         print(
-            "check --render needs Playwright; run it as\n"
-            "  colloquy check --render <dir>\n"
+            "version check --render needs Playwright; run it as\n"
+            "  colloquy version check <page> --render\n"
             "or, from a checkout,\n"
-            "  uv run --with playwright skills/colloquy/scripts/interact.py check --render <dir>",
+            "  uv run --with playwright skills/colloquy/scripts/interact.py "
+            "version check <page> --render",
             file=sys.stderr,
         )
         return 1
@@ -3539,10 +3571,10 @@ def inline_assets(html: str, page_dir: Path) -> str:
 def export_page(browser, url: str, page_dir: Path) -> str:
     """The served version at `url`, copied as one self-contained document.
 
-    One implementation with two callers, as `render_version` is: `export` supplies a
-    browser of its own, and the suite drives this over the shipped examples with the
-    one it already has, so the copy a reviewer gets and the copy the suite asserts on
-    cannot drift.
+    One implementation with two callers, as `render_version` is: `version export`
+    supplies a browser of its own, and the suite drives this over the shipped
+    examples with the one it already has, so the copy a reviewer gets and the copy
+    the suite asserts on cannot drift.
 
     The reviewer's decisions come with it. Replay is what puts them on the page, so
     this waits for the runtime's caught-up stamp exactly as the gate does, and a page
@@ -3562,7 +3594,8 @@ def export_page(browser, url: str, page_dir: Path) -> str:
         except PlaywrightTimeout:
             sys.exit(
                 f"{url.rsplit('/', 1)[-1]} never finished upgrading in the browser, so a copy "
-                "would be half-drawn. `check --render` says what is wrong with it."
+                "would be half-drawn. `colloquy version check <page> --render` says what "
+                "is wrong with it."
             )
         return inline_assets(page.evaluate(BAKE), page_dir)
     finally:
@@ -3584,13 +3617,17 @@ def cmd_export(page_dir: Path, out: Path, version) -> int:
     except ImportError:
         sys.exit(
             "export needs Playwright; run it as\n"
-            "  colloquy export <dir> -o <file>\n"
+            "  colloquy version export <page> -o <file>\n"
             "or, from a checkout,\n"
-            "  uv run --with playwright skills/colloquy/scripts/interact.py export <dir> -o <file>"
+            "  uv run --with playwright skills/colloquy/scripts/interact.py "
+            "version export <page> -o <file>"
         )
     published = published_versions(page_dir, read_events(page_dir))
     if not published:
-        sys.exit(f"{page_dir} has no published version to export; `note` one first")
+        sys.exit(
+            f"{page_dir} has no published version to export; "
+            "run `colloquy version publish` first"
+        )
     version = version if version else published[-1]
     if version not in published:
         sys.exit(
@@ -3622,53 +3659,151 @@ def cmd_export(page_dir: Path, out: Path, version) -> int:
 def resolve_dir(dir_arg: str, must_exist: bool = True) -> Path:
     page_dir = Path(dir_arg).expanduser().resolve()
     if must_exist and not page_dir.is_dir():
-        sys.exit(f"{page_dir} does not exist; run `init` first")
+        sys.exit(f"{page_dir} does not exist; run `colloquy page init` first")
     return page_dir
 
 
 @click.group()
 def cli() -> None:
-    """Serve and mediate an interactive colloquy page."""
+    """Build and run interactive review pages."""
 
 
-@cli.command()
-@click.argument("dir")
+@cli.group(short_help="Create pages and add media.")
+def page() -> None:
+    """Create pages and add media."""
+
+
+@page.command(short_help="Create or re-vendor a page directory.")
+@click.argument("dir", metavar="PAGE")
 def init(dir: str) -> None:
-    """Create the page directory layout and vendor the widget layer into it.
+    """Create or re-vendor a page directory.
 
-    Re-running it is the explicit re-vendor for a live page; note the re-vendor
-    in the next version's changelog. Refuses when the page's log was recorded in
-    a vocabulary the incoming layer no longer speaks."""
+    Creates PAGE/versions/ for authored vN.html files and vendors the widget
+    layer. Re-running replaces that layer, unless the page log uses vocabulary
+    the incoming layer cannot read.
+    """
     cmd_init(resolve_dir(dir, must_exist=False))
 
 
-@cli.command()
-@click.argument("dir")
-@click.argument("files", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False))
+@page.command(short_help="Add images and print their page paths.")
+@click.argument("dir", metavar="PAGE")
+@click.argument(
+    "files",
+    nargs=-1,
+    required=True,
+    type=click.Path(exists=True, dir_okay=False),
+    metavar="IMAGE...",
+)
 def media(dir: str, files) -> None:
-    """Put images in the page directory; prints the src to write for each.
+    """Add images and print their page paths.
 
-    A page cannot inline a screenshot the way it inlines a diagram: the author is
-    a language model, and a megabyte of base64 is not something it can type. So an
-    image arrives by reference — copied in here, and written into the version as
-    the printed path."""
+    Copies each image into the page under a content-addressed name and prints
+    its page path followed by its source file.
+    """
     for src, url in cmd_media(resolve_dir(dir), [Path(f) for f in files]):
         print(f"{url}\t{src}")
 
 
-@cli.command()
-@click.argument("dir")
-def serve(dir: str) -> None:
-    """Serve the page on localhost (reuses a live server); prints the URL."""
+@page.command(short_help="Print the widget and theme vocabulary.")
+@click.argument("dir", metavar="PAGE")
+def catalog(dir: str) -> None:
+    """Print the page's widget and theme vocabulary."""
+    cmd_catalog(resolve_dir(dir))
+
+
+@cli.group(short_help="Check, publish, and export versions.")
+def version() -> None:
+    """Check, publish, and export versions."""
+
+
+@version.command(short_help="Check a page version.")
+@click.argument("dir", metavar="PAGE")
+@click.option(
+    "--version",
+    type=int,
+    default=None,
+    metavar="N",
+    help="version to check (default: latest)",
+)
+@click.option("--render", is_flag=True, help="also check the rendered page in Chrome")
+def check(dir: str, version: int, render: bool) -> None:
+    """Check a page version.
+
+    Runs deterministic markup checks. --render also checks the drawn page in
+    the installed Chrome.
+    """
+    sys.exit(cmd_check(resolve_dir(dir), version, render))
+
+
+@version.command(short_help="Publish a checked version with a changelog.")
+@click.argument("dir", metavar="PAGE")
+@click.option("--version", type=int, required=True, metavar="N", help="version to publish")
+@click.option("--text", help="changelog text (default: stdin)")
+def publish(dir: str, version: int, text: str) -> None:
+    """Publish a checked version with a changelog.
+
+    Checks the version first, then makes it visible to the page server.
+    """
+    cmd_publish(resolve_dir(dir), version, text)
+
+
+@version.command(short_help="Export a published version to one HTML file.")
+@click.argument("dir", metavar="PAGE")
+@click.option(
+    "-o",
+    "--out",
+    required=True,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="output HTML file",
+)
+@click.option(
+    "--version",
+    type=int,
+    metavar="N",
+    help="published version to export (default: latest)",
+)
+def export(dir: str, out: Path, version: int) -> None:
+    """Export a published version to one HTML file.
+
+    Renders the version in Chrome, then writes a standalone copy.
+    """
+    sys.exit(cmd_export(resolve_dir(dir), out, version))
+
+
+@cli.group(short_help="Run or stop the local server.")
+def server() -> None:
+    """Run or stop the local server."""
+
+
+@server.command(short_help="Serve a page and print its URL.")
+@click.argument("dir", metavar="PAGE")
+def run(dir: str) -> None:
+    """Serve a page and print its URL.
+
+    Runs until stopped. If the page already has a live server, prints its URL
+    and exits.
+    """
     cmd_serve(resolve_dir(dir))
 
 
-@cli.command()
-@click.argument("dir")
+@server.command(short_help="Stop a page's server.")
+@click.argument("dir", metavar="PAGE")
+def stop(dir: str) -> None:
+    """Stop a page's server."""
+    print(cmd_stop(resolve_dir(dir)))
+
+
+@cli.group(short_help="Watch and write to a live review.")
+def review() -> None:
+    """Watch and write to a live review."""
+
+
+@review.command(short_help="Set Claude's banner state.")
+@click.argument("dir", metavar="PAGE")
 @click.argument("state", type=click.Choice(["working", "waiting", "idle"]))
 @click.argument("detail", required=False, default="")
-def status(dir: str, state: str, detail: str) -> None:
-    """Declare Claude's state for the banner."""
+def state(dir: str, state: str, detail: str) -> None:
+    """Set Claude's banner state."""
     page_dir = resolve_dir(dir)
     # Idling over undelivered events ends the review on a reviewer still owed an
     # answer. Here rather than in cmd_status because SessionEnd idles pages whose
@@ -3682,109 +3817,74 @@ def status(dir: str, state: str, detail: str) -> None:
     if pending:
         sys.exit(
             f"{pending} user event{'s' if pending != 1 else ''} nobody has picked up; "
-            "idling closes the review over them. `wait` prints them and returns at "
-            "once when events are already waiting."
+            "idling closes the review over them. `colloquy review wait` prints them "
+            "and returns at once when events are already waiting."
         )
     cmd_status(page_dir, state, detail)
 
 
-@cli.command()
-@click.argument("dir")
+@review.command(short_help="Print new reviewer events, then exit.")
+@click.argument("dir", metavar="PAGE")
 def wait(dir: str) -> None:
-    """Block until new user events arrive, print them as JSON lines, exit."""
+    """Print new reviewer events, then exit.
+
+    Waits for undelivered reviewer events, prints them as JSON lines, and marks
+    them delivered.
+    """
     sys.exit(cmd_wait(resolve_dir(dir)))
 
 
-@cli.command()
-@click.argument("dir")
-@click.option("--quote", help="the passage to anchor on, as the version file holds it")
-@click.option("--section", help="element id: scopes --quote, or anchors on the element alone")
-@click.option("--text")
+@review.command(short_help="Open a Claude thread on a page passage.")
+@click.argument("dir", metavar="PAGE")
+@click.option("--quote", help="passage text from the published version")
+@click.option("--section", metavar="ID", help="element ID to anchor or scope --quote")
+@click.option("--text", help="comment text (default: stdin)")
 def comment(dir: str, quote: str, section: str, text: str) -> None:
-    """Open a thread on a passage as Claude (--text or stdin).
+    """Open a Claude thread on a page passage.
 
     The reviewer answers it in the browser and resolves it there. Refuses a quote the
-    published version doesn't hold, or holds more than once — extend it or scope it.
+    published version does not hold, or holds more than once.
     """
     cmd_comment(resolve_dir(dir), quote, section, text)
 
 
-@cli.command()
-@click.argument("dir")
-@click.option("--to", required=True, help="id of the comment or reply being answered")
-@click.option("--text")
+@review.command(short_help="Reply to a thread as Claude.")
+@click.argument("dir", metavar="PAGE")
+@click.option("--to", required=True, metavar="ID", help="comment or reply ID to answer")
+@click.option("--text", help="reply text (default: stdin)")
 def reply(dir: str, to: str, text: str) -> None:
-    """Post a threaded reply as Claude (--text or stdin)."""
+    """Reply to a thread as Claude."""
     cmd_reply(resolve_dir(dir), to, text)
 
 
-@cli.command()
-@click.argument("dir")
-@click.option("--version", type=int, required=True)
-@click.option("--text")
-def note(dir: str, version: int, text: str) -> None:
-    """Post a one-line changelog for a version (--text or stdin)."""
-    cmd_note(resolve_dir(dir), version, text)
-
-
-@cli.command()
-@click.argument("dir")
-@click.option("--after", type=int, default=0, help="only events with seq greater than this")
+@review.command(short_help="Print the event log as JSON lines.")
+@click.argument("dir", metavar="PAGE")
+@click.option(
+    "--after",
+    type=int,
+    default=0,
+    metavar="SEQ",
+    help="print events after this sequence",
+)
 def events(dir: str, after: int) -> None:
-    """Print the event log as JSON lines."""
+    """Print the event log as JSON lines.
+
+    This is read-only and does not mark reviewer events delivered.
+    """
     cmd_events(resolve_dir(dir), after)
 
 
-@cli.command()
-@click.argument("dir")
-def stop(dir: str) -> None:
-    """Stop the server."""
-    print(cmd_stop(resolve_dir(dir)))
-
-
-@cli.command()
-def hook() -> None:
-    """Answer a Claude Code hook: event JSON on stdin, hook response on stdout.
-
-    Registered in hooks/hooks.json for Stop, UserPromptSubmit and SessionEnd,
-    which it tells apart by the payload's hook_event_name."""
-    cmd_hook(json.load(sys.stdin))
-
-
-@cli.command()
-@click.argument("dir")
-@click.option("--version", type=int, default=None, help="version to check (default: latest)")
-@click.option(
-    "--render",
-    is_flag=True,
-    help="also render the version in the installed Chrome (needs playwright, which bin/colloquy supplies)",
-)
-def check(dir: str, version: int, render: bool) -> None:
-    """Deterministic pre-handover lint of a version; --render adds the browser half."""
-    sys.exit(cmd_check(resolve_dir(dir), version, render))
-
-
-@cli.command()
-@click.argument("dir")
-def catalog(dir: str) -> None:
-    """Print the page's vendored vocabulary: widget schemas, then theme idioms."""
-    cmd_catalog(resolve_dir(dir))
-
-
-@cli.command()
-@click.argument("dir")
+@review.command(short_help="Print the review as Markdown.")
+@click.argument("dir", metavar="PAGE")
 def transcript(dir: str) -> None:
-    """Print the review thread as Markdown, for reuse in a PR description."""
+    """Print the review as Markdown."""
     cmd_transcript(resolve_dir(dir))
 
 
-@cli.command()
-@click.argument("dir")
-@click.option("-o", "--out", required=True, type=click.Path(dir_okay=False, path_type=Path))
-@click.option("--version", type=int, help="Which version to copy; the newest published by default.")
-def export(dir: str, out: Path, version: int) -> None:
-    """Write a version as one standalone HTML file, with no server behind it."""
-    sys.exit(cmd_export(resolve_dir(dir), out, version))
+@cli.command(hidden=True)
+def hook() -> None:
+    """Answer a Claude Code hook on stdin."""
+    cmd_hook(json.load(sys.stdin))
 
 
 if __name__ == "__main__":

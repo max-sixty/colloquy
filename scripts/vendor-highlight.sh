@@ -10,7 +10,7 @@
 # built from a different list than the registry states.
 #
 # The language list is not stated here: it is read out of registry.json's
-# `$languages.names`, which is the list `check` refuses an unknown language against
+# `$languages.names`, which is the list `version check` refuses an unknown language against
 # and the list the catalog shows Claude. One list, so the bundle cannot offer a
 # language the lint rejects or lack one it accepts. Add a language there, then rerun
 # this.

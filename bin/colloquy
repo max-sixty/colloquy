@@ -3,16 +3,24 @@
 # the skill's examples can be this command verbatim — no path for the agent to
 # resolve, and no shell-specific variable expansion to get wrong.
 #
-# Two subcommands open a browser: `check --render` looks at the page, `export` copies
-# it. Both need Playwright, and declaring it in the script's PEP 723 header would put
-# its wheel behind every serve, wait, and note, so it is supplied here, on exactly the
-# invocations that launch Chrome.
+# Two subcommands open a browser: `version check --render` looks at the page and
+# `version export` copies it. Both need Playwright, and declaring it in the script's
+# PEP 723 header would put its wheel behind every `server run`, `review wait`, and
+# `version publish`, so it is supplied here on exactly the invocations that launch
+# Chrome.
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 script=$root/skills/colloquy/scripts/interact.py
 
-for arg in "$@"; do
-  case $arg in
-    --render | export) exec uv run --with playwright "$script" "$@" ;;
-  esac
-done
+if [ "${1-}" = "version" ] && [ "${2-}" = "export" ]; then
+  exec uv run --with playwright "$script" "$@"
+fi
+
+if [ "${1-}" = "version" ] && [ "${2-}" = "check" ]; then
+  for cli_arg in "$@"; do
+    if [ "$cli_arg" = "--render" ]; then
+      exec uv run --with playwright "$script" "$@"
+    fi
+  done
+fi
+
 exec uv run "$script" "$@"

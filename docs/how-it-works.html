@@ -79,7 +79,7 @@ the background wait, which re-invokes Claude.</title>
       fill="var(--accent)">a comment ends the background wait · Claude wakes</text>
 </svg>
 
-<p id="wait-trick">Claude's turn ends on a background <code>wait</code> that
+<p id="wait-trick">Claude's turn ends on a background <code>review wait</code> that
 exits the moment an event lands, re-invoking the session. Nothing runs between
 rounds and there is nothing to keep alive: the server exists to hand events
 across, and the page directory (versions plus the event log) is the whole
@@ -102,16 +102,16 @@ What the reviewer looks at is the version composed with the log, recomposed on a
 two-second poll: the reply appears in a thread in the injected panel, the
 passage it answers is lit by the browser's highlight registry — which paints a
 range and touches no nodes — and the banner's line is whatever
-<code>status</code> last wrote. Nothing in the document was rewritten to put any
+<code>review state</code> last wrote. Nothing in the document was rewritten to put any
 of it there, and it is the same composition that shows the reviewer their own
 edits before a version carries them.</p>
 <p id="agent-versions">The HTML changes once per version, and even then nothing
 is edited in place: a revision is a new file beside the last one,
-<code>v2.html</code> next to <code>v1.html</code>, and <code>note</code> is
-what publishes it. Until the note lands the file is on disk and unreachable, and
-the note lints it first, so a broken version is never exposed. The next poll
+<code>v2.html</code> next to <code>v1.html</code>, and <code>version publish</code>
+publishes it. Until the publication note lands the file is on disk and unreachable,
+and publishing lints it first, so a broken version is never exposed. The next poll
 moves the tab onto the new document, keeping the reader's place — the whole of
-what a round changes on screen. Coming back the other way, <code>wait</code>
+what a round changes on screen. Coming back the other way, <code>review wait</code>
 hands over each event exactly once, so a comment posted while Claude was working
 is still there on the next round.</p>
 </section>
@@ -221,7 +221,7 @@ page rolls back to the authored state as that version lands.</p>
 
 <section id="layer">
 <h2>Each page owns its layer</h2>
-<p><code>init</code> vendors the whole layer (runtime, theme, registry, widget
+<p><code>page init</code> vendors the whole layer (runtime, theme, registry, widget
 modules) into the page's directory, overlaying the shipped defaults with
 <code>~/.config/colloquy/</code> and the project's
 <code>.claude/colloquy/</code>. Override one CSS token to change the accent
@@ -232,7 +232,7 @@ you approved can't change under you when the defaults do.</p>
 
 <section id="gate">
 <h2>Nothing broken goes live</h2>
-<p>Before a version is published, <code>interact.py check</code> lints it
+<p>Before a version is published, <code>version check</code> lints it
 deterministically, with no browser: the HTML parses with balanced tags, the
 scaffold is exactly the theme link and the runtime module, every
 <code>cq-*</code> element validates against the page's registry along with the
@@ -240,7 +240,7 @@ head's <code>cq-*</code> metas, ids stay unique
 and every comment anchor from the previous version survives, and nothing is
 wider than the readable column. The changelog note runs the lint and refuses
 a failing version, so an open browser never sees one. Before a page's URL first
-goes out, <code>check --render</code> also loads it in the machine's own Chrome
+goes out, <code>version check --render</code> also loads it in the machine's own Chrome
 and refuses what only a layout engine can see — a console error, a widget
 rendered into a box of no size, a sideways scroll — in both color schemes.</p>
 </section>

@@ -32,7 +32,7 @@ to do about it; the rest is complexity paid for a case that never arrives, and i
 reads as if the impossible were expected.
 
 Where data enters, check it once and completely: browser events at `POST /api/event`,
-authored markup at `check`, a replayed action's detail in the widget's own
+authored markup at `version check`, a replayed action's detail in the widget's own
 `applyAction`, since only it knows that shape. Everything downstream then indexes the
 field rather than asking a second time whether it arrived.
 
@@ -41,7 +41,7 @@ field rather than asking a second time whether it arrived.
 Six things, and nothing between them:
 
 - `skills/colloquy/scripts/interact.py` — a `uv` script: the server, the event log, the
-  lint (`check`), vendoring, export. No daemon, no database. Reached as `colloquy`,
+  lint (`version check`), vendoring, export. No daemon, no database. Reached as `colloquy`,
   through the `bin/` shim Claude Code puts on PATH for every enabled plugin, so the skill
   can hand an agent commands with no path to resolve and nothing shell-specific to
   expand.
@@ -57,16 +57,16 @@ Six things, and nothing between them:
 - `examples/` — six complete pages that are also the render suite's corpus, plus
   `gallery.html`, all six on one page (generated; edit the examples, not it).
 
-The whole layer is vendored into each page directory at `init`. A page you approved can't
-change under you when the defaults do.
+The whole layer is vendored into each page directory by `page init`. A page you approved
+can't change under you when the defaults do.
 
 A page's own images are the one thing in that directory the layer doesn't put there, and
-they hold the same promise a different way: `media` names each file by the hash of its
+they hold the same promise a different way: `page media` names each file by the hash of its
 bytes, so a name can only ever mean one picture. That is also the only door an image has.
 The page's author is a language model, and a screenshot is a megabyte of base64 it cannot
-type — nor should each version carry a copy of one that a `check` walks and a browser
-reloads. So the transport was never an optimisation over inlining; inlining was never
-available.
+type — nor should each version carry a copy of one that a `version check` walks and a
+browser reloads. So the transport was never an optimisation over inlining; inlining was
+never available.
 
 ## Norms
 
@@ -136,20 +136,21 @@ patterns became knew that a comment's braces are not braces, and still read a `}
 still read a rule holding both declarations and a nested rule as declaring nothing of its
 own; and still told a fixed `900px` from a `calc(100% - 900px)` by asking whether the
 string ended in `px`, which `900px !important` does not. CSS has no parser in the stdlib,
-so the dependency is a real cost — one more wheel behind every `check`, ~6ms to read the
-theme — and it buys the grammar whole rather than one bug's worth at a time.
+so the dependency is a real cost — one more wheel behind every `version check`, ~6ms to
+read the theme — and it buys the grammar whole rather than one bug's worth at a time.
 
 ### The file's reading never claims more than the page's
 
 An anchor is captured in two places and resolved in one. `selectionAnchor` captures from
-the DOM, `comment` captures from the version file, and `resolveAnchor` is still the only
-thing that searches. Two captures are not two answers to "what does the page say here":
+the DOM, `review comment` captures from the version file, and `resolveAnchor` is still
+the only thing that searches. Two captures are not two answers to "what does the page say here":
 both write the same collapsed text under the same rules, so what the file's reading holds
 the page holds too — where a module replaces what the file holds, the reading skips it,
 and everywhere else a module only adds. The file alone is not enough: a reviewer's
 decision moves the page's reading too, retiring a settled suggestion's losing slot, so
-`comment` reads the log and retires the same slot from its reading (`x-retired-when` in
-the registry), refusing a quote into one by naming the decision that removed it — and
+`review comment` reads the log and retires the same slot from its reading
+(`x-retired-when` in the registry), refusing a quote into one by naming the decision
+that removed it — and
 where the decision empties its widget (a deletion accepted, an insertion refused), the
 wrapper goes with the slot in both runtimes, because an element anchor asks what is on
 the screen, which the markup's presence does not answer. Their
@@ -322,9 +323,9 @@ the next one, so the bug surfaces as a feature that was never wired up rather th
 error. So a consumer works from what an entry declares — where a behaviour is wanted by
 some widgets and not others, it becomes an `x-` key they declare and the consumer
 dispatches on, and no branch anywhere reads `cq-diagram` and does something particular.
-That binds the runtime, the lint, `check --render`, export, and the skill's own prose
-alike; the test is whether a twelfth widget touches anything but its module and its
-entry, and where it would, the thing missing is a declaration.
+That binds the runtime, the lint, `version check --render`, `version export`, and the
+skill's own prose alike; the test is whether a twelfth widget touches anything but its
+module and its entry, and where it would, the thing missing is a declaration.
 
 Most widgets are things a page contains, and those are anonymous outside their own
 module. A few are part of the machine the list is defined against, and core names those
@@ -361,15 +362,15 @@ because the poll replays it and the sender's own action must be a no-op. The ver
 detail schema, its fold unit, and its record form are declared in the registry
 (`x-state`), not known privately to the module: absoluteness is what makes the
 reviewer's standing state a fold over the log, and the declaration drives the POST and
-re-vendor contract gates, check's state gate, the record-lag report, the runtime's
-uniform decided-but-unhonored mark, and the diff's state half without teaching any
-consumer a widget by name. The registry doubles as the page's vocabulary stamp
-(`$events`): the log is append-only and its verbs are a forever-contract, so `note`
-refuses to write a shape the page's vendored layer doesn't read, and `init` refuses to
-re-vendor over a log recorded in vocabulary the incoming layer no longer speaks — the
-lost-decision bug's third door, after version-scoping and hand-copying: fifteen of
-this page's own `decide` events fell silent when the verb was retired, and only the
-stamp makes that a refusal instead of a quiet no-op.
+re-vendor contract gates, `version check`'s state gate, the record-lag report, the
+runtime's uniform decided-but-unhonored mark, and the diff's state half without teaching
+any consumer a widget by name. The registry doubles as the page's vocabulary stamp
+(`$events`): the log is append-only and its verbs are a forever-contract, so
+`version publish` refuses to write a `note` event the page's vendored layer doesn't read,
+and `page init` refuses to re-vendor over a log recorded in vocabulary the incoming layer
+no longer speaks — the lost-decision bug's third door, after version-scoping and
+hand-copying: fifteen of this page's own `decide` events fell silent when the verb was
+retired, and only the stamp makes that a refusal instead of a quiet no-op.
 
 The traffic runs the other way too. A comment can land anywhere the reviewer can select,
 so the hidden line announcing one lands inside widgets — and a widget reading its own light
@@ -405,8 +406,8 @@ why the answers coincide: paper drops the radios and stacks both frames, and the
 naming them are `data-cq-gen` rather than `.cq-ui` — a frame's caption is the widget's own
 word, like a column's heading, not a control's like "Save".
 
-A copy is the third medium, and `export` marks it as one: `.cq-copy` on the root. The
-theme reads it as a guard rather than a case — a widget writes its affordance once,
+A copy is the third medium, and `version export` marks it as one: `.cq-copy` on the root.
+The theme reads it as a guard rather than a case — a widget writes its affordance once,
 inside `@media screen { html:not(.cq-copy) { … } }`, and everything outside that block is
 the page the markup already describes, which is what a copy and paper both get by never
 being handed the affordance rather than by undoing it. Where a control's state is the
@@ -415,10 +416,10 @@ withholding the block is what stacks `cq-tabs`' panels and drops a strip that sw
 nothing. The theme's `@media print` is then only what paper needs beyond a copy, and
 paper needs two things: it can press nothing, so `cq-shot` stacks both frames there while
 a copy still flips them, and it cannot edit the document, so it undoes the
-content-visibility that `export` removes outright by dropping `hidden="until-found"` — a
-promise nothing in the file can keep, and one that takes the collapsed element's layout
-with it, since the theme zeroes a hidden card's padding and that padding is the room its
-chips are positioned into.
+content-visibility that `version export` removes outright by dropping
+`hidden="until-found"` — a promise nothing in the file can keep, and one that takes the
+collapsed element's layout with it, since the theme zeroes a hidden card's padding and
+that padding is the room its chips are positioned into.
 
 ### The chrome's rules stay inside the chrome
 
@@ -453,31 +454,31 @@ is a second thing to reconcile.
 
 There was a second store once, unnamed: recorded state in the log and authored state in
 the markup, with the page's author expected to copy each decision from one to the other
-by hand. `check` guaranteed ids survived a republish and nothing guaranteed the state on
-them did, so a forgotten copy silently un-made a decision. A reviewer re-approved the
-same drafts version after version, and no part of the system said a word.
+by hand. `version check` guaranteed ids survived a republish and nothing guaranteed the
+state on them did, so a forgotten copy silently un-made a decision. A reviewer
+re-approved the same drafts version after version, and no part of the system said a word.
 
 One writer, then: markup states the initial condition, the log every transition after
 it. A version that says nothing about a decision leaves it standing. The cost lands
 where the old design hid it — a version can't quietly revise what a reviewer acted on,
 because replay would paint their state back over the revision — so `restated` on the
-rewritten element retracts what rested on it, and `check` refuses a bare rewrite and an
-unearned `restated` alike (`restatement_errors`). Divergence comes in two kinds and the
-gate reads both: words, through `spoken`, and declared state, through the fold — every
+rewritten element retracts what rested on it, and `version check` refuses a bare rewrite
+and an unearned `restated` alike (`restatement_errors`). Divergence comes in two kinds
+and the gate reads both: words, through `spoken`, and declared state, through the fold — every
 `applyAction` is absolute, so the reviewer's standing state is the last surviving
 action per unit the registry's `x-state` declares, one linear scan and no replay
 simulation. Writing the folded state is honoring; re-emitting the previous version's is
 blessed silence; a unit with no surviving action is the author's again. And liveness
 has one key space — the sending widget plus the detail ids it contains, in both
 runtimes — or a group-level retraction floors differently in Python than in the
-browser. State the registry doesn't declare gets the browser's backstop instead:
-replay records the ids it wrote (`data-cq-replay-wrote`), and `check --render` reports
+browser. State the registry doesn't declare gets the browser's backstop instead: replay
+records the ids it wrote (`data-cq-replay-wrote`), and `version check --render` reports
 the ones the author also changed since the previous version, so a markup assertion the
 log overrides is heard rather than silently repainted.
 
-That attribute is a declaration, not state: `note` records it on the note event it
-publishes (one append — a second event could be torn from its note by a crash) and the
-log carries it onward. Left in the markup it would hold for exactly one version,
+That attribute is a declaration, not state: `version publish` records it on the `note`
+event it publishes (one append — a second event could be torn from its note by a crash)
+and the log carries it onward. Left in the markup it would hold for exactly one version,
 because the version *after* a rewrite has nothing to declare, and its silence would hand
 the retracted decision straight back — the same bug, one version later.
 
@@ -506,11 +507,12 @@ and outside clicks hide, they don't discard. Cancel is the only discard.
   passes it. Run the suite.
 - **Measure before optimising and before assuming.** The cost claims in this codebase came
   from timing the real thing on `examples/gallery.html`, not from reasoning.
-- **`check` runs on every version** and refuses one whose changelog `note` would publish a
-  failing page. It's near-free and deterministic; keep it that way. The browser lives in
-  `check --render`, run once per page at handover: its invariants are `render_version`,
-  which `test_example_renders` drives over the shipped examples — one implementation, so
-  the gate a reviewer's page passes and the suite the examples pass cannot drift.
+- **`version check` runs on every version** and refuses one that `version publish` would
+  expose as a failing page. It's near-free and deterministic; keep it that way. The
+  browser lives in `version check --render`, run once per page at handover: its invariants
+  are `render_version`, which `test_example_renders` drives over the shipped examples —
+  one implementation, so the gate a reviewer's page passes and the suite the examples
+  pass cannot drift.
 - **Merge locally.** The project isn't at the stage of PRs: a finished branch lands with
   `wt merge`, a direct squash merge to main. That holds for background jobs too, whose
   harness default is to push and open a draft PR.
