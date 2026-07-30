@@ -4932,3 +4932,55 @@ def test_a_widget_declaring_it_renders_a_picture_takes_a_click(browser, serve):
     )
     assert errors == []
     page.close()
+
+
+# ---------- export: the page as one file ----------
+
+
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
+def test_an_exported_example_stands_on_its_own(example, browser, serve, tmp_path):
+    """Every shipped example copied to a file and opened from disk, which is the whole
+    contract: no server answers, so anything still reaching for one is a hole, and the
+    console is where a hole says so. Driven over the corpus rather than one page because
+    what a copy loses is per-widget — the gallery alone would pass while the widget only
+    it lacks was the broken one."""
+    url = serve(example.read_text())
+    out = tmp_path / "standalone.html"
+    out.write_text(interact.export_page(browser, url, serve.page_dir))
+
+    errors = []
+    page = browser.new_page(viewport={"width": 1200, "height": 900})
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.on("requestfailed", lambda r: errors.append(f"unfetched {r.url}"))
+    page.goto(out.as_uri(), wait_until="load")
+    state = page.evaluate("""() => ({
+        scripts: document.querySelectorAll('script').length,
+        chrome: document.querySelectorAll('.cq-chrome').length,
+        toServer: [...document.querySelectorAll('[src^="/"], [href^="/"]')]
+            .map(e => e.getAttribute('src') ?? e.getAttribute('href')),
+        links: document.querySelectorAll('link[rel="stylesheet"]').length,
+        column: getComputedStyle(document.querySelector('main')).maxWidth,
+        unshown: [...document.querySelectorAll('main *')]
+            .filter(el => el.textContent.trim() && !el.checkVisibility()
+                          // A disclosure the reader can still work, a control's own
+                          // label, and an element with no box by design are all fine;
+                          // what is not is the page's words with nothing to reveal them.
+                          && !el.closest('details, [data-cq-offer], .cq-ui, style, script')
+                          && getComputedStyle(el).display !== 'contents')
+            .map(el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '')),
+    })""")
+    page.close()
+
+    assert state["scripts"] == 0, "a copy with no server behind it keeps no script"
+    assert state["chrome"] == 0, (
+        "the runtime's layer came along — a comment box that swallows what you type"
+    )
+    assert state["toServer"] == [], "the copy still points at a server that isn't there"
+    assert state["links"] == 0, "a stylesheet link survived, pointing at nothing"
+    assert state["column"] != "none", "the theme didn't inline; the copy opens unstyled"
+    assert state["unshown"] == [], (
+        "the copy says less than the page did: content sitting behind a control that "
+        f"needed a handler, and nothing in a file can press one — {state['unshown']}"
+    )
+    assert errors == [], f"{example.stem} needs a server to render: {errors}"

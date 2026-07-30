@@ -405,6 +405,17 @@ why the answers coincide: paper drops the radios and stacks both frames, and the
 naming them are `data-cq-gen` rather than `.cq-ui` — a frame's caption is the widget's own
 word, like a column's heading, not a control's like "Save".
 
+A copy is the third medium, and `export` marks it as one: `.cq-copy` on the root, read by
+the theme per widget beside the `@media print` block that asks the same question. Where a
+control's state is the browser's the widget says nothing there and keeps working; where it
+needed a handler the widget says what a copy shows instead, as `cq-tabs` does in stacking
+its panels and dropping a strip that switches nothing. Two rules, not three, because a
+copy and paper differ on exactly one thing: paper can press nothing, a copy can still
+press what the browser owns. What neither medium can do is reveal, so `export` drops
+`hidden="until-found"` — a promise nothing in the file can keep, and one that takes the
+collapsed element's layout with it, since the theme zeroes a hidden card's padding and
+that padding is the room its chips are positioned into.
+
 ### The chrome's rules stay inside the chrome
 
 Tags, attributes, nesting, and ids are registry-driven, so the renderer, the linter,

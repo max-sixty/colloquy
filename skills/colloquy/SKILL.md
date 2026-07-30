@@ -7,7 +7,7 @@ description:
   plan or a handed-over .md report. Triggers: "explain this in HTML", "write it up as a
   page", "write up the findings", "I want to see the options", a run of work whose items
   the user will want to watch go by, or an intricate design that needs review.'
-argument-hint: "[concept, decision, or work to show]"
+argument-hint: "[--export] [concept, decision, or work to show]"
 allowed-tools:
   - Bash(colloquy:*)
 ---
@@ -73,7 +73,8 @@ colloquy reply <dir> --to <id> --text "…"
 colloquy note <dir> --version 1 --text "<one-line changelog>"   # lints, then publishes vNNN.html
 colloquy check --render <dir>                # the browser gate, once per page (see below)
 colloquy events <dir>                        # reprint the full thread
-colloquy export <dir>                        # the review thread as Markdown
+colloquy transcript <dir>                    # the review thread as Markdown
+colloquy export <dir> -o <file>              # the page as one standalone HTML file
 colloquy stop <dir>                          # stop the server; its background task exits 143 (SIGTERM — normal)
 ```
 
@@ -94,6 +95,20 @@ prerequisite.
    gate too: `check --render` (see "Before the URL goes out"). Then hand the user the
    URL with a one-line orientation (select text to comment; on a sign-off page,
    "✓ Looks good" approves) and enter the review loop.
+
+## When the deliverable is the file
+
+`--export` in the argument asks for the page rather than the review: steps 1, 2 and 4
+as above, then `export <dir> -o <file>` and hand back the `file://` URL. No `serve`, no
+`wait`, no review loop — the page directory is still built, so the same page can be
+served and reviewed later without being rewritten, and the Stop hook covers only pages
+that were served or waited on, so it has nothing to say about this one. Write the file
+wherever the project puts things for the user to open.
+
+Mid-review the same command answers "give me a copy": `export` any published version,
+as many times as asked, and the review carries on around it. The copy is the page as
+the browser drew it, with the reviewer's decisions replayed onto it and the comment
+layer left behind.
 
 ## Page conventions
 
@@ -294,10 +309,11 @@ On wake:
 
 A `done` event is sign-off — it arrives only from a page declaring it (see the
 conventions): `status <dir> idle`, don't restart `wait`, and carry the approval back
-into the main task — `export` prints the whole review as Markdown when a PR
-description wants it. A review ending with record debt publishes one final honoring
+into the main task — `transcript` prints the whole review as Markdown when a PR
+description wants it, and `export` writes the page itself as one file when that is
+what outlives the review. A review ending with record debt publishes one final honoring
 version first — the final version is the page that has to read right without the
-log, and `export` lists what still lags on stderr. A comments-only page has no terminal event; when the discussion
+log, and `transcript` lists what still lags on stderr. A comments-only page has no terminal event; when the discussion
 has served its purpose, set `status idle` yourself. Either way, `stop` the server once
 the page won't be revisited.
 

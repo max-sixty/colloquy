@@ -814,7 +814,7 @@ def test_a_version_may_not_quietly_move_the_pick(page_dir):
 def test_check_reports_record_lag_without_erroring(page_dir):
     """Silence is blessed — replay resolves it — but a log-less reader sees only
     the markup, so `check` says where it lags the log, as advice on a passing
-    run. `export` says the same to stderr, where the debt stops being fixable."""
+    run. `transcript` says the same to stderr, where the debt stops being fixable."""
     def write(version, a=""):
         opts = OPTIONS.format(a=a, b="", shim="Fastest to ship.", stage="Table by table.")
         (page_dir / "versions" / f"v{version}.html").write_text(
@@ -838,7 +838,7 @@ def test_check_reports_record_lag_without_erroring(page_dir):
     assert result.exit_code == 0
     assert "record behind the log" not in result.output
 
-    result = CliRunner().invoke(interact.cli, ["export", str(page_dir)])
+    result = CliRunner().invoke(interact.cli, ["transcript", str(page_dir)])
     assert "record behind the log" in result.output  # CliRunner folds stderr in
 
 
@@ -1893,7 +1893,7 @@ def test_export_prints_threads_and_versions(page_dir):
             "detail": {"card": "card-x", "to": "col-done", "index": 0},
         },
     )
-    result = CliRunner().invoke(interact.cli, ["export", str(page_dir)])
+    result = CliRunner().invoke(interact.cli, ["transcript", str(page_dir)])
     assert result.exit_code == 0, result.output
     assert "## Review: Cutoff & backfill" in result.output
     assert "- v1: first cut" in result.output

@@ -2877,4 +2877,10 @@ upgradeWidgets().then(() => {
     } catch {}
   poll();
   setInterval(poll, POLL_MS);
+  // Every widget has upgraded and every async one has settled, so the geometry and
+  // the drawn SVG are final. `export` copies the page at this moment and has no
+  // other way to know it arrived: a load event fires before the modules run, and
+  // networkidle only says a bundle finished downloading, not that it finished
+  // drawing. The stamp says the document is done becoming itself.
+  document.body.dataset.cqUpgraded = "1";
 });

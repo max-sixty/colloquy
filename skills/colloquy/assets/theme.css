@@ -294,6 +294,13 @@ cq-options[open] > .cq-settled::before { content: "▾"; }
   cq-options[settled].cq-rendered:not([open]) { display: grid; }
   cq-options[settled] > cq-option { content-visibility: visible !important; }
 }
+/* Same answer for a copy, for the reason a copy shares with paper: the row that
+ * opens the group is a button, and nothing in a file presses one. The cards would
+ * otherwise be a decision the copy states without the options it was made among.
+ * The grid is all it takes — the copy drops the cards' hidden attribute, so they
+ * lay out with the room their chips are positioned into, as an opened group's do. */
+.cq-copy cq-options[settled].cq-rendered:not([open]) { display: grid; }
+.cq-copy cq-options[settled] > .cq-settled { display: none; }
 
 /* cq-milestones / cq-milestone: a rail of status dots. The rail and dots are
  * CSS; the chip row (`when`, `tags`) is built by the cq-milestone upgrade. */
@@ -450,6 +457,16 @@ cq-tabs.cq-rendered > cq-tab[hidden]:not([hidden="until-found"]) { display: none
                              margin-top: 14px; }
   cq-tabs.cq-rendered > cq-tab::before { content: attr(label); }
 }
+/* A copy answers the same question as paper and gets the same answer, for a
+ * different reason: nothing on paper can be pressed, and nothing in a copy is
+ * listening. The strip's buttons needed a handler to switch a panel, so in a copy
+ * they are decoration in front of content — the panels stack and the labels come
+ * back, and the strip goes rather than sit there taking clicks that do nothing.
+ * A control whose state the browser owns needs none of this and says nothing here;
+ * that is the whole difference between this widget and cq-shot's radios. */
+.cq-copy cq-tabs.cq-rendered > cq-tab { margin-top: 14px; }
+.cq-copy cq-tabs.cq-rendered > cq-tab::before { content: attr(label); }
+.cq-copy .cq-tabstrip { display: none; }
 
 /* cq-shot: a before/after pair of screenshots, one on screen at a time. Both
  * frames occupy the same grid cell, so the box is the taller of the two and

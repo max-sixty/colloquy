@@ -128,7 +128,8 @@ comment neither wakes its watcher nor reads as unanswered. What Claude cannot do
 that happened; closing one from this side would file it away unread.
 
 Commands:
-    init media serve status wait comment reply note events stop check catalog export
+    init media serve status wait comment reply note events stop check catalog
+    transcript export
 
 `check` is a deterministic pre-handover lint (no browser, near-free — `note`
 re-runs it on every version): the HTML parses with balanced tags; the page
@@ -163,6 +164,8 @@ detaches later in the reviewer's browser. Element-anchor an opaque widget instea
 (`--section`), which is the anchor a click on a diagram makes.
 """
 
+import base64
+import contextlib
 import errno
 import hashlib
 import json
@@ -1076,7 +1079,7 @@ def cmd_events(page_dir: Path, after: int) -> None:
             print(json.dumps(event, ensure_ascii=False))
 
 
-def cmd_export(page_dir: Path) -> None:
+def cmd_transcript(page_dir: Path) -> None:
     """The review thread as Markdown, for reuse in a PR description."""
     events = read_events(page_dir)
     versions = list_versions(page_dir)
@@ -1094,7 +1097,7 @@ def cmd_export(page_dir: Path) -> None:
         for e in notes:
             print(f"- v{e['version']}: {e['text']}")
 
-    # The reviewer's direct edits are review outcomes; without them the export
+    # The reviewer's direct edits are review outcomes; without them the transcript
     # understates the review whenever a changelog note doesn't restate them. So
     # is a version taking one back, which is the same understatement the other
     # way round — an edit shown as final that a later version overruled.
@@ -1136,8 +1139,8 @@ def cmd_export(page_dir: Path) -> None:
             print(f"Approved at {e['ts']}.")
             break
 
-    # To stderr — stdout is the artifact. Export is a review's closing act, and
-    # the record debt it reports here is about to stop being fixable.
+    # To stderr — stdout is the artifact. A transcript is a review's closing act,
+    # and the record debt it reports here is about to stop being fixable.
     published = published_versions(page_dir, events)
     registry = load_registry(page_dir)
     if published and registry:
@@ -1366,7 +1369,7 @@ class _StructParser(HTMLParser):
         self.css = ""
         self.inline_styles = []  # each style="" declaration list
         self.attr_widths = []  # (tag, value) per width="" that counts as pixels
-        self.title = ""  # what <title> says, for the export's heading
+        self.title = ""  # what <title> says, for the transcript's heading
         # {"tag", "line", "attrs", "parent", "children", "text"}
         self.cq_elements = []
         # {"id", "resolves", "line", "slots", "old_ids", "new_ids", "nested"} per
@@ -2985,7 +2988,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
         f"ids and decisions carried over, nothing overflows the {column}px column"
     )
     # Advice, never a gate: silence is blessed and replay resolves it, but a
-    # log-less reader (a printout, the export's audience) sees only the markup,
+    # log-less reader (a printout, a transcript's audience) sees only the markup,
     # so say where it lags the log. Loudest at the end of a review — the final
     # version is the page that must read right without the log.
     for line in record_lag(html, events, registry or {}):
@@ -3247,6 +3250,21 @@ def render_version(browser, url: str) -> list:
     return [*in_scheme("light"), *in_scheme("dark")]
 
 
+@contextlib.contextmanager
+def preview_server(page_dir: Path, version: int):
+    """The page directory on a loopback port, exposing versions up to this one, for
+    the length of a `with`. Two callers need a browser to see a version the reviewer
+    may not have (`check --render` before its note lands, `export` on any published
+    one), and the preview window is what lets them: the server's own liveness rule
+    is the reviewer's, and this widens it for exactly one process."""
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler_for(page_dir, preview_upto=version))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_address[1]}/versions/{version_name(version)}"
+    finally:
+        httpd.shutdown()
+
+
 def render_check(page_dir: Path, version: int) -> int:
     """Serve the page directory to the machine's installed Chrome and run the
     render invariants on this version.
@@ -3268,9 +3286,7 @@ def render_check(page_dir: Path, version: int) -> int:
         )
         return 1
     name = version_name(version)
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler_for(page_dir, preview_upto=version))
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    try:
+    with preview_server(page_dir, version) as url:
         with sync_playwright() as p:
             try:
                 browser = p.chromium.launch(channel="chrome")
@@ -3282,12 +3298,9 @@ def render_check(page_dir: Path, version: int) -> int:
                 )
                 return 1
             try:
-                url = f"http://127.0.0.1:{httpd.server_address[1]}/versions/{name}"
                 failures = render_version(browser, url)
             finally:
                 browser.close()
-    finally:
-        httpd.shutdown()
     if failures:
         print(f"✗ {name}: renders broken — {len(failures)} issue(s)", file=sys.stderr)
         for f in failures:
@@ -3297,6 +3310,136 @@ def render_check(page_dir: Path, version: int) -> int:
         f"✓ {name}: renders clean in Chrome, light and dark — no console errors, "
         "every widget takes space, no sideways scroll"
     )
+    return 0
+
+
+# ---------- export: the page as one file ----------
+
+# What a standalone copy drops. Scripts go because there is no server behind a file
+# and nothing left for them to reach; the runtime's own layer goes with them, since a
+# comment box that swallows what you type and a banner claiming someone is listening
+# are worse than no chrome at all — a copy that lies about being a review. What stays
+# is everything the widgets built, the controls they injected among it: a control whose
+# state the browser owns still works with no script running, which is why a `cq-shot`
+# flips on radios.
+#
+# `cq-copy` is the medium, declared the way `@media print` is and read the same way —
+# by the theme, per widget. A widget whose control needed a handler says there what the
+# copy shows instead, and one whose control is native says nothing. That is why no
+# widget is named here: this marks the medium, and the widgets answer for themselves.
+BAKE = """() => {
+    document.documentElement.classList.add('cq-copy');
+    document.querySelectorAll('script, .cq-chrome').forEach(el => el.remove());
+    // hidden="until-found" is the page saying "collapsed, but the reader can still
+    // get here" — a tab's inactive panel, a settled group's cards. In a copy the
+    // control that would get them there is inert, so the attribute is a promise
+    // nothing can keep, and it takes the collapsed element's layout down with it:
+    // the theme zeroes a hidden card's padding, which is the room its chips are
+    // positioned into. Dropping it opens the element on the terms it was authored
+    // with, which is what the widget's own copy rules below then arrange.
+    document.querySelectorAll('[hidden="until-found"]')
+        .forEach(el => el.removeAttribute('hidden'));
+    return document.documentElement.outerHTML;
+}"""
+
+
+def inline_assets(html: str, page_dir: Path) -> str:
+    """Fold the served assets into the markup. The theme's link becomes the stylesheet
+    itself and each image becomes its own bytes, which is everything the document still
+    reaches the server for: the runtime's stylesheet arrived as a `<style>` in the DOM,
+    the widget modules were imports rather than elements, and a `cq-ref`'s link was
+    always somewhere else."""
+    theme = (page_dir / "theme.css").read_text(encoding="utf-8")
+    html, n = re.subn(r'<link[^>]+href="/theme\.css"[^>]*>', lambda _: f"<style>{theme}</style>", html, count=1)
+    if not n:
+        sys.exit("the rendered page carried no /theme.css link — it would open unstyled")
+    for src in sorted(set(re.findall(r"/" + MEDIA_DIR + r"/[a-f0-9]{16}\.[a-z]+", html))):
+        file = page_dir / src.lstrip("/")
+        data = base64.b64encode(file.read_bytes()).decode()
+        html = html.replace(src, f"data:{MEDIA_TYPES[file.suffix]};base64,{data}")
+    return html
+
+
+def export_page(browser, url: str, page_dir: Path) -> str:
+    """The served version at `url`, copied as one self-contained document.
+
+    One implementation with two callers, as `render_version` is: `export` supplies a
+    browser of its own, and the suite drives this over the shipped examples with the
+    one it already has, so the copy a reviewer gets and the copy the suite asserts on
+    cannot drift.
+
+    The reviewer's decisions come with it. Replay is what puts them on the page, so
+    this waits for the runtime's caught-up stamp exactly as the gate does, and a page
+    whose board was rearranged copies rearranged."""
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    page = browser.new_page(viewport=RENDER_VIEWPORT)
+    try:
+        page.goto(url, wait_until="networkidle")
+        try:
+            page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+            n_actions = len([e for e in read_events(page_dir) if e["kind"] == "action"])
+            if n_actions:
+                page.wait_for_function(
+                    f"() => Number(document.body.dataset.cqApplied ?? -1) >= {n_actions}"
+                )
+        except PlaywrightTimeout:
+            sys.exit(
+                f"{url.rsplit('/', 1)[-1]} never finished upgrading in the browser, so a copy "
+                "would be half-drawn. `check --render` says what is wrong with it."
+            )
+        return inline_assets(page.evaluate(BAKE), page_dir)
+    finally:
+        page.close()
+
+
+def cmd_export(page_dir: Path, out: Path, version) -> int:
+    """One published version as a standalone HTML file.
+
+    The copy is the page as the browser finished drawing it, which is the only way to
+    get one: half the document is written by the widget layer at runtime, a mermaid
+    diagram becomes an SVG only once mermaid has drawn it, and a code block is colored
+    by the vendored tokenizer in the page rather than by anything that can read the
+    file. So Chrome is not an optimisation here and no `x-` key exempts a widget from
+    it; without a browser there is nothing to copy at all."""
+    try:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        sys.exit(
+            "export needs Playwright; run it as\n"
+            "  colloquy export <dir> -o <file>\n"
+            "or, from a checkout,\n"
+            "  uv run --with playwright skills/colloquy/scripts/interact.py export <dir> -o <file>"
+        )
+    published = published_versions(page_dir, read_events(page_dir))
+    if not published:
+        sys.exit(f"{page_dir} has no published version to export; `note` one first")
+    version = version if version else published[-1]
+    if version not in published:
+        sys.exit(
+            f"v{version} is not published — published: "
+            + ", ".join(f"v{v}" for v in published)
+        )
+    name = version_name(version)
+
+    with preview_server(page_dir, version) as url:
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.launch(channel="chrome")
+            except PlaywrightError as e:
+                sys.exit(
+                    f"export needs Chrome, and it didn't launch ({str(e).strip().splitlines()[0]}). "
+                    "A copy is the drawn page, so there is nothing to write without one."
+                )
+            try:
+                html = export_page(browser, url, page_dir)
+            finally:
+                browser.close()
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    print(f"✓ {name} → {out} ({out.stat().st_size // 1024} KB, opens with no server)")
     return 0
 
 
@@ -3454,9 +3597,18 @@ def catalog(dir: str) -> None:
 
 @cli.command()
 @click.argument("dir")
-def export(dir: str) -> None:
+def transcript(dir: str) -> None:
     """Print the review thread as Markdown, for reuse in a PR description."""
-    cmd_export(resolve_dir(dir))
+    cmd_transcript(resolve_dir(dir))
+
+
+@cli.command()
+@click.argument("dir")
+@click.option("-o", "--out", required=True, type=click.Path(dir_okay=False, path_type=Path))
+@click.option("--version", type=int, help="Which version to copy; the newest published by default.")
+def export(dir: str, out: Path, version: int) -> None:
+    """Write a version as one standalone HTML file, with no server behind it."""
+    sys.exit(cmd_export(resolve_dir(dir), out, version))
 
 
 if __name__ == "__main__":

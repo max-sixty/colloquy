@@ -8,6 +8,7 @@ examples to keep their ids disjoint across files, which this script enforces.
 Usage: gallery.py  (no arguments; writes examples/gallery.html)
 """
 
+import re
 import sys
 from html.parser import HTMLParser
 from pathlib import Path
@@ -90,6 +91,11 @@ def build() -> str:
         if text.count("<main>") != 1 or text.count("</main>") != 1:
             sys.exit(f"{source.name}: expected exactly one <main>…</main>")
         body = text[text.index("<main>") + len("<main>") : text.rindex("</main>")].strip()
+        # The tab's label is the example's own eyebrow, title-cased, so embedding both
+        # makes the panel say its name twice. On screen the strip carries it; wherever
+        # there is no strip — unupgraded, in print, in a copy — the theme paints the
+        # label back onto the panel. The eyebrow is the copy that has nowhere to be.
+        body = re.sub(r'^<p class="eyebrow">[^<]*</p>\s*', "", body)
         tabs.append(f'<cq-tab id="gal-{stem}" label="{label}">\n{body}\n</cq-tab>\n')
 
     return HEAD + "\n" + "\n".join(tabs) + "\n" + FOOT
