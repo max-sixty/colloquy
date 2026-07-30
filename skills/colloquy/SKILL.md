@@ -6,7 +6,7 @@ description:
   in-thread, and ships revised versions as the work moves. Use instead of a wall-of-text
   plan or a handed-over .md report. Triggers: "explain this in HTML", "write it up as a
   page", "write up the findings", "I want to see the options", a run of work whose items
-  the user will want to watch go by, or reaching for plan mode on something intricate.'
+  the user will want to watch go by, or an intricate design that needs review.'
 argument-hint: "[concept, decision, or work to show]"
 allowed-tools:
   - Bash(colloquy:*)
@@ -125,7 +125,7 @@ prerequisite.
   hatch for genuinely page-specific presentation, not for re-declaring the palette.
 - **Widgets are `cq-*` elements**, validated against the vendored registry: attributes
   carry scalars (enums, flags), children carry prose, an item's title is a leading
-  `<strong>` child. Every `cq-*` element takes an explicit end tag — `<cq-ref …/>` is
+  `<strong>` child. Every `cq-*` element takes an explicit end tag — `<cq-diagram id="flow"/>` is
   rejected because HTML ignores the slash. A `data`-bodied widget (`cq-diagram`) takes
   text in its notation with `<` and `>` escaped. The catalog is the authority; don't
   invent tags or attributes.
@@ -184,11 +184,10 @@ prerequisite.
   plain. A `cq-diff` needs no language and takes none: a unified diff spans files, so
   each file's own path says what it holds, and a path naming nothing leaves that file
   plain like any undeclared block.
-- **Make references clickable.** Declare the repo or tracker base once as
-  `<meta name="cq-base" content="https://host/repo/blob/main/{path}#L{line}">` and
-  write source references as `<cq-ref src="path/to/file.py:88"></cq-ref>`. Render
-  ticket keys, MR/PR numbers, and URLs as real `<a>` links, not plain text. Inside
-  a `<cq-specimen>` a fictional base is fine.
+- **Make references clickable.** Write source locations as ordinary semantic links,
+  such as `<a href="https://host/repo/blob/main/path/to/file.py#L88"><code>path/to/file.py:88</code></a>`.
+  Render ticket keys, MR/PR numbers, and URLs as real `<a>` links, not plain text.
+  Inside a `<cq-specimen>` a fictional URL is fine.
 - **Keep wide content inside the column** — 760px in the default theme. The comment
   layer anchors to on-screen text, so a page that scrolls sideways is hard to review.
   Give any element that can overflow (a `<pre>`, a `<table>`, an `<svg>`)
@@ -334,8 +333,8 @@ does, and reads the version the way the reviewer sees it: a slot their decision 
 much the file still holds it, and a `cq-draft` they have edited says their words — quote
 the text their edit sent, not the body you authored. Quote the words the file holds, not
 what the page renders, and stay inside one part of a widget — a module writes words of
-its own between an element's children (a column's heading, a milestone's chips, a
-`cq-ref`'s link text), and a quote spanning that join names nothing. A quote the version
+its own between an element's children (a column's heading or a milestone's chips), and
+a quote spanning that join names nothing. A quote the version
 doesn't hold, holds twice, runs across such a join, sits in a retired slot, or names
 words an edit replaced is refused with what to do about it, rather than posted as a
 comment that lands nowhere — as is a `--section` naming an element their decision left
@@ -358,10 +357,7 @@ or add widget modules, and `catalog` always reflects what this page actually has
 page directory is self-contained: an approved version can't change under its reviewer.
 Re-running `init` on a live page is the explicit re-vendor; note it in the next
 version's changelog. It refuses when the page's log holds event kinds or action verbs
-the incoming layer no longer speaks — those events would silently never replay again —
-and `--retire-vocabulary` is the explicit override. The same stamp guards the other
-direction: `note` refuses to write a shape the page's vendored layer doesn't read,
-and says to re-vendor first.
+the incoming layer no longer speaks — those events would silently never replay again.
 
 ## When the browser can't reach the server
 

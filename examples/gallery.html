@@ -5,7 +5,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Colloquy examples gallery</title>
-<meta name="cq-base" content="https://github.com/example/gateway/blob/main/{path}#L{line}">
 <link rel="stylesheet" href="/theme.css">
 <script type="module" src="/colloquy.js"></script>
 </head>
@@ -206,7 +205,8 @@ gateway/
   migrations/
     0042_token_buckets.sql  +11
 </cq-tree>
-<p id="p-shape">The interesting part is <cq-ref src="gateway/limits.py:41"></cq-ref>:
+<p id="p-shape">The interesting part is
+<a href="https://github.com/example/gateway/blob/main/gateway/limits.py#L41"><code>gateway/limits.py:41</code></a>:
 the bucket key changes from the remote address to the token id when one is present.
 Everything else is plumbing that key through.</p>
 </section>

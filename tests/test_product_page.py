@@ -1,6 +1,4 @@
-"""The product pages (docs/*.html) dogfood the shipped layer: their theme.css
-must stay byte-identical to the theme the plugin vendors, and every cq-* tag
-they use must exist in the shipped registry."""
+"""The product pages use the shipped theme and widget vocabulary directly."""
 
 import json
 import re
@@ -11,8 +9,11 @@ ASSETS = ROOT / "skills" / "colloquy" / "assets"
 DOCS = ROOT / "docs"
 
 
-def test_docs_theme_is_the_shipped_theme():
-    assert (DOCS / "theme.css").read_bytes() == (ASSETS / "theme.css").read_bytes()
+def test_docs_pages_link_the_shipped_theme():
+    target = "../skills/colloquy/assets/theme.css"
+    assert (ROOT / "skills" / "colloquy" / "assets" / "theme.css").is_file()
+    for page in DOCS.glob("*.html"):
+        assert f'<link rel="stylesheet" href="{target}">' in page.read_text()
 
 
 def test_docs_pages_use_only_registered_widgets():

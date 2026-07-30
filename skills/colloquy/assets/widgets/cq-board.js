@@ -35,10 +35,6 @@ import {
   SCROLL,
 } from "/colloquy.js";
 
-// Registered on first upgrade, not at import: every x-upgrade module loads on
-// every page, but the "?" overlay should list grip keys only where a board is.
-let helpRegistered = false;
-
 customElements.define(
   "cq-board",
   class extends HTMLElement {
@@ -51,14 +47,11 @@ customElements.define(
       // A quoted board is an exhibit: no grips, no sortable, no grip keys in
       // the "?" overlay — it stays the static board the theme renders anyway.
       if (quoted(this)) return;
-      if (!helpRegistered) {
-        helpRegistered = true;
-        keyHelp("On a card grip", [
-          ["Enter", "grab, then drop, the card"],
-          ["arrows", "move the grabbed card"],
-          ["Esc", "cancel the move"],
-        ]);
-      }
+      keyHelp("On a card grip", [
+        ["Enter", "grab, then drop, the card"],
+        ["arrows", "move the grabbed card"],
+        ["Esc", "cancel the move"],
+      ]);
       // Own cards only (:scope-deep would double-wire a nested board's cards).
       for (const card of this.querySelectorAll(":scope > cq-column > cq-card"))
         this.#grip(card);

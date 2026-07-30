@@ -23,7 +23,7 @@ A page directory holds:
                          layer-wide facts under $ — $idioms, $languages, and the page's
                          vocabulary stamp ($events, x-state): the one statement of what
                          this page's vendored runtime speaks
-    widgets/             one ES module per upgraded widget (cq-ref.js, cq-diagram.js)
+    widgets/             one ES module per upgraded widget (cq-tabs.js, cq-diagram.js)
     vendor/              vendored third-party assets (mermaid.min.js, sortable.esm.js)
     media/               images the page shows, each named by the hash of its bytes
                          (`media`). Not vendored — this is the page's content, not the
@@ -184,19 +184,101 @@ from typing import NamedTuple
 import click
 import tinycss2
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
 
 HEARTBEAT_FRESH_SECS = 8
 # The browser's event kinds, and per kind the fields something downstream reads.
 # POST /api/event is the one door they come through, so this is where the shape is
 # checked; every reader indexes the fields rather than asking whether they arrived.
-# The browser sends more than this (a comment carries the version it was made
-# against); what nothing reads, nothing requires.
 BROWSER_EVENT_FIELDS = {
-    "comment": {"text": str},
-    "reply": {"parent": str, "text": str},
+    "comment": {"version": int, "text": str},
+    "reply": {"parent": str, "version": int, "text": str},
     "resolve": {"parent": str},
-    "done": {},
+    "done": {"version": int, "text": str},
     "action": {"widget": str, "action": str, "detail": dict, "version": int},
+}
+# Every field the current browser and CLI may write, beyond append_event's
+# id/ts/author/kind and read_events' seq. A registry may grow this vocabulary,
+# but it cannot omit a word the producers beside it already speak.
+EVENT_VOCABULARY = {
+    "comment": {"version", "text", "anchor", "suggestion"},
+    "reply": {"parent", "version", "text"},
+    "resolve": {"parent"},
+    "done": {"version", "text"},
+    "action": {"widget", "action", "detail", "version"},
+    "note": {"version", "text", "restated"},
+}
+HTML_NAME = r"[a-z][a-z0-9-]*"
+WIDGET_NAME = r"cq-[a-z0-9]+(?:-[a-z0-9]+)*"
+STATE_SCHEMA = {
+    "type": "object",
+    "minProperties": 1,
+    "propertyNames": {"pattern": f"^{HTML_NAME}$"},
+    "additionalProperties": {
+        "type": "object",
+        "properties": {
+            "detail": {"type": "object"},
+            "unit": {"type": "string", "minLength": 1},
+            "record": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"const": "attribute"},
+                            "attr": {"type": "string", "pattern": f"^{HTML_NAME}$"},
+                            "value": {"type": "string", "minLength": 1},
+                        },
+                        "required": ["kind", "attr", "value"],
+                        "additionalProperties": False,
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"const": "position"},
+                            "within": {"type": "string", "pattern": f"^{WIDGET_NAME}$"},
+                            "value": {"type": "string", "minLength": 1},
+                        },
+                        "required": ["kind", "within", "value"],
+                        "additionalProperties": False,
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"const": "body"},
+                            "value": {"type": "string", "minLength": 1},
+                        },
+                        "required": ["kind", "value"],
+                        "additionalProperties": False,
+                    },
+                ]
+            },
+        },
+        "required": ["detail"],
+        "additionalProperties": False,
+    },
+}
+EXTENSION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "x-content": {"enum": ["prose", "items", "data", "none"]},
+        "x-example": {"type": "string"},
+        "x-exhibit": {"type": "boolean"},
+        "x-language": {"type": "string", "pattern": f"^{HTML_NAME}$"},
+        "x-parent": {"type": "string", "pattern": f"^{WIDGET_NAME}$"},
+        "x-retired-when": {"type": "string", "pattern": f"^{HTML_NAME}$"},
+        "x-says": {
+            "type": "object",
+            "propertyNames": {"pattern": f"^{HTML_NAME}$"},
+            "additionalProperties": {"enum": ["before", "after"]},
+        },
+        "x-state": STATE_SCHEMA,
+        "x-upgrade": {"type": "boolean"},
+        "x-verbatim": {"type": "boolean"},
+        "x-visual": {"type": "boolean"},
+    },
+    "required": ["x-content", "x-upgrade"],
+    "dependentRequired": {"x-retired-when": ["x-parent"]},
+    "additionalProperties": False,
 }
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
@@ -229,7 +311,7 @@ SERVED_PATH = re.compile(
     + "|".join(
         [re.escape(f) for f in VENDORED_FILES]
         + [f"{d}/{_DIR_FILES[d]}" for d in (*VENDORED_DIRS, MEDIA_DIR)]
-        + [r"versions/v[0-9]+\.html"]
+        + [r"versions/v[1-9][0-9]*\.html"]
     )
     + ")"
 )
@@ -258,7 +340,7 @@ def now_iso() -> str:
 def read_json(path: Path):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
         return None
 
 
@@ -304,35 +386,26 @@ def read_events(page_dir: Path) -> list:
 
 
 def build_threads(events: list) -> dict:
-    """Comment threads by root id: {"root", "msgs", "resolved"}. A reply or
-    resolve names its parent, which may itself be a reply, so each walks up to
-    the comment that roots it — and always reaches one, since both writers hold a
-    parent to naming a message already in the log. An `accept` action carrying
-    `resolves` settles the thread its suggestion answered — snapshotted into the
-    action at decision time, because the honoring version retires the wrapper that
-    held the mapping, and one atomic event can't half-arrive the way a second POST
-    can."""
-    threads = {
-        e["id"]: {"root": e, "msgs": [e], "resolved": False}
-        for e in events
-        if e["kind"] == "comment"
-    }
-    index = {e["id"]: e for e in events}
+    """Fold the chronological log into comment threads by root id."""
+    threads = {}
+    thread_for = {}
     for e in events:
+        if e["kind"] == "comment":
+            thread = {"root": e, "msgs": [e], "resolved": False}
+            threads[e["id"]] = thread
+            thread_for[e["id"]] = thread
+            continue
         if e["kind"] == "action" and e["action"] == "accept":
             answered = threads.get(e["detail"].get("resolves"))
             if answered:
                 answered["resolved"] = True
             continue
-        if e["kind"] not in ("reply", "resolve"):
-            continue
-        cur = e
-        while cur["kind"] != "comment":
-            cur = index[cur["parent"]]
-        thread = threads[cur["id"]]
         if e["kind"] == "reply":
+            thread = thread_for[e["parent"]]
             thread["msgs"].append(e)
-        else:
+            thread_for[e["id"]] = thread
+        elif e["kind"] == "resolve":
+            thread = thread_for[e["parent"]]
             thread["resolved"] = True
     return threads
 
@@ -346,7 +419,7 @@ def anchored_ids(events: list) -> set:
     } - {None}
 
 
-VERSION_FILE = re.compile(r"v(\d+)\.html")
+VERSION_FILE = re.compile(r"v([1-9][0-9]*)\.html")
 
 
 def version_num(name: str) -> int:
@@ -359,29 +432,31 @@ def version_num(name: str) -> int:
     return int(VERSION_FILE.fullmatch(name).group(1))
 
 
+def version_name(version: int) -> str:
+    return f"v{version}.html"
+
+
+def version_path(page_dir: Path, version: int) -> Path:
+    return page_dir / "versions" / version_name(version)
+
+
 def list_versions(page_dir: Path) -> list:
     versions_dir = page_dir / "versions"
     if not versions_dir.exists():
         return []
     return sorted(
-        (p.name for p in versions_dir.iterdir() if VERSION_FILE.fullmatch(p.name)),
-        key=version_num,
+        version_num(p.name)
+        for p in versions_dir.iterdir()
+        if p.is_file() and VERSION_FILE.fullmatch(p.name)
     )
 
 
-def version_file(page_dir: Path, version: int):
-    """The file holding a version, or None if the page has no such version. Found
-    by the number that identifies it rather than by rebuilding a name to match:
-    asking "is version N here?" is a question about a number."""
-    return next((n for n in list_versions(page_dir) if version_num(n) == version), None)
-
-
-def published_versions(page_dir: Path) -> list:
+def published_versions(page_dir: Path, events: list) -> list:
     """Versions the server exposes: those whose `note` has landed. `note` follows a
     passing `check`, so a half-written or failing version is never live to an open
     browser — the file existing is not enough."""
-    noted = {e["version"] for e in read_events(page_dir) if e["kind"] == "note"}
-    return [name for name in list_versions(page_dir) if version_num(name) in noted]
+    noted = {e["version"] for e in events if e["kind"] == "note"}
+    return [version for version in list_versions(page_dir) if version in noted]
 
 
 def pid_alive(pid: int) -> bool:
@@ -402,8 +477,7 @@ def running_server(page_dir: Path):
 
 
 def config_home() -> Path:
-    """$XDG_CONFIG_HOME/colloquy (~/.config/colloquy/) — the user's overlay
-    layer, and the config.json the /colloquy-plans toggle writes."""
+    """$XDG_CONFIG_HOME/colloquy (~/.config/colloquy/) — the user's overlay layer."""
     return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "colloquy"
 
 
@@ -468,19 +542,18 @@ def undelivered(events: list, cursor: int) -> list:
     return [e for e in events if e["seq"] > cursor and e["author"] == "user"]
 
 
-def full_state(page_dir: Path) -> dict:
+def full_state(page_dir: Path, events: list, versions: list) -> dict:
     # A file that isn't there stands in as its whole record, so every read below
     # indexes rather than asking twice whether the field arrived.
     status = read_json(page_dir / "status.json") or {"state": "idle", "detail": "", "ts": None}
     heartbeat = read_json(page_dir / "heartbeat.json") or {"t": 0}
     session = read_json(page_dir / "session.json")
-    events = read_events(page_dir)
     # What `wait` has delivered to Claude: an action past this seq can't have
     # been seen (so not declined), which is what lets the runtime carry it
     # forward onto versions written without it.
     cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
     return {
-        "versions": published_versions(page_dir),
+        "versions": versions,
         "status": status,
         "listening": time.time() - heartbeat["t"] < HEARTBEAT_FRESH_SECS,
         "cursor": cursor,
@@ -492,7 +565,7 @@ def full_state(page_dir: Path) -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
-    page_dir = None  # set before serving
+    page_dir = None
     # The render gate previews a version before its `note` publishes it —
     # refusing the note is the gate's whole job. Set to that version's number,
     # the handler exposes on-disk versions up to it, previewed one included as
@@ -501,10 +574,10 @@ class Handler(BaseHTTPRequestHandler):
     # exposes noted versions only.
     preview_upto = None
 
-    def versions_live(self):
+    def versions_live(self, events):
         if self.preview_upto is None:
-            return published_versions(self.page_dir)
-        return [n for n in list_versions(self.page_dir) if version_num(n) <= self.preview_upto]
+            return published_versions(self.page_dir, events)
+        return [version for version in list_versions(self.page_dir) if version <= self.preview_upto]
 
     def log_message(self, *args):
         pass
@@ -523,12 +596,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
         if path == "/":
-            versions = self.versions_live()
+            versions = self.versions_live(read_events(self.page_dir))
             if not versions:
                 self._json({"error": "no published versions yet"}, 404)
                 return
             self.send_response(302)
-            self.send_header("Location", f"/versions/{versions[-1]}")
+            self.send_header("Location", f"/versions/{version_name(versions[-1])}")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", "0")
             self.end_headers()
@@ -536,7 +609,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/state":
             # versions through the handler's own view, so a preview server's
             # state agrees with what it serves (identical when not previewing).
-            self._json({**full_state(self.page_dir), "versions": self.versions_live()})
+            events = read_events(self.page_dir)
+            self._json(full_state(self.page_dir, events, self.versions_live(events)))
             return
         # Browsers ask for this unprompted. Answering "no content" rather than
         # letting it fall through to 404 keeps the console clean, which is what
@@ -545,9 +619,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(204, "image/x-icon", b"")
             return
         if SERVED_PATH.fullmatch(path):
-            if path.startswith("/versions/") and Path(path).name not in self.versions_live():
-                self._json({"error": "not published yet — `note` the version first"}, 404)
-                return
+            if path.startswith("/versions/"):
+                version = version_num(Path(path).name)
+                if version not in self.versions_live(read_events(self.page_dir)):
+                    self._json({"error": "not published yet — `note` the version first"}, 404)
+                    return
             file = self.page_dir / path.lstrip("/")
             # is_file, not exists: the vendor pattern admits "." and "..", which
             # resolve to directories.
@@ -573,29 +649,93 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(event, dict):
             self._json({"error": "event must be a JSON object"}, 400)
             return
-        if event.get("kind") not in BROWSER_EVENT_FIELDS:
+        kind = event.get("kind")
+        if not isinstance(kind, str) or kind not in BROWSER_EVENT_FIELDS:
             self._json({"error": f"kind must be one of {sorted(BROWSER_EVENT_FIELDS)}"}, 400)
+            return
+        # Identity, authorship, and time belong to the server. Drop client copies
+        # before checking the kind's declared payload, so none can be forged into
+        # the append-only record.
+        for field in ("id", "author", "ts"):
+            event.pop(field, None)
+        unexpected = set(event) - {"kind"} - EVENT_VOCABULARY[kind]
+        if unexpected:
+            self._json(
+                {"error": f"{event['kind']} events have unexpected fields {sorted(unexpected)}"},
+                400,
+            )
             return
         wrong = [
             f"`{name}` ({typ.__name__})"
-            for name, typ in BROWSER_EVENT_FIELDS[event["kind"]].items()
-            if not isinstance(event.get(name), typ) or event[name] == ""
+            for name, typ in BROWSER_EVENT_FIELDS[kind].items()
+            if type(event.get(name)) is not typ or event[name] == ""
         ]
         if wrong:
-            self._json({"error": f"{event['kind']} events need {', '.join(wrong)}"}, 400)
+            self._json({"error": f"{kind} events need {', '.join(wrong)}"}, 400)
             return
+        if kind == "comment" and "anchor" in event:
+            anchor = event["anchor"]
+            fields = {"section", "quote", "prefix", "suffix"}
+            invalid = (
+                not isinstance(anchor, dict)
+                or set(anchor) - fields
+                or any(
+                    name in anchor
+                    and not (
+                        isinstance(anchor[name], str)
+                        or (name == "section" and anchor[name] is None)
+                    )
+                    for name in fields
+                )
+                or not (anchor.get("section") or anchor.get("quote"))
+            )
+            if invalid:
+                self._json(
+                    {
+                        "error": "comment anchor must contain a string section or quote, "
+                        "with optional string prefix/suffix"
+                    },
+                    400,
+                )
+                return
+        if (
+            kind == "comment"
+            and "suggestion" in event
+            and type(event["suggestion"]) is not bool
+        ):
+            self._json({"error": "comment suggestion must be boolean"}, 400)
+            return
+        events = read_events(self.page_dir)
+        if "version" in event:
+            live_versions = self.versions_live(events)
+            if event["version"] not in live_versions:
+                self._json(
+                    {"error": f"{kind} version must be one of {live_versions}"},
+                    400,
+                )
+                return
         # A parent names a message in a thread, the same rule `reply` holds Claude
         # to. Enforced here so a walk up the log always terminates at a comment.
         if "parent" in event and event["parent"] not in {
-            e["id"] for e in read_events(self.page_dir) if e["kind"] in {"comment", "reply"}
+            e["id"] for e in events if e["kind"] in {"comment", "reply"}
         }:
             self._json({"error": f"unknown parent {event['parent']!r}"}, 400)
             return
-        # The server owns identity: a client-supplied id could collide with an
-        # existing event's and silently re-root its thread.
-        event.pop("id", None)
         event["author"] = "user"
         self._json({"ok": True, "event": append_event(self.page_dir, event)})
+
+
+def handler_for(page_dir: Path, preview_upto=None, protocol_version="HTTP/1.0"):
+    """A request handler bound to one page and publication view."""
+    return type(
+        "PageHandler",
+        (Handler,),
+        {
+            "page_dir": page_dir,
+            "preview_upto": preview_upto,
+            "protocol_version": protocol_version,
+        },
+    )
 
 
 def layer_dirs() -> list:
@@ -606,40 +746,48 @@ def layer_dirs() -> list:
     return [ASSETS, config_home(), Path.cwd() / ".claude" / "colloquy"]
 
 
-def cmd_init(page_dir: Path, retire_vocabulary: bool = False) -> None:
+def cmd_init(page_dir: Path) -> None:
     # Re-vendoring is the one moment a page's vocabulary changes hands, so it is
     # where drift has to be caught: an applyAction ignores a verb it doesn't
     # know, silently, on the first reload — the lost-decision bug reintroduced
-    # through vocabulary drift instead of version-scoping. The log can't be
-    # migrated (it is append-only, seq is the line number, and a retired verb
-    # has no successor to map to), so the choice is the human's: keep the page
-    # on the layer that speaks its log, or retire that vocabulary explicitly.
-    gaps = vocabulary_gaps(page_dir)
-    if gaps and not retire_vocabulary:
+    # through vocabulary drift instead of version-scoping.
+    layers = [
+        layer
+        for layer in layer_dirs()
+        if layer.is_dir() and layer.resolve() != page_dir.resolve()
+    ]
+    incoming = incoming_registry(layers)
+    events = read_events(page_dir)
+    gaps = vocabulary_gaps(events, incoming)
+    if gaps:
         sys.exit(
             "this page's log holds vocabulary the incoming layer no longer speaks:\n"
             + "\n".join(f"  - {g}" for g in gaps)
             + "\nre-vendoring would silently stop these replaying — the reviewer's"
-            " recorded decisions among them. Pass --retire-vocabulary to proceed anyway."
+            " recorded decisions among them."
         )
     (page_dir / "versions").mkdir(parents=True, exist_ok=True)
     for stray in page_dir.glob("*.tmp"):  # a killed writer's write_json leftovers
         stray.unlink()
-    for layer in layer_dirs():
-        if not layer.is_dir() or layer.resolve() == page_dir.resolve():
-            continue
-        for name in VENDORED_FILES:
-            src = layer / name
-            if src.is_file():
-                (page_dir / name).write_bytes(src.read_bytes())
-        for sub in VENDORED_DIRS:
-            src_dir = layer / sub
-            if not src_dir.is_dir():
-                continue
-            (page_dir / sub).mkdir(exist_ok=True)
-            for src in src_dir.iterdir():
-                if src.is_file():
-                    (page_dir / sub / src.name).write_bytes(src.read_bytes())
+    for name in VENDORED_FILES:
+        source = next((layer / name for layer in reversed(layers) if (layer / name).is_file()), None)
+        if source:
+            (page_dir / name).write_bytes(source.read_bytes())
+    for sub in VENDORED_DIRS:
+        sources = {
+            source.name: source
+            for layer in layers
+            if (source_dir := layer / sub).is_dir()
+            for source in source_dir.iterdir()
+            if source.is_file()
+        }
+        destination = page_dir / sub
+        destination.mkdir(exist_ok=True)
+        for stale in destination.iterdir():
+            if stale.is_file() and stale.name not in sources:
+                stale.unlink()
+        for name, source in sources.items():
+            (destination / name).write_bytes(source.read_bytes())
     if not (page_dir / "status.json").exists():
         cmd_status(page_dir, "working", "Writing the page")
     print(f"initialized {page_dir}")
@@ -673,13 +821,14 @@ def cmd_serve(page_dir: Path) -> None:
     if existing:
         print(existing["url"], flush=True)
         return
-    Handler.page_dir = page_dir
-    Handler.protocol_version = "HTTP/1.1"
     base = 41000 + zlib.crc32(str(page_dir.resolve()).encode()) % 4000
     httpd = None
     for port in [*range(base, base + 10), 0]:
         try:
-            httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            httpd = ThreadingHTTPServer(
+                ("127.0.0.1", port),
+                handler_for(page_dir, protocol_version="HTTP/1.1"),
+            )
             break
         except OSError as e:
             if e.errno != errno.EADDRINUSE:
@@ -782,13 +931,13 @@ def read_text_arg(text) -> str:
     return body.strip()
 
 
-def thread_widget_ids(page_dir: Path) -> set:
+def thread_widget_ids(events: list) -> set:
     """Ids claimed by widget markup in Claude's logged messages. Thread markup is frozen
     in the log and rendered into the panel, so its ids share one universe with page ids —
     the runtime resolves actions document-wide by id, and a collision would silently
     redirect a thread widget's replay to the page."""
     ids = set()
-    for e in read_events(page_dir):
+    for e in events:
         # author gate mirrors the renderer: only Claude's messages inject HTML — a user
         # comment or reply merely quoting markup renders as text and claims nothing.
         if e["kind"] in ("comment", "reply") and e["author"] == "claude" and "<cq-" in e["text"]:
@@ -800,9 +949,9 @@ def thread_widget_ids(page_dir: Path) -> set:
 
 def version_ids(page_dir: Path) -> set:
     ids = set()
-    for name in list_versions(page_dir):
+    for version in list_versions(page_dir):
         p = _StructParser()
-        p.feed((page_dir / "versions" / name).read_text(encoding="utf-8"))
+        p.feed(version_path(page_dir, version).read_text(encoding="utf-8"))
         ids |= p.ids
     return ids
 
@@ -819,20 +968,22 @@ def reserved_ids_error(ids: list) -> str:
     )
 
 
-def check_thread_markup(page_dir: Path, kind: str, body: str) -> None:
+def check_thread_markup(
+    page_dir: Path, kind: str, body: str, events: list, registry: dict | None
+) -> None:
     """A comment or reply of Claude's carrying widget markup renders live in the panel, so
     it validates against the vendored registry at post time — the discussion-side `check`.
     Exits with what's wrong; returns on plain text, which is most of them."""
     if "<cq-" not in body:
         return
-    registry = load_registry(page_dir)
     if registry is None:
         sys.exit(f"{kind} carries widget markup but the page has no registry.json; run `init`")
-    errs = fragment_errors(body, registry, vendored_languages(page_dir))
-    if errs:
-        sys.exit(f"{kind} widget markup doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs))
     frag = _StructParser()
     frag.feed(body)
+    frag.close()
+    errs = fragment_errors(frag, registry, registry["$languages"]["names"])
+    if errs:
+        sys.exit(f"{kind} widget markup doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs))
     if frag.suggestions:
         sys.exit(
             f"a {kind} can't carry <cq-suggestion>: thread markup is frozen in the "
@@ -843,7 +994,7 @@ def check_thread_markup(page_dir: Path, kind: str, body: str) -> None:
         sys.exit(f"{kind} widget markup reuses an id within itself: {frag.duplicate_ids}")
     if frag.reserved_ids:
         sys.exit(f"{kind} widget markup takes " + reserved_ids_error(frag.reserved_ids))
-    clash = sorted(frag.ids & (version_ids(page_dir) | thread_widget_ids(page_dir)))
+    clash = sorted(frag.ids & (version_ids(page_dir) | thread_widget_ids(events)))
     if clash:
         sys.exit(f"{kind} widget ids already taken by the page or an earlier message: {clash}")
 
@@ -856,22 +1007,24 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
     holds their words, so a quote is met here the way it would land there."""
     if not quote and not section:
         sys.exit("a comment points at something: pass --quote, --section, or both")
-    published = published_versions(page_dir)
+    events = read_events(page_dir)
+    published = published_versions(page_dir, events)
     if not published:
         sys.exit("no published version to anchor in; `note` one first")
-    version = version_num(published[-1])
-    html = (page_dir / "versions" / published[-1]).read_text(encoding="utf-8")
-    events = read_events(page_dir)
+    version = published[-1]
+    html = version_path(page_dir, version).read_text(encoding="utf-8")
     registry = load_registry(page_dir)
-    fold, _, _ = page_fold(html, events, registry or {}, version)
-    decided = decisions(fold, registry or {})
+    if registry is None:
+        sys.exit(f"no registry.json in {page_dir}; run `init` first")
+    fold, _, _ = page_fold(html, events, registry, version)
+    decided = decisions(fold, registry)
     edited = rewritten_bodies(fold)
     try:
         anchor = capture_anchor(html, registry, quote, section, decided, edited)
     except ValueError as err:
         sys.exit(f"can't anchor in v{version}: {err}")
     body = read_text_arg(text)
-    check_thread_markup(page_dir, "comment", body)
+    check_thread_markup(page_dir, "comment", body, events, registry)
     event = append_event(
         page_dir,
         {"kind": "comment", "author": "claude", "version": version, "anchor": anchor, "text": body},
@@ -880,18 +1033,21 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
 
 
 def cmd_reply(page_dir: Path, to: str, text) -> None:
-    known = {e["id"] for e in read_events(page_dir) if e["kind"] in {"comment", "reply"}}
+    events = read_events(page_dir)
+    known = {e["id"] for e in events if e["kind"] in {"comment", "reply"}}
     if to not in known:
         sys.exit(f"unknown comment id {to!r}; known: {sorted(known)}")
     body = read_text_arg(text)
-    check_thread_markup(page_dir, "reply", body)
+    registry = load_registry(page_dir) if "<cq-" in body else None
+    check_thread_markup(page_dir, "reply", body, events, registry)
     event = append_event(page_dir, {"kind": "reply", "author": "claude", "parent": to, "text": body})
     print(json.dumps(event, ensure_ascii=False))
 
 
 def cmd_note(page_dir: Path, version: int, text) -> None:
-    name = version_file(page_dir, version)
-    if name is None:
+    name = version_name(version)
+    path = version_path(page_dir, version)
+    if not path.is_file():
         sys.exit(f"no v{version}.html in {page_dir / 'versions'}; write the version file first")
     # `note` publishes (the server exposes only noted versions), so it is the one
     # gate: a version that fails `check` can't go live.
@@ -905,19 +1061,9 @@ def cmd_note(page_dir: Path, version: int, text) -> None:
     # note itself rather than a second event: `note` is one act, and two appends
     # can be torn by a crash into a retraction for a version that never published.
     parser = _StructParser()
-    parser.feed((page_dir / "versions" / name).read_text(encoding="utf-8"))
+    parser.feed(path.read_text(encoding="utf-8"))
     parser.close()
     retracts = sorted(parser.restated)
-    if retracts and "restated" not in vendored_event_fields(page_dir).get("note", ()):
-        # The page's vendored runtime reads retractions off the note's `restated`
-        # field; a layer that doesn't declare the field would drop it silently and
-        # replay the retracted decision back over the rewrite, in front of the
-        # reviewer. The bin shim always runs the newest CLI against pages vendored
-        # at any age, so the write site is the one place this can be caught.
-        sys.exit(
-            "this page's vendored layer predates `restated` on notes, so its runtime "
-            "would silently drop the retraction — run `init` to re-vendor, then note again"
-        )
     event = {"kind": "note", "author": "claude", "version": version, "text": read_text_arg(text)}
     if retracts:
         event["restated"] = retracts
@@ -937,7 +1083,7 @@ def cmd_export(page_dir: Path) -> None:
     title = ""
     if versions:
         parser = _StructParser()
-        parser.feed((page_dir / "versions" / versions[-1]).read_text(encoding="utf-8"))
+        parser.feed(version_path(page_dir, versions[-1]).read_text(encoding="utf-8"))
         parser.close()
         title = parser.title.strip()
     print(f"## Review: {title or page_dir.name}")
@@ -992,10 +1138,10 @@ def cmd_export(page_dir: Path) -> None:
 
     # To stderr — stdout is the artifact. Export is a review's closing act, and
     # the record debt it reports here is about to stop being fixable.
-    published = published_versions(page_dir)
+    published = published_versions(page_dir, events)
     registry = load_registry(page_dir)
     if published and registry:
-        html = (page_dir / "versions" / published[-1]).read_text(encoding="utf-8")
+        html = version_path(page_dir, published[-1]).read_text(encoding="utf-8")
         for line in record_lag(html, events, registry):
             print(f"record behind the log — {line}", file=sys.stderr)
 
@@ -1022,7 +1168,7 @@ CATALOG_PREAMBLE = """\
 
 
 def cmd_catalog(page_dir: Path) -> None:
-    reg = read_json(page_dir / "registry.json")
+    reg = load_registry(page_dir)
     if reg is None:
         sys.exit(f"no registry.json in {page_dir}; run `init` first")
     print(CATALOG_PREAMBLE)
@@ -1066,7 +1212,8 @@ def unattended_pages(session_id: str) -> list:
     a review that has quietly stopped."""
     reasons = []
     for page_dir in owned_pages(session_id):
-        state = full_state(page_dir)
+        events = read_events(page_dir)
+        state = full_state(page_dir, events, published_versions(page_dir, events))
         if state["listening"]:
             # A live `wait` is the watch, and it delivers what's pending on its own.
             # Reporting the page here would have Claude start a second one, and two
@@ -1173,7 +1320,7 @@ OVERFLOW_PROPS = ("width", "min-width")
 # name → allowed content values (None = free-form). A misspelled name or value
 # would silently declare nothing in the browser, so `check` owns this vocabulary
 # the way the registry owns cq-* elements.
-CQ_META = {"cq-base": None, "cq-review": frozenset({"sign-off"})}
+CQ_META = {"cq-review": frozenset({"sign-off"})}
 
 
 def implicit_closes(open_tags: list, tag: str) -> int:
@@ -1416,8 +1563,7 @@ class _StructParser(HTMLParser):
 #   x-verbatim  an upgraded element whose body reaches the reader as its own words
 #               (cq-draft renders the authored text into a plain div, deliberately
 #               unmarked so anchoring can see it). Without it, an upgraded element is
-#               opaque: a mermaid body is a picture by the time it is read, a cq-ref
-#               with no body at all renders a link's text.
+#               opaque: a mermaid body is a picture by the time it is read.
 #   x-retired-when  the outcome under which this element leaves the page: a decided
 #               suggestion's losing slot. The browser builds its anchor pass's skip
 #               list from this key too (`quotable` in colloquy.js), so a reading given
@@ -1453,10 +1599,6 @@ UNQUOTABLE_TAGS = {"script", "style", "head"}
 # surrounding text it stores to tell two identical passages apart.
 QUOTE_CAP = 400
 CONTEXT = 24
-# How a refusal names a decision, past tense because the reviewer already made it.
-DECIDED_VERB = {"accept": "accepted", "reject": "rejected"}
-
-
 class _PassageParser(HTMLParser):
     """A version's prose as the anchor pass reads it. `text` is the whole page collapsed
     the way a captured quote is; `owner[i]` is the ids enclosing text[i], outermost
@@ -1746,13 +1888,13 @@ def capture_anchor(html: str, registry, quote: str, section: str, decided=None, 
         if section in retired:
             sid = retired[section]
             raise ValueError(
-                f"§ {section} left the page when the reviewer {DECIDED_VERB[decided[sid]]} "
+                f"§ {section} left the page when the reviewer chose to {decided[sid]} "
                 f"§ {sid} — a decided suggestion's losing slot is retired, and an anchor "
                 "on it would reach nobody. Anchor on the settled text instead."
             )
         if section in gone:
             raise ValueError(
-                f"§ {section} settled to nothing when the reviewer {DECIDED_VERB[gone[section]]} "
+                f"§ {section} settled to nothing when the reviewer chose to {gone[section]} "
                 "it — the decision removed everything it held from the page, and an anchor "
                 "on it would reach nobody. Anchor on the surrounding text instead."
             )
@@ -1839,7 +1981,7 @@ def _removed_by(html, registry, wanted: str, section: str, decided, rewritten):
             sid = next((wid for wid in ids if wid in decided), None)
             if sid:
                 return (
-                    f"the reviewer {DECIDED_VERB[decided[sid]]} § {sid} — that decision "
+                    f"the reviewer chose to {decided[sid]} § {sid} — that decision "
                     "retired these words from the page. Quote it as it now stands."
                 )
             wid = next((wid for wid in ids if wid in rewritten), None)
@@ -1955,41 +2097,208 @@ def _overwide_elements(parser: _StructParser, column: int) -> list:
     return hits
 
 
-def load_registry(page_dir: Path):
-    """The vendored vocabulary: tag → schema entry. None when the page has no
-    vendored registry.json (an un-initialized directory)."""
-    reg = read_json(page_dir / "registry.json")
-    if reg is None:
+def read_registry(path: Path):
+    """Read and validate one complete registry vocabulary."""
+    try:
+        registry = read_json(path)
+    except json.JSONDecodeError as error:
+        sys.exit(f"{path}: invalid JSON ({error.msg}, line {error.lineno})")
+    if registry is None:
         return None
-    return {tag: entry for tag, entry in reg.items() if tag.startswith("cq-")}
+    if not isinstance(registry, dict):
+        sys.exit(f"{path}: registry must be a JSON object")
+    non_objects = [name for name, entry in registry.items() if not isinstance(entry, dict)]
+    if non_objects:
+        sys.exit(f"{path}: registry entries must be objects: {non_objects}")
+    try:
+        kinds = registry["$events"]["kinds"]
+        names = registry["$languages"]["names"]
+        paths = registry["$languages"]["paths"]
+    except (KeyError, TypeError):
+        sys.exit(f"{path}: registry must declare $events.kinds and $languages.names/paths")
+    if (
+        not isinstance(kinds, dict)
+        or not all(
+            isinstance(kind, str)
+            and isinstance(fields, list)
+            and all(isinstance(field, str) for field in fields)
+            and len(fields) == len(set(fields))
+            for kind, fields in kinds.items()
+        )
+    ):
+        sys.exit(f"{path}: $events.kinds must map event names to unique field-name lists")
+    missing_events = []
+    for kind, required in EVENT_VOCABULARY.items():
+        if kind not in kinds:
+            missing_events.append(f"kind `{kind}`")
+            continue
+        fields = required - set(kinds[kind])
+        if fields:
+            missing_events.append(f"`{kind}` fields {sorted(fields)}")
+    if missing_events:
+        sys.exit(
+            f"{path}: $events.kinds omits vocabulary the current layer writes: "
+            + ", ".join(missing_events)
+        )
+    if (
+        not isinstance(names, list)
+        or not all(isinstance(name, str) for name in names)
+        or len(names) != len(set(names))
+    ):
+        sys.exit(f"{path}: $languages.names must be a unique list of strings")
+    if (
+        not isinstance(paths, dict)
+        or not all(
+            isinstance(extension, str) and language in names
+            for extension, language in paths.items()
+        )
+    ):
+        sys.exit(f"{path}: $languages.paths must map extensions to declared languages")
+    invalid_names = [
+        tag
+        for tag in registry
+        if not tag.startswith("$") and re.fullmatch(WIDGET_NAME, tag) is None
+    ]
+    if invalid_names:
+        sys.exit(f"{path}: invalid registry entry names: {invalid_names}")
+    widgets = {tag: entry for tag, entry in registry.items() if tag.startswith("cq-")}
+    # First validate every entry in isolation. Cross-entry checks run only after this
+    # pass, so their result cannot depend on which widget happened to be written first.
+    for tag, entry in widgets.items():
+        try:
+            Draft202012Validator.check_schema(entry)
+        except SchemaError as error:
+            sys.exit(f"{path}: <{tag}> is not a valid JSON Schema: {error.message}")
+        extensions = {key: value for key, value in entry.items() if key.startswith("x-")}
+        errors = sorted(
+            Draft202012Validator(EXTENSION_SCHEMA).iter_errors(extensions), key=str
+        )
+        if errors:
+            sys.exit(f"{path}: <{tag}> registry extensions are invalid: {errors[0].message}")
+        for verb, spec in entry.get("x-state", {}).items():
+            try:
+                Draft202012Validator.check_schema(spec["detail"])
+            except SchemaError as error:
+                sys.exit(
+                    f"{path}: <{tag}> x-state verb `{verb}` has an invalid "
+                    f"detail schema: {error.message}"
+                )
+            if spec["detail"].get("type") != "object":
+                sys.exit(
+                    f"{path}: <{tag}> x-state verb `{verb}` detail schema "
+                    "must declare an object"
+                )
+
+    for tag, entry in widgets.items():
+        parent = entry.get("x-parent")
+        if parent and parent not in widgets:
+            sys.exit(f"{path}: <{tag}> x-parent names unknown widget <{parent}>")
+        properties = entry.get("properties", {})
+        said = set(entry.get("x-says", {}))
+        if unknown := sorted(said - set(properties)):
+            sys.exit(f"{path}: <{tag}> x-says names undeclared attributes {unknown}")
+        language = entry.get("x-language")
+        if language and language not in properties:
+            sys.exit(f"{path}: <{tag}> x-language names undeclared attribute `{language}`")
+        needs_upgrade = [
+            key
+            for key in ("x-state", "x-language", "x-verbatim")
+            if entry.get(key) and not entry["x-upgrade"]
+        ]
+        if needs_upgrade:
+            sys.exit(
+                f"{path}: <{tag}> declares {', '.join(needs_upgrade)} "
+                "but has no upgraded handler"
+            )
+        for verb, spec in entry.get("x-state", {}).items():
+            detail_properties = spec["detail"].get("properties", {})
+            required = set(spec["detail"].get("required", []))
+            unit = spec.get("unit", "widget")
+            fields = [] if unit == "widget" else [unit]
+            record = spec.get("record")
+            if record:
+                fields.append(record["value"])
+                if record["kind"] == "position" and record["within"] not in widgets:
+                    sys.exit(
+                        f"{path}: <{tag}> x-state verb `{verb}` records a position "
+                        f"within unknown widget <{record['within']}>"
+                    )
+            undeclared = [field for field in fields if field not in detail_properties]
+            optional = [field for field in fields if field not in required]
+            if undeclared or optional:
+                problem = (
+                    f"does not declare {undeclared}"
+                    if undeclared
+                    else f"does not require {optional}"
+                )
+                sys.exit(
+                    f"{path}: <{tag}> x-state verb `{verb}` reads detail fields "
+                    f"its schema {problem}"
+                )
+            if unit != "widget" and record and record["kind"] != "position":
+                sys.exit(
+                    f"{path}: <{tag}> x-state verb `{verb}` records per-part state; "
+                    "only position records support that"
+                )
+
+            def field_types(field):
+                field_schema = detail_properties[field]
+                declared = field_schema.get("type") if isinstance(field_schema, dict) else None
+                return {declared} if isinstance(declared, str) else set(declared or [])
+
+            if unit != "widget" and field_types(unit) != {"string"}:
+                sys.exit(
+                    f"{path}: <{tag}> x-state verb `{verb}` fold unit `{unit}` "
+                    "must be a string"
+                )
+            if record:
+                value = record["value"]
+                allowed = {"string", "null"} if record["kind"] == "attribute" else {"string"}
+                types = field_types(value)
+                if "string" not in types or not types <= allowed:
+                    suffix = " or null" if "null" in allowed else ""
+                    sys.exit(
+                        f"{path}: <{tag}> x-state verb `{verb}` record value `{value}` "
+                        f"must be a string{suffix}"
+                    )
+        retired = entry.get("x-retired-when")
+        if retired is None:
+            continue
+        parent_entry = widgets[parent]
+        parent_state = parent_entry.get("x-state", {})
+        if retired not in parent_state:
+            sys.exit(
+                f"{path}: <{tag}> x-retired-when `{retired}` is invalid: "
+                f"<{parent}> does not declare that x-state verb"
+            )
+        if parent_state[retired].get("unit", "widget") != "widget":
+            sys.exit(
+                f"{path}: <{tag}> x-retired-when `{retired}` must fold by widget"
+            )
+    return registry
+
+
+def load_registry(page_dir: Path):
+    """The page's complete vendored vocabulary, or None before `init`."""
+    return read_registry(page_dir / "registry.json")
+
+
+def incoming_registry(layers: list) -> dict:
+    """The highest-precedence registry `init` will vendor."""
+    path = next(
+        (layer / "registry.json" for layer in reversed(layers) if (layer / "registry.json").is_file()),
+        None,
+    )
+    if path is None:
+        sys.exit("the incoming layer has no registry.json")
+    return read_registry(path)
 
 
 # ---------- the vocabulary stamp ----------
 # The registry vendored into a page is also that page's statement of what its
 # runtime speaks: $events names the event kinds and the fields each carries,
-# x-state (per widget) the action verbs. Nothing else on disk says so, and the
-# two drift directions are both silent without it — a new CLI writing a shape an
-# old runtime drops (`note` guards that at the write site), and a re-vendor
-# retiring a verb the log still holds, which would no-op the reviewer's recorded
-# decisions on the next reload (`init` guards that). A registry with no $events
-# at all *is* a statement too: it predates the stamp, and the pre-stamp
-# vocabulary is exactly what such a layer reads.
-
-
-def vendored_event_fields(page_dir: Path) -> dict:
-    """kind → the fields the page's vendored runtime reads on it. A stampless
-    registry is the pre-stamp vocabulary: plain notes, no `restated` field."""
-    reg = read_json(page_dir / "registry.json") or {}
-    return (reg.get("$events") or {}).get("kinds") or {}
-
-
-def vendored_languages(page_dir: Path) -> list:
-    """The languages this page's vendored layer can color ($languages.names). Read off
-    the raw registry rather than load_registry's tag→schema view, because the list is a
-    property of the page and not of any one tag — the same reason it doesn't live under
-    the schema of whichever widget happens to take a `lang`."""
-    reg = read_json(page_dir / "registry.json") or {}
-    return (reg.get("$languages") or {}).get("names") or []
+# x-state (per widget) the action verbs. Nothing else on disk says so. `init`
+# refuses a re-vendor that would retire vocabulary still present in the log.
 
 
 def declared_verbs(registry: dict) -> set:
@@ -2002,29 +2311,15 @@ def declared_verbs(registry: dict) -> set:
     }
 
 
-def vocabulary_gaps(page_dir: Path) -> list:
+def vocabulary_gaps(events: list, incoming: dict) -> list:
     """What the page's log says that the *incoming* layer no longer speaks:
     event kinds with no $events entry, action verbs with no x-state declaration.
     Empty for a fresh page. Counted, because the number is the cost — each is a
     recorded event that would never replay again."""
-    events = read_events(page_dir)
     if not events:
         return []
-    incoming = {}
-    for layer in layer_dirs():
-        reg = read_json(layer / "registry.json")
-        if reg is not None:
-            incoming = reg
-    # A stampless incoming registry (a user or project overlay predating the
-    # stamp) is the pre-stamp vocabulary, exactly as the note-side bootstrap
-    # reads a stampless page — not an empty one, which would count every plain
-    # comment as a gap and refuse with nonsense.
-    if "$events" in incoming:
-        kinds = set((incoming.get("$events") or {}).get("kinds") or {})
-        verbs = declared_verbs(incoming)
-    else:
-        kinds = {"comment", "reply", "resolve", "done", "action", "note", "restate"}
-        verbs = {"choose", "move", "edit", "accept", "reject"}
+    kinds = set(incoming["$events"]["kinds"])
+    verbs = declared_verbs(incoming)
     missing = {}
     for e in events:
         kind = e["kind"]
@@ -2045,6 +2340,8 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
     # Containers ("items") admit exactly the tags that declare them as x-parent.
     children_of = {}
     for tag, entry in registry.items():
+        if not tag.startswith("cq-"):
+            continue
         parent = entry.get("x-parent")
         if parent:
             children_of.setdefault(parent, set()).add(tag)
@@ -2060,12 +2357,11 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
         # (bare and ="") both mean true; a literal value on a flag stays a string
         # so it fails loudly rather than silently meaning true.
         props = entry.get("properties", {})
-        instance = {
-            name: True
-            if value in (None, "") and props.get(name, {}).get("type") == "boolean"
-            else (value or "")
-            for name, value in rec["attrs"].items()
-        }
+        instance = {}
+        for name, value in rec["attrs"].items():
+            prop = props.get(name)
+            is_flag = isinstance(prop, dict) and prop.get("type") == "boolean"
+            instance[name] = True if value in (None, "") and is_flag else (value or "")
         for err in sorted(Draft202012Validator(entry).iter_errors(instance), key=str):
             errors.append(f"{where}: {err.message}")
 
@@ -2077,7 +2373,7 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
         # content model — that is what x-parent means. "data" forbids all others
         # (the body is text in a notation), "items" also forbids loose text,
         # "none" forbids everything.
-        content = entry.get("x-content", "prose")
+        content = entry["x-content"]
         allowed = children_of.get(tag, set())
         stray = sorted({c for c in rec["children"] if c not in allowed})
         if content == "none" and (rec["children"] or rec["text"]):
@@ -2201,10 +2497,7 @@ def action_subjects(event: dict, byid: dict, now: dict, registry: dict) -> list:
     somewhere, which would let a literal like "approved" collide with an element
     that happens to be called that."""
     widget = event["widget"]
-    parts = [
-        v for v in event["detail"].values()
-        if isinstance(v, str) and widget in now.get(v, EMPTY).within
-    ]
+    parts = action_rests_on(event, now)[1:]
     leaves = [
         v for v in parts
         if registry.get(byid.get(v, {}).get("tag"), {}).get("x-content") != "items"
@@ -2532,15 +2825,12 @@ def structure_errors(parser: _StructParser) -> list:
     return errors
 
 
-def fragment_errors(html: str, registry: dict, known: list) -> list:
+def fragment_errors(parser: _StructParser, registry: dict, known: list) -> list:
     """Structural + registry validation of a markup fragment (a Claude reply
     carrying widgets): the discussion-side analog of `check`. The language check
     comes along because the schema stopped carrying the list: a reply's
     <cq-code lang=…> is colored by the same tokenizer a version's is, and nothing
     else would now refuse it a word that tokenizer doesn't know."""
-    parser = _StructParser()
-    parser.feed(html)
-    parser.close()
     return (
         structure_errors(parser)
         + widget_errors(parser.cq_elements, registry)
@@ -2552,10 +2842,11 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     versions = list_versions(page_dir)
     if not versions:
         sys.exit(f"no versions in {page_dir / 'versions'}; write versions/v1.html first")
-    name = version_file(page_dir, version) if version is not None else versions[-1]
-    if name is None:
+    selected = version if version is not None else versions[-1]
+    if selected not in versions:
         sys.exit(f"no v{version}.html in {page_dir / 'versions'}")
-    html = (page_dir / "versions" / name).read_text(encoding="utf-8")
+    name = version_name(selected)
+    html = version_path(page_dir, selected).read_text(encoding="utf-8")
 
     errors = []
 
@@ -2605,11 +2896,16 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
         errors.extend(widget_errors(parser.cq_elements, registry))
         errors.extend(
             language_errors(
-                parser.language_blocks, parser.cq_elements, registry, vendored_languages(page_dir)
+                parser.language_blocks,
+                parser.cq_elements,
+                registry,
+                registry["$languages"]["names"],
             )
         )
         for tag, entry in registry.items():
-            if entry.get("x-upgrade") and not (page_dir / "widgets" / f"{tag}.js").is_file():
+            if not tag.startswith("cq-"):
+                continue
+            if entry["x-upgrade"] and not (page_dir / "widgets" / f"{tag}.js").is_file():
                 errors.append(
                     f"registry marks <{tag}> as upgraded but widgets/{tag}.js "
                     f"isn't vendored — run `init`"
@@ -2631,13 +2927,14 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     # nothing decided, which is exactly what makes a `restated` on it an error
     # like any other unearned one.
     noted = {e["version"] for e in events if e["kind"] == "note"}
-    earlier = [v for v in versions if version_num(v) < version_num(name) and version_num(v) in noted]
+    earlier = [candidate for candidate in versions if candidate < selected and candidate in noted]
     prev, prev_num, was = _StructParser(), 0, {}
     prev.close()
     if earlier:
-        prev_name = earlier[-1]
-        prev_html = (page_dir / "versions" / prev_name).read_text(encoding="utf-8")
-        prev, prev_num = _StructParser(), version_num(prev_name)
+        prev_num = earlier[-1]
+        prev_name = version_name(prev_num)
+        prev_html = version_path(page_dir, prev_num).read_text(encoding="utf-8")
+        prev = _StructParser()
         prev.feed(prev_html)
         prev.close()
         was = spoken(prev_html, registry or {})
@@ -2662,7 +2959,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
 
     # Thread markup is frozen in the log and rendered into the panel; a page id
     # colliding with one would steal its action replays (see thread_widget_ids).
-    taken = sorted(parser.ids & thread_widget_ids(page_dir))
+    taken = sorted(parser.ids & thread_widget_ids(events))
     if taken:
         errors.append(f"ids already taken by widget markup in a reply: {taken}")
 
@@ -2695,7 +2992,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
         print(f"  · record behind the log — {line}")
     # Render only what passed the static half: an unparseable page would drown
     # the browser's report in consequences of what the lint already named.
-    return render_check(page_dir, name) if render else 0
+    return render_check(page_dir, selected) if render else 0
 
 
 # ---------- check --render: the browser half of the gate ----------
@@ -2793,14 +3090,14 @@ UNREACHABLE_WORDS = """() => {
 REPLAY_OVERRIDES = """async () => {
     const ids = (document.body.dataset.cqReplayWrote ?? '').split(' ').filter(Boolean);
     if (!ids.length) return [];
-    const name = location.pathname.split('/').pop();
+    const current = Number(location.pathname.match(/\\/versions\\/v([1-9]\\d*)\\.html$/)[1]);
     const versions = (await (await fetch('/api/state')).json()).versions;
-    const i = versions.indexOf(name);
+    const i = versions.indexOf(current);
     if (i <= 0) return [];
     const { shallowSigs } = await import('/colloquy.js');
     const sigs = async (v) => shallowSigs(new DOMParser().parseFromString(
-        await (await fetch('/versions/' + v)).text(), 'text/html').body);
-    const cur = await sigs(name), prev = await sigs(versions[i - 1]);
+        await (await fetch(`/versions/v${v}.html`)).text(), 'text/html').body);
+    const cur = await sigs(current), prev = await sigs(versions[i - 1]);
     const groups = new Map();
     for (const id of ids) {
         if ((cur.get(id) ?? '') === (prev.get(id) ?? '')) continue;
@@ -2950,16 +3247,14 @@ def render_version(browser, url: str) -> list:
     return [*in_scheme("light"), *in_scheme("dark")]
 
 
-def render_check(page_dir: Path, name: str) -> int:
+def render_check(page_dir: Path, version: int) -> int:
     """Serve the page directory to the machine's installed Chrome and run the
     render invariants on this version.
 
     Playwright is the gate's own extra, not the script's: declaring it in the
     PEP 723 header would put its wheel in every `serve`, `wait`, and `note`, so
     the import happens here and its absence names the invocation that supplies
-    it. Chrome being absent is different — the machine's fact, not the
-    command's, and the reviewer may well hold another browser — so the gate says
-    loudly that it couldn't look and lets the static result stand."""
+    it. Chrome is part of this gate: if it cannot launch, the gate fails."""
     try:
         from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import sync_playwright
@@ -2972,22 +3267,20 @@ def render_check(page_dir: Path, name: str) -> int:
             file=sys.stderr,
         )
         return 1
-    handler = type(
-        "PreviewHandler", (Handler,), {"page_dir": page_dir, "preview_upto": version_num(name)}
-    )
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    name = version_name(version)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler_for(page_dir, preview_upto=version))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     try:
         with sync_playwright() as p:
             try:
                 browser = p.chromium.launch(channel="chrome")
-            except PlaywrightError as e:
+            except PlaywrightError as error:
                 print(
-                    f"⚠ render check skipped — Chrome didn't launch ({str(e).strip().splitlines()[0]}). "
-                    "The static checks stand; the page goes out unrendered.",
+                    "✗ render check failed — Chrome did not launch: "
+                    + str(error).strip().splitlines()[0],
                     file=sys.stderr,
                 )
-                return 0
+                return 1
             try:
                 url = f"http://127.0.0.1:{httpd.server_address[1]}/versions/{name}"
                 failures = render_version(browser, url)
@@ -3021,20 +3314,13 @@ def cli() -> None:
 
 @cli.command()
 @click.argument("dir")
-@click.option(
-    "--retire-vocabulary",
-    is_flag=True,
-    help="re-vendor even though the log holds event kinds or verbs the incoming "
-    "layer no longer speaks; those events will never replay again",
-)
-def init(dir: str, retire_vocabulary: bool) -> None:
+def init(dir: str) -> None:
     """Create the page directory layout and vendor the widget layer into it.
 
     Re-running it is the explicit re-vendor for a live page; note the re-vendor
     in the next version's changelog. Refuses when the page's log was recorded in
-    a vocabulary the incoming layer no longer speaks (--retire-vocabulary
-    overrides, discarding those events' replay for good)."""
-    cmd_init(resolve_dir(dir, must_exist=False), retire_vocabulary)
+    a vocabulary the incoming layer no longer speaks."""
+    cmd_init(resolve_dir(dir, must_exist=False))
 
 
 @cli.command()
@@ -3068,7 +3354,12 @@ def status(dir: str, state: str, detail: str) -> None:
     # Idling over undelivered events ends the review on a reviewer still owed an
     # answer. Here rather than in cmd_status because SessionEnd idles pages whose
     # session is already gone, where nothing is left to pick them up.
-    pending = full_state(page_dir)["pending"] if state == "idle" else 0
+    events = read_events(page_dir)
+    pending = (
+        full_state(page_dir, events, published_versions(page_dir, events))["pending"]
+        if state == "idle"
+        else 0
+    )
     if pending:
         sys.exit(
             f"{pending} user event{'s' if pending != 1 else ''} nobody has picked up; "

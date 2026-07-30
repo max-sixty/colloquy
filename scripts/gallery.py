@@ -5,9 +5,6 @@ The gallery is derived content — edit the sibling examples and rerun this
 script (tests fail on a stale gallery). Each example's <main> body is embedded
 verbatim, so ids in the gallery are the ids in the sources; that requires the
 examples to keep their ids disjoint across files, which this script enforces.
-A cq-base meta is carried over when exactly one example declares one; two
-distinct declarations can't merge into a single page and abort instead.
-
 Usage: gallery.py  (no arguments; writes examples/gallery.html)
 """
 
@@ -37,7 +34,7 @@ HEAD = """\
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Colloquy examples gallery</title>
-{base}<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/theme.css">
 <script type="module" src="/colloquy.js"></script>
 </head>
 <body>
@@ -61,19 +58,16 @@ FOOT = """\
 
 
 class _Scan(HTMLParser):
-    """Collects element ids and the cq-base meta from one example."""
+    """Collect element ids from one example."""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.ids = []
-        self.base = None
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if attrs.get("id"):
             self.ids.append(attrs["id"])
-        if tag == "meta" and attrs.get("name") == "cq-base":
-            self.base = attrs.get("content")
 
 
 def build() -> str:
@@ -83,7 +77,7 @@ def build() -> str:
         sys.exit(f"examples/ and the TABS table disagree: {sorted(on_disk ^ in_table)}")
 
     owner = {"gallery": GALLERY.name, "gal-lede": GALLERY.name}
-    bases, tabs = {}, []
+    tabs = []
     for stem, label in TABS:
         source = EXAMPLES_DIR / f"{stem}.html"
         text = source.read_text(encoding="utf-8")
@@ -93,18 +87,12 @@ def build() -> str:
             if i in owner:
                 sys.exit(f"id '{i}' is in both {owner[i]} and {source.name}; rename one")
             owner[i] = source.name
-        if scan.base is not None:
-            bases[source.name] = scan.base
         if text.count("<main>") != 1 or text.count("</main>") != 1:
             sys.exit(f"{source.name}: expected exactly one <main>…</main>")
         body = text[text.index("<main>") + len("<main>") : text.rindex("</main>")].strip()
         tabs.append(f'<cq-tab id="gal-{stem}" label="{label}">\n{body}\n</cq-tab>\n')
 
-    if len(set(bases.values())) > 1:
-        sys.exit(f"conflicting cq-base metas, one page can carry only one: {bases}")
-    base = next(iter(bases.values()), None)
-    base_meta = f'<meta name="cq-base" content="{base}">\n' if base else ""
-    return HEAD.format(base=base_meta) + "\n" + "\n".join(tabs) + "\n" + FOOT
+    return HEAD + "\n" + "\n".join(tabs) + "\n" + FOOT
 
 
 def main() -> None:

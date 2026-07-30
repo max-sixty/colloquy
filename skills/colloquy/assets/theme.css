@@ -392,7 +392,6 @@ cq-column > [data-cq-said="label"] { display: block; font-size: var(--t-6);
             padding: 2px 4px 8px; }
 cq-column::before { content: attr(label); }
 cq-column:has(> [data-cq-said="label"])::before { content: none; }
-cq-column.cq-dropping { border-color: var(--accent); }
 cq-card { display: block; position: relative; background: var(--card);
           border: 1px solid var(--rule); border-radius: var(--r);
           padding: 8px 34px 8px 10px; margin: 0 0 var(--sp-2); font-size: 14px; }
@@ -505,10 +504,10 @@ cq-new { background: var(--add-tint); }
 /* Decided: the surviving slot is plain prose, the other one gone. */
 cq-suggestion[data-cq-state] > :is(cq-old, cq-new) {
   background: none; color: inherit; text-decoration: none; padding: 0; }
-cq-suggestion[data-cq-state="accepted"] > cq-old,
-cq-suggestion[data-cq-state="rejected"] > cq-new { display: none; }
-cq-suggestion[data-cq-state="accepted"]:not(:has(cq-new)),
-cq-suggestion[data-cq-state="rejected"]:not(:has(cq-old)) { display: none; }
+cq-suggestion[data-cq-state="accept"] > cq-old,
+cq-suggestion[data-cq-state="reject"] > cq-new { display: none; }
+cq-suggestion[data-cq-state="accept"]:not(:has(cq-new)),
+cq-suggestion[data-cq-state="reject"]:not(:has(cq-old)) { display: none; }
 /* The controls hang in the page margin: absolute against <main> for the
  * horizontal edge, and — inline-flex, so the box they would have occupied in
  * flow is inline-level — the line the change starts on for the vertical. A
@@ -595,7 +594,6 @@ cq-specimen cq-options[choose] > cq-option[chosen]:hover {
               box-shadow: 0 0 0 1px var(--ok); }
 
 /* Upgraded widgets: pre-upgrade presentation, so a page degrades readably. */
-cq-ref { font-family: var(--mono); font-size: 87%; }
 cq-diagram, cq-diff, cq-tree, cq-code { display: block; margin: 14px 0;
              white-space: pre; font-family: var(--mono); font-size: 12.5px;
              color: var(--muted); overflow-x: auto; }
@@ -619,7 +617,6 @@ cq-diff pre > span { display: block; padding: 0 12px; }
 cq-diff pre .add  { background: var(--add-tint); }
 cq-diff pre .del  { background: var(--del-tint); }
 cq-diff pre .hunk { color: var(--accent); background: var(--pre-bg); }
-cq-diff pre .meta { display: none; } /* the summary already names the file */
 cq-diff pre .note { color: var(--muted); } /* git's remark on the line above, not a line */
 
 /* cq-tree rendered form: nested lists with hairline guides and change badges. */

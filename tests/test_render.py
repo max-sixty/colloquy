@@ -370,10 +370,7 @@ def serve(tmp_path, monkeypatch):
             interact.append_event(d, {"kind": "comment", "author": "user", "version": 1,
                                       "text": "About this bit.",
                                       "anchor": {"section": section, "quote": quote}})
-        # A subclass per server: page_dir is a class attribute, so two servers sharing
-        # interact.Handler would both end up serving whichever directory was set last.
-        handler = type("Handler", (interact.Handler,), {"page_dir": d})
-        httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(d))
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         servers.append(httpd)
         go.page_dir = d  # for tests that publish a v2 or read the event log
@@ -385,7 +382,7 @@ def serve(tmp_path, monkeypatch):
         httpd.shutdown()
 
 
-def open_page(browser, url):
+def open_page(browser, url, *, init_script=None, wait_until="networkidle"):
     """A page with its console errors collected, settled enough for mermaid."""
     page = browser.new_page(viewport={"width": 1200, "height": 900}, color_scheme="light")
     errors = []
@@ -394,7 +391,9 @@ def open_page(browser, url):
     # The console's own word for a bad response is "Failed to load resource", which
     # names nothing; carry the status and URL so a failure says what went missing.
     page.on("response", lambda r: errors.append(f"{r.status} {r.url}") if r.status >= 400 else None)
-    page.goto(url, wait_until="networkidle")
+    if init_script:
+        page.add_init_script(init_script)
+    page.goto(url, wait_until=wait_until)
     page.wait_for_function("() => document.querySelector('.cq-banner') !== null")
     return page, errors
 
@@ -2562,13 +2561,13 @@ def test_a_selection_around_a_control_does_not_deaden_it(browser, serve):
     ), "the selection doesn't reach the control, so this run tests nothing"
 
     page.locator("#sug-in-card .cq-sug-reject").click()
-    expect(page.locator("#sug-in-card")).to_have_attribute("data-cq-state", "rejected")
+    expect(page.locator("#sug-in-card")).to_have_attribute("data-cq-state", "reject")
     assert page.evaluate("() => !getSelection().isCollapsed"), (
         "the press cleared the selection, so the keyboard half below is untested"
     )
     page.locator("#sug-thistle .cq-sug-accept").focus()
     page.keyboard.press("Enter")
-    expect(page.locator("#sug-thistle")).to_have_attribute("data-cq-state", "accepted")
+    expect(page.locator("#sug-thistle")).to_have_attribute("data-cq-state", "accept")
     assert errors == []
     page.close()
 
@@ -2878,7 +2877,7 @@ def test_every_language_returns_the_source_it_was_given(browser, serve):
     It is also what a version bump of the vendored bundle has to survive."""
     url = serve(CODE_PAGE)
     page, errors = open_page(browser, url)
-    langs = interact.vendored_languages(serve.page_dir)
+    langs = interact.load_registry(serve.page_dir)["$languages"]["names"]
     samples = [
         'def f(x):\n    """doc\n    <b>&amp;</b>\n    """\n    return f"{x!r}"  # ok\n',
         "# c\ncd x && ls -la | grep \"a b\" > /dev/null\n",
@@ -3023,11 +3022,10 @@ def test_a_diff_is_colored_by_each_files_own_path(browser, serve):
     # No extension the table names: plain, the way a cq-code with no `lang` is.
     assert all(l["roles"] == [] for l in by_path["deploy/Dockerfile"]), by_path["deploy/Dockerfile"]
 
-    # And every line still reads exactly as authored, sign column and all — colour adds
-    # no characters and moves none, which is what keeps the file's reading and the
-    # page's the same reading.
+    # Every displayed source line still reads exactly as authored, sign column and all.
+    # File headers are metadata already represented by the summary, so the widget drops
+    # them instead of leaving hidden text in the DOM for anchoring to find.
     assert [l["text"] for l in by_path["gateway/config.yaml"]] == [
-        "--- a/gateway/config.yaml\n", "+++ b/gateway/config.yaml\n",
         "@@ -4,6 +4,6 @@ ratelimit:\n",
         "-  burst: 20\n", "+  burst: 40\n", "   window: 60\n",
     ]
@@ -3563,11 +3561,11 @@ def test_one_neighbour_is_not_enough_to_move_a_comment(browser, serve):
 
 
 def test_the_picker_runs_in_number_order_past_v9(browser, serve):
-    """A version's number is its identity and its file name only renders it, so the
-    runtime parses the number back out of every name the server hands it. Order a
-    review by those names instead and v10 lands between v1 and v2: the picker reads
-    out of sequence, the diff offers the wrong base, and a reader on the newest
-    version is told a newer one is waiting."""
+    """A version stays an integer from the server through runtime state; only the
+    picker and URL boundary render its file name. Order a review by those names
+    instead and v10 lands between v1 and v2: the picker reads out of sequence,
+    the diff offers the wrong base, and a reader on the newest version is told a
+    newer one is waiting."""
     url = serve(INLINE_PAGE)
     for n in range(2, 11):
         _publish(serve.page_dir, n, INLINE_PAGE, f"cut {n}")
@@ -3924,6 +3922,57 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
     page.close()
 
 
+def test_a_foreign_edit_waits_for_a_live_draft_and_replays_in_order(browser, serve):
+    """Replay never replaces words while the reviewer is typing them.
+
+    Deferring one edit must also hold later edits for that draft: otherwise the
+    later absolute value lands first and the deferred earlier value overwrites it
+    when the box closes. An unrelated board move proves the poll saw the same
+    batch while the editor was open, without making the test depend on time.
+    """
+    page, errors = open_page(browser, serve(JOURNEY_V1))
+    draft = page.locator("#draft-ops")
+    draft.locator(".cq-draft-body").dblclick()
+    editor = draft.locator("textarea")
+    editor.fill("Local unsent words.")
+
+    d = serve.page_dir
+    for text in ("Foreign first edit.", "Foreign committed words."):
+        interact.append_event(
+            d,
+            {
+                "kind": "action",
+                "author": "user",
+                "version": 1,
+                "widget": "draft-ops",
+                "action": "edit",
+                "detail": {"text": text},
+            },
+        )
+    interact.append_event(
+        d,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "board",
+            "action": "move",
+            "detail": {"card": "card-x", "to": "col-done", "index": 0},
+        },
+    )
+
+    expect(page.locator("#col-done #card-x")).to_have_count(1, timeout=10000)
+    expect(editor).to_have_value("Local unsent words.")
+
+    page.keyboard.press("Escape")
+    expect(draft.locator(".cq-draft-body")).to_have_text(
+        "Foreign committed words.", timeout=10000
+    )
+    expect(page.locator("body")).to_have_attribute("data-cq-applied", "3")
+    assert errors == []
+    page.close()
+
+
 def test_a_decision_claude_has_seen_still_survives_the_next_version(browser, serve):
     """The round trip above, differing in one fact: `wait` has handed the actions
     to Claude before v2 publishes. That is the ordinary case — Claude writes a
@@ -4250,13 +4299,142 @@ def test_accepting_a_suggestion_resolves_its_thread_in_one_event(browser, serve)
     page.close()
 
 
+def test_chrome_is_safe_during_the_registry_fetch(browser, serve):
+    """The chrome is wired before the asynchronous registry fetch completes.
+    That interval is real state, not a missing-registry fallback: general
+    Comments remains usable, but an anchored comment waits until upgrades have
+    made the page's final words. The explicit gate proves each assertion runs on
+    the intended side of the fetch rather than racing a timer."""
+    gate_registry = """
+      const nativeFetch = window.fetch.bind(window);
+      window.cqRegistryGate = new Promise(resolve => window.cqReleaseRegistry = resolve);
+      window.fetch = (...args) => {
+        const input = args[0];
+        const url = typeof input === 'string' ? input : input.url;
+        if (new URL(url, location.href).pathname === '/registry.json') {
+          window.cqRegistryBlocked = true;
+          return window.cqRegistryGate.then(() => nativeFetch(...args));
+        }
+        return nativeFetch(...args);
+      };
+    """
+    html = JOURNEY_V1.replace(
+        '<h2 id="notes">',
+        """
+<cq-milestones>
+  <cq-milestone id="gate-milestone" status="active" tags="wood,solar">
+    <strong>Build feeders</strong> Two classic models.
+  </cq-milestone>
+</cq-milestones>
+<h2 id="notes">""",
+    )
+    page, errors = open_page(
+        browser,
+        serve(html, anchored=[("intro", SENTENCE)]),
+        init_script=gate_registry,
+        wait_until="domcontentloaded",
+    )
+    page.wait_for_function("() => window.cqRegistryBlocked === true")
+    expect(page.locator("#gate-milestone .cq-chips")).to_have_count(0)
+    expect(page.locator("#draft-ops .cq-draft-body")).to_have_count(0)
+
+    page.get_by_role("button", name=re.compile("^Comments")).click()
+    expect(page.locator(".cq-panel")).to_have_class(re.compile("open"))
+    page.locator(".cq-general textarea").fill("General comment during startup")
+    page.locator(".cq-general").get_by_role("button", name="Send").click()
+    expect(page.locator(".cq-thread")).to_have_count(2)
+    assert page.evaluate("() => CSS.highlights.get('cq-mark')?.size ?? 0") == 0
+
+    page.locator("#gate-milestone").select_text()
+    page.keyboard.press("c")
+    expect(page.locator(".cq-composer")).to_be_hidden()
+
+    page.evaluate("window.cqReleaseRegistry()")
+    expect(page.locator("#gate-milestone .cq-chips")).to_have_count(1)
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    expect(page.locator(".cq-fab")).to_be_visible()
+    page.locator(".cq-fab").click()
+    page.locator(".cq-composer textarea").fill("Still anchored?")
+    page.locator(".cq-composer").get_by_role("button", name="Comment").click()
+
+    expect(page.locator(".cq-thread")).to_have_count(3)
+    expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(0)
+    assert errors == []
+    page.close()
+
+
+def test_overlapping_polls_never_move_the_log_backwards(browser, serve):
+    """A post-triggered poll and the timer can overlap. The append-only event
+    sequence makes an older response unambiguously stale."""
+    delay_second_state = """
+      const nativeFetch = window.fetch.bind(window);
+      let stateCalls = 0;
+      window.fetch = async (...args) => {
+        const input = args[0];
+        const url = typeof input === 'string' ? input : input.url;
+        const response = await nativeFetch(...args);
+        if (new URL(url, location.href).pathname !== '/api/state') return response;
+        stateCalls += 1;
+        if (stateCalls !== 2) return response;
+        const body = await response.text();
+        window.cqDelayedPollCaptured = true;
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        window.cqDelayedPollReleased = true;
+        return new Response(body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
+      };
+    """
+    page, errors = open_page(
+        browser,
+        serve(JOURNEY_V1),
+        init_script=delay_second_state,
+    )
+    page.get_by_role("button", name=re.compile("^Comments")).click()
+    page.locator(".cq-general textarea").fill("Starts the slow poll")
+    page.locator(".cq-general button").click()
+    page.wait_for_function("() => window.cqDelayedPollCaptured === true")
+
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "comment",
+            "id": "newest-snapshot",
+            "author": "user",
+            "version": 1,
+            "text": "Newest snapshot stays rendered",
+        },
+    )
+    expect(page.locator(".cq-thread", has_text="Newest snapshot stays rendered")).to_have_count(
+        1, timeout=5000
+    )
+    page.wait_for_function("() => window.cqDelayedPollReleased === true")
+    expect(page.locator(".cq-thread", has_text="Newest snapshot stays rendered")).to_have_count(1)
+    assert errors == []
+    page.close()
+
+
 def test_the_help_overlay_answers_to_one_owner(browser, serve):
     """Open or closed is state with one writer now — it was three writers and
-    two classList read-backs, the exact shape the first norm forbids. Driven by
-    real keys and a real outside click, the gestures those writers served."""
-    page, errors = open_page(browser, serve(JOURNEY_V1))
+    two classList read-backs, the exact shape the first norm forbids. Exact
+    registrations deduplicate without making display text a lossy identity."""
+    html = JOURNEY_V1.replace(
+        "</main>",
+        '<cq-draft id="draft-second">A second editable draft.</cq-draft></main>',
+    )
+    page, errors = open_page(browser, serve(html))
+    page.evaluate(
+        """async () => {
+          const { keyHelp } = await import('/colloquy.js');
+          keyHelp('On a draft', [['F2', 'a project widget using the same heading']]);
+        }"""
+    )
     page.keyboard.press("?")
     expect(page.locator(".cq-help")).to_be_visible()
+    expect(page.locator(".cq-help h3", has_text="On a draft")).to_have_count(2)
+    expect(page.locator(".cq-help", has_text="a project widget using the same heading")).to_be_visible()
     page.keyboard.press("Escape")
     expect(page.locator(".cq-help")).to_be_hidden()
     page.keyboard.press("?")

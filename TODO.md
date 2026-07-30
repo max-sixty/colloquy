@@ -52,9 +52,6 @@ stands alone.
       two edges, or resolving the anchor in the browser at post time, which `comment`
       can't afford — it runs every round of the loop, and the browser is `check --render`'s
       once-per-page budget.
-- [ ] Plan-mode integration hardening: remove the auto-approve workaround in
-      `/colloquy-plans` and settle the default UX before promoting it from
-      experimental.
 - [ ] A comment on a repeated passage goes back to naming the first copy once the page is
       revised around it. Context places a comment only where the neighbours it stored are
       still there in full on both sides; anything less falls back to document order — right
@@ -143,11 +140,6 @@ stands alone.
       runtime's paint as disagreement — a list a future runtime-written attribute
       must join, or it starts seeing ghosts. One declaration beside the writers
       would give the list an owner.
-- [ ] An overlaid registry can name an `x-retired-when` the runtime's `DECIDED_VERB`
-      doesn't know, and the generated selector then matches nothing — a retired slot
-      silently quotable again. Unreachable in the shipped registry; the vendored-registry
-      loop in `cmd_check` already reports keys a page can't honor, and this one belongs
-      with them.
 - [ ] `@scope` can't contain `@keyframes` names, so `cq-pulse` and `cq-flash` stay
       document-global — the one pinhole in the chrome's scoping, live only if a widget
       both coins the name and animates with it.
@@ -197,11 +189,3 @@ stands alone.
       anyway to say how two entries differ. The reading half belongs on the runtime's
       helper surface rather than in `cq-draft`, because the second widget to want it
       would otherwise copy it.
-- [ ] `cq-diff` keeps text in the DOM that nothing on screen shows: the `---`/`+++`
-      headers render as `.meta` lines the theme sets to `display: none`, because the
-      summary already names the file. A reviewer cannot select them, but the paint
-      pass reads text nodes rather than boxes, so a quote matching one would anchor
-      to a mark nobody can see — the mirror image of the rule that everything the
-      page says can be pointed at. The fix is for the widget to drop the lines it
-      isn't showing rather than the theme to hide them, which is also one fewer
-      thing the anchor pass has to be right about by accident.

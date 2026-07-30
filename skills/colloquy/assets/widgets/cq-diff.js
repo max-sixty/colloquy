@@ -15,7 +15,7 @@
 import { failSoft, langForPath, once, settle, synNodes, syntax, tokenLines } from "/colloquy.js";
 
 // One entry per file: {path, adds, dels, lines: [{kind, text}]} where kind is
-// add | del | ctx | hunk | meta | note. Tolerates both `diff --git` and bare ---/+++
+// add | del | ctx | hunk | note. Tolerates both `diff --git` and bare ---/+++
 // file headers; anything before the first header fails the parse. A `--- ` line
 // counts as a header only when `+++ ` follows it — a *deleted* line whose
 // content starts with `-- ` (a SQL comment, say) renders as `--- …` too, and
@@ -39,7 +39,6 @@ function parseDiff(text) {
     if (line.startsWith("--- ") && lines[i + 1]?.startsWith("+++ ")) {
       // A bare ---/+++ pair opens a file unless `diff --git` already did.
       if (!file || file.lines.some((l) => l.kind === "hunk")) start("");
-      file.lines.push({ kind: "meta", text: line });
       expectPlus = true;
       continue;
     }
@@ -48,7 +47,6 @@ function parseDiff(text) {
       expectPlus = false;
       const path = line.slice(4).replace(/^b\//, "");
       if (!file.path && path !== "/dev/null") file.path = path;
-      file.lines.push({ kind: "meta", text: line });
     } else if (line.startsWith("@@")) {
       file.lines.push({ kind: "hunk", text: line });
     } else if (line.startsWith("+")) {
@@ -58,7 +56,7 @@ function parseDiff(text) {
       file.dels++;
       file.lines.push({ kind: "del", text: line });
     } else if (line.startsWith("index ") || line.startsWith("new file") || line.startsWith("deleted file") || line.startsWith("similarity ") || line.startsWith("rename ") || line.startsWith("Binary files ")) {
-      file.lines.push({ kind: "meta", text: line });
+      continue;
     } else if (line.startsWith("\\ ")) {
       // `\ No newline at end of file` — git remarking on the line above rather than
       // showing one of its own. Shown, because it is something the diff says, but its
@@ -105,7 +103,7 @@ async function colorHunks(file, lang) {
     // A hunk runs until the diff stops showing the file's lines. git's remark doesn't
     // stop it — the hunk carries on past a `\ No newline` — the remark just isn't one of
     // those lines, so it goes into neither side.
-    if (line.kind === "hunk" || line.kind === "meta") close();
+    if (line.kind === "hunk") close();
     else if (line.kind !== "note") hunk.push(i);
   });
   close();

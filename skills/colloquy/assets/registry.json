@@ -141,19 +141,6 @@
     "x-says": {"value": "before", "delta": "after"},
     "x-upgrade": false
   },
-  "cq-ref": {
-    "description": "An inline reference to a source location, rendered as a link. `src` is path or path:line. The link base is resolved once per page from <meta name=\"cq-base\" content=\"https://host/repo/blob/main/{path}#L{line}\">; without that meta the reference renders as plain code.",
-    "type": "object",
-    "properties": {
-      "id":  {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
-      "src": {"type": "string", "pattern": "^\\S+$"}
-    },
-    "required": ["src"],
-    "additionalProperties": false,
-    "x-content": "none",
-    "x-upgrade": true,
-    "x-example": "<p>The cutoff lives in <cq-ref src=\"jobs/backfill.py:88\"></cq-ref>.</p>"
-  },
   "cq-diff": {
     "description": "A unified diff rendered with per-file collapse, add/del tints, and per-file +/− counts. The body is data: the diff verbatim, at column 0 (context lines keep their leading space), with < and > escaped as &lt; and &gt;. Comments anchor to the required id. Takes no language: each file's own path is read for one ($languages), so keep the `diff --git` or ---/+++ headers rather than pasting bare hunks, and a path naming no language leaves that file plain.",
     "type": "object",
@@ -402,7 +389,7 @@
     }
   },
   "$events": {
-    "description": "The vocabulary stamp: the event kinds this layer's runtime and CLI read, and the fields each carries beyond id/ts/author/kind/seq. Vendored with the page, it is the one statement of what that page's runtime speaks — `note` refuses to write a shape the page's vendored copy doesn't declare (an old runtime drops unknown shapes silently), and `init` refuses to re-vendor over a log recorded in kinds or verbs (x-state, per widget) the incoming layer no longer speaks, because those events would never replay again. A registry with no $events predates the stamp and is read as exactly the pre-stamp vocabulary.",
+    "description": "The vocabulary stamp: the event kinds this layer's runtime and CLI read, and the fields each carries beyond id/ts/author/kind/seq. Vendored with the page, it is the one statement of what that page's runtime speaks. `init` refuses to re-vendor over a log recorded in kinds or verbs (x-state, per widget) the incoming layer no longer speaks, because those events would never replay again.",
     "kinds": {
       "comment": ["version", "text", "anchor", "suggestion"],
       "reply": ["parent", "version", "text"],
@@ -452,7 +439,7 @@
     },
     "details": {
       "description": "Evidence: a claim as the <summary>, its backing collapsed beneath. Native disclosure; find-in-page reaches the collapsed content.",
-      "example": "<details>\n  <summary>The parser drops the slash on self-closed custom tags</summary>\n  <pre><code>document.querySelector(\"cq-ref\").textContent\n// → \"rest of the paragraph\"</code></pre>\n</details>"
+      "example": "<details>\n  <summary>The parser drops the slash on self-closed custom tags</summary>\n  <pre><code>document.querySelector(\"cq-metric\").textContent\n// → \"rest of the paragraph\"</code></pre>\n</details>"
     },
     "pre > code.language-*": {
       "description": "A literal the reviewer can select and quote: a command to run, a config file, a snippet of output. Name the language to color it — one of $languages, the same list a widget's own language attribute is held to, and `check` refuses one outside it. Leave the class off where the body isn't source; nothing is guessed from the text. Reach for cq-code instead when the block is a walkthrough: numbered lines, highlighted ranges, remarks anchored at a line.",

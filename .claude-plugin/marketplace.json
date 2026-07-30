@@ -5,14 +5,14 @@
     "name": "max-sixty",
     "url": "https://github.com/max-sixty"
   },
-  "description": "colloquy, installable as a Claude Code plugin: review Claude's plans and findings as a commentable web page instead of terminal text.",
+  "description": "colloquy, installable as a Claude Code plugin: collaborate through a commentable HTML page for plans, findings, and work in progress.",
   "plugins": [
     {
       "name": "colloquy",
       "source": "./",
-      "description": "Review Claude's plans and findings like a document: Claude serves a commentable HTML page on localhost, you mark it up in the browser, and revised versions ship with changelogs.",
+      "description": "Collaborate with Claude in HTML: plans, findings, and work in progress arrive as a commentable page on localhost, you mark it up in the browser, and each revision ships with a changelog as the work moves.",
       "license": "MIT",
-      "keywords": ["plan-review", "review", "html", "annotation", "collaboration", "plan-mode"]
+      "keywords": ["plan-review", "review", "html", "annotation", "collaboration"]
     }
   ]
 }

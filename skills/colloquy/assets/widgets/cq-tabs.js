@@ -14,9 +14,6 @@
 import { once, keyHelp, offer, relabel, HIDDEN } from "/colloquy.js";
 
 const TAB_KEY = "cq-tabs:";
-// Registered on first upgrade, not at import: the "?" overlay should list tab
-// keys only where a tab strip is.
-let helpRegistered = false;
 
 customElements.define(
   "cq-tabs",
@@ -28,13 +25,10 @@ customElements.define(
       // Own panels only (a nested cq-tabs wires its own).
       const panels = [...this.querySelectorAll(":scope > cq-tab")];
       if (!panels.length) return;
-      if (!helpRegistered) {
-        helpRegistered = true;
-        keyHelp("On a tab", [
-          ["←/→", "previous / next tab"],
-          ["Home/End", "first / last tab"],
-        ]);
-      }
+      keyHelp("On a tab", [
+        ["←/→", "previous / next tab"],
+        ["Home/End", "first / last tab"],
+      ]);
       // The strip is a thing to work, and its tabs ride inside it, so paper drops the
       // whole row and puts each panel's label back on the panel. What a tab says is not
       // the strip's word though — it is the panel's name, and once the strip exists it

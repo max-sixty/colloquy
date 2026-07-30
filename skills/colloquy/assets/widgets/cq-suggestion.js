@@ -25,7 +25,7 @@
  * its whole width), where there isn't they dock into flow; and whether two rows
  * land on top of each other, which a translate nudges apart without touching
  * layout. */
-import { DECIDED_VERB, offer, once, quoted, says, sendAction, toast } from "/colloquy.js";
+import { offer, once, quoted, says, sendAction, toast } from "/colloquy.js";
 
 // Every row on the page, so one observer serves all of them.
 const rows = new Set();
@@ -167,7 +167,7 @@ customElements.define(
     }
 
     #settle(outcome) {
-      if (outcome) this.dataset.cqState = DECIDED_VERB[outcome];
+      if (outcome) this.dataset.cqState = outcome;
       else delete this.dataset.cqState;
       if (this.#row) this.#row.hidden = Boolean(outcome); // a quoted one grew none
       schedule(); // one row fewer: the rows below it may no longer need a nudge

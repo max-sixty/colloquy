@@ -4,11 +4,12 @@
 > say soon.
 
 A Claude Code plugin for collaborating with your agent in HTML: Claude presents plans,
-write-ups, and work in flight as a web page rather than a wall of terminal text. Select any line to comment on it like a shared doc;
-your comment wakes the session, and Claude ships a revised version. It comments back the
-same way — in the margin, on the passage in question, rather than in the terminal. A page
-tracking work in progress keeps up with it: items go from planned to done as Claude works
-through them, and the browser follows each new version on its own.
+write-ups, and work in flight as a web page rather than a wall of terminal text. Select
+any line to comment on it like a shared doc; your comment wakes the session, and Claude
+ships a revised version. It comments back the same way — in the margin, on the passage
+in question, rather than in the terminal. A page tracking work in progress keeps up with
+it: items go from planned to done as Claude works through them, and the browser follows
+each new version on its own.
 
 ![colloquy demo](docs/demo.gif)
 
@@ -31,13 +32,6 @@ PATH too, which is how Claude drives a page.
 
 Then ask Claude for a page, or run `/colloquy [topic]`, which with no argument presents
 whatever the session is currently about.
-
-## Experimental: plan-mode integration
-
-`/colloquy-plans on` redirects Claude's plan mode into a colloquy page: instead of
-approving a plan in the terminal, you review it in the browser. It's off by default and
-global. This one is a prototype (it auto-approves the plan-mode exit so the page can be
-built), so try it deliberately. `/colloquy-plans off` restores normal plan mode.
 
 ## Examples
 
@@ -66,9 +60,9 @@ anchored) and pins the event log it leaves. `test_product_page.py` holds the pag
 `docs/` to the shipped theme and widget registry. Playwright attaches to the Chrome
 already installed (`channel="chrome"`), so there is no browser download and still no
 build step. Driving a page by hand to check a change works the same way: `init` the
-directory, then serve it from `interact.Handler` in-process as the fixtures do. `serve`
-instead puts a live review behind the session, and the review-loop hooks then hold it to
-watching that page.
+directory, then serve it from `interact.handler_for(page_dir)` in-process as the fixtures
+do. `serve` instead puts a live review behind the session, and the review-loop hooks then
+hold it to watching that page.
 
 ```
 uv run --with pytest --with click --with jsonschema --with tinycss2 --with playwright python -m pytest tests

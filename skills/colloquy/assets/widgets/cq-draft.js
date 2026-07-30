@@ -55,10 +55,6 @@
  */
 import { once, offer, quoted, sendAction, toast, keyHelp, saveDraft, loadDraft } from "/colloquy.js";
 
-// Registered on first upgrade, not at import: the "?" overlay should list edit
-// keys only where a draft is.
-let helpRegistered = false;
-
 // The store key for a draft's unsent edit. The page's port is its own origin, so
 // the id alone is unambiguous — the same scoping every composer draft relies on.
 const ctx = (id) => "edit:" + id;
@@ -105,7 +101,6 @@ customElements.define(
 
     connectedCallback() {
       if (!once(this)) return;
-      this.classList.add("cq-rendered"); // the upgraded marker every widget uses
 
       const raw = capture(this);
       this.textContent = "";
@@ -120,14 +115,11 @@ customElements.define(
       // gates the action channel, not presentation.
       if (quoted(this)) return;
 
-      if (!helpRegistered) {
-        helpRegistered = true;
-        keyHelp("On a draft", [
-          ["dblclick or ✎", "edit the text in place"],
-          ["⌘/Ctrl+Enter", "save the edit"],
-          ["Esc", "cancel the edit"],
-        ]);
-      }
+      keyHelp("On a draft", [
+        ["dblclick or ✎", "edit the text in place"],
+        ["⌘/Ctrl+Enter", "save the edit"],
+        ["Esc", "cancel the edit"],
+      ]);
 
       this.#pencil = this.#button("✎", () => this.#open());
       this.#pencil.classList.add("cq-draft-pencil");
@@ -225,7 +217,7 @@ customElements.define(
     // the authored text and marks data-cq-pending for every widget alike.
     applyAction(action, detail) {
       if (action !== "edit" || typeof detail?.text !== "string") return;
-      if (this.#ta) return; // never yank the words out from under a live edit
+      if (this.#ta) return false; // defer rather than yank words out from under a live edit
       this.#body.textContent = detail.text;
     }
   },

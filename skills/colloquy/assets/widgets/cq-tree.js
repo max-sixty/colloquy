@@ -32,7 +32,7 @@ function listNode(nodes) {
   for (const node of nodes) {
     const li = document.createElement("li");
     const name = document.createElement("span");
-    name.className = node.dir || node.children.length ? "cq-tree-dir" : "cq-tree-file";
+    if (node.dir || node.children.length) name.className = "cq-tree-dir";
     name.textContent = node.name + (node.dir || node.children.length ? "/" : "");
     li.append(name);
     for (const badge of node.badges)

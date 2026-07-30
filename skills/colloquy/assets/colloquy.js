@@ -6,10 +6,8 @@
  * renders them. It also renders the attributes the registry marks x-says as real text
  * (renderSaid), for every widget alike: a word the page says has to be a word the
  * reviewer can select. Upgrades flush before the first anchor pass, so comment quotes
- * always search the enhanced DOM. Widget modules import the helper surface exported here
- * (`once`, `failSoft`, `settle`, `refUrl`, `sendAction`, `quoted`, `offer`, `relabel`,
- * `says`, `toast`, `announce`, `keyHelp`, `pageScroller`, `HIDDEN`, `REDUCED`, `SCROLL`,
- * `DECIDED_VERB`); it stays minimal until a real widget needs more.
+ * always search the enhanced DOM. Widget modules import only the small helper surface
+ * they need from here.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
  * through it as an `action` event — sendAction posts it, `wait` delivers it. The live
@@ -238,11 +236,9 @@ export function tokenLines(tokens) {
 // each file's path is the diff's own statement about what it is. Still a declaration —
 // the rule that nothing is inferred is about source *text*, which no path is. The table
 // is the registry's ($languages), beside the enum it has to agree with, rather than a
-// second list here. Asked of the table optionally, because a user or project overlay
-// replaces registry.json wholesale (see init) and one written before $languages is a
-// registry that simply names no languages — the same way a stampless one names no events.
+// second list here.
 export const langForPath = (path) =>
-  registry?.$languages?.paths?.[path.split("/").pop().split(".").slice(1).pop()?.toLowerCase()];
+  registry.$languages.paths[path.split("/").pop().split(".").slice(1).pop()?.toLowerCase()];
 
 // The page's own code blocks: <pre><code class="language-python">. The class is the
 // universal one — what every Markdown renderer emits, and what `check` validates — so a
@@ -267,17 +263,6 @@ async function highlightBlocks(root) {
       console.error(`colloquy: <pre><code class="language-${lang}"> failed to highlight`, err);
     }
   }
-}
-
-// Reference base, resolved from the page's own declaration:
-//   <meta name="cq-base" content="https://host/repo/blob/main/{path}#L{line}">
-// Returns null when the page declares none — the reference then renders as plain code.
-export function refUrl(path, line) {
-  const template = document.querySelector('meta[name="cq-base"]')?.content;
-  if (!template) return null;
-  let url = template.replaceAll("{path}", path).replaceAll("{line}", line ?? "");
-  if (!line) url = url.replace(/#[^#]*$/, ""); // the fragment is line-shaped; lineless refs drop it
-  return url;
 }
 
 // The theme's reduced-motion guard covers CSS animation and transitions; motion
@@ -420,15 +405,6 @@ export function sendAction(el, action, detail) {
   return post({ kind: "action", version: VNUM, widget: el.id, action, detail });
 }
 
-// A decision is a verb everywhere it travels — the action a widget sends, the outcome
-// the registry's x-retired-when names — and the element it settled wears the past
-// participle, which the theme's rules, the anchor pass's skip list, and the widget
-// writing the attribute all match on. One table for the crossing, spelled out rather
-// than suffixed: the -ed is English and not a rule, and a string three places each
-// arrive at alone is one they can drift apart on. interact.py's DECIDED_VERB is the
-// same map, for the prose of a refusal.
-export const DECIDED_VERB = { accept: "accepted", reject: "rejected" };
-
 // Transient confirmation ("Moved to Doing — sent to Claude"), styled and placed by
 // the comment layer. Announced too: toast routes through the live region.
 export function toast(msg) {
@@ -444,9 +420,10 @@ export function announce(msg) {
 
 // Rows for the "?" overlay. A widget with focus-scoped keys declares them beside
 // the code implementing them: keyHelp("On a card grip", [["Enter", "grab"], …]).
-const helpSections = [];
+const helpSections = new Map();
 export function keyHelp(title, rows) {
-  helpSections.push({ title, rows });
+  const key = JSON.stringify([title, rows]);
+  helpSections.set(key, { title, rows });
 }
 
 // How a widget collapses content it may need to show again (cq-tabs' inactive
@@ -471,26 +448,28 @@ function reveal(el) {
 }
 
 // The vocabulary, vendored per page: which tags a module upgrades, and which of their
-// attributes are words the page says (see renderSaid).
-let registry = null;
+// attributes are words the page says (see renderSaid). Empty only during the real
+// fetch interval, when the already-wired chrome can legitimately be used; a failed
+// fetch still rejects startup rather than becoming an empty vocabulary.
+let registry = {};
+let anchoringReady = false;
 
 // Which widgets answer a question the way the caller means it, read from what they
 // declare. Nothing out here names a widget: a behaviour some widgets want is an x- key
 // they carry, so the twelfth widget is covered by its entry alone — the alternative
 // keeps working perfectly on the widget it was taught and silently does nothing for the
-// next one. Read per call, like retiredSlots(): before the registry lands nothing has
-// upgraded, and the empty answer is the right one.
+// next one.
 const tagsDeclaring = (holds) =>
-  Object.entries(registry ?? {})
+  Object.entries(registry)
     .filter(([tag, entry]) => tag.startsWith("cq-") && holds(entry))
     .map(([tag]) => tag);
 
 async function upgradeWidgets() {
-  try {
-    registry = await (await fetch("/registry.json")).json();
-  } catch {
-    return; // no vendored registry — nothing upgrades, and nothing to color code from
-  }
+  const response = await fetch("/registry.json");
+  if (!response.ok) throw new Error(`colloquy: registry failed to load (${response.status})`);
+  registry = await response.json();
+  if (!registry.$events?.kinds || !registry.$languages?.names || !registry.$languages?.paths)
+    throw new Error("colloquy: registry lacks $events or $languages");
   await Promise.all(
     Object.entries(registry)
       .filter(([tag, entry]) => tag.startsWith("cq-") && entry["x-upgrade"])
@@ -538,9 +517,7 @@ async function upgradeWidgets() {
 // theme, whose every rule names the attribute it styles rather than matching the bare
 // marker.
 function renderSaid(root) {
-  // ?? {}: a reply's widgets reach here on a page with no vendored registry too, where
-  // nothing upgrades and the theme's pseudo-elements are doing the rendering.
-  for (const [tag, entry] of Object.entries(registry ?? {})) {
+  for (const [tag, entry] of Object.entries(registry)) {
     if (!entry["x-says"]) continue;
     for (const el of root.querySelectorAll(tag))
       for (const [attr, edge] of Object.entries(entry["x-says"])) {
@@ -557,7 +534,7 @@ function renderSaid(root) {
 
 // ---------- comment layer ----------
 
-const VERSION_MATCH = location.pathname.match(/\/versions\/v(\d+)\.html$/);
+const VERSION_MATCH = location.pathname.match(/\/versions\/v([1-9]\d*)\.html$/);
 const VNUM = VERSION_MATCH ? parseInt(VERSION_MATCH[1], 10) : null;
 const PINNED = new URLSearchParams(location.search).has("pin");
 // Sign-off is the page's ask, not standing chrome: the approve button exists only
@@ -830,10 +807,10 @@ document.body.style.paddingTop = basePaddingTop + 42 + "px";
 
 // ---------- state ----------
 let events = [];
-let lastEventsKey = "";
+let lastEventSeq = -1;
 let lastVersionsKey = "";
-let latestName = "";
-let versionNames = []; // the server's version list; versionSelect renders it
+let latestVersion = null;
+let versions = [];
 let claudeMsgCount = -1;
 let panelOpen = false;
 let pendingAnchor = null;
@@ -990,22 +967,16 @@ const ago = (ts) => {
 };
 
 // ---------- threads ----------
-const byId = () => new Map(events.map((e) => [e.id, e]));
-// A parent names a comment or a reply — the server holds both writers to it — so
-// climbing from either lands on the comment that roots the thread.
-function rootOf(event, index) {
-  let cur = event;
-  while (cur.kind !== "comment") cur = index.get(cur.parent);
-  return cur;
-}
 function buildThreads() {
-  const index = byId();
   const threads = new Map();
+  const threadFor = new Map();
   for (const e of events) {
-    if (e.kind === "comment")
-      threads.set(e.id, { root: e, msgs: [e], resolved: false });
-  }
-  for (const e of events) {
+    if (e.kind === "comment") {
+      const thread = { root: e, msgs: [e], resolved: false };
+      threads.set(e.id, thread);
+      threadFor.set(e.id, thread);
+      continue;
+    }
     // An accept snapshots the thread its suggestion answered into the action
     // (the honoring version retires the wrapper that held the mapping, and one
     // atomic event can't half-arrive the way a second POST could).
@@ -1014,10 +985,13 @@ function buildThreads() {
       if (answered) answered.resolved = true;
       continue;
     }
-    if (e.kind !== "reply" && e.kind !== "resolve") continue;
-    const thread = threads.get(rootOf(e, index).id);
-    if (e.kind === "reply") thread.msgs.push(e);
-    if (e.kind === "resolve") thread.resolved = true;
+    if (e.kind === "reply") {
+      const thread = threadFor.get(e.parent);
+      thread.msgs.push(e);
+      threadFor.set(e.id, thread);
+    } else if (e.kind === "resolve") {
+      threadFor.get(e.parent).resolved = true;
+    }
   }
   return [...threads.values()];
 }
@@ -1188,17 +1162,13 @@ function renderPanel() {
 //
 // Which slots retire is the registry's to say, so this and interact.py's reading of the
 // same page follow one declaration: x-retired-when names the decision that removes the
-// element, x-parent the wrapper the decision is recorded on. Read per call rather than
-// built once when the registry lands, which leaves that async arrival nothing to get
-// wrong — before it, nothing has upgraded and so no element carries a decision, and the
-// bare list is already the whole answer. On a page that vendored no registry it stays
-// the whole answer, since nothing there ever upgrades.
+// element, x-parent the wrapper the decision is recorded on.
 const retiredSlots = () =>
-  Object.entries(registry ?? {})
+  Object.entries(registry)
     .filter(([, entry]) => entry["x-retired-when"])
     .map(
       ([tag, entry]) =>
-        `${entry["x-parent"]}[data-cq-state="${DECIDED_VERB[entry["x-retired-when"]]}"] > ${tag}`,
+        `${entry["x-parent"]}[data-cq-state="${entry["x-retired-when"]}"] > ${tag}`,
     )
     .join(", ");
 // What no label can speak through, however it is marked: an inline script, the
@@ -1639,6 +1609,7 @@ function noteMarks(noted) {
 }
 
 function paintAnchors() {
+  if (!anchoringReady) return;
   for (const where of allMarks())
     if (where instanceof Element) where.classList.remove("cq-mark-el");
   pendingOutline?.classList.remove("cq-mark-el", PENDING);
@@ -1920,12 +1891,17 @@ const pageSelection = () => {
 // for an element anchor, so the selection's absence takes down only a quote, and the
 // queued re-decide lands on the same outcome.
 function updateFab(visual) {
+  if (!anchoringReady) {
+    showFab(null);
+    return false;
+  }
   const sel = pageSelection();
   const anchor = sel ? selectionAnchor(sel) : null;
   if (anchor?.quote.length >= MIN_QUOTE)
     showFab(anchor, ...beside(sel.getRangeAt(0).getBoundingClientRect()));
   else if (visual) showFab({ section: visual.id }, visual.x + 6, visual.y - 40);
   else if (fabAnchor?.quote) showFab(null);
+  return true;
 }
 // Where the pointer stopped is not the question; where the selection is, is. The guard
 // exists so a mouseup inside the runtime's layer — a click in the panel, the composer —
@@ -2169,6 +2145,7 @@ function escapeKey() {
 // floating button does), an element click's pending 💬 gets that, and otherwise
 // the panel toggles — focusing the general box on open.
 function commentKey() {
+  if (!anchoringReady && pageSelection()) return;
   updateFab(); // the selection may be newer than the mouseup that last placed the button
   if (fabAnchor) return fab.onclick();
   if (panelOpen) return setPanel(false);
@@ -2206,8 +2183,8 @@ threadsBox.addEventListener("keydown", (ev) => {
 
 // [ and ] step versions with the picker's own pin semantics.
 function stepVersion(dir) {
-  const at = versionNames.findIndex((name) => vnum(name) === VNUM);
-  const next = at === -1 ? null : versionNames[at + dir];
+  const at = versions.indexOf(VNUM);
+  const next = at === -1 ? null : versions[at + dir];
   if (next) goVersion(next);
 }
 
@@ -2234,8 +2211,8 @@ function showHelp(open) {
       return t;
     };
     helpEl.append(table(KEYS.filter((b) => b.does).map((b) => [b.label, b.does])));
-    for (const section of helpSections)
-      helpEl.append(el("h3", "", section.title), table(section.rows));
+    for (const { title, rows } of helpSections.values())
+      helpEl.append(el("h3", "", title), table(rows));
   }
   helpEl.classList.toggle("open", open);
   if (open) helpEl.focus({ preventScroll: true });
@@ -2303,7 +2280,7 @@ const diffOpaqueSel = () =>
     ...new Set(tagsDeclaring((e) => e["x-retired-when"]).map((tag) => registry[tag]["x-parent"])),
     "svg",
   ].join(",");
-let diffBase = ""; // previous version's file name, set by renderVersions
+let diffBase = null;
 let diffOn = false;
 const diffMarked = [];
 // A block's key is its *authored* text, read the same way a quote is — including the
@@ -2328,7 +2305,8 @@ function diffBlocks(root) {
   }
   return pairs;
 }
-async function applyDiff(baseName) {
+async function applyDiff(baseVersion) {
+  const baseName = `v${baseVersion}.html`;
   const res = await fetch(`/versions/${baseName}`);
   if (!res.ok) throw new Error(`couldn't load ${baseName}`);
   const doc = new DOMParser().parseFromString(await res.text(), "text/html");
@@ -2349,8 +2327,7 @@ async function applyDiff(baseName) {
   // own. Compare declared facets instead: the base version's state (its markup
   // plus the fold as of it) against the live DOM, which already wears the
   // current fold. Body facets are words and the block keys above own them.
-  const baseNum = vnum(baseName);
-  const baseFold = stateFold(baseNum);
+  const baseFold = stateFold(baseVersion);
   for (const [tag, spec] of stateSpecs()) {
     if (!spec.record || spec.record.kind === "body") continue;
     for (const widget of document.body.querySelectorAll(tag)) {
@@ -2401,7 +2378,7 @@ diffBtn.onclick = async () => {
   try {
     const n = await applyDiff(diffBase);
     setDiff(true);
-    const baseLabel = `v${vnum(diffBase)}`;
+    const baseLabel = `v${diffBase}`;
     showToast(n ? `${n} changed passage${n === 1 ? "" : "s"} since ${baseLabel}` : `No text changes since ${baseLabel}`);
   } catch {
     showToast("Couldn't load the previous version");
@@ -2474,55 +2451,50 @@ function renderStatus(state) {
     );
 }
 
-// A version's number is its identity; its file name only renders it. So every
-// question about which version something is — is this the newest, where does it
-// sit in the list, what does the button call it — parses the number out rather
-// than rebuilding a name to match against the server's list.
-const vnum = (name) => parseInt(name.match(/^v(\d+)\.html$/)[1], 10);
 // Navigate to a version with the pin semantics every chooser shares: an older
 // version pins the view, the newest unpins it.
-const goVersion = (name) => {
-  location.href = name === latestName ? `/versions/${name}` : `/versions/${name}?pin`;
+const goVersion = (version) => {
+  const path = `/versions/v${version}.html`;
+  location.href = version === latestVersion ? path : `${path}?pin`;
 };
 function renderVersions(state) {
-  versionNames = state.versions;
+  versions = state.versions;
   const notes = {};
   for (const e of events) if (e.kind === "note") notes[e.version] = e.text;
   const key = JSON.stringify([state.versions, notes]);
-  const current = state.versions.find((name) => vnum(name) === VNUM);
+  const current = state.versions.includes(VNUM) ? VNUM : null;
   if (key !== lastVersionsKey) {
     lastVersionsKey = key;
     versionSelect.textContent = "";
-    for (const name of state.versions) {
-      const n = vnum(name);
+    for (const version of state.versions) {
       const opt = document.createElement("option");
-      opt.value = name;
-      const isLatest = name === state.versions.at(-1);
-      opt.textContent = `v${n}${isLatest ? " (latest)" : ""}${notes[n] ? " · " + notes[n] : ""}`;
+      opt.value = version;
+      const isLatest = version === state.versions.at(-1);
+      opt.textContent = `v${version}${isLatest ? " (latest)" : ""}${
+        notes[version] ? " · " + notes[version] : ""
+      }`;
       versionSelect.append(opt);
     }
     versionSelect.value = current ?? "";
   }
-  versionNames = state.versions;
-  latestName = state.versions.at(-1) || "";
-  const behind = latestName && VNUM !== null && vnum(latestName) !== VNUM;
+  latestVersion = state.versions.at(-1) ?? null;
+  const behind = latestVersion !== null && VNUM !== null && latestVersion !== VNUM;
   // Follow the newest version unless pinned or the user is mid-composition:
   // drafts survive navigation, but an open composer or a live selection
   // doesn't. While deferred, the chip shows instead.
   if (behind && !PINNED && !midComposition()) {
-    location.replace(`/versions/${latestName}`);
+    location.replace(`/versions/v${latestVersion}.html`);
     return;
   }
   latestChip.style.display = behind ? "" : "none";
   if (behind)
-    latestChip.textContent = `New version available → open v${vnum(latestName)}`;
-  const idx = current ? state.versions.indexOf(current) : -1;
-  diffBase = idx > 0 ? state.versions[idx - 1] : "";
+    latestChip.textContent = `New version available → open v${latestVersion}`;
+  const idx = current === null ? -1 : state.versions.indexOf(current);
+  diffBase = idx > 0 ? state.versions[idx - 1] : null;
   diffBtn.style.display = diffBase ? "" : "none";
   if (diffBase) {
-    const n = vnum(diffBase);
-    diffBtn.textContent = `Δ v${n}`;
-    diffBtn.title = `Highlight what changed since v${n}`;
+    diffBtn.textContent = `Δ v${diffBase}`;
+    diffBtn.title = `Highlight what changed since v${diffBase}`;
   }
 }
 // A live widget gesture (.cq-dragging) counts: navigating mid-drag would unload
@@ -2532,7 +2504,7 @@ const midComposition = () =>
   Boolean(fabAnchor) ||
   Boolean(document.querySelector(".cq-dragging")) ||
   (document.activeElement?.tagName === "TEXTAREA" && document.activeElement.value !== "");
-versionSelect.onchange = () => goVersion(versionSelect.value);
+versionSelect.onchange = () => goVersion(Number(versionSelect.value));
 latestChip.onclick = () => (location.href = "/");
 
 // ---------- polling ----------
@@ -2553,7 +2525,6 @@ latestChip.onclick = () => (location.href = "/");
 // Claude did with an action, and saying it is `check`'s business now
 // (restatement_errors), not something inferred here from silence.
 const appliedActions = new Set();
-const lastActionByWidget = new Map();
 // What an action rests on: the widget that sent it, and the parts of that widget
 // its detail names — a `move` rests on its card as much as on the board. Either
 // can be taken back, which is what lets a rewritten card drop its own moves while
@@ -2614,22 +2585,27 @@ function applyActions() {
     ? shallowSigs(document.body)
     : null;
   let applied = false;
+  const deferredWidgets = new Set();
   for (const e of events) {
-    if (e.kind !== "action" || appliedActions.has(e.seq)) continue;
-    // Every action is decided here and never looked at again. This pass runs after
-    // the panel has rendered the log, so every widget that will ever exist is on the
-    // page: one that isn't is one no version can carry — an honored suggestion, whose
-    // markup and id the honoring version replaced. Retrying instead meant looking a
-    // vanished element up every two seconds for as long as the page stayed open.
-    appliedActions.add(e.seq);
+    if (e.kind !== "action" || appliedActions.has(e.seq) || deferredWidgets.has(e.widget))
+      continue;
     const el = document.getElementById(e.widget);
-    if (!el?.applyAction) continue;
+    // Every terminal action is decided here and never looked at again. This pass runs
+    // after the panel has rendered the log, so a widget that isn't here is one no
+    // version can carry — an honored suggestion, whose wrapper the version replaced.
+    if (!el?.applyAction) {
+      appliedActions.add(e.seq);
+      continue;
+    }
     // A pinned older version is a historical view, so it shows what the reviewer
     // had done by then and not what they did later. A widget inside the comment
-    // layer (a reply's inline question) has no version at all: its markup is
-    // frozen in the log, and no version can rewrite or retract it.
+    // layer (.cq-chrome — a reply's inline question) has no version at all: its markup
+    // is frozen in the log, and no version can rewrite or retract it.
     if (!inChrome(el)) {
-      if (e.version > VNUM) continue;
+      if (e.version > VNUM) {
+        appliedActions.add(e.seq);
+        continue;
+      }
       const gone = restsOn(e, el).filter((id) => (takenBack.get(id) ?? 0) > e.version);
       if (gone.length) {
         // Say so on the page: a decision undone looks exactly like one never
@@ -2638,16 +2614,17 @@ function applyActions() {
           const target = document.getElementById(id);
           if (target) target.dataset.cqRestated = "1";
         }
+        appliedActions.add(e.seq);
         continue;
       }
     }
-    // A foreign action older than one this tab already applied to the widget
-    // would yank it backwards — skip it. Two tabs editing one widget in the same
-    // poll window can diverge until either reloads and replays the log in seq
-    // order; the log stays canonical either way.
-    if (e.seq < (lastActionByWidget.get(e.widget) ?? 0)) continue;
-    lastActionByWidget.set(e.widget, e.seq);
-    el.applyAction(e.action, e.detail);
+    // A widget may briefly own live local input. `false` asks replay to leave this
+    // action and later actions for the same widget in order for the next poll.
+    if (el.applyAction(e.action, e.detail) === false) {
+      deferredWidgets.add(e.widget);
+      continue;
+    }
+    appliedActions.add(e.seq);
     applied = true;
   }
   if (applied) {
@@ -2655,9 +2632,11 @@ function applyActions() {
     // What the batch wrote — the ids whose shallow state its calls changed —
     // recorded on the body, where check --render reads it. A no-op says the
     // markup already held the state; only a page widget can contradict its
-    // version, so a reply's widget (no version at all) goes unrecorded.
+    // version, so a reply's widget (.cq-chrome, no version) goes unrecorded.
     const wrote = [...new Set([...before.keys(), ...now.keys()])].filter(
-      (id) => before.get(id) !== now.get(id) && !inChrome(document.getElementById(id)),
+      (id) =>
+        before.get(id) !== now.get(id) &&
+        !inChrome(document.getElementById(id)),
     );
     if (wrote.length) {
       const prior = document.body.dataset.cqReplayWrote?.split(" ") ?? [];
@@ -2688,7 +2667,7 @@ const authoredFacets = new Map(); // unit id -> the facet this version arrived s
 
 function stateSpecs() {
   const specs = [];
-  for (const [tag, entry] of Object.entries(registry ?? {}))
+  for (const [tag, entry] of Object.entries(registry))
     for (const spec of Object.values(entry["x-state"] ?? {})) specs.push([tag, spec]);
   return specs;
 }
@@ -2739,7 +2718,7 @@ function stateFold(upto) {
     if (e.kind !== "action" || e.version > upto) continue;
     const el = document.getElementById(e.widget);
     if (!el?.applyAction || inChrome(el)) continue;
-    const spec = registry?.[el.tagName.toLowerCase()]?.["x-state"]?.[e.action];
+    const spec = registry[el.tagName.toLowerCase()]?.["x-state"]?.[e.action];
     if (!spec) continue;
     if (restsOn(e, el).some((id) => (floors.get(id) ?? 0) > e.version)) continue;
     const unit = spec.unit === "widget" || !spec.unit ? e.widget : e.detail[spec.unit];
@@ -2774,12 +2753,17 @@ async function poll() {
     renderStatus(null);
     return;
   }
-  events = state.events;
+  const nextEvents = state.events;
+  const eventSeq = nextEvents.at(-1)?.seq ?? 0;
+  // post() and the timer can poll together. The log is append-only, so a response
+  // behind one already rendered is unambiguously stale; accepting it would move
+  // every event-derived view backwards until the next poll.
+  if (eventSeq < lastEventSeq) return;
+  events = nextEvents;
   renderStatus(state);
   renderVersions(state);
-  const key = JSON.stringify(events);
-  if (key !== lastEventsKey) {
-    lastEventsKey = key;
+  if (eventSeq > lastEventSeq) {
+    lastEventSeq = eventSeq;
     // prune only here, where events is the server's truth — never from renderThreads,
     // which also runs with an empty events array (pre-first-poll, server offline)
     pruneReplyDrafts(
@@ -2828,6 +2812,7 @@ const savedView = (() => {
   }
 })();
 addEventListener("pagehide", () => {
+  if (!anchoringReady) return;
   try {
     sessionStorage.setItem(VIEW_KEY, JSON.stringify(captureView()));
   } catch {}
@@ -2845,6 +2830,9 @@ upgradeWidgets().then(() => {
   // initial condition, and replay is about to overwrite them in the DOM.
   captureAuthoredFacets();
   syncSuggestions();
+  anchoringReady = true;
+  paintAnchors(); // an early general post may already have loaded anchored threads
+  updateFab(); // an early selection is now read from the fully upgraded page
   if (savedView) {
     restoreView(savedView);
     if (savedView.v < VNUM) showToast(`Updated to v${VNUM}`);

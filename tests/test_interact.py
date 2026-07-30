@@ -40,7 +40,7 @@ PAGE = """<!doctype html>
 <main>
 <section id="plan">
   <h2>Plan</h2>
-  <p>The cutoff lives in <cq-ref src="jobs/backfill.py:88"></cq-ref>.</p>
+  <p>The cutoff lives in <a href="https://example.test/jobs/backfill.py#L88"><code>jobs/backfill.py:88</code></a>.</p>
   <cq-options>
     <cq-option id="flag-first" effort="low" risk="med">
       <strong>Flag first</strong> Ship dark.
@@ -86,10 +86,27 @@ def publish(d, version=1):
     )
 
 
+def page_state(d):
+    events = interact.read_events(d)
+    return interact.full_state(d, events, interact.published_versions(d, events))
+
+
+def live_versions(d):
+    events = interact.read_events(d)
+    return interact.published_versions(d, events)
+
+
+def fragment_errors(html, registry):
+    parser = interact._StructParser()
+    parser.feed(html)
+    parser.close()
+    return interact.fragment_errors(parser, registry, registry["$languages"]["names"])
+
+
 def test_init_vendors_the_layer(page_dir):
     for name in ["colloquy.js", "theme.css", "registry.json"]:
         assert (page_dir / name).is_file()
-    assert (page_dir / "widgets" / "cq-ref.js").is_file()
+    assert (page_dir / "widgets" / "cq-tabs.js").is_file()
     assert (page_dir / "widgets" / "cq-diagram.js").is_file()
     assert (page_dir / "vendor" / "mermaid.min.js").is_file()
 
@@ -106,7 +123,7 @@ def test_init_user_layer_applies(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert (d / "theme.css").read_text() == ":root { --accent: teal }"
     assert (d / "widgets" / "cq-foo.js").read_text() == "// user widget"
-    assert (d / "widgets" / "cq-ref.js").is_file()  # shipped modules still vendored
+    assert (d / "widgets" / "cq-tabs.js").is_file()  # shipped modules still vendored
 
 
 def test_init_project_layer_wins(tmp_path, monkeypatch):
@@ -121,6 +138,14 @@ def test_init_project_layer_wins(tmp_path, monkeypatch):
     assert (d / "registry.json").is_file()
 
 
+def test_revendoring_removes_files_the_layer_retired(page_dir):
+    stale = page_dir / "widgets" / "cq-retired.js"
+    stale.write_text("// no longer in any layer")
+    result = CliRunner().invoke(interact.cli, ["init", str(page_dir)])
+    assert result.exit_code == 0, result.output
+    assert not stale.exists()
+
+
 def test_check_accepts_a_valid_page(page_dir):
     result = check(page_dir)
     assert result.exit_code == 0, result.output
@@ -129,8 +154,8 @@ def test_check_accepts_a_valid_page(page_dir):
 def test_check_rejects_widget_violations(page_dir):
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
-            '<cq-ref src="jobs/backfill.py:88"></cq-ref>',
-            '<cq-ref src="x.py:1"/>'
+            '<a href="https://example.test/jobs/backfill.py#L88"><code>jobs/backfill.py:88</code></a>',
+            '<cq-metric id="bad-metric" value="1"/>'
             "<cq-bogus></cq-bogus>"
             '<cq-option id="stray" risk="medium"><strong>S</strong></cq-option>'
             '<cq-diagram id="Bad_ID"><em>x</em></cq-diagram>',
@@ -205,7 +230,8 @@ def test_a_layer_naming_no_languages_refuses_every_word_rather_than_none(page_di
     the moment its list moved — and this is the check whose failures the reviewer can't
     see either way, so silence is the one outcome it must not have."""
     registry = json.loads((page_dir / "registry.json").read_text())
-    del registry["$languages"]
+    registry["$languages"]["names"] = []
+    registry["$languages"]["paths"] = {}
     (page_dir / "registry.json").write_text(json.dumps(registry))
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
@@ -838,7 +864,7 @@ def test_init_refuses_a_log_the_incoming_layer_no_longer_speaks(page_dir):
     """The log is append-only and a retired verb has no successor to map to, so
     re-vendoring over one is how recorded decisions fall silent — annabels-drafts
     holds fifteen `decide` events today's widgets would drop on the first reload.
-    The choice is the human's, made loudly."""
+    The re-vendor is refused rather than offering a way to discard that history."""
     interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
                                      "widget": "d1", "action": "decide",
                                      "detail": {"decision": "approved"}})
@@ -846,63 +872,261 @@ def test_init_refuses_a_log_the_incoming_layer_no_longer_speaks(page_dir):
     assert result.exit_code != 0
     assert "no longer speaks" in result.output
     assert "decide" in result.output
-    result = CliRunner().invoke(interact.cli, ["init", str(page_dir), "--retire-vocabulary"])
-    assert result.exit_code == 0, result.output
 
 
-def test_a_stampless_overlay_reads_as_the_pre_stamp_vocabulary(page_dir, tmp_path):
-    """A user or project overlay predating the stamp replaces registry.json
-    wholesale, so the incoming layer arrives with no $events — which means the
-    pre-stamp vocabulary, not an empty one. Plain comments pass; only genuinely
-    retired vocabulary refuses."""
+def test_check_refuses_a_malformed_registry(page_dir):
+    (page_dir / "registry.json").write_text("{broken")
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "invalid JSON" in result.output
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        (None, "registry entries must be objects"),
+        ({"type": "not-a-schema-type"}, "not a valid JSON Schema"),
+    ],
+)
+def test_check_refuses_a_malformed_widget_schema(page_dir, entry, message):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry["cq-options"] = entry
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "cq-options" in result.output and message in result.output
+
+
+@pytest.mark.parametrize(("subschema", "exit_code"), [(True, 0), (False, 1)])
+def test_boolean_attribute_subschemas_validate_without_crashing(
+    page_dir, subschema, exit_code
+):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry["cq-options"]["properties"]["choose"] = subschema
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+    version = page_dir / "versions" / "v1.html"
+    version.write_text(
+        version.read_text().replace("<cq-options>", '<cq-options id="opts" choose>')
+    )
+
+    result = check(page_dir)
+    assert result.exit_code == exit_code, result.output
+    assert not isinstance(result.exception, AttributeError)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("x-content", "words"),
+        ("x-parent", []),
+        ("x-says", []),
+        ("x-state", []),
+        ("x-upgrade", "yes"),
+        ("x-verbatim", "false"),
+        ("x-unknown", True),
+    ],
+)
+def test_check_refuses_malformed_registry_extensions(page_dir, key, value):
+    """Custom registry keywords are executable contracts, not schema comments."""
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry["cq-options"][key] = value
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "<cq-options> registry extensions are invalid" in result.output
+
+
+@pytest.mark.parametrize("tag", ["cq-options[", "CQ-options", "cq_options"])
+def test_check_refuses_a_widget_name_that_cannot_form_a_selector(page_dir, tag):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry[tag] = registry.pop("cq-options")
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert f"invalid registry entry names: ['{tag}']" in result.output
+
+
+def test_check_refuses_an_invalid_action_detail_schema(page_dir):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry["cq-options"]["x-state"]["choose"]["detail"]["type"] = "not-a-type"
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "<cq-options> x-state verb `choose` has an invalid detail schema" in result.output
+
+
+def test_action_detail_schemas_match_the_post_object_contract(page_dir):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry["cq-suggestion"]["x-state"]["accept"]["detail"] = {"type": "string"}
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "detail schema must declare an object" in result.output
+
+
+@pytest.mark.parametrize("subschema", [True, False])
+def test_state_reader_fields_reject_boolean_subschemas(page_dir, subschema):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry["cq-options"]["x-state"]["choose"]["detail"]["properties"][
+        "option"
+    ] = subschema
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "record value `option` must be a string or null" in result.output
+
+
+def test_fold_units_are_required_strings(page_dir):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    card = registry["cq-board"]["x-state"]["move"]["detail"]["properties"]["card"]
+    card["type"] = "integer"
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "fold unit `card` must be a string" in result.output
+
+
+@pytest.mark.parametrize(
+    ("tag", "verb", "field"),
+    [
+        ("cq-options", "choose", "option"),
+        ("cq-draft", "edit", "text"),
+    ],
+)
+def test_per_part_state_records_positions(page_dir, tag, verb, field):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    spec = registry[tag]["x-state"][verb]
+    spec["unit"] = field
+    spec["detail"]["properties"][field]["type"] = "string"
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert f"<{tag}> x-state verb `{verb}` records per-part state" in result.output
+    assert "only position records support that" in result.output
+
+
+@pytest.mark.parametrize(
+    ("tag", "verb", "field"),
+    [
+        ("cq-options", "choose", "option"),
+        ("cq-board", "move", "to"),
+        ("cq-draft", "edit", "text"),
+    ],
+)
+def test_record_values_have_the_type_the_reader_uses(page_dir, tag, verb, field):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    spec = registry[tag]["x-state"][verb]
+    spec["detail"]["properties"][field]["type"] = "integer"
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert f"<{tag}> x-state verb `{verb}` record value `{field}`" in result.output
+    assert "must be a string" in result.output
+
+
+def test_registry_cross_entry_checks_wait_for_every_entry_to_validate(page_dir):
+    """A child appearing first must not inspect a malformed parent half-validated."""
+    registry = json.loads((page_dir / "registry.json").read_text())
+    child = registry.pop("cq-old")
+    registry["cq-suggestion"]["x-state"] = 42
+    registry = {"cq-old": child, **registry}
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "<cq-suggestion> registry extensions are invalid" in result.output
+
+
+def test_state_requires_an_upgraded_widget(page_dir):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry["cq-options"]["x-upgrade"] = False
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "<cq-options> declares x-state but has no upgraded handler" in result.output
+
+
+def test_retirement_requires_a_parent(page_dir):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    del registry["cq-old"]["x-parent"]
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "<cq-old> registry extensions are invalid" in result.output
+
+
+def test_check_refuses_a_retirement_verb_its_parent_does_not_declare(page_dir):
+    """A retirement outcome is a cross-entry reference, not a free-form label.
+
+    If it names no verb on the parent widget, the browser's selector can never
+    match and the file reading can disagree with what that widget knows how to
+    settle. Refuse that vocabulary at its one ingress instead of leaving every
+    consumer to rediscover the broken reference.
+    """
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry["cq-old"]["x-retired-when"] = "approve"
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "<cq-old> x-retired-when `approve`" in result.output
+    assert "<cq-suggestion> does not declare that x-state verb" in result.output
+
+
+def test_retirement_verbs_fold_by_the_parent_widget(page_dir):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    accept = registry["cq-suggestion"]["x-state"]["accept"]
+    accept["unit"] = "resolves"
+    accept["detail"]["required"] = ["resolves"]
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert "<cq-old> x-retired-when `accept` must fold by widget" in result.output
+
+
+@pytest.mark.parametrize("section", ["$events", "$languages"])
+def test_init_requires_the_complete_registry_contract(page_dir, tmp_path, section):
     overlay = tmp_path / ".claude" / "colloquy"
     overlay.mkdir(parents=True)
     reg = json.loads((page_dir / "registry.json").read_text())
-    del reg["$events"]
-    for entry in reg.values():
-        if isinstance(entry, dict):
-            entry.pop("x-state", None)
+    del reg[section]
     (overlay / "registry.json").write_text(json.dumps(reg))
 
-    interact.append_event(page_dir, {"kind": "comment", "author": "user", "text": "hm"})
-    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
-                                     "widget": "g1", "action": "choose",
-                                     "detail": {"option": "o-shim"}})
-    result = CliRunner().invoke(interact.cli, ["init", str(page_dir)])
-    assert result.exit_code == 0, result.output
-
-    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
-                                     "widget": "d1", "action": "decide",
-                                     "detail": {"decision": "approved"}})
     result = CliRunner().invoke(interact.cli, ["init", str(page_dir)])
     assert result.exit_code != 0
-    assert "decide" in result.output and "comment" not in result.output
+    assert "$events.kinds and $languages.names/paths" in result.output
 
 
-def test_note_refuses_a_restated_shape_an_old_layer_would_drop(page_dir):
-    """The bin shim runs the newest CLI against pages vendored at any age, and an
-    old runtime keys retractions off a shape it doesn't read — so the write site
-    is where the drift is caught. A stampless registry predates the stamp, and
-    the pre-stamp vocabulary is exactly what it reads: plain notes pass, a
-    retraction-carrying one is refused until `init` re-vendors."""
-    v2 = _decided(page_dir, "Ship the flag dark, then backfill.")
-    v2("Ship the flag dark, then backfill. Roll back with one flag.", attrs=" restated")
+@pytest.mark.parametrize("field", [None, "restated"])
+def test_init_requires_the_event_vocabulary_the_layer_writes(
+    page_dir, tmp_path, field
+):
+    overlay = tmp_path / ".claude" / "colloquy"
+    overlay.mkdir(parents=True)
+    registry = json.loads((page_dir / "registry.json").read_text())
+    if field is None:
+        del registry["$events"]["kinds"]["note"]
+    else:
+        registry["$events"]["kinds"]["note"].remove(field)
+    (overlay / "registry.json").write_text(json.dumps(registry))
 
-    reg = json.loads((page_dir / "registry.json").read_text())
-    stamped = dict(reg)
-    del reg["$events"]
-    (page_dir / "registry.json").write_text(json.dumps(reg))
-    result = CliRunner().invoke(
-        interact.cli, ["note", str(page_dir), "--version", "2", "--text", "rewrote it"]
-    )
+    result = CliRunner().invoke(interact.cli, ["init", str(page_dir)])
     assert result.exit_code != 0
-    assert "predates" in result.output
-
-    (page_dir / "registry.json").write_text(json.dumps(stamped))
-    result = CliRunner().invoke(
-        interact.cli, ["note", str(page_dir), "--version", "2", "--text", "rewrote it"]
-    )
-    assert result.exit_code == 0, result.output
+    assert "current layer writes" in result.output
+    assert "note" in result.output
+    if field:
+        assert field in result.output
 
 
 def test_a_widget_nobody_has_touched_is_not_the_gate_s_business(page_dir):
@@ -1089,8 +1313,7 @@ def test_check_reads_widths_where_the_document_states_them(page_dir):
 @pytest.fixture
 def server(page_dir):
     """A real HTTP server over the page directory, on an ephemeral port."""
-    interact.Handler.page_dir = page_dir
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.Handler)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(page_dir))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}"
@@ -1115,7 +1338,7 @@ def test_server_round_trip(server, page_dir):
     status, body = fetch(f"{server}/")  # urllib follows the 302
     assert status == 200 and b"cq-options" in body
     # Vendored files serve; the log and directory paths don't.
-    for path in ["/colloquy.js", "/theme.css", "/registry.json", "/widgets/cq-ref.js"]:
+    for path in ["/colloquy.js", "/theme.css", "/registry.json", "/widgets/cq-tabs.js"]:
         assert fetch(server + path)[0] == 200, path
     for path in ["/comments.jsonl", "/vendor/..", "/status.json", "/../secret"]:
         assert fetch(server + path)[0] == 404, path
@@ -1123,14 +1346,24 @@ def test_server_round_trip(server, page_dir):
     # (client ids are dropped — a reused one would re-root an existing thread).
     status, body = fetch(
         f"{server}/api/event",
-        data=json.dumps({"kind": "comment", "id": "c9", "text": "hm", "author": "claude"}).encode(),
+        data=json.dumps(
+            {
+                "kind": "comment",
+                "id": "c9",
+                "author": "claude",
+                "ts": "1900-01-01T00:00:00Z",
+                "version": 1,
+                "text": "hm",
+            }
+        ).encode(),
     )
     assert status == 200
     posted = interact.read_events(page_dir)[-1]
     assert posted["author"] == "user" and posted["id"] != "c9"
+    assert posted["ts"] != "1900-01-01T00:00:00Z"
     status, body = fetch(f"{server}/api/state")
     state = json.loads(body)
-    assert state["versions"] == ["v1.html"]
+    assert state["versions"] == [1]
     assert state["cursor"] == 0  # nothing delivered to Claude yet
     assert state["events"][-1]["id"] == posted["id"]
     # A widget action rides the same channel; half-formed ones are refused at the edge.
@@ -1150,13 +1383,34 @@ def test_server_round_trip(server, page_dir):
     moved = interact.read_events(page_dir)[-1]
     assert moved["author"] == "user" and moved["detail"]["to"] == "col-doing"
     for bad in [
+        {"kind": []},
         {"kind": "action", "action": "move"},  # no widget
         {"kind": "action", "widget": "", "action": "move", "detail": {}, "version": 1},
         {"kind": "action", "widget": "b", "action": "move", "version": 1},  # no detail
         {"kind": "action", "widget": "b", "action": "move", "detail": None, "version": 1},
         {"kind": "action", "widget": "b", "action": "move", "detail": {}, "version": "1"},
-        {"kind": "comment"},  # no text: a blank thread nobody can read
-        {"kind": "reply", "parent": "nope", "text": "hi"},  # parent names no message
+        {"kind": "action", "widget": "b", "action": "move", "detail": {}, "version": True},
+        {"kind": "action", "widget": "b", "action": "move", "detail": {}, "version": 0},
+        {"kind": "action", "widget": "b", "action": "move", "detail": {}, "version": 2},
+        {"kind": "comment", "version": 1},  # no text: a blank thread nobody can read
+        {"kind": "comment", "version": 1, "text": "x", "anchor": "intro"},
+        {"kind": "comment", "version": 1, "text": "x", "anchor": {"quote": 7}},
+        {"kind": "comment", "version": 1, "text": "x", "anchor": {}},
+        {
+            "kind": "comment",
+            "version": 1,
+            "text": "x",
+            "anchor": {"quote": "x", "extra": "y"},
+        },
+        {"kind": "comment", "version": 1, "text": "x", "suggestion": "yes"},
+        {
+            "kind": "reply",
+            "parent": posted["id"],
+            "version": 1,
+            "text": "hi",
+            "suggestion": True,
+        },
+        {"kind": "reply", "parent": "nope", "version": 1, "text": "hi"},
         {"kind": "resolve", "parent": "nope"},
         ["not", "an", "object"],
     ]:
@@ -1165,10 +1419,14 @@ def test_server_round_trip(server, page_dir):
 
 
 def test_concurrent_posts_never_tear_the_log(server, page_dir):
+    CliRunner().invoke(interact.cli, ["note", str(page_dir), "--version", "1", "--text", "cut"])
+
     def post(i):
         fetch(
             f"{server}/api/event",
-            data=json.dumps({"kind": "comment", "text": f"c{i} " + "x" * 500}).encode(),
+            data=json.dumps(
+                {"kind": "comment", "version": 1, "text": f"c{i} " + "x" * 500}
+            ).encode(),
         )
 
     threads = [threading.Thread(target=post, args=(i,)) for i in range(20)]
@@ -1176,7 +1434,9 @@ def test_concurrent_posts_never_tear_the_log(server, page_dir):
         t.start()
     for t in threads:
         t.join()
-    events = interact.read_events(page_dir)  # raises on any torn non-final line
+    events = [
+        e for e in interact.read_events(page_dir) if e["kind"] == "comment"
+    ]  # read_events raises on any torn non-final line
     assert {e["text"].split()[0] for e in events} == {f"c{i}" for i in range(20)}
     assert len({e["id"] for e in events}) == 20  # server-minted, all distinct
 
@@ -1202,7 +1462,7 @@ def test_wait_delivers_new_user_events_and_flips_status(page_dir, capsys):
     assert delivered[1]["detail"]["to"] == "y"
     # Delivered means delivered: the cursor has moved past them, so nothing is pending.
     assert interact.read_json(page_dir / "cursor.json")["seq"] == 2
-    assert interact.full_state(page_dir)["pending"] == 0
+    assert page_state(page_dir)["pending"] == 0
     # The delivery status is marked a handoff, which dates the claim: Claude's own
     # `status` clears the mark, so the mark surviving is a pickup that never landed.
     status = interact.read_json(page_dir / "status.json")
@@ -1286,7 +1546,7 @@ def test_stop_hook_blocks_a_turn_that_leaves_a_page_unwatched(claimed, capsys):
 def test_prompt_hook_surfaces_comments_claude_never_picked_up(claimed, capsys):
     interact.cmd_status(claimed, "working", "revising")
     interact.append_event(claimed, {"kind": "comment", "author": "user", "text": "hi"})
-    assert interact.full_state(claimed)["pending"] == 1
+    assert page_state(claimed)["pending"] == 1
     interact.cmd_hook({"hook_event_name": "UserPromptSubmit", "session_id": "s1"})
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "1 user event you haven't picked up" in context
@@ -1323,10 +1583,8 @@ def test_only_serving_or_watching_a_page_puts_the_session_under_the_guard(
     assert "no watcher" in json.loads(capsys.readouterr().out)["reason"]
 
 
-def test_hook_scripts_agree_with_interact_on_homes(tmp_path, monkeypatch):
-    """review-guard.py, plan-mode-redirect.py, and plans.py run under plain
-    python3, so they inline the XDG resolution interact.py owns rather than
-    importing the uv script; this holds the copies to it."""
+def test_review_guard_agrees_with_interact_on_state_home(tmp_path, monkeypatch):
+    """The plain-Python hook inlines the uv script's XDG state resolution."""
     root = Path(__file__).parent.parent
 
     def load(path):
@@ -1337,17 +1595,13 @@ def test_hook_scripts_agree_with_interact_on_homes(tmp_path, monkeypatch):
 
     for env in (
         {},
-        {"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "XDG_STATE_HOME": str(tmp_path / "st")},
+        {"XDG_STATE_HOME": str(tmp_path / "st")},
     ):
-        for key in ("XDG_CONFIG_HOME", "XDG_STATE_HOME"):
-            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("XDG_STATE_HOME", raising=False)
         for key, value in env.items():
             monkeypatch.setenv(key, value)
         guard = load(root / "hooks" / "scripts" / "review-guard.py")
-        redirect = load(root / "hooks" / "scripts" / "plan-mode-redirect.py")
-        plans = load(root / "scripts" / "plans.py")
         assert guard.SESSIONS == interact.state_home() / "sessions"
-        assert redirect.CONFIG == plans.CONFIG == interact.config_home() / "config.json"
 
 
 def test_idle_cannot_close_a_review_over_events_nobody_read(claimed, capsys):
@@ -1380,24 +1634,24 @@ def test_session_end_idles_the_page_and_stops_its_server(claimed):
 def test_state_reports_whether_the_owning_session_still_exists(claimed):
     """The banner's one hard fact: a status.json claim outlives its session, the
     owning pid doesn't."""
-    assert interact.full_state(claimed)["session_alive"] is True
+    assert page_state(claimed)["session_alive"] is True
     dead = subprocess.Popen([sys.executable, "-c", ""])
     dead.wait()
     interact.write_json(claimed / "session.json", {"id": "s1", "pid": dead.pid, "ts": "t"})
-    assert interact.full_state(claimed)["session_alive"] is False
+    assert page_state(claimed)["session_alive"] is False
 
 
 def test_versions_publish_only_once_noted(page_dir):
-    assert interact.published_versions(page_dir) == []
-    assert interact.full_state(page_dir)["versions"] == []
+    assert live_versions(page_dir) == []
+    assert page_state(page_dir)["versions"] == []
     result = CliRunner().invoke(
         interact.cli, ["note", str(page_dir), "--version", "1", "--text", "first cut"]
     )
     assert result.exit_code == 0, result.output
-    assert interact.published_versions(page_dir) == ["v1.html"]
+    assert live_versions(page_dir) == [1]
     # The next version stays unpublished until its own note lands.
     (page_dir / "versions" / "v2.html").write_text(PAGE)
-    assert interact.published_versions(page_dir) == ["v1.html"]
+    assert live_versions(page_dir) == [1]
 
 
 def test_versions_run_in_number_order_past_v9(page_dir):
@@ -1407,22 +1661,31 @@ def test_versions_run_in_number_order_past_v9(page_dir):
     of those would quietly answer with the wrong version."""
     for n in range(2, 12):
         (page_dir / "versions" / f"v{n}.html").write_text(PAGE)
-    assert interact.list_versions(page_dir) == [f"v{n}.html" for n in range(1, 12)]
+    assert interact.list_versions(page_dir) == list(range(1, 12))
     for n in range(1, 12):
         result = CliRunner().invoke(
             interact.cli, ["note", str(page_dir), "--version", str(n), "--text", f"cut {n}"]
         )
         assert result.exit_code == 0, result.output
-    assert interact.published_versions(page_dir) == [f"v{n}.html" for n in range(1, 12)]
+    assert live_versions(page_dir) == list(range(1, 12))
+
+
+def test_version_filenames_are_canonical(page_dir, server):
+    """Only an ASCII, unpadded file can identify a positive version."""
+    (page_dir / "versions" / "v01.html").write_text("<h1>shadow</h1>")
+    (page_dir / "versions" / "v1٢.html").write_text("<h1>Unicode alias</h1>")
+    (page_dir / "versions" / "v2.html").mkdir()
+    assert interact.list_versions(page_dir) == [1]
+    assert check(page_dir, version=1).exit_code == 0
+    assert fetch(f"{server}/versions/v01.html")[0] == 404
 
 
 def test_choose_requires_an_id(page_dir):
     # Actions name their widget by id, so an interactive group can't go without one.
     registry = interact.load_registry(page_dir)
-    errs = interact.fragment_errors(
+    errs = fragment_errors(
         '<cq-options choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>',
         registry,
-        interact.vendored_languages(page_dir),
     )
     assert errs and "'id' is a dependency of 'choose'" in " ".join(errs)
 
@@ -1432,14 +1695,13 @@ def test_specimen_admits_interactive_widgets(page_dir):
     # interactive widgets inside unwired. Validation is unchanged by the
     # wrapper: nesting rules (cq-option under cq-options) still hold.
     registry = interact.load_registry(page_dir)
-    errs = interact.fragment_errors(
+    errs = fragment_errors(
         '<cq-specimen id="sp" label="a decision">'
         '<cq-options id="g" choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>'
         '<cq-board id="b"><cq-column id="c" label="To do">'
         '<cq-card id="k"><strong>Card</strong></cq-card></cq-column></cq-board>'
         "</cq-specimen>",
         registry,
-        interact.vendored_languages(page_dir),
     )
     assert errs == []
 
@@ -1452,10 +1714,9 @@ def test_settling_a_decision_drops_no_ids(page_dir):
     state is remembered against it."""
     registry = interact.load_registry(page_dir)
     assert "'id' is a dependency of 'settled'" in " ".join(
-        interact.fragment_errors(
+        fragment_errors(
             '<cq-options settled><cq-option id="o1"><strong>A</strong></cq-option></cq-options>',
             registry,
-            interact.vendored_languages(page_dir),
         )
     )
 
@@ -1479,7 +1740,7 @@ def test_registry_examples_validate(page_dir):
     examples = {t: e["x-example"] for t, e in reg.items() if t.startswith("cq-") and "x-example" in e}
     assert examples  # the shipped registry documents by example
     for tag, example in examples.items():
-        errs = interact.fragment_errors(example, registry, interact.vendored_languages(page_dir))
+        errs = fragment_errors(example, registry)
         assert not errs, f"{tag} x-example doesn't validate: {errs}"
 
 
@@ -1658,10 +1919,27 @@ def test_widget_reply_requires_a_registry(page_dir):
     interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
     result = CliRunner().invoke(
         interact.cli,
-        ["reply", str(page_dir), "--to", "c1", "--text", '<cq-ref src="a.py:1"></cq-ref>'],
+        [
+            "reply",
+            str(page_dir),
+            "--to",
+            "c1",
+            "--text",
+            '<cq-diagram id="reply-flow">graph LR; A --&gt; B</cq-diagram>',
+        ],
     )
     assert result.exit_code != 0
     assert "no registry.json" in result.output
+
+
+def test_comment_requires_the_registry_its_runtime_reads(page_dir):
+    published(page_dir)
+    (page_dir / "registry.json").unlink()
+    before = interact.read_events(page_dir)
+    result = comment(page_dir, "--quote", "Ship dark", "--text", "Still posts")
+    assert result.exit_code != 0
+    assert "no registry.json" in result.output and "run `init`" in result.output
+    assert interact.read_events(page_dir) == before
 
 
 def test_note_refuses_a_version_that_fails_check(page_dir):
@@ -1671,7 +1949,7 @@ def test_note_refuses_a_version_that_fails_check(page_dir):
     )
     assert result.exit_code != 0
     assert "refusing to publish" in result.output
-    assert interact.published_versions(page_dir) == []
+    assert live_versions(page_dir) == []
 
 
 # ---------- comment: the anchor written without a browser ----------
@@ -1763,16 +2041,28 @@ def test_a_widgets_data_body_is_not_quotable_but_the_widget_is(page_dir):
 
 
 def test_a_quote_may_not_run_across_a_widgets_parts(page_dir):
-    """A module writes words of its own where the file has none — a cq-ref is empty in the
-    source and renders the reference it links to, a column gets a heading, a milestone a
-    row of chips. A quote spanning one of those joins would resolve to nothing in the
+    """A module can replace or insert words the file's reading cannot model. A quote
+    spanning one of those joins would resolve to nothing in the
     reviewer's browser, so it's refused here, where someone can still do something about
     it. Either side of the join quotes fine."""
+    fenced = PAGE.replace(
+        '  <cq-diagram id="flow">\ngraph LR\n  A --> B\n  </cq-diagram>',
+        '  <p>Before the diagram.</p>\n'
+        '  <cq-diagram id="flow">\ngraph LR\n  A --> B\n  </cq-diagram>\n'
+        '  <p>After the diagram.</p>',
+    )
+    (page_dir / "versions" / "v1.html").write_text(fenced)
     published(page_dir)
-    across = comment(page_dir, "--quote", "The cutoff lives in .", "--text", "x")
+    across = comment(
+        page_dir,
+        "--quote",
+        "Before the diagram. After the diagram.",
+        "--text",
+        "x",
+    )
     assert across.exit_code != 0
     assert "across a widget's parts" in across.output
-    assert comment(page_dir, "--quote", "The cutoff lives in", "--text", "x").exit_code == 0
+    assert comment(page_dir, "--quote", "Before the diagram.", "--text", "x").exit_code == 0
 
 
 DRAFTED = PAGE.replace(
@@ -1923,13 +2213,13 @@ def test_a_decision_retires_its_losing_slot_from_comments_reach(page_dir):
     decide(page_dir, "accept")
     gone = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
     assert gone.exit_code != 0
-    assert "accepted § sug-refill" in gone.output and "retired" in gone.output
+    assert "chose to accept § sug-refill" in gone.output and "retired" in gone.output
     kept = comment(page_dir, "--quote", "camera shows it half-empty", "--text", "x")
     assert kept.exit_code == 0, kept.output
 
     decide(page_dir, "reject")
     gone = comment(page_dir, "--quote", "camera shows it half-empty", "--text", "x")
-    assert gone.exit_code != 0 and "rejected § sug-refill" in gone.output
+    assert gone.exit_code != 0 and "chose to reject § sug-refill" in gone.output
     kept = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
     assert kept.exit_code == 0, kept.output
 
@@ -1942,7 +2232,7 @@ def test_a_section_inside_a_retired_slot_is_refused(page_dir):
     decide(page_dir, "accept")
     result = comment(page_dir, "--section", "refill-rule", "--text", "x")
     assert result.exit_code != 0
-    assert "accepted" in result.output and "sug-refill" in result.output
+    assert "chose to accept" in result.output and "sug-refill" in result.output
 
 
 def test_a_decision_that_empties_its_widget_takes_it_off_sections_reach(page_dir):
@@ -1967,10 +2257,10 @@ def test_a_decision_that_empties_its_widget_takes_it_off_sections_reach(page_dir
         assert ok.exit_code == 0, ok.output
     decide(page_dir, "accept", widget="sug-drop")
     decide(page_dir, "reject", widget="sug-add")
-    for wid, verb in (("sug-drop", "accepted"), ("sug-add", "rejected")):
+    for wid, verb in (("sug-drop", "accept"), ("sug-add", "reject")):
         gone = comment(page_dir, "--section", wid, "--text", "x")
         assert gone.exit_code != 0
-        assert "settled to nothing" in gone.output and verb in gone.output
+        assert "settled to nothing" in gone.output and f"chose to {verb}" in gone.output
 
 
 def test_a_settled_replacement_still_answers_an_element_anchor(page_dir):
@@ -1980,20 +2270,6 @@ def test_a_settled_replacement_still_answers_an_element_anchor(page_dir):
     decide(page_dir, "accept")
     ok = comment(page_dir, "--section", "sug-refill", "--text", "x")
     assert ok.exit_code == 0, ok.output
-
-
-def test_a_decision_verb_the_registry_no_longer_speaks_settles_nothing(page_dir):
-    """The decisions gate is the fold's, the same one the edit gate above reads: an
-    outcome whose verb this page's vendored x-state doesn't declare folds to nothing,
-    so the reading stays pending — matching a vendored layer whose widgets no longer
-    speak the verb — rather than trusting the log's word alone."""
-    suggested(page_dir)
-    registry = json.loads((page_dir / "registry.json").read_text())
-    del registry["cq-suggestion"]["x-state"]["accept"]
-    (page_dir / "registry.json").write_text(json.dumps(registry))
-    decide(page_dir, "accept")
-    kept = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
-    assert kept.exit_code == 0, kept.output
 
 
 def test_a_decision_settles_which_copy_a_quote_names(page_dir):
@@ -2061,7 +2337,7 @@ def test_claudes_own_comment_is_not_delivered_back_to_it(page_dir):
     can't wake its own watcher or read as a comment nobody answered."""
     published(page_dir)
     assert comment(page_dir, "--quote", "Ship dark", "--text", "x").exit_code == 0
-    assert interact.full_state(page_dir)["pending"] == 0
+    assert page_state(page_dir)["pending"] == 0
     assert interact.unattended_pages("") == []
 
 
