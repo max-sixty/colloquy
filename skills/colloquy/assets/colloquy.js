@@ -336,11 +336,12 @@ document.addEventListener("keydown", (ev) => {
 // The question is whether *this* click's mouseup is where the selection stopped, so
 // it reads the selection's focus end — the character the pointer was on when the
 // button came up. Asking instead whether the selection contains the control is a
-// question about the DOM, and it answers yes for any selection over the passage a
-// widget sits in: a suggestion's buttons are its children, hung in the margin by CSS
-// alone, so a reviewer who read the sentence and then reached for Accept pressed a
-// control that had gone dead — and stayed dead, because a press that refuses a drag
-// (`user-select: none`) never collapses the selection that deadened it either.
+// question about the DOM, and it answers yes for any selection running over the
+// control: a suggestion's row is the column's own child, in flow between the block
+// holding the change and the next one, so a reviewer who read across the change and
+// then reached for Accept pressed a control that had gone dead — and stayed dead,
+// because a press that refuses a drag (`user-select: none`) never collapses the
+// selection that deadened it either.
 document.addEventListener(
   "click",
   (ev) => {
@@ -1857,18 +1858,46 @@ function selectionAnchor(sel) {
   };
 }
 
+// Controls the page is standing on its own account, as against the ones in the runtime's
+// layer: a reply's widget is markup frozen in the log, and the layer's own buttons are
+// what floating chrome is allowed to sit beside. `data-cq-offer` is what makes a thing
+// pressable (`offer`), so this asks after any widget's controls without naming one.
+const pageControls = () =>
+  [...document.querySelectorAll("[data-cq-offer]")].filter((c) => !inChrome(c));
+
 // The 💬 button carries the anchor it would open a composer on, so raising it and acting
 // on it can't come to different conclusions about what the reader picked. Visibility is
 // derived from that anchor and never read back off the stylesheet.
 const beside = (rect) => [rect.right + 6, rect.top - 6];
+// It has one more thing to stay clear of, and it is the same kind of thing the composer's
+// mark is: a control standing on the page. The button floats and they don't. A selection
+// runs to the column's right edge on any line it fills, so `beside` puts the button in
+// the margin — which is where a suggestion hangs the row deciding the change that
+// selection just covered. The reviewer's own gesture then hid the Accept they were
+// reaching for, and the press that would have dismissed the button was the press it was
+// covering.
+//
+// Down, and past each in turn, because the margin runs down the page: clearing one row
+// can land on the next, and walking a sorted list is the step the rows themselves take to
+// nudge apart. place()'s clamp still has the last word, so a button with nowhere left to
+// go keeps the best spot rather than leaving the screen.
+function placeFab(left, top) {
+  place(fab, left, top);
+  const box = fab.getBoundingClientRect();
+  const sharing = pageControls()
+    .map((c) => c.getBoundingClientRect())
+    .filter((r) => r.width && r.left < box.right && box.left < r.right)
+    .sort((a, b) => a.top - b.top);
+  let y = box.top;
+  for (const r of sharing) if (r.top < y + box.height && y < r.bottom) y = r.bottom + 6;
+  if (y !== box.top) place(fab, left, y);
+}
 let fabAnchor = null;
-let fabAt = null; // where the button was asked for — state, not the clamped style
 function showFab(anchor, left, top) {
   fabAnchor = anchor;
-  fabAt = anchor ? [left, top] : null;
   fab.style.display = anchor ? "block" : "none";
   if (anchor) {
-    place(fab, left, top);
+    placeFab(left, top);
   }
 }
 // The button follows the selection. What counts as one is measured on the quote it would
@@ -2061,11 +2090,15 @@ function closeComposer() {
   hideComposer();
 }
 
-// The button opens the composer where it stands, on the anchor it is carrying.
+// The button opens the composer where it stands, on the anchor it is carrying. Where it
+// stands, and not where it was asked for: placement moves it — down past the controls it
+// would cover, and off the viewport's edges — so the two are no longer the same point,
+// and handing on the asked-for one put the composer straight back over the row the button
+// had just stepped off.
 fab.onclick = () => {
   if (!fabAnchor) return;
   const anchor = fabAnchor;
-  const [left, top] = fabAt;
+  const { left, top } = fab.getBoundingClientRect();
   showFab(null);
   openComposer(anchor, "", left, top);
 };

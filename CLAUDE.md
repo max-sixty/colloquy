@@ -203,9 +203,9 @@ Each of those is a rule the pass keeps rather than a property it gets for free.
 ### Assume the browser it already assumes
 
 The runtime requires ES modules, custom elements, `field-sizing`, `color-mix`, `:has()`,
-`@scope`, `caretPositionFromPoint`, `Intl.Segmenter`, and the highlight registry. Guarding
-one of those while assuming the rest buys nothing and reads as if the others were checked.
-Add a feature guard only where there is a real fallback to take.
+`@scope`, anchor positioning, `caretPositionFromPoint`, `Intl.Segmenter`, and the highlight
+registry. Guarding one of those while assuming the rest buys nothing and reads as if the
+others were checked. Add a feature guard only where there is a real fallback to take.
 
 A stale entry is the same mistake as a stray guard, so cut one the moment nothing uses it.
 And the list promises support, not uniform rendering: `::highlight()` takes a narrow,
@@ -270,11 +270,18 @@ paid differently. Where the *pointer* stopped is not it: a tab's name runs to wi
 pixels of its own padding, so the mouseup lands on chrome while the selection is the
 page's, and the Comment button never came up. Whether the selection *contains* the control
 is not it either, and that one cost more — containment is a fact about the DOM, and a
-suggestion's buttons are its children hung out in the margin by CSS, so a reviewer who
-read the sentence and then reached for Accept pressed a control that did nothing, and kept
-doing nothing, since a press that refuses a drag never collapses the selection deadening
-it. The question is whether this click's own mouseup is where the selection stopped, and
-the selection's focus end is that answer.
+suggestion's row stands in the column between the block holding the change and the next
+one, so a reviewer who read across the change and then reached for Accept pressed a
+control that did nothing, and kept doing nothing, since a press that refuses a drag never
+collapses the selection deadening it. The question is whether this click's own mouseup is
+where the selection stopped, and the selection's focus end is that answer.
+
+The button raised by that same drag is the other way a press goes missing, and it needs no
+wrong question to do it: a selection fills the lines it covers, so the button placed beside
+it lands in the margin, on the line a change's row hangs. Nothing was deadened — the
+reviewer pressed the 💬 they could see and got a composer, because a press on it is not the
+outside click that dismisses it. Floating chrome steps aside from what stands on the page
+(`placeFab`), asked of `data-cq-offer` so it holds for any control any widget hangs.
 
 Paper asks its own question and reads its own pair of markers. Print's question is "is
 this a thing to work, and nothing else?", because nothing on paper can be pressed; the

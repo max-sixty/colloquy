@@ -63,7 +63,7 @@ body { margin: 0; background: var(--paper); color: var(--ink);
        font: var(--t-4)/1.55 system-ui, -apple-system, sans-serif; }
 /* Positioned so it is the containing block for anything a widget hangs in the
  * page margin (cq-suggestion's controls): `left: 100%` then means the column's
- * right edge, whatever the element's own depth in the document. */
+ * right edge, and `anchor()` reaches the anchor names declared inside it. */
 main { max-width: 760px; margin: 0 auto; padding: 64px 24px 96px; position: relative; }
 h1 { font-size: 27px; line-height: 1.2; letter-spacing: -0.01em; margin: 0 0 10px; }
 h2 { font-size: var(--t-3); margin: 44px 0 10px; }
@@ -509,16 +509,19 @@ cq-suggestion[data-cq-state="reject"] > cq-new { display: none; }
 cq-suggestion[data-cq-state="accept"]:not(:has(cq-new)),
 cq-suggestion[data-cq-state="reject"]:not(:has(cq-old)) { display: none; }
 /* The controls hang in the page margin: absolute against <main> for the
- * horizontal edge, and — inline-flex, so the box they would have occupied in
- * flow is inline-level — the line the change starts on for the vertical. A
- * block-level box would take its static position from the line *after* the
- * change. One line tall and laid along it, so two changes a line apart don't
- * collide; the widget nudges the pair that still would, and docks the row into
- * flow wherever it can't hang clear of the column. */
-.cq-sug-actions { position: absolute; left: 100%; margin-left: 22px;
+ * horizontal edge, and against the anchor the widget prepends to the change for
+ * the vertical — `anchor(top)` is the line that empty span sits on, mid-sentence
+ * included. The row is <main>'s own child so that <main> is what `left: 100%`
+ * resolves against (cq-suggestion.js hangs it there); one line tall, so two
+ * changes a line apart don't collide, and the widget nudges the pair that still
+ * would. Docked, it is the same box in flow at that same point: a control line
+ * under the block the change sits in, wherever it can't hang clear of the column.
+ * Waiting, the change is inside something collapsed and there is no line yet. */
+.cq-sug-actions { position: absolute; left: 100%; margin-left: 22px; top: anchor(top);
     display: inline-flex; gap: 4px; white-space: nowrap; }
 .cq-sug-actions[hidden] { display: none; } /* outranks the flex above, unlike the UA rule */
-.cq-sug-actions.cq-docked { position: static; margin-left: 6px; vertical-align: baseline; }
+.cq-sug-actions.cq-waiting { display: none; }
+.cq-sug-actions.cq-docked { position: static; margin: 2px 0 12px; }
 .cq-sug-actions [role="button"] { font: inherit; font-size: var(--t-6); line-height: 1.7;
     padding: 0 8px; border: 1px solid var(--border-2); border-radius: 999px;
     background: var(--card); color: var(--ink-2); cursor: pointer; }
@@ -542,12 +545,11 @@ cq-suggestion[data-cq-state="reject"]:not(:has(cq-old)) { display: none; }
  * column it costs, and the widget docks as it always has; on paper the controls
  * are gone, so their room would be a blank margin.
  *
- * What the row can't say is whether it will use the rail: a change inside a card
- * docks there whatever the page's width, so a page whose only change is one of
- * those reserves a strip nothing hangs in. The alternative is to ask, and the
- * question feeds back on itself — a row docks because it found no room, and the
- * room is what the answer would reserve, so a rail granted only to rows that
- * aren't docked is a rail no row is ever granted. */
+ * Presence is also all the reservation can go on. What the row can't say is
+ * whether it will use the rail, and the question feeds back on itself: a row
+ * docks because it found no room, and the room is what the answer would reserve,
+ * so a rail granted only to rows that aren't docked is a rail no row is ever
+ * granted. */
 @media screen and (min-width: 900px) {
   body:has(.cq-sug-actions) { padding-right: var(--rail); }
 }

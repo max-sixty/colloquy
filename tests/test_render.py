@@ -1153,13 +1153,13 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     # marked — and grows nothing to settle it with, so it is also not the
     # banner's to count or Accept all's to decide.
     assert page.locator("#quoted-suggestion cq-old").is_visible()
-    assert page.locator("#quoted-suggestion .cq-sug-actions").count() == 0
+    assert page.locator("[data-cq-for='quoted-suggestion']").count() == 0
     expect(page.get_by_role("button", name="Accept all (1)")).to_be_visible()
 
     # The control: the same markup unquoted wires all of it.
     assert page.locator('#live-group .cq-pick[role="button"]').count() == 2
     assert page.locator("#live-board .cq-grip").count() == 1
-    assert page.locator("#live-suggestion .cq-sug-actions").count() == 1
+    assert page.locator("[data-cq-for='live-suggestion']").count() == 1
 
     # Nor the room for one. A quoted card stands at the height of a card in a
     # group that never declared `choose`, because that is what it is; reserving
@@ -1330,8 +1330,9 @@ def test_composer_grows_with_its_text_without_script(browser, serve):
 
 
 # Two pending changes a line apart, and a third inside a widget that positions
-# its own contents — the case where `left: 100%` would resolve against the card
-# rather than the column and drop the controls back into the text.
+# its own contents — the case where `left: 100%` resolves against the card rather
+# than the column, and drops the controls back into the text, unless the row is
+# the column's own child.
 SUGGESTION_PAGE = """<!doctype html>
 <html lang="en">
 <head>
@@ -1370,11 +1371,13 @@ SUGGESTION_PAGE = """<!doctype html>
 
 def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     """Review chrome hangs in the page margin, so the prose keeps the full column
-    and reads as it will once the change is settled. Two things can pull the
-    controls back into the text and neither is visible to the lint: a positioned
-    ancestor, which `left: 100%` resolves against instead of the column, and a
-    window too narrow to have a margin at all. Both must dock the row into flow
-    rather than leave it overlapping the page.
+    and reads as it will once the change is settled. The row is the column's own
+    child and takes its line from an anchor inside the change, so how deep the
+    change sits costs it nothing: one inside a card — a positioned ancestor, which
+    `left: 100%` used to resolve against, dropping the row back into the text —
+    hangs in the rail beside its card like any other. What is left is a
+    measurement no lint can make: a window with no margin to hold the row docks it
+    into flow, under the block it decides rather than overlapping the page.
 
     The margin the row hangs in is reserved, not left over, and the posture that
     proves it is the one a reviewer reads in: with the comment panel open, a
@@ -1383,9 +1386,10 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     page, errors = open_page(browser, serve(SUGGESTION_PAGE))
     assert errors == []
     column = page.locator("main").evaluate("el => el.getBoundingClientRect().right")
+    room = page.evaluate("() => document.body.getBoundingClientRect().right")
     box = "el => el.getBoundingClientRect()"
 
-    margin_rows = page.locator("#sug-refill .cq-sug-actions, #sug-thistle .cq-sug-actions")
+    margin_rows = page.locator("[data-cq-for='sug-refill'], [data-cq-for='sug-thistle']")
     assert margin_rows.count() == 2
     for i in range(2):
         assert margin_rows.nth(i).evaluate(box)["left"] > column, (
@@ -1395,12 +1399,16 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     first, second = (margin_rows.nth(i).evaluate(box) for i in range(2))
     assert first["bottom"] <= second["top"], "control rows must not stack on each other"
 
-    # Inside the card the row has no margin to hang in: it docks into flow, which
-    # keeps it inside the card rather than over the column beside it.
-    docked = page.locator("#sug-in-card .cq-sug-actions")
-    assert docked.evaluate("el => el.classList.contains('cq-docked')")
-    card = page.locator("#card-heater").evaluate(box)
-    assert docked.evaluate(box)["right"] <= card["right"] + 1
+    # The card is positioned and the change is three elements down inside it, and
+    # the row still hangs in the rail on the line that change starts — which is
+    # what the anchor buys, and what a static position never could.
+    in_card = page.locator("[data-cq-for='sug-in-card']").evaluate(box)
+    assert in_card["left"] > column and in_card["right"] <= room, (
+        "a change inside a widget is still a change the reviewer decides in the margin"
+    )
+    assert abs(in_card["top"] - page.locator("#sug-in-card cq-old").evaluate(box)["top"]) <= 4, (
+        "the row must hang on the change's own line, not on the block it follows"
+    )
 
     # The panel takes the right of the window, and the rail survives it: the rows
     # keep their line, clear of the column on one side and of the panel on the
@@ -1410,7 +1418,7 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
     page.wait_for_function(
         "() => [...document.querySelectorAll("
-        "'#sug-refill .cq-sug-actions, #sug-thistle .cq-sug-actions')]"
+        "'[data-cq-for=sug-refill], [data-cq-for=sug-thistle]')]"
         ".every(r => !r.classList.contains('cq-docked'))"
     )
     narrowed = page.locator("main").evaluate("el => el.getBoundingClientRect().right")
@@ -1421,7 +1429,9 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
             "with the panel open the row must still hang between column and panel"
         )
 
-    # No margin anywhere: every row docks, and nothing spills sideways.
+    # No margin anywhere: every row docks, and nothing spills sideways. Docked is
+    # the same box in flow where the row was hoisted to, so it reads as a control
+    # line under the block holding the change and never as the one before's.
     page.get_by_role("button", name="Close comments").click()
     page.set_viewport_size({"width": 820, "height": 900})
     page.wait_for_function(
@@ -1429,7 +1439,128 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
         ".every(r => r.classList.contains('cq-docked'))"
     )
     assert page.evaluate("() => document.body.scrollWidth <= document.body.clientWidth")
+    for widget, block in [("sug-refill", "#replace"), ("sug-in-card", "#feeders")]:
+        assert (
+            page.locator(f"[data-cq-for='{widget}']").evaluate(box)["top"]
+            >= page.locator(block).evaluate(box)["bottom"]
+        ), "a docked row belongs under the block whose change it decides"
     page.close()
+
+
+def test_a_moved_change_takes_its_controls_with_it(browser, serve):
+    """The row is the column's child, not the change's, so the subtree a card
+    travels in no longer carries it: a card dragged to another column, or moved by
+    the replay of someone else's drag, leaves and re-enters the document with its
+    row unhooked. Re-connection has to hang it again, or the reviewer loses the
+    only way to decide a change that is still plainly pending on the page. Replayed
+    rather than dragged, because that is the same move with no gesture in the way."""
+    url = serve(SUGGESTION_PAGE)
+    interact.append_event(serve.page_dir, {
+        "kind": "action", "author": "user", "version": 1, "widget": "feeders",
+        "action": "move", "detail": {"card": "card-heater", "to": "col-done", "index": 0},
+    })
+    page, errors = open_page(browser, url)
+    expect(page.locator("#col-done #card-heater")).to_be_visible()
+    box = "el => el.getBoundingClientRect()"
+    row = page.locator("[data-cq-for='sug-in-card']")
+    expect(row).to_be_visible()
+    change = page.locator("#sug-in-card cq-old").evaluate(box)
+    assert abs(row.evaluate(box)["top"] - change["top"]) <= 4, (
+        "the row must find the moved change's line again, not the one it left"
+    )
+    row.locator(".cq-sug-accept").click()
+    expect(page.locator("#sug-in-card cq-old")).to_be_hidden()
+    assert errors == []
+    page.close()
+
+
+# A change the reader hasn't opened yet. The row hangs off an anchor in the
+# change, and a collapsed container reports its content's last rendered geometry
+# rather than nothing at all — so a row that trusted a measurement would hang in
+# the margin deciding a change nobody can see.
+COLLAPSED_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>collapsed</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Winter</h1>
+<p id="stocked">The feeders are stocked.
+  <cq-suggestion id="sug-now">
+    <cq-new>Thistle goes out in October.</cq-new>
+  </cq-suggestion></p>
+<details id="later"><summary id="sum">Deferred</summary>
+<p id="deferred">Nest boxes wait for spring.
+  <cq-suggestion id="sug-boxes">
+    <cq-new>Order them in February.</cq-new>
+  </cq-suggestion></p>
+</details>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_row_waits_for_the_change_it_decides_to_be_on_screen(browser, serve):
+    """A change inside a collapsed container has no line for its row to hang on,
+    and an anchor that isn't rendered is no anchor at all: the row falls back to
+    the block it was hoisted to and hangs there in the margin, offering to decide
+    something the reader can't see. It waits instead, and arrives on the change's
+    own line the moment the container opens — a real click on the summary, because
+    opening it is the reader's gesture and the reflow it causes is the point."""
+    page, errors = open_page(browser, serve(COLLAPSED_PAGE))
+    waiting = page.locator("[data-cq-for='sug-boxes']")
+    expect(page.locator("[data-cq-for='sug-now']")).to_be_visible()
+    expect(waiting).to_be_hidden()
+
+    page.locator("#sum").click()
+    expect(waiting).to_be_visible()
+    box = "el => el.getBoundingClientRect()"
+    row = waiting.evaluate(box)
+    assert row["left"] > page.locator("main").evaluate(box)["right"], (
+        "the row must arrive in the margin, not over the prose that just opened"
+    )
+    assert abs(row["top"] - page.locator("#sug-boxes cq-new").evaluate(box)["top"]) <= 4, (
+        "and on the line of the change it decides"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_the_rail_survives_every_script_being_removed(browser, serve, tmp_path):
+    """A standalone copy of a colloquy page is its rendered DOM with the script tags
+    dropped, and the pass that placed these rows is script. It doesn't have to run
+    again: the row is a child of <main> in the serialized markup, and `left: 100%`
+    against the column with `top: anchor(top)` against the change re-solve wherever
+    the copy is opened and at whatever width. Including the change inside the card,
+    whose positioned ancestor is exactly what a placement done in script would have
+    had to correct for — and could not, with no script left to run."""
+    page, _ = open_page(browser, serve(SUGGESTION_PAGE))
+    page.evaluate("() => document.querySelectorAll('script').forEach(s => s.remove())")
+    baked = page.evaluate("() => document.documentElement.outerHTML").replace(
+        '<link rel="stylesheet" href="/theme.css">',
+        "<style>" + (serve.page_dir / "theme.css").read_text() + "</style>",
+    )
+    page.close()
+
+    standalone = tmp_path / "standalone.html"
+    standalone.write_text(baked)
+    loose = browser.new_page(viewport={"width": 1500, "height": 900})
+    loose.goto(standalone.as_uri(), wait_until="load")
+    assert loose.evaluate("document.querySelectorAll('script').length") == 0
+    box = "el => el.getBoundingClientRect()"
+    column = loose.locator("main").evaluate(box)["right"]
+    for widget in ("sug-refill", "sug-in-card"):
+        row = loose.locator(f"[data-cq-for='{widget}']").evaluate(box)
+        assert row["left"] > column, f"{widget}'s row lost the rail without its script"
+        assert abs(row["top"] - loose.locator(f"#{widget} cq-old").evaluate(box)["top"]) <= 4, (
+            f"{widget}'s row lost its change's line without its script"
+        )
+    loose.close()
 
 
 def test_accepting_a_suggestion_settles_it_and_reaches_claude(browser, serve):
@@ -1439,7 +1570,7 @@ def test_accepting_a_suggestion_settles_it_and_reaches_claude(browser, serve):
     The outcome has to reach the log too: what the reviewer sees settle and what
     Claude is told must be the same event."""
     page, errors = open_page(browser, serve(SUGGESTION_PAGE))
-    accept = page.locator("#sug-refill .cq-sug-accept")
+    accept = page.locator("[data-cq-for='sug-refill'] .cq-sug-accept")
     assert accept.get_attribute("aria-label").startswith(
         "Accept the suggested change: Refill a feeder when"
     ), "the button names the proposal, not the text being replaced"
@@ -1447,7 +1578,7 @@ def test_accepting_a_suggestion_settles_it_and_reaches_claude(browser, serve):
     accept.click()
     expect(page.locator("#sug-refill cq-old")).to_be_hidden()
     expect(page.locator("#sug-refill cq-new")).to_be_visible()
-    assert page.locator("#sug-refill .cq-sug-actions").is_hidden()
+    expect(page.locator("[data-cq-for='sug-refill']")).to_be_hidden()
     settled = page.locator("#sug-refill cq-new").evaluate(
         "el => getComputedStyle(el).textDecorationLine + ' ' + getComputedStyle(el).backgroundColor"
     )
@@ -1506,7 +1637,7 @@ def test_a_widget_naming_its_own_words_does_not_read_the_runtimes(browser, serve
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     # Vacuous otherwise: the line has to be inside the slot the label is read from.
     assert page.locator("cq-new #now > .cq-mark-note").count() == 1
-    page.locator(f"#sug .cq-sug-{outcome}").click()
+    page.locator(f"[data-cq-for='sug'] .cq-sug-{outcome}").click()
     expect(page.locator(".cq-toast")).to_have_text(
         f"{verb} “Retry three times.” — sent to Claude"
     )
@@ -1527,7 +1658,7 @@ def test_accept_all_decides_every_pending_suggestion(browser, serve):
         expect(page.locator(f"#{widget} cq-new")).to_be_visible()
         # Waited for, not read once: each is decided by its own round trip, so the
         # last of them is still in flight when the first has settled.
-        expect(page.locator(f"#{widget} .cq-sug-actions")).to_be_hidden()
+        expect(page.locator(f"[data-cq-for='{widget}']")).to_be_hidden()
     for widget in ("sug-refill", "sug-in-card"):  # the two that replace rather than insert
         expect(page.locator(f"#{widget} cq-old")).to_be_hidden()
     # Nothing left to accept, so the button says nothing rather than saying zero.
@@ -1550,10 +1681,10 @@ def test_a_decision_the_server_never_took_goes_back_to_pending(browser, serve):
     a change the next version won't carry and the reviewer won't know to repeat."""
     page, errors = open_page(browser, serve(SUGGESTION_PAGE))
     page.route("**/api/event", lambda route: route.abort())
-    page.locator("#sug-refill .cq-sug-accept").click()
+    page.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
 
     expect(page.locator("#sug-refill cq-old")).to_be_visible()
-    expect(page.locator("#sug-refill .cq-sug-actions")).to_be_visible()
+    expect(page.locator("[data-cq-for='sug-refill']")).to_be_visible()
     assert page.locator("#sug-refill").get_attribute("data-cq-state") is None
     # And the page's own count is derived from that, so it comes back too.
     expect(page.get_by_role("button", name="Accept all (3)")).to_be_visible()
@@ -1562,7 +1693,7 @@ def test_a_decision_the_server_never_took_goes_back_to_pending(browser, serve):
 
     # The retry is a second click, not a reload: the widget is pending again.
     page.unroute("**/api/event")
-    page.locator("#sug-refill .cq-sug-accept").click()
+    page.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
     expect(page.locator("#sug-refill cq-old")).to_be_hidden()
     # The refused POST is the one thing the console may carry, and it is this test's
     # own doing — anything else means the page broke on the way back to pending.
@@ -1580,10 +1711,10 @@ def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, 
     first, first_errors = open_page(browser, url)
     second, second_errors = open_page(browser, url)
 
-    first.locator("#sug-refill .cq-sug-accept").click()
+    first.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
     expect(second.locator("#sug-refill cq-old")).to_be_hidden()
     expect(second.locator("#sug-refill cq-new")).to_be_visible()
-    expect(second.locator("#sug-refill .cq-sug-actions")).to_be_hidden()  # nothing left to decide
+    expect(second.locator("[data-cq-for='sug-refill']")).to_be_hidden()  # nothing left to decide
     expect(second.get_by_role("button", name="Accept all (2)")).to_be_visible()
 
     # Now the race the controls make possible: a window cut off from the log still
@@ -1592,11 +1723,11 @@ def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, 
     # settles it for both once the cut-off one catches up.
     third, third_errors = open_page(browser, url)
     third.route("**/api/state", lambda route: route.abort())
-    first.locator("#sug-thistle .cq-sug-accept").click()
+    first.locator("[data-cq-for='sug-thistle'] .cq-sug-accept").click()
     # In the log before the reject is clicked, so which one is later is this test's
     # to decide rather than the network's.
     expect(second.get_by_role("button", name="Accept all (1)")).to_be_visible()
-    third.locator("#sug-thistle .cq-sug-reject").click()
+    third.locator("[data-cq-for='sug-thistle'] .cq-sug-reject").click()
     third.unroute("**/api/state")
     for tab in (first, second, third):
         expect(tab.locator("#sug-thistle cq-new")).to_be_hidden()
@@ -1725,7 +1856,7 @@ def test_a_pending_suggestion_can_be_discussed_instead_of_decided(browser, serve
     expect(thread).not_to_have_class(re.compile(r"\bdetached\b"))
     assert painted(page, "cq-mark") == "Refill a feeder when its camera shows it half-empty."
 
-    page.locator("#sug-refill .cq-sug-reject").click()
+    page.locator("[data-cq-for='sug-refill'] .cq-sug-reject").click()
     expect(thread).to_have_class(re.compile(r"\bdetached\b"))
     assert painted(page, "cq-mark") == "", (
         "a mark stayed painted on text the reviewer's own decision removed"
@@ -1830,7 +1961,7 @@ def test_a_decision_that_empties_its_widget_detaches_the_element_anchor(browser,
     expect(thread).not_to_have_class(re.compile(r"\bdetached\b"))
     expect(page.locator("#sug-thistle")).to_have_class(re.compile(r"\bcq-mark-el\b"))
 
-    page.locator("#sug-thistle .cq-sug-reject").click()
+    page.locator("[data-cq-for='sug-thistle'] .cq-sug-reject").click()
     expect(thread).to_have_class(re.compile(r"\bdetached\b"))
     expect(page.locator("#sug-thistle")).not_to_have_class(re.compile(r"\bcq-mark-el\b"))
     assert errors == []
@@ -2538,36 +2669,100 @@ def test_a_selection_around_a_control_does_not_deaden_it(browser, serve):
     fresh press, long after that drag's own mouseup.
 
     Asking whether the live selection *contains* the control is a question about the
-    DOM, and a suggestion's buttons are its children, hung out in the margin by CSS
-    alone: every selection over the passage contains them. So Accept did nothing, and
-    kept doing nothing, because a press that refuses a drag never collapses the
-    selection that deadened it either. The keyboard still worked, which is the shape of
-    a bug nobody reports — it looks like a slip of the mouse.
+    DOM, and a suggestion's row is the column's own child in flow between the block
+    holding the change and the next one: a drag across both runs straight over it. So
+    Accept did nothing, and kept doing nothing, because a press that refuses a drag
+    never collapses the selection that deadened it either. The keyboard still worked,
+    which is the shape of a bug nobody reports — it looks like a slip of the mouse.
 
     Both decisions the product exists to collect go through a press, so this asserts the
     pointer and then the keyboard, with the selection standing throughout."""
     page, errors = open_page(browser, serve(SUGGESTION_PAGE))
-    # The card's suggestion rather than the column's, because a suggestion in running
-    # prose hangs its controls in the page margin, which is where the drag's own
-    # Comment button lands too — a real element in front of the one under test.
-    card = page.locator("#card-heater").bounding_box()
-    page.mouse.move(card["x"] + 4, card["y"] + 6)
+    # Across the two paragraphs, so the row deciding the first is inside the selection.
+    start = page.locator("#replace").bounding_box()
+    end = page.locator("#insert").bounding_box()
+    page.mouse.move(start["x"] + 4, start["y"] + 6)
     page.mouse.down()
-    page.mouse.move(card["x"] + card["width"] - 6, card["y"] + card["height"] - 6, steps=16)
+    page.mouse.move(end["x"] + end["width"] - 6, end["y"] + end["height"] - 6, steps=16)
     page.mouse.up()
     assert page.evaluate(
-        "() => getSelection().containsNode(document.querySelector('#sug-in-card"
-        " .cq-sug-reject'), true)"
+        "() => getSelection().containsNode(document.querySelector("
+        "'[data-cq-for=sug-refill] .cq-sug-reject'), true)"
     ), "the selection doesn't reach the control, so this run tests nothing"
 
-    page.locator("#sug-in-card .cq-sug-reject").click()
-    expect(page.locator("#sug-in-card")).to_have_attribute("data-cq-state", "reject")
+    page.locator("[data-cq-for='sug-refill'] .cq-sug-reject").click()
+    expect(page.locator("#sug-refill")).to_have_attribute("data-cq-state", "reject")
     assert page.evaluate("() => !getSelection().isCollapsed"), (
         "the press cleared the selection, so the keyboard half below is untested"
     )
-    page.locator("#sug-thistle .cq-sug-accept").focus()
+    page.locator("[data-cq-for='sug-in-card'] .cq-sug-accept").focus()
     page.keyboard.press("Enter")
-    expect(page.locator("#sug-thistle")).to_have_attribute("data-cq-state", "accept")
+    expect(page.locator("#sug-in-card")).to_have_attribute("data-cq-state", "accept")
+    assert errors == []
+    page.close()
+
+
+def test_the_comment_button_stands_on_no_control(browser, serve):
+    """And the other way the same press is lost: not deadened but covered. A selection
+    fills its lines, so the button placed beside it goes out to the column's right edge —
+    into the margin, on the line the change starts, which is exactly where the row
+    deciding that change hangs. The reviewer's own gesture put the 💬 over the Accept
+    they made it to reach, and the press did the one thing worse than nothing: it hit the
+    button and opened a composer, because a press on the 💬 is not the outside click that
+    dismisses it.
+
+    Asserted through the hit test rather than the rectangles, since what matters is which
+    element the press would reach — and then by making the press, which is the whole
+    claim."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    box = page.locator("#replace").bounding_box()
+    page.mouse.move(box["x"] + 4, box["y"] + 6)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] - 8, box["y"] + box["height"] - 6, steps=16)
+    page.mouse.up()
+    expect(page.locator(".cq-fab")).to_be_visible()
+
+    under = page.evaluate("""() => [...document.querySelectorAll("[data-cq-offer]")]
+        .filter(c => !c.closest(".cq-chrome"))
+        .filter(c => { const b = c.getBoundingClientRect();
+                       const top = document.elementFromPoint((b.left + b.right) / 2,
+                                                            (b.top + b.bottom) / 2);
+                       return top && !c.contains(top) && top.closest(".cq-chrome"); })
+        .map(c => c.className)""")
+    assert under == [], f"floating chrome is standing on controls: {under}"
+
+    page.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
+    expect(page.locator("#sug-refill")).to_have_attribute("data-cq-state", "accept")
+    expect(page.locator(".cq-composer")).to_be_hidden()  # the press decided, it didn't compose
+    assert errors == []
+    page.close()
+
+
+def test_the_composer_opens_where_the_button_stood(browser, serve):
+    """Stepping the button aside is undone if what it opens goes back. The button carries
+    the anchor it was raised on, and it used to carry the position it was *asked for*
+    alongside — the same point for as long as nothing moved it, and a different one from
+    the moment something did. So the 💬 cleared the row and the composer it opened landed
+    back on top of it."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    box = page.locator("#replace").bounding_box()
+    page.mouse.move(box["x"] + 4, box["y"] + 6)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] - 8, box["y"] + box["height"] - 6, steps=16)
+    page.mouse.up()
+    expect(page.locator(".cq-fab")).to_be_visible()
+    stood = page.locator(".cq-fab").evaluate("el => el.getBoundingClientRect().top")
+    # It moved, or this run would hold whether or not the position were carried along.
+    assert stood > page.locator("[data-cq-for='sug-refill']").evaluate(
+        "el => el.getBoundingClientRect().bottom"
+    ), "the button never stepped aside, so where it stood proves nothing"
+
+    page.locator(".cq-fab").click()
+    expect(page.locator(".cq-composer")).to_be_visible()
+    opened = page.locator(".cq-composer").evaluate("el => el.getBoundingClientRect().top")
+    assert abs(opened - stood) <= 1, (
+        f"the composer opened at {opened}, where the button was asked for, not {stood}"
+    )
     assert errors == []
     page.close()
 
