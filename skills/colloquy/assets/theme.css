@@ -253,17 +253,17 @@ cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-off
  * runtime hides the offers. Left hidden, a printout would state the decision in
  * the ok ring alone, which greyscale drops. */
 /* `settled`: the decision is made and acted on, so the group reads as one line
- * — the disclosure the upgrade builds — with the cards behind it. Collapsed it
- * lays out as a block, so hidden cards contribute no grid rows and no gaps;
- * open, the grid is back. Unupgraded (and in print) every card shows. */
-cq-options[settled].cq-rendered:not([open]) { display: block; }
+ * — the disclosure the upgrade builds — with the cards behind it. Unupgraded, and
+ * anywhere the disclosure has no handler behind it, every card shows. */
 /* Scoped, not a bare .cq-settled: the row wears cq-ui for the chrome look, and the
  * runtime's own .cq-ui font and color rules are later in the cascade. This is the
  * page's disclosure, so it reads at the theme's summary size. (The part of the row
  * naming the chosen card is the page speaking and says so, which anchoring reads
- * over the class — see cq-options.js.) */
+ * over the class — see cq-options.js.) Laid out by the live-page block below;
+ * hidden until then, because a button is worth showing only where something will
+ * answer it. */
 cq-options[settled] > .cq-settled {
-              grid-column: 1 / -1; display: flex; width: 100%; align-items: baseline;
+              grid-column: 1 / -1; display: none; width: 100%; align-items: baseline;
               gap: var(--sp-2); margin: 0 0 var(--sp-2); padding: 7px 12px;
               font: inherit; font-size: 14.5px; font-weight: 600; text-align: left;
               background: var(--field); color: var(--ink); cursor: pointer;
@@ -278,29 +278,29 @@ cq-options[open] > .cq-settled::before { content: "▾"; }
                     color: var(--muted); white-space: nowrap; }
 .cq-settled-diff { font-weight: 400; font-size: var(--t-6); padding: 0 6px;
                    border-radius: 999px; background: var(--add-tint); color: var(--ok-ink); }
-/* The collapse is a screen affordance, and scoping it says so — print gets the
- * cards back by simply not hiding them, rather than by undoing a hide. */
+/* The collapse is the whole of what the disclosure's handler does, so it is offered
+ * only in the live page and every other medium gets the cards back by never being
+ * handed it, rather than by undoing a hide. A page left holding the row elsewhere
+ * would state a decision and offer no way to the options it was made among. */
 @media screen {
-  /* until-found keeps the card's own box in flow, and a card is bordered and
-   * padded — zero it, or the collapse leaves a stack of empty boxes behind. */
-  cq-options[settled] > cq-option[hidden] { padding: 0; border: 0; box-shadow: none; }
-  /* The boolean-hidden fallback (no until-found support) hides here, because the
-   * display:block above outranks the UA's [hidden] rule. */
-  cq-options[settled] > cq-option[hidden]:not([hidden="until-found"]) { display: none; }
+  html:not(.cq-copy) {
+    cq-options[settled] > .cq-settled { display: flex; }
+    /* Collapsed the group lays out as a block, so hidden cards contribute no grid
+     * rows and no gaps; open, the grid is back. */
+    cq-options[settled].cq-rendered:not([open]) { display: block; }
+    /* until-found keeps the card's own box in flow, and a card is bordered and
+     * padded — zero it, or the collapse leaves a stack of empty boxes behind. */
+    cq-options[settled] > cq-option[hidden] { padding: 0; border: 0; box-shadow: none; }
+    /* The boolean-hidden fallback (no until-found support) hides here, because the
+     * display:block above outranks the UA's [hidden] rule. */
+    cq-options[settled] > cq-option[hidden]:not([hidden="until-found"]) { display: none; }
+  }
 }
-/* Print shows every card: the row hides with the rest of the UI, and the grid
- * comes back (content-visibility is the only part of the hide left to undo). */
+/* Paper cannot edit the document the way `export` does, so the collapsed cards keep
+ * their hidden attribute and the content-visibility it carries is undone here. */
 @media print {
-  cq-options[settled].cq-rendered:not([open]) { display: grid; }
   cq-options[settled] > cq-option { content-visibility: visible !important; }
 }
-/* Same answer for a copy, for the reason a copy shares with paper: the row that
- * opens the group is a button, and nothing in a file presses one. The cards would
- * otherwise be a decision the copy states without the options it was made among.
- * The grid is all it takes — the copy drops the cards' hidden attribute, so they
- * lay out with the room their chips are positioned into, as an opened group's do. */
-.cq-copy cq-options[settled].cq-rendered:not([open]) { display: grid; }
-.cq-copy cq-options[settled] > .cq-settled { display: none; }
 
 /* cq-milestones / cq-milestone: a rail of status dots. The rail and dots are
  * CSS; the chip row (`when`, `tags`) is built by the cq-milestone upgrade. */
@@ -422,22 +422,17 @@ cq-card.cq-inhand { opacity: 1; cursor: grabbing;
                     box-shadow: 0 8px 24px rgba(0, 0, 0, .22); }
 /* cq-tabs / cq-tab: parallel workstreams, one panel on screen at a time. The
  * strip is generated by the upgrade; which tab is open is the reader's view
- * state, so everything here is presentation. Unupgraded (and in print) the
- * panels stack as labeled sections. */
+ * state, so everything here is presentation. Unupgraded, and anywhere the
+ * strip has no handler behind it, the panels stack as labeled sections. */
 cq-tabs { display: block; margin: 14px 0; }
 cq-tab { display: block; }
 cq-tab::before { content: attr(label); display: block; font-size: var(--t-6);
                  text-transform: uppercase; letter-spacing: .05em;
                  color: var(--muted); margin: 18px 0 8px; }
 cq-tabs.cq-rendered > cq-tab { margin-top: 14px; }
-cq-tabs.cq-rendered > cq-tab::before { content: none; } /* the strip carries the label */
-/* until-found keeps the element's own box in flow; zero it so inactive panels
- * leave no stray gap below the active one. */
-cq-tabs.cq-rendered > cq-tab[hidden] { margin: 0; }
-/* The boolean-hidden fallback (no until-found support) hides here, because the
- * display:block above outranks the UA's [hidden] rule. */
-cq-tabs.cq-rendered > cq-tab[hidden]:not([hidden="until-found"]) { display: none; }
-.cq-tabstrip { display: flex; flex-wrap: wrap; gap: 2px;
+/* Laid out by the live-page block below; hidden until then, because a row of
+ * buttons is worth showing only where something will answer one. */
+.cq-tabstrip { display: none; flex-wrap: wrap; gap: 2px;
                border-bottom: 1px solid var(--rule); }
 .cq-tabstrip .cq-tab-btn { font: inherit; font-size: var(--t-5); padding: 6px 12px;
                color: var(--muted); cursor: pointer;
@@ -449,24 +444,27 @@ cq-tabs.cq-rendered > cq-tab[hidden]:not([hidden="until-found"]) { display: none
 .cq-tabdiff { font-size: var(--t-6); font-weight: 400; margin-left: 6px;
               padding: 0 6px; border-radius: 999px;
               background: var(--add-tint); color: var(--ok-ink); }
-/* Print shows every panel: the strip hides with the rest of the UI, and the
- * stacked labels come back. */
-@media print {
-  cq-tabs.cq-rendered > cq-tab { display: block !important;
-                             content-visibility: visible !important;
-                             margin-top: 14px; }
-  cq-tabs.cq-rendered > cq-tab::before { content: attr(label); }
-}
-/* A copy answers the same question as paper and gets the same answer, for a
- * different reason: nothing on paper can be pressed, and nothing in a copy is
- * listening. The strip's buttons needed a handler to switch a panel, so in a copy
- * they are decoration in front of content — the panels stack and the labels come
- * back, and the strip goes rather than sit there taking clicks that do nothing.
- * A control whose state the browser owns needs none of this and says nothing here;
+/* One panel at a time is the whole of what the strip's handler does, so it is
+ * offered only in the live page and the rest is what the markup already says.
+ * A control whose state the browser owns needs no such block and has none;
  * that is the whole difference between this widget and cq-shot's radios. */
-.cq-copy cq-tabs.cq-rendered > cq-tab { margin-top: 14px; }
-.cq-copy cq-tabs.cq-rendered > cq-tab::before { content: attr(label); }
-.cq-copy .cq-tabstrip { display: none; }
+@media screen {
+  html:not(.cq-copy) {
+    .cq-tabstrip { display: flex; }
+    cq-tabs.cq-rendered > cq-tab::before { content: none; } /* the strip carries the label */
+    /* until-found keeps the element's own box in flow; zero it so inactive panels
+     * leave no stray gap below the active one. */
+    cq-tabs.cq-rendered > cq-tab[hidden] { margin: 0; }
+    /* The boolean-hidden fallback (no until-found support) hides here, because the
+     * display:block above outranks the UA's [hidden] rule. */
+    cq-tabs.cq-rendered > cq-tab[hidden]:not([hidden="until-found"]) { display: none; }
+  }
+}
+/* Paper cannot edit the document the way `export` does, so the inactive panels keep
+ * their hidden attribute and the content-visibility it carries is undone here. */
+@media print {
+  cq-tabs.cq-rendered > cq-tab { content-visibility: visible !important; }
+}
 
 /* cq-shot: a before/after pair of screenshots, one on screen at a time. Both
  * frames occupy the same grid cell, so the box is the taller of the two and

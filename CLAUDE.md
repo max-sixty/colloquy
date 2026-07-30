@@ -405,16 +405,20 @@ why the answers coincide: paper drops the radios and stacks both frames, and the
 naming them are `data-cq-gen` rather than `.cq-ui` — a frame's caption is the widget's own
 word, like a column's heading, not a control's like "Save".
 
-A copy is the third medium, and `export` marks it as one: `.cq-copy` on the root, read by
-the theme per widget beside the `@media print` block that asks the same question. Where a
-control's state is the browser's the widget says nothing there and keeps working; where it
-needed a handler the widget says what a copy shows instead, as `cq-tabs` does in stacking
-its panels and dropping a strip that switches nothing. Two rules, not three, because a
-copy and paper differ on exactly one thing: paper can press nothing, a copy can still
-press what the browser owns. What neither medium can do is reveal, so `export` drops
-`hidden="until-found"` — a promise nothing in the file can keep, and one that takes the
-collapsed element's layout with it, since the theme zeroes a hidden card's padding and
-that padding is the room its chips are positioned into.
+A copy is the third medium, and `export` marks it as one: `.cq-copy` on the root. The
+theme reads it as a guard rather than a case — a widget writes its affordance once,
+inside `@media screen { html:not(.cq-copy) { … } }`, and everything outside that block is
+the page the markup already describes, which is what a copy and paper both get by never
+being handed the affordance rather than by undoing it. Where a control's state is the
+browser's the widget has no such block and keeps working; where it needed a handler,
+withholding the block is what stacks `cq-tabs`' panels and drops a strip that switches
+nothing. The theme's `@media print` is then only what paper needs beyond a copy, and
+paper needs two things: it can press nothing, so `cq-shot` stacks both frames there while
+a copy still flips them, and it cannot edit the document, so it undoes the
+content-visibility that `export` removes outright by dropping `hidden="until-found"` — a
+promise nothing in the file can keep, and one that takes the collapsed element's layout
+with it, since the theme zeroes a hidden card's padding and that padding is the room its
+chips are positioned into.
 
 ### The chrome's rules stay inside the chrome
 

@@ -5094,6 +5094,10 @@ def test_an_exported_example_stands_on_its_own(example, browser, serve, tmp_path
                           && getComputedStyle(el).display !== 'contents')
             .map(el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '')),
     })""")
+    # The gate's own reading, on the medium that most needs it: a copy is laid out by
+    # rules no other medium runs, and the last two ways one went out wrong were both a
+    # widget's words landing on the page's.
+    covered = page.evaluate(interact.COVERED_WORDS)
     page.close()
 
     assert state["scripts"] == 0, "a copy with no server behind it keeps no script"
@@ -5107,4 +5111,5 @@ def test_an_exported_example_stands_on_its_own(example, browser, serve, tmp_path
         "the copy says less than the page did: content sitting behind a control that "
         f"needed a handler, and nothing in a file can press one — {state['unshown']}"
     )
+    assert covered == [], f"the copy draws its own words over each other: {covered}"
     assert errors == [], f"{example.stem} needs a server to render: {errors}"

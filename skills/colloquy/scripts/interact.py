@@ -3256,14 +3256,62 @@ PAPER_WORDS = """() => {
 }"""
 
 
+# Words the page draws in the same place as other words. A copy went out with a settled
+# group's cards laid across the heading above them — the cards kept the collapsed
+# padding, which is the room the group is laid out in — and the reviewer saw it in the
+# first second while every assertion passed: the words were all present, all shown, and
+# all of a usable size. They were in the same place, and nothing was asking about place.
+#
+# Boxes rather than a hit test, which is the other way to ask: a press landing on the
+# wrong element is a different fault with its own test, and the medium this has to hold
+# up in is the copy, where there is nothing left to press. Text against text, because
+# text over a background, a border, or a picture is how a page is built.
+#
+# A pair where one element contains the other is skipped: a paragraph and the <em>
+# inside it are one run of words that the flow lays out together, and their boxes
+# overlap by construction. Two pixels of slack, since a line box carries its leading and
+# adjacent blocks can round into each other by a hair. The runtime's layer is skipped
+# too: it floats over the document on purpose, and where that costs the reviewer a press
+# it is the hit test that says so.
+COVERED_WORDS = """() => {
+    const runs = [];
+    const at = el => { const named = el.closest('[id]');
+                       return named ? `<${named.tagName.toLowerCase()} id=${named.id}>`
+                                    : `<${el.tagName.toLowerCase()}>`; };
+    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const el = n.parentElement;
+        if (!n.data.trim() || el.closest('.cq-chrome')) continue;
+        if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        for (const box of range.getClientRects())
+            if (box.width > 1 && box.height > 1)
+                runs.push({ el, box, text: n.data.trim().slice(0, 40) });
+    }
+    const found = [];
+    for (let i = 0; i < runs.length; i++) for (let j = i + 1; j < runs.length; j++) {
+        const a = runs[i], b = runs[j];
+        if (a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
+        const across = Math.min(a.box.right, b.box.right) - Math.max(a.box.left, b.box.left);
+        const down = Math.min(a.box.bottom, b.box.bottom) - Math.max(a.box.top, b.box.top);
+        if (across <= 2 || down <= 2) continue;
+        found.push(`${at(a.el)} draws ${JSON.stringify(a.text)} in the same place as `
+                   + `${at(b.el)}'s ${JSON.stringify(b.text)}`);
+    }
+    return [...new Set(found)];
+}"""
+
+
 def render_version(browser, url: str) -> list:
     """Everything wrong with a served version that only a browser can see: a
     console or page error, a request that 404s, a fail-soft error box, a widget
     upgraded into a box of no usable size, the page scrolling sideways, words the
-    reviewer can read and can't select — each in both color schemes, because the
-    dark theme is real CSS nobody otherwise renders — plus, in one scheme, a
-    version that authors widget state the log replays over (replay isn't CSS) and
-    words the page says on screen and not on paper (print is scheme-blind).
+    reviewer can read and can't select, words drawn on top of other words — each
+    in both color schemes, because the dark theme is real CSS nobody otherwise
+    renders — plus, in one scheme, a version that authors widget state the log
+    replays over (replay isn't CSS) and, on paper, words the page drops that it
+    says on screen, or draws over each other (print is scheme-blind).
     Returns human-readable failures; [] is a pass.
 
     One implementation with two callers — `check --render` on the page an agent
@@ -3291,6 +3339,17 @@ def render_version(browser, url: str) -> list:
                 f"[{scheme}] the runtime never injected its banner — "
                 + ("; ".join(errors) or "and no console error explains why")
             ]
+        # Every reading below is of a settled page. The widget layer writes half the
+        # document, so a box measured while it is still drawing belongs to no version of
+        # the page — which is the stamp `export` waits on for the same reason.
+        try:
+            page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+        except PlaywrightTimeout:
+            page.close()
+            return [
+                f"[{scheme}] the widget layer never finished upgrading — "
+                + ("; ".join(errors) or "and no console error explains why")
+            ]
         failsoft = page.evaluate(
             "[...document.querySelectorAll('.cq-error')].map(e => e.textContent.trim())"
         )
@@ -3310,6 +3369,7 @@ def render_version(browser, url: str) -> list:
             .filter(box => box.w < 40 || box.h < 10)""")
         overflow = page.evaluate("document.body.scrollWidth - document.body.clientWidth")
         unreachable = page.evaluate(UNREACHABLE_WORDS)
+        covered = page.evaluate(COVERED_WORDS)
         # Replay is scheme-blind, so one scheme's reading covers both. The wait
         # is for the runtime's own caught-up stamp: reading the replay's record
         # mid-replay would miss whatever hadn't landed yet.
@@ -3331,17 +3391,20 @@ def render_version(browser, url: str) -> list:
                     ]
         # Last, and in one scheme: paper has no color scheme, and the medium has to be
         # put back before anything else reads a box.
-        lost = []
+        on_paper = []
         if scheme == "light":
             screen = page.evaluate(PAPER_WORDS)
             page.emulate_media(media="print")
             paper = page.evaluate(PAPER_WORDS)
+            # Paper is laid out by rules no other medium runs, and it is the medium
+            # nobody looks at, so the overlap reading is taken here too while it holds.
+            on_paper = [f"[print] {c}" for c in page.evaluate(COVERED_WORDS)]
             page.emulate_media(media="screen")
             # Paired on the words as well as the position: the page is live, and a poll
             # landing between the two readings would otherwise shift one against the
             # other and report whatever happened to line up. A pair that disagrees says
             # nothing, which is the right way round — the next run reads it again.
-            lost = [
+            on_paper += [
                 f"[print] {s['at']} drops {json.dumps(s['text'])}, which it says on screen"
                 for s, p in zip(screen, paper)
                 if s["text"] == p["text"] and s["shown"] and not p["shown"]
@@ -3354,8 +3417,9 @@ def render_version(browser, url: str) -> list:
         if overflow > 0:
             found.append(f"[{scheme}] the page scrolls sideways by {overflow}px")
         found += [f"[{scheme}] {w}" for w in unreachable]
+        found += [f"[{scheme}] {c}" for c in covered]
         found += [f"[{scheme}] {c}" for c in conflicts]
-        found += lost
+        found += on_paper
         return found
 
     return [*in_scheme("light"), *in_scheme("dark")]
@@ -3419,7 +3483,7 @@ def render_check(page_dir: Path, version: int) -> int:
         return 1
     print(
         f"✓ {name}: renders clean in Chrome, light and dark — no console errors, "
-        "every widget takes space, no sideways scroll"
+        "every widget takes space, no words on top of other words, no sideways scroll"
     )
     return 0
 
@@ -3435,9 +3499,10 @@ def render_check(page_dir: Path, version: int) -> int:
 # flips on radios.
 #
 # `cq-copy` is the medium, declared the way `@media print` is and read the same way —
-# by the theme, per widget. A widget whose control needed a handler says there what the
-# copy shows instead, and one whose control is native says nothing. That is why no
-# widget is named here: this marks the medium, and the widgets answer for themselves.
+# by the theme, per widget. A widget whose control needed a handler puts the affordance
+# behind a guard this class fails, so a copy gets the page its markup describes; one
+# whose control the browser owns has no guard and keeps working. That is why no widget
+# is named here: this marks the medium, and the widgets answer for themselves.
 BAKE = """() => {
     document.documentElement.classList.add('cq-copy');
     document.querySelectorAll('script, .cq-chrome').forEach(el => el.remove());
@@ -3447,7 +3512,7 @@ BAKE = """() => {
     // nothing can keep, and it takes the collapsed element's layout down with it:
     // the theme zeroes a hidden card's padding, which is the room its chips are
     // positioned into. Dropping it opens the element on the terms it was authored
-    // with, which is what the widget's own copy rules below then arrange.
+    // with, which is the layout the theme's live-page guard was withholding anyway.
     document.querySelectorAll('[hidden="until-found"]')
         .forEach(el => el.removeAttribute('hidden'));
     return document.documentElement.outerHTML;
