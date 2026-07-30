@@ -523,9 +523,10 @@ and outside clicks hide, they don't discard. Cancel is the only discard.
   `wt merge`, a direct squash merge to main. That holds for background jobs too, whose
   harness default is to push and open a draft PR.
 - **A session loads each host's cached copy, not the checkout.** Both repo-root
-  marketplaces point at `plugins/colloquy/`. `codex plugin add colloquy@colloquy` copies
-  from the main checkout every time; `claude plugin update colloquy@colloquy` copies from
-  GitHub main, so a payload change reaches it only once pushed. Neither manifest declares
-  a version, because that string is Claude Code's cache key: an unchanged one leaves the
-  old copy in place and the update reports it as the latest. Without one the key is the
-  commit.
+  marketplaces point at `plugins/colloquy/`, and both hosts install from GitHub main, so a
+  payload change reaches a session only once pushed. `claude plugin update colloquy@colloquy`
+  refreshes Claude Code's copy; Codex installs from a marketplace snapshot it fetches
+  separately, so it takes `codex plugin marketplace upgrade colloquy` and then
+  `codex plugin add colloquy@colloquy`. Neither manifest declares a version, because that
+  string is Claude Code's cache key: an unchanged one leaves the old copy in place and the
+  update reports it as the latest. Without one the key is the commit.
