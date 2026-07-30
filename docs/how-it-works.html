@@ -224,10 +224,11 @@ page rolls back to the authored state as that version lands.</p>
 <p><code>page init</code> vendors the whole layer (runtime, theme, registry, widget
 modules) into the page's directory, overlaying the shipped defaults with
 <code>~/.config/colloquy/</code> and the project's
-<code>.colloquy/</code>. Override one CSS token to change the accent
-everywhere; replace <code>theme.css</code> to change the voice; add a registry
-entry and a module to add a widget. Because pages are self-contained, a version
-you approved can't change under you when the defaults do.</p>
+<code>.colloquy/</code>. Theme rules cascade over the defaults; registry
+entries add or replace widgets; modules replace by filename. The
+<a href="customizing.html">customization guide</a> shows how to scaffold each
+shape. Because pages are self-contained, a version you approved can't change
+under you when the defaults do.</p>
 </section>
 
 <section id="gate">
@@ -256,6 +257,7 @@ without port forwarding, has no hand-over.</p>
 
 <footer id="colophon">
 <p><a href="index.html">What colloquy offers</a> ·
+<a href="customizing.html">Customize</a> ·
 <a href="https://github.com/max-sixty/colloquy">GitHub</a> · MIT license. This
 page is a static render of the theme and widgets it describes; the comment layer
 joins in when a live session serves a page.</p>

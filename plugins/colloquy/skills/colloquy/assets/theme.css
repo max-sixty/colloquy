@@ -1,9 +1,9 @@
 /* Colloquy default theme, vendored into each page directory by `page init` and served
  * at /theme.css. Four tiers, cheapest first: tokens, element styles for plain
  * semantic HTML, class idioms (one rule + one catalog line each), and
- * element-widgets (cq-* tags rendered entirely by CSS). Customization is the
- * same cascade: override a token, then a widget's rule, then replace the file
- * via a project or user layer (see interact.py `page init`).
+ * element-widgets (cq-* tags rendered entirely by CSS). Customization follows
+ * the same cascade: override a token, then a widget's rule. `page init` appends
+ * user and project theme files after these defaults.
  *
  * Every surface rides a token, so the dark palette is exactly one more token
  * block — nothing else in this file (or the runtime, which styles its UI from

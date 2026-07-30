@@ -14,9 +14,10 @@ each new version on its own.
 ![colloquy demo](docs/demo.gif)
 
 [`docs/index.html`](docs/index.html) is the tour: what it does and a review end to end.
-[`docs/how-it-works.html`](docs/how-it-works.html) covers the mechanism. Both are set in
-colloquy's own theme, so they double as specimens. Open them in a browser from a
-checkout.
+[`docs/how-it-works.html`](docs/how-it-works.html) covers the mechanism, and
+[`docs/customizing.html`](docs/customizing.html) covers themes and project widgets.
+All three use colloquy's own theme, so they double as specimens. Open them in a browser
+from a checkout.
 
 ## Install
 
@@ -41,6 +42,24 @@ in a PEP 723 header) and a browser on the same machine as the session.
 Then ask the agent for a page. The explicit skill is `/colloquy [topic]` in Claude Code
 and `$colloquy [topic]` in Codex; with no argument it presents whatever the session is
 currently about.
+
+## Customize
+
+Project customizations live in `.colloquy/`; user customizations live in
+`~/.config/colloquy/`. A short theme file cascades over the defaults, and a widget
+scaffold adds a registry entry, CSS, and optionally an ES module:
+
+```
+colloquy customize theme
+colloquy customize widget cq-callout
+```
+
+Add `--upgrade` to the widget's first scaffold command when it needs browser
+behavior.
+
+The next `colloquy page init <page-dir>` vendors the merged layer. The
+[customization guide](docs/customizing.html) covers the file contracts and the
+project/user precedence.
 
 ## Examples
 

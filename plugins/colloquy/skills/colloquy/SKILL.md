@@ -370,12 +370,16 @@ knows that happened.
 
 `page init` vendors the layer into the page directory from colloquy's shipped defaults,
 then the user's `~/.config/colloquy/`, then the project's `.colloquy/`. Each
-layer mirrors the same layout (`theme.css`, `registry.json`, `widgets/`, `vendor/`).
-Files replace by path; registry files merge by top-level entry, with a later layer
-replacing one complete entry. A custom widget therefore adds its entry without copying
-the shipped registry, while overriding a tag supplies its whole schema. The merged
-vocabulary is validated before vendoring, and its `x-state.detail` schema validates
-every action at `POST /api/event`. `page catalog` reflects the result.
+mirrors the same layout (`theme.css`, `registry.json`, `widgets/`, `vendor/`). Theme
+files concatenate in that order, so a short later file can override tokens or rules
+without copying the defaults. Runtime, widget, and vendor files replace by path;
+registry files merge by top-level entry, with a later layer replacing one complete
+entry. A custom widget therefore adds its entry without copying the shipped registry,
+while overriding a tag supplies its whole schema. `colloquy customize theme` and
+`colloquy customize widget cq-name [--upgrade]` scaffold those files in the project
+layer; pass `--user` for the user layer. The merged vocabulary is validated before
+vendoring, and its `x-state.detail` schema validates every action at
+`POST /api/event`. `page catalog` reflects the result.
 
 The page directory is self-contained: an approved version can't change under its
 reviewer. Re-running `page init` on a live page is the explicit re-vendor; note it in

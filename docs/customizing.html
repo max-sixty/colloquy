@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>customize colloquy</title>
+<meta name="description" content="Customize colloquy's theme and add project or user widgets through the registry, CSS, and optional ES modules.">
+<link rel="stylesheet" href="../plugins/colloquy/skills/colloquy/assets/theme.css">
+<style>
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
+         font-size: var(--t-5); color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+
+<header id="top">
+<p class="eyebrow"><a href="index.html">colloquy</a> · customize</p>
+<h1>Customize colloquy</h1>
+<p class="lede" id="lede">A customization layer can change the theme, add
+<code>cq-*</code> elements, and supply browser behavior. <code>page init</code>
+combines that layer with the shipped one and vendors the result into each page,
+where the normal catalog and checks cover the additions too.</p>
+</header>
+
+<section id="scope">
+<h2>Choose where it applies</h2>
+<table>
+<thead>
+<tr><th>Scope</th><th>Directory</th><th>Scaffold command</th></tr>
+</thead>
+<tbody>
+<tr>
+<td>Current project</td>
+<td><code>.colloquy/</code></td>
+<td><code>colloquy customize theme</code></td>
+</tr>
+<tr>
+<td>Every project for this user</td>
+<td><code>$XDG_CONFIG_HOME/colloquy/</code>, or
+<code>~/.config/colloquy/</code></td>
+<td><code>colloquy customize theme --user</code></td>
+</tr>
+</tbody>
+</table>
+<p>Run project commands from the project root. Both theme and widget scaffold
+commands accept <code>--user</code> to write the user layer instead. During
+<code>page init</code>, the shipped layer loads first, the user layer second, and
+the project layer last. Theme files join in that order. A later registry entry
+or module with the same name replaces the earlier one. Files may be managed
+through symlinks, but user, project, and page-owned paths must resolve
+separately so one scope can never overwrite another.</p>
+</section>
+
+<section id="theme">
+<h2>Adjust the theme</h2>
+<p>The scaffold creates a short <code>theme.css</code> that loads after all
+shipped rules:</p>
+<pre><code>colloquy customize theme</code></pre>
+<p>Token overrides change every surface that consumes them. Ordinary selectors
+can tune one element or widget.</p>
+<pre><code>:root {
+  --accent: #7c3aed;
+  --r: 3px;
+}
+
+cq-options {
+  gap: var(--sp-2);
+}</code></pre>
+<p>The default stylesheet remains intact, so changing one token needs no copied
+theme. Its opening
+<a href="../plugins/colloquy/skills/colloquy/assets/theme.css">token block</a>
+is the reference. Presentation unique to one page still belongs in that
+version's own <code>&lt;style&gt;</code>; the layer is for a look reused across
+pages.</p>
+</section>
+
+<section id="widget">
+<h2>Add a CSS-only widget</h2>
+<p>Most new document shapes need a schema and CSS, with no browser code. This
+command creates both in the project layer. Choose this form when CSS is enough;
+if the widget needs browser behavior from the start, use the
+<code>--upgrade</code> form in the next section instead.</p>
+<pre><code>colloquy customize widget cq-callout</code></pre>
+<p>The generated registry entry accepts an <code>id</code> and prose. Its
+example appears in <code>catalog</code>, so an agent working in the project can
+discover and use it:</p>
+<pre><code>&lt;cq-callout id="migration-warning"&gt;
+  &lt;strong&gt;Migration window&lt;/strong&gt;
+  Writes pause for about two minutes.
+&lt;/cq-callout&gt;</code></pre>
+<p>Edit <code>.colloquy/registry.json</code> to declare attributes,
+child relationships, or a different content model. The entry is JSON Schema
+over the element's attributes. Colloquy's <code>x-*</code> keys connect that
+schema to the rest of the page:</p>
+<table>
+<thead>
+<tr><th>Key</th><th>What it declares</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x-content</code></td><td>Prose, child items, a data body, or no body.</td></tr>
+<tr><td><code>x-example</code></td><td>Valid authored markup shown by <code>catalog</code>.</td></tr>
+<tr><td><code>x-exhibit</code></td><td>This region quotes its interactive descendants rather than offering their controls.</td></tr>
+<tr><td><code>x-parent</code></td><td>The required direct parent for an item element.</td></tr>
+<tr><td><code>x-retired-when</code></td><td>The parent action outcome that removes this child from the page.</td></tr>
+<tr><td><code>x-says</code></td><td>Attributes rendered as selectable page text.</td></tr>
+<tr><td><code>x-language</code></td><td>The attribute that names a language from the shared tokenizer list.</td></tr>
+<tr><td><code>x-upgrade</code></td><td>A module at <code>widgets/&lt;tag&gt;.js</code> enhances the element.</td></tr>
+<tr><td><code>x-verbatim</code></td><td>An upgraded element leaves its authored body readable as written.</td></tr>
+<tr><td><code>x-visual</code></td><td>The rendered element takes a whole-widget comment by click.</td></tr>
+<tr><td><code>x-state</code></td><td>Action verbs, payload schemas, and how reviewer edits record in markup.</td></tr>
+</tbody>
+</table>
+<p>Each overlay entry is complete. Replacing a shipped widget means copying and
+editing that widget's whole entry; new widgets only add their own entries.</p>
+</section>
+
+<section id="upgrade">
+<h2>Add browser behavior</h2>
+<p>On the widget's first scaffold command, <code>--upgrade</code> also creates
+<code>widgets/cq-callout.js</code> and marks the registry entry for dynamic
+import. It is an alternative to the CSS-only command above, not an upgrade of
+an existing scaffold:</p>
+<pre><code>colloquy customize widget cq-callout --upgrade</code></pre>
+<p>The module starts with the same one-shot upgrade guard used by shipped
+widgets:</p>
+<pre><code>import { once } from "/colloquy.js";
+
+customElements.define(
+  "cq-callout",
+  class extends HTMLElement {
+    connectedCallback() {
+      if (!once(this)) return;
+    }
+  },
+);</code></pre>
+<p>The authored element should remain readable before the module runs. The
+scaffold sets <code>x-verbatim</code> because this starter preserves its body;
+set it to false if the module renders different words. Runtime helpers cover
+fail-soft rendering, asynchronous settling, controls, announcements, and
+actions. The shipped
+<a href="../plugins/colloquy/skills/colloquy/assets/widgets/cq-options.js">options module</a>
+and its
+<a href="../plugins/colloquy/skills/colloquy/assets/registry.json">registry entry</a> form a
+complete action-backed example: the registry validates each action and records
+its absolute state, while <code>applyAction</code> makes replay idempotent.</p>
+<p>Export keeps the DOM produced by an upgrade and removes its scripts. Durable
+state therefore belongs in attributes, and the resulting markup must still make
+sense after its event handlers are gone.</p>
+</section>
+
+<section id="vendor">
+<h2>Vendor and check the result</h2>
+<pre><code>colloquy page init &lt;page-dir&gt;
+colloquy page catalog &lt;page-dir&gt;</code></pre>
+<p>Then use the custom element in the page's next
+<code>versions/vN.html</code> file and run the same gate as any other version:</p>
+<pre><code>colloquy version check --render &lt;page-dir&gt;</code></pre>
+<p>Re-running <code>page init</code> is the explicit update for an existing page. It
+merges the current layers, checks the full registry, requires a module for every
+upgraded tag, and refuses a vocabulary change that would strand actions already
+recorded in the page's log. Pages that are not re-initialized keep their
+vendored theme and widgets unchanged.</p>
+</section>
+
+<footer id="colophon">
+<p><a href="index.html">What colloquy offers</a> ·
+<a href="how-it-works.html">How it works</a> ·
+<a href="https://github.com/max-sixty/colloquy">GitHub</a> · MIT license.</p>
+</footer>
+
+</main>
+</body>
+</html>

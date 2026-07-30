@@ -77,12 +77,28 @@ Options:
   --help  Show this message and exit.
 
 Commands:
-  page     Create pages and add media.
-  review   Watch and write to a live review.
-  server   Run or stop the local server.
-  version  Check, publish, and export versions.
+  customize  Create theme and widget customizations.
+  page       Create pages and add media.
+  review     Watch and write to a live review.
+  server     Run or stop the local server.
+  version    Check, publish, and export versions.
 """,
             id="root",
+        ),
+        pytest.param(
+            ["customize", "--help"],
+            """Usage: colloquy customize [OPTIONS] COMMAND [ARGS]...
+
+  Create theme and widget customizations.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  theme   Create the theme override file.
+  widget  Add a widget scaffold.
+""",
+            id="customize",
         ),
         pytest.param(
             ["page", "--help"],
@@ -287,6 +303,13 @@ def test_claude_and_codex_load_the_same_plugin_payload():
     assert not [path for path in PLUGIN_ROOT.rglob("*") if path.is_symlink()]
 
 
+def case_alias(path):
+    alias = path.with_name(path.name.swapcase())
+    if not alias.exists() or not path.samefile(alias):
+        pytest.skip("requires a case-insensitive filesystem")
+    return alias
+
+
 def test_init_vendors_the_layer(page_dir):
     for name in ["colloquy.js", "theme.css", "registry.json"]:
         assert (page_dir / name).is_file()
@@ -298,14 +321,17 @@ def test_init_vendors_the_layer(page_dir):
 def test_init_user_layer_applies(tmp_path, monkeypatch):
     home = tmp_path / "home"
     (home / ".config" / "colloquy" / "widgets").mkdir(parents=True)
-    (home / ".config" / "colloquy" / "theme.css").write_text(":root { --accent: teal }")
+    custom_theme = ":root { --accent: teal }\n"
+    (home / ".config" / "colloquy" / "theme.css").write_text(custom_theme)
     (home / ".config" / "colloquy" / "widgets" / "cq-foo.js").write_text("// user widget")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
     d = tmp_path / "page"
     result = CliRunner().invoke(interact.cli, ["page", "init", str(d)])
     assert result.exit_code == 0, result.output
-    assert (d / "theme.css").read_text() == ":root { --accent: teal }"
+    vendored_theme = (d / "theme.css").read_text()
+    assert vendored_theme.startswith((interact.ASSETS / "theme.css").read_text())
+    assert vendored_theme.endswith(custom_theme)
     assert (d / "widgets" / "cq-foo.js").read_text() == "// user widget"
     assert (d / "widgets" / "cq-tabs.js").is_file()  # shipped modules still vendored
 
@@ -313,11 +339,15 @@ def test_init_user_layer_applies(tmp_path, monkeypatch):
 def test_init_project_layer_wins(tmp_path, monkeypatch):
     project = tmp_path / "proj"
     (project / ".colloquy").mkdir(parents=True)
-    (project / ".colloquy" / "theme.css").write_text(":root { --accent: red }")
+    custom_theme = ":root { --accent: red }\n"
+    (project / ".colloquy" / "theme.css").write_text(custom_theme)
     monkeypatch.chdir(project)
     d = tmp_path / "page"
-    CliRunner().invoke(interact.cli, ["page", "init", str(d)])
-    assert (d / "theme.css").read_text() == ":root { --accent: red }"
+    result = CliRunner().invoke(interact.cli, ["page", "init", str(d)])
+    assert result.exit_code == 0, result.output
+    theme = (d / "theme.css").read_text()
+    assert theme.startswith((interact.ASSETS / "theme.css").read_text())
+    assert theme.endswith(custom_theme)
     # Files the project layer doesn't override still come from the shipped defaults.
     assert (d / "registry.json").is_file()
 
@@ -374,12 +404,1288 @@ def test_init_merges_registry_layers_by_complete_entry(tmp_path, monkeypatch):
     assert "cq-options" in registry and "$events" in registry
 
 
+def test_customize_scaffolds_a_project_widget_that_init_can_vendor(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    theme = runner.invoke(interact.cli, ["customize", "theme"])
+    assert theme.exit_code == 0, theme.output
+
+    widget = runner.invoke(
+        interact.cli, ["customize", "widget", "cq-callout", "--upgrade"]
+    )
+    assert widget.exit_code == 0, widget.output
+
+    layer = tmp_path / ".colloquy"
+    registry = json.loads((layer / "registry.json").read_text())
+    entry = registry["cq-callout"]
+    assert entry["x-content"] == "prose"
+    assert entry["x-upgrade"] is True
+    assert entry["x-verbatim"] is True
+    assert "<cq-callout" in entry["x-example"]
+    assert "cq-callout {" in (layer / "theme.css").read_text()
+    assert "customElements.define(" in (
+        layer / "widgets" / "cq-callout.js"
+    ).read_text()
+
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    assert "cq-callout {" in (page / "theme.css").read_text()
+    assert json.loads((page / "registry.json").read_text())["cq-callout"] == entry
+    assert (page / "widgets" / "cq-callout.js").is_file()
+
+    (page / "versions" / "v1.html").write_text(
+        PAGE.replace(
+            "<h2>Plan</h2>",
+            '<h2>Plan</h2><cq-callout id="custom-note">'
+            "<strong>Heads up</strong> Custom project guidance."
+            "</cq-callout>",
+        )
+    )
+    result = check(page)
+    assert result.exit_code == 0, result.output
+
+
+def test_customize_scaffolds_a_long_widget_name(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tag = "cq-" + "a" * 237
+    module_name = f"{tag}.js"
+    try:
+        name_max = os.pathconf(tmp_path, "PC_NAME_MAX")
+    except (AttributeError, OSError, ValueError):
+        name_max = 255
+    if len(os.fsencode(module_name)) > name_max:
+        pytest.skip("the final module name does not fit this filesystem")
+
+    result = CliRunner().invoke(
+        interact.cli, ["customize", "widget", tag, "--upgrade"]
+    )
+
+    assert result.exit_code == 0, result.output
+    layer = tmp_path / ".colloquy"
+    assert (layer / "widgets" / module_name).is_file()
+    assert tag in json.loads((layer / "registry.json").read_text())
+
+
+def test_customize_never_overwrites_an_existing_layer(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    layer = tmp_path / ".colloquy"
+    layer.mkdir(parents=True)
+    theme = layer / "theme.css"
+    theme.write_text(":root { --accent: rebeccapurple; }\n")
+
+    result = runner.invoke(interact.cli, ["customize", "theme"])
+    assert result.exit_code == 0, result.output
+    assert theme.read_text() == ":root { --accent: rebeccapurple; }\n"
+
+    assert (
+        runner.invoke(interact.cli, ["customize", "widget", "cq-note-card"]).exit_code
+        == 0
+    )
+    registry_before = (layer / "registry.json").read_text()
+    theme_before = theme.read_text()
+
+    duplicate = runner.invoke(
+        interact.cli, ["customize", "widget", "cq-note-card"]
+    )
+    assert duplicate.exit_code != 0
+    assert "already exists" in duplicate.output
+    assert (layer / "registry.json").read_text() == registry_before
+    assert theme.read_text() == theme_before
+
+    shipped = runner.invoke(
+        interact.cli, ["customize", "widget", "cq-options"]
+    )
+    assert shipped.exit_code != 0
+    assert "already exists" in shipped.output
+    assert (layer / "registry.json").read_text() == registry_before
+    assert theme.read_text() == theme_before
+
+
+def test_customize_can_target_the_user_layer(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        interact.cli, ["customize", "widget", "cq-personal-note", "--user"]
+    )
+
+    assert result.exit_code == 0, result.output
+    layer = config / "colloquy"
+    assert "cq-personal-note" in json.loads((layer / "registry.json").read_text())
+    assert (layer / "theme.css").is_file()
+    assert not (tmp_path / ".colloquy").exists()
+
+
+def test_customize_preserves_a_symlinked_registry(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    layer = tmp_path / ".colloquy"
+    layer.mkdir(parents=True)
+    shared_registry = tmp_path / "shared-registry.json"
+    shared_registry.write_text("{}\n")
+    registry = layer / "registry.json"
+    registry.symlink_to(shared_registry)
+
+    result = CliRunner().invoke(
+        interact.cli, ["customize", "widget", "cq-shared-note"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert registry.is_symlink()
+    assert "cq-shared-note" in json.loads(shared_registry.read_text())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX umask and mode semantics")
+def test_staged_writes_honor_umask_without_copying_a_replaced_symlink_mode(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    old_umask = os.umask(0o077)
+    try:
+        customized = runner.invoke(interact.cli, ["customize", "theme"])
+    finally:
+        os.umask(old_umask)
+    assert customized.exit_code == 0, customized.output
+    custom_theme = tmp_path / ".colloquy" / "theme.css"
+    assert custom_theme.stat().st_mode & 0o777 == 0o600
+
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    external = tmp_path / "external-theme.css"
+    external.write_text("external")
+    external.chmod(0o600)
+    (page / "theme.css").unlink()
+    (page / "theme.css").symlink_to(external)
+    old_umask = os.umask(0o022)
+    try:
+        revendored = runner.invoke(interact.cli, ["page", "init", str(page)])
+    finally:
+        os.umask(old_umask)
+
+    assert revendored.exit_code == 0, revendored.output
+    assert not (page / "theme.css").is_symlink()
+    assert (page / "theme.css").stat().st_mode & 0o777 == 0o644
+    assert external.read_text() == "external"
+
+
+@pytest.mark.parametrize("alias", ["root", "theme.css", "registry.json", "widgets"])
+def test_customize_refuses_targets_aliased_to_another_layer(
+    tmp_path, monkeypatch, alias
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    config = tmp_path / "config"
+    user = config / "colloquy"
+    user.mkdir(parents=True)
+    (user / "theme.css").write_text(":root { --accent: teal; }\n")
+    (user / "registry.json").write_text("{}\n")
+    (user / "widgets").mkdir()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.chdir(project)
+    layer = project / ".colloquy"
+    if alias == "root":
+        layer.symlink_to(user, target_is_directory=True)
+    else:
+        layer.mkdir()
+        (layer / alias).symlink_to(
+            user / alias, target_is_directory=alias == "widgets"
+        )
+    before = {
+        path.relative_to(user): path.read_bytes()
+        for path in user.rglob("*")
+        if path.is_file()
+    }
+
+    args = ["customize", "widget", "cq-no-scope-alias"]
+    if alias in {"root", "widgets"}:
+        args.append("--upgrade")
+    result = CliRunner().invoke(interact.cli, args)
+
+    assert result.exit_code != 0
+    assert "overlaps another layer source" in result.output
+    after = {
+        path.relative_to(user): path.read_bytes()
+        for path in user.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["customize", "theme"],
+        ["customize", "widget", "cq-future-alias"],
+        ["customize", "theme", "--user"],
+        ["customize", "widget", "cq-future-alias", "--user"],
+    ],
+    ids=["project-theme", "project-widget", "user-theme", "user-widget"],
+)
+def test_customize_protects_another_layers_future_root(
+    tmp_path, monkeypatch, args
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    config = tmp_path / "config"
+    config.mkdir()
+    (project / ".colloquy").symlink_to(
+        config / "colloquy", target_is_directory=True
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(interact.cli, args)
+
+    assert result.exit_code != 0
+    if "--user" in args:
+        assert "overlaps another layer source" in result.output
+    else:
+        assert "must be a directory" in result.output
+    assert not (config / "colloquy").exists()
+
+
+def test_path_case_policy_matches_the_filesystem(tmp_path):
+    probe = tmp_path / "CaseProbe"
+    probe.mkdir()
+    alias_resolves = (tmp_path / "cASEpROBE").exists()
+
+    assert interact._filesystem_case_sensitive(tmp_path) is not alias_resolves
+
+
+def test_path_overlap_respects_case_sensitive_future_names(
+    tmp_path, monkeypatch
+):
+    upper = tmp_path / "FutureScope"
+    lower = tmp_path / "fUTUREsCOPE"
+    monkeypatch.setattr(
+        interact, "_filesystem_case_sensitive", lambda path: True
+    )
+    assert not interact.paths_overlap(upper, lower)
+
+    monkeypatch.setattr(
+        interact, "_filesystem_case_sensitive", lambda path: False
+    )
+    assert interact.paths_same(upper, lower)
+
+
+def test_customize_refuses_case_aliased_future_roots(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "Project"
+    project.mkdir()
+    alias = case_alias(project)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(alias / ".COLLOQUY"))
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(interact.cli, ["customize", "theme"])
+
+    assert result.exit_code != 0
+    assert "overlaps another layer source" in result.output
+    assert not (project / ".colloquy").exists()
+
+
+def test_customize_refuses_a_broken_case_alias_to_its_future_target(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "Project"
+    project.mkdir()
+    alias = case_alias(project)
+    config = tmp_path / "Config"
+    user_theme = config / "colloquy" / "theme.css"
+    user_theme.parent.mkdir(parents=True)
+    user_theme.symlink_to(
+        alias / ".COLLOQUY" / "THEME.CSS"
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(interact.cli, ["customize", "theme"])
+
+    assert result.exit_code != 0
+    assert "overlaps another layer source" in result.output
+    assert user_theme.is_symlink() and not user_theme.exists()
+    assert not (
+        project / ".colloquy" / "theme.css"
+    ).exists()
+
+
+def test_customize_refuses_an_existing_member_case_alias(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "Project"
+    project.mkdir()
+    config = tmp_path / "Config"
+    user_theme = config / "colloquy" / "theme.css"
+    user_theme.parent.mkdir(parents=True)
+    user_theme.write_text(":root { --accent: teal; }\n")
+    config_alias = case_alias(config)
+    project_theme = project / ".colloquy" / "theme.css"
+    project_theme.parent.mkdir(parents=True)
+    project_theme.symlink_to(
+        config_alias / "COLLOQUY" / "THEME.CSS"
+    )
+    before = user_theme.read_bytes()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(
+        interact.cli, ["customize", "widget", "cq-case-member"]
+    )
+
+    assert result.exit_code != 0
+    assert "overlaps another layer source" in result.output
+    assert user_theme.read_bytes() == before
+    assert not (project_theme.parent / "registry.json").exists()
+
+
+@pytest.mark.parametrize("user", [False, True], ids=["project", "user"])
+def test_customize_refuses_an_initialized_page_as_a_layer(
+    tmp_path, monkeypatch, user
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    config = tmp_path / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    before = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+
+    layer = config / "colloquy" if user else project / ".colloquy"
+    layer.parent.mkdir(parents=True, exist_ok=True)
+    layer.symlink_to(page, target_is_directory=True)
+    args = ["customize", "widget", "cq-page-alias", "--upgrade"]
+    if user:
+        args.append("--user")
+
+    result = runner.invoke(interact.cli, args)
+
+    assert result.exit_code != 0
+    assert "owned by initialized page" in result.output
+    after = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+@pytest.mark.parametrize(
+    "relative",
+    ["theme.css", "registry.json", "widgets", "widgets/cq-tabs.js"],
+)
+def test_customize_refuses_members_aliased_into_an_initialized_page(
+    tmp_path, monkeypatch, relative
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    before = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+
+    layer = project / ".colloquy"
+    alias = layer / relative
+    alias.parent.mkdir(parents=True, exist_ok=True)
+    target = page / relative
+    alias.symlink_to(target, target_is_directory=target.is_dir())
+
+    result = runner.invoke(
+        interact.cli,
+        ["customize", "widget", "cq-page-member-alias", "--upgrade"],
+    )
+
+    assert result.exit_code != 0
+    assert "owned by initialized page" in result.output
+    after = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+    assert not (layer / "theme.css").exists() or relative == "theme.css"
+    assert not (layer / "registry.json").exists() or relative == "registry.json"
+
+
+def test_customize_recognizes_a_page_without_runtime_status(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    (page / "status.json").unlink()
+    before = (page / "theme.css").read_bytes()
+
+    layer = project / ".colloquy"
+    layer.mkdir(parents=True)
+    (layer / "theme.css").symlink_to(page / "theme.css")
+
+    result = runner.invoke(
+        interact.cli,
+        ["customize", "widget", "cq-page-without-status", "--upgrade"],
+    )
+
+    assert result.exit_code != 0
+    assert "owned by initialized page" in result.output
+    assert (page / "theme.css").read_bytes() == before
+    assert not (layer / "registry.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("source_name", "page_name"),
+    [
+        ("theme.css", "status.json"),
+        ("widgets", interact.MEDIA_DIR),
+        ("vendor", "versions"),
+    ],
+)
+def test_customize_refuses_sources_aliased_to_page_owned_state(
+    tmp_path, monkeypatch, source_name, page_name
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    target = page / page_name
+    if source_name in interact.VENDORED_DIRS:
+        target.mkdir(exist_ok=True)
+    before = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+
+    layer = project / ".colloquy"
+    layer.mkdir(parents=True)
+    (layer / source_name).symlink_to(
+        target, target_is_directory=target.is_dir()
+    )
+
+    result = runner.invoke(
+        interact.cli,
+        ["customize", "widget", "cq-page-owned-alias", "--upgrade"],
+    )
+
+    assert result.exit_code != 0
+    assert "owned by initialized page" in result.output
+    after = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+    assert not (layer / "registry.json").exists()
+
+
+def test_customize_continues_when_the_project_root_is_the_page(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    themed = runner.invoke(interact.cli, ["customize", "theme"])
+    assert themed.exit_code == 0, themed.output
+    initialized = runner.invoke(interact.cli, ["page", "init", "."])
+    assert initialized.exit_code == 0, initialized.output
+    page_theme = tmp_path / "theme.css"
+    page_registry = tmp_path / "registry.json"
+    before_theme = page_theme.read_bytes()
+    before_registry = page_registry.read_bytes()
+    before_widgets = {
+        path.name: path.read_bytes()
+        for path in (tmp_path / "widgets").iterdir()
+        if path.is_file()
+    }
+
+    scaffold = runner.invoke(
+        interact.cli,
+        ["customize", "widget", "cq-after-init", "--upgrade"],
+    )
+
+    assert scaffold.exit_code == 0, scaffold.output
+    assert page_theme.read_bytes() == before_theme
+    assert page_registry.read_bytes() == before_registry
+    assert {
+        path.name: path.read_bytes()
+        for path in (tmp_path / "widgets").iterdir()
+        if path.is_file()
+    } == before_widgets
+    source = tmp_path / ".colloquy"
+    assert (source / "widgets" / "cq-after-init.js").is_file()
+
+    revendored = runner.invoke(interact.cli, ["page", "init", "."])
+
+    assert revendored.exit_code == 0, revendored.output
+    assert "cq-after-init" in json.loads(page_registry.read_text())
+    assert (tmp_path / "widgets" / "cq-after-init.js").is_file()
+
+
+@pytest.mark.parametrize(
+    "name",
+    (
+        "comments.jsonl",
+        "status.json",
+        "heartbeat.json",
+        "cursor.json",
+        "server.json",
+        "session.json",
+    ),
+)
+def test_initialized_page_owns_runtime_state_paths(
+    tmp_path, monkeypatch, name
+):
+    monkeypatch.chdir(tmp_path)
+    page = tmp_path / "page"
+    initialized = CliRunner().invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+
+    assert interact.initialized_page_owning(page / name) == page
+    assert (
+        interact.initialized_page_owning(
+            page / ".colloquy" / name
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "directory", ("versions", "widgets", "vendor", "media")
+)
+def test_initialized_page_owns_declared_directory_trees(
+    tmp_path, monkeypatch, directory
+):
+    monkeypatch.chdir(tmp_path)
+    page = tmp_path / "page"
+    initialized = CliRunner().invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+
+    assert (
+        interact.initialized_page_owning(page / directory / "future")
+        == page
+    )
+
+
+def test_customize_allows_a_symlink_managed_external_layer(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    layer = tmp_path / ".colloquy"
+    layer.mkdir(parents=True)
+    managed = tmp_path / "managed"
+    widgets = managed / "widgets"
+    widgets.mkdir(parents=True)
+    theme = managed / "theme.css"
+    theme.write_text(":root { --accent: teal; }\n")
+    registry = managed / "registry.json"
+    registry.write_text("{}\n")
+    (layer / "theme.css").symlink_to(theme)
+    (layer / "registry.json").symlink_to(registry)
+    (layer / "widgets").symlink_to(widgets, target_is_directory=True)
+
+    result = CliRunner().invoke(
+        interact.cli,
+        ["customize", "widget", "cq-managed", "--upgrade"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (layer / "theme.css").is_symlink()
+    assert (layer / "registry.json").is_symlink()
+    assert (layer / "widgets").is_symlink()
+    assert "cq-managed {" in theme.read_text()
+    assert "cq-managed" in json.loads(registry.read_text())
+    assert (widgets / "cq-managed.js").is_file()
+
+
+def test_replace_files_rejects_case_aliased_future_targets(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        interact, "_filesystem_case_sensitive", lambda path: False
+    )
+    first = tmp_path / "Result.css"
+    second = tmp_path / "rESULT.CSS"
+
+    with pytest.raises(SystemExit, match="resolve to the same target"):
+        interact.replace_files(
+            [(first, b"first", False), (second, b"second", False)]
+        )
+
+    assert not first.exists() and not second.exists()
+
+
+def test_customize_widget_names_a_wrong_kind_lower_layer(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    config = tmp_path / "config"
+    config.mkdir()
+    user_layer = config / "colloquy"
+    user_layer.write_text("not a directory")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(
+        interact.cli, ["customize", "widget", "cq-clear-error"]
+    )
+
+    assert result.exit_code != 0
+    assert f"{user_layer} must be a directory" in result.output
+    assert user_layer.read_text() == "not a directory"
+    assert not (project / ".colloquy").exists()
+
+
+@pytest.mark.parametrize(
+    ("relative", "directory"),
+    [("vendor", False), ("colloquy.js", True)],
+)
+def test_customize_widget_validates_the_complete_selected_layer(
+    tmp_path, monkeypatch, relative, directory
+):
+    monkeypatch.chdir(tmp_path)
+    layer = tmp_path / ".colloquy"
+    layer.mkdir(parents=True)
+    malformed = layer / relative
+    if directory:
+        malformed.mkdir()
+    else:
+        malformed.write_text("not a directory")
+
+    result = CliRunner().invoke(
+        interact.cli, ["customize", "widget", "cq-complete-layer", "--upgrade"]
+    )
+
+    assert result.exit_code != 0
+    assert str(malformed) in result.output
+    assert not (layer / "theme.css").exists()
+    assert not (layer / "registry.json").exists()
+    assert not (layer / "widgets").exists()
+
+
+def test_customize_refuses_a_broken_lower_alias_to_its_planned_target(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    config = tmp_path / "config"
+    user_layer = config / "colloquy"
+    user_layer.mkdir(parents=True)
+    project_theme = project / ".colloquy" / "theme.css"
+    user_theme = user_layer / "theme.css"
+    user_theme.symlink_to(project_theme)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(interact.cli, ["customize", "theme"])
+
+    assert result.exit_code != 0
+    assert "overlaps another layer source" in result.output
+    assert user_theme.is_symlink() and not user_theme.exists()
+    assert not project_theme.exists()
+
+
+def test_customize_refuses_an_existing_member_aliased_to_another_scope(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    config = tmp_path / "config"
+    user_module = config / "colloquy" / "widgets" / "cq-shared.js"
+    user_module.parent.mkdir(parents=True)
+    user_module.write_text("// shared source\n")
+    project_module = (
+        project / ".colloquy" / "widgets" / "cq-shared.js"
+    )
+    project_module.parent.mkdir(parents=True)
+    project_module.symlink_to(user_module)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(interact.cli, ["customize", "theme"])
+
+    assert result.exit_code != 0
+    assert "overlaps another layer source" in result.output
+    assert project_module.is_symlink()
+    assert user_module.read_text() == "// shared source\n"
+    assert not (project / ".colloquy" / "theme.css").exists()
+
+
+@pytest.mark.parametrize("user", [False, True], ids=["project", "user"])
+def test_init_refuses_to_overwrite_a_customization_source(
+    tmp_path, monkeypatch, user
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    config = tmp_path / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    args = ["customize", "widget", "cq-safe-source", "--upgrade"]
+    if user:
+        args.append("--user")
+    scaffold = runner.invoke(interact.cli, args)
+    assert scaffold.exit_code == 0, scaffold.output
+
+    layer = config / "colloquy" if user else project / ".colloquy"
+    before = {
+        path.relative_to(layer): path.read_bytes()
+        for path in layer.rglob("*")
+        if path.is_file()
+    }
+    assert before
+
+    result = runner.invoke(interact.cli, ["page", "init", str(layer)])
+
+    assert result.exit_code != 0
+    assert "customization source" in result.output
+    after = {
+        path.relative_to(layer): path.read_bytes()
+        for path in layer.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+def test_init_refuses_overlapping_customization_scopes(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    config = tmp_path / "config"
+    user = config / "colloquy"
+    user.mkdir(parents=True)
+    (user / "theme.css").write_text(":root { --accent: teal; }\n")
+    project_layer = project / ".colloquy"
+    project_layer.symlink_to(user, target_is_directory=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.chdir(project)
+    before = {
+        path.relative_to(user): path.read_bytes()
+        for path in user.rglob("*")
+        if path.is_file()
+    }
+    page = tmp_path / "page"
+
+    result = CliRunner().invoke(interact.cli, ["page", "init", str(page)])
+
+    assert result.exit_code != 0
+    assert "layer scopes must be separate" in result.output
+    after = {
+        path.relative_to(user): path.read_bytes()
+        for path in user.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+    assert not page.exists()
+
+
+def test_init_refuses_case_aliased_layer_scopes(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "Project"
+    project.mkdir()
+    alias = case_alias(project)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(alias / ".COLLOQUY"))
+    monkeypatch.chdir(project)
+    user_layer = alias / ".COLLOQUY" / "colloquy"
+    user_layer.mkdir(parents=True)
+    theme = user_layer / "theme.css"
+    theme.write_text(":root { --accent: teal; }\n")
+    before = theme.read_bytes()
+    page = tmp_path / "page"
+
+    result = CliRunner().invoke(interact.cli, ["page", "init", str(page)])
+
+    assert result.exit_code != 0
+    assert "layer scopes must be separate" in result.output
+    assert theme.read_bytes() == before
+    assert not page.exists()
+
+
+def test_init_refuses_to_write_inside_a_customization_source(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    scaffold = runner.invoke(
+        interact.cli, ["customize", "widget", "cq-safe-source", "--upgrade"]
+    )
+    assert scaffold.exit_code == 0, scaffold.output
+    layer = tmp_path / ".colloquy"
+    before = {
+        path.relative_to(layer): path.read_bytes()
+        for path in layer.rglob("*")
+        if path.is_file()
+    }
+
+    result = runner.invoke(interact.cli, ["page", "init", str(layer / "widgets")])
+
+    assert result.exit_code != 0
+    assert "inside the widget-layer customization source" in result.output
+    after = {
+        path.relative_to(layer): path.read_bytes()
+        for path in layer.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+def test_init_refuses_a_case_aliased_page_inside_a_customization_source(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "Project"
+    project.mkdir()
+    alias = case_alias(project)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    scaffold = runner.invoke(
+        interact.cli,
+        ["customize", "widget", "cq-case-source", "--upgrade"],
+    )
+    assert scaffold.exit_code == 0, scaffold.output
+    layer = project / ".colloquy"
+    page = alias / ".COLLOQUY" / "WIDGETS"
+    assert page.samefile(layer / "widgets")
+    before = {
+        path.relative_to(layer): path.read_bytes()
+        for path in layer.rglob("*")
+        if path.is_file()
+    }
+
+    result = runner.invoke(interact.cli, ["page", "init", str(page)])
+
+    assert result.exit_code != 0
+    assert "inside the widget-layer customization source" in result.output
+    after = {
+        path.relative_to(layer): path.read_bytes()
+        for path in layer.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+def test_customize_widget_validates_every_target_before_writing(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    layer = tmp_path / ".colloquy"
+    theme = layer / "theme.css"
+    theme.mkdir(parents=True)
+    sentinel = theme / "keep.txt"
+    sentinel.write_text("keep")
+
+    result = CliRunner().invoke(
+        interact.cli, ["customize", "widget", "cq-no-partial", "--upgrade"]
+    )
+
+    assert result.exit_code != 0
+    assert "theme.css must be a file" in result.output
+    assert sentinel.read_text() == "keep"
+    assert not (layer / "registry.json").exists()
+    assert not (layer / "widgets").exists()
+
+
+def test_customize_widget_refuses_malformed_css_before_writing(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    layer = tmp_path / ".colloquy"
+    layer.mkdir(parents=True)
+    theme = layer / "theme.css"
+    theme.write_text(".bad { color red; }\n")
+
+    result = CliRunner().invoke(
+        interact.cli, ["customize", "widget", "cq-no-broken-css", "--upgrade"]
+    )
+
+    assert result.exit_code != 0
+    assert f"{theme} syntax error" in result.output
+    assert theme.read_text() == ".bad { color red; }\n"
+    assert not (layer / "registry.json").exists()
+    assert not (layer / "widgets").exists()
+
+
+def test_init_reads_the_complete_layer_before_revendoring(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    before = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+
+    layer = tmp_path / ".colloquy"
+    layer.mkdir(parents=True)
+    (layer / "registry.json").write_text(
+        json.dumps(
+            {"cq-bad-theme": interact.custom_widget_entry("cq-bad-theme", False)}
+        )
+    )
+    (layer / "theme.css").write_bytes(b"\xff")
+
+    result = runner.invoke(interact.cli, ["page", "init", str(page)])
+
+    assert result.exit_code != 0
+    assert "theme.css must be UTF-8" in result.output
+    after = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+def test_init_refuses_malformed_layer_css_before_revendoring(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    before = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+    theme = tmp_path / ".colloquy" / "theme.css"
+    theme.parent.mkdir(parents=True)
+    theme.write_text(".bad { color red; }\n")
+
+    result = runner.invoke(interact.cli, ["page", "init", str(page)])
+
+    assert result.exit_code != 0
+    assert f"{theme} syntax error" in result.output
+    after = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+def test_init_does_not_partially_revendor_on_a_destination_conflict(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    theme_before = (page / "theme.css").read_bytes()
+    registry_before = (page / "registry.json").read_bytes()
+
+    conflict = page / "widgets" / "cq-tabs.js"
+    conflict.unlink()
+    conflict.mkdir()
+    layer = tmp_path / ".colloquy"
+    layer.mkdir(parents=True)
+    (layer / "theme.css").write_text(":root { --accent: rebeccapurple; }\n")
+    (layer / "registry.json").write_text(
+        json.dumps(
+            {"cq-new-shape": interact.custom_widget_entry("cq-new-shape", False)}
+        )
+    )
+
+    result = runner.invoke(interact.cli, ["page", "init", str(page)])
+
+    assert result.exit_code != 0
+    assert (page / "theme.css").read_bytes() == theme_before
+    assert (page / "registry.json").read_bytes() == registry_before
+
+
+@pytest.mark.parametrize("sub", ["versions", "widgets", "vendor"])
+def test_init_refuses_a_symlinked_page_directory(
+    tmp_path, monkeypatch, sub
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    original = tmp_path / f"original-{sub}"
+    (page / sub).rename(original)
+    outside = tmp_path / f"outside-{sub}"
+    outside.mkdir()
+    sentinel = outside / "keep.txt"
+    sentinel.write_text("do not prune or replace files outside the page")
+    (page / sub).symlink_to(outside, target_is_directory=True)
+
+    result = runner.invoke(interact.cli, ["page", "init", str(page)])
+
+    assert result.exit_code != 0
+    assert "must be a real directory, not a symlink" in result.output
+    assert sentinel.read_text() == "do not prune or replace files outside the page"
+    assert list(outside.iterdir()) == [sentinel]
+
+
+@pytest.mark.parametrize(
+    ("source_relative", "destination_relative"),
+    [("vendor", "widgets"), ("theme.css", "registry.json")],
+)
+def test_init_refuses_a_layer_source_aliased_to_a_page_destination(
+    tmp_path, monkeypatch, source_relative, destination_relative
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    destination = page / destination_relative
+    if destination.is_dir():
+        (destination / "keep-source.txt").write_text(
+            "stale pruning must not delete a customization source"
+        )
+
+    source = tmp_path / ".colloquy" / source_relative
+    source.parent.mkdir(parents=True)
+    source.symlink_to(destination, target_is_directory=destination.is_dir())
+    before = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+
+    result = runner.invoke(interact.cli, ["page", "init", str(page)])
+
+    assert result.exit_code != 0
+    assert "overlaps page destination" in result.output
+    after = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+def test_init_refuses_a_case_aliased_source_at_a_page_destination(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "Project"
+    project.mkdir()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.chdir(project)
+    runner = CliRunner()
+    page = tmp_path / "ReviewPage"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    alias = case_alias(page)
+    target = alias / "THEME.CSS"
+    assert target.samefile(page / "theme.css")
+    before = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+    layer_theme = project / ".colloquy" / "theme.css"
+    layer_theme.parent.mkdir(parents=True)
+    layer_theme.symlink_to(target)
+
+    result = runner.invoke(interact.cli, ["page", "init", str(page)])
+
+    assert result.exit_code != 0
+    assert "overlaps page destination" in result.output
+    after = {
+        path.relative_to(page): path.read_bytes()
+        for path in page.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+def test_init_preserves_tmp_files_even_when_a_layer_reads_one(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    page = tmp_path / "page"
+    initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
+    assert initialized.exit_code == 0, initialized.output
+    source = page / f"theme.css.{os.getpid()}.0.tmp"
+    source.write_text(":root { --accent: rebeccapurple; }\n")
+    layer = tmp_path / ".colloquy"
+    layer.mkdir(parents=True)
+    (layer / "theme.css").symlink_to(source)
+
+    result = runner.invoke(interact.cli, ["page", "init", str(page)])
+
+    assert result.exit_code == 0, result.output
+    assert source.read_text() == ":root { --accent: rebeccapurple; }\n"
+    assert (layer / "theme.css").is_symlink()
+
+
+@pytest.mark.parametrize(
+    ("relative", "directory"),
+    [
+        ("theme.css", True),
+        ("registry.json", True),
+        ("widgets", False),
+        ("vendor", False),
+    ],
+)
+def test_init_refuses_wrong_kind_customization_paths(
+    tmp_path, monkeypatch, relative, directory
+):
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / ".colloquy" / relative
+    path.parent.mkdir(parents=True)
+    if directory:
+        path.mkdir()
+    else:
+        path.write_text("not a directory")
+
+    result = CliRunner().invoke(
+        interact.cli, ["page", "init", str(tmp_path / "page")]
+    )
+
+    assert result.exit_code != 0
+    assert str(path) in result.output
+
+
+def test_init_refuses_an_upgraded_custom_widget_without_its_module(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    scaffold = runner.invoke(
+        interact.cli, ["customize", "widget", "cq-unfinished"]
+    )
+    assert scaffold.exit_code == 0, scaffold.output
+
+    registry_path = tmp_path / ".colloquy" / "registry.json"
+    registry = json.loads(registry_path.read_text())
+    registry["cq-unfinished"]["x-upgrade"] = True
+    registry["cq-unfinished"]["x-verbatim"] = True
+    registry_path.write_text(json.dumps(registry))
+
+    result = runner.invoke(interact.cli, ["page", "init", str(tmp_path / "page")])
+    assert result.exit_code != 0
+    assert "widgets/cq-unfinished.js" in result.output
+
+
+def test_init_refuses_a_registry_example_that_violates_its_schema(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    scaffold = runner.invoke(
+        interact.cli, ["customize", "widget", "cq-toned-note"]
+    )
+    assert scaffold.exit_code == 0, scaffold.output
+
+    registry_path = tmp_path / ".colloquy" / "registry.json"
+    registry = json.loads(registry_path.read_text())
+    entry = registry["cq-toned-note"]
+    entry["properties"]["tone"] = {"enum": ["quiet", "loud"]}
+    entry["required"].append("tone")
+    registry_path.write_text(json.dumps(registry))
+
+    result = runner.invoke(interact.cli, ["page", "init", str(tmp_path / "page")])
+
+    assert result.exit_code != 0
+    assert "<cq-toned-note> x-example is invalid" in result.output
+    assert "'tone' is a required property" in result.output
+
+
+@pytest.mark.parametrize(
+    ("example", "message"),
+    [
+        (
+            '<cq-toned-note id="repeat"><p id="repeat">Two</p></cq-toned-note>',
+            "duplicate ids",
+        ),
+        (
+            '<cq-toned-note id="cq-example">One</cq-toned-note>',
+            "cq- namespace",
+        ),
+    ],
+    ids=["duplicate", "reserved"],
+)
+def test_init_refuses_invalid_ids_in_a_registry_example(
+    tmp_path, monkeypatch, example, message
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    scaffold = runner.invoke(
+        interact.cli, ["customize", "widget", "cq-toned-note"]
+    )
+    assert scaffold.exit_code == 0, scaffold.output
+    registry_path = tmp_path / ".colloquy" / "registry.json"
+    registry = json.loads(registry_path.read_text())
+    registry["cq-toned-note"]["x-example"] = example
+    registry_path.write_text(json.dumps(registry))
+
+    result = runner.invoke(interact.cli, ["page", "init", str(tmp_path / "page")])
+
+    assert result.exit_code != 0
+    assert "<cq-toned-note> x-example is invalid" in result.output
+    assert message in result.output
+
+
 def test_revendoring_removes_files_the_layer_retired(page_dir):
     stale = page_dir / "widgets" / "cq-retired.js"
     stale.write_text("// no longer in any layer")
     result = CliRunner().invoke(interact.cli, ["page", "init", str(page_dir)])
     assert result.exit_code == 0, result.output
     assert not stale.exists()
+
+
+@pytest.mark.parametrize(
+    ("sub", "name"),
+    [("widgets", "cq-returned.js"), ("vendor", "returned.js")],
+)
+def test_revendoring_removes_stale_broken_links_before_a_file_returns(
+    page_dir, sub, name
+):
+    stale = page_dir / sub / name
+    stale.symlink_to(page_dir.parent / "missing-target")
+
+    retired = CliRunner().invoke(interact.cli, ["page", "init", str(page_dir)])
+
+    assert retired.exit_code == 0, retired.output
+    assert not stale.is_symlink()
+
+    source = page_dir.parent / ".colloquy" / sub / name
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("// returned\n")
+    returned = CliRunner().invoke(interact.cli, ["page", "init", str(page_dir)])
+
+    assert returned.exit_code == 0, returned.output
+    assert stale.is_file() and not stale.is_symlink()
+    assert stale.read_text() == "// returned\n"
+    assert source.read_text() == "// returned\n"
 
 
 def test_check_accepts_a_valid_page(page_dir):
@@ -1620,6 +2926,25 @@ def test_check_reads_a_page_stylesheet_as_css(page_dir):
     assert checked("/* .wide { width: 900px } */").exit_code == 0
 
 
+def test_check_reports_css_syntax_errors_in_every_authored_source(page_dir):
+    theme = page_dir / "theme.css"
+    theme.write_text(theme.read_text() + "\n.theme { color red; }\n")
+    (page_dir / "versions" / "v1.html").write_text(
+        styled(
+            '.page { color: "unterminated\n; }',
+            '<p style="color red">All three CSS inputs are malformed.</p>',
+        )
+    )
+
+    result = check(page_dir)
+
+    assert result.exit_code == 1
+    assert "page <style> syntax error" in result.output
+    assert "inline style #1 syntax error" in result.output
+    assert "theme.css syntax error" in result.output
+    assert result.output.count("syntax error") == 3
+
+
 def test_check_takes_its_column_from_what_a_page_states_outright(page_dir):
     """A rule inside an at-rule applies only when a condition this check never evaluates
     holds, which cuts both ways. It cannot set the column, because the column is the
@@ -2341,13 +3666,30 @@ def test_settling_a_decision_drops_no_ids(page_dir):
 
 
 def test_registry_examples_validate(page_dir):
-    reg = json.loads((page_dir / "registry.json").read_text())
     registry = interact.load_registry(page_dir)
-    examples = {t: e["x-example"] for t, e in reg.items() if t.startswith("cq-") and "x-example" in e}
-    assert examples  # the shipped registry documents by example
-    for tag, example in examples.items():
-        errs = fragment_errors(example, registry)
-        assert not errs, f"{tag} x-example doesn't validate: {errs}"
+    assert any(
+        tag.startswith("cq-") and "x-example" in entry
+        for tag, entry in registry.items()
+    )
+    assert (
+        interact.validate_registry_examples(registry, "vendored registry")
+        is registry
+    )
+
+
+def test_registry_example_ids_are_independent_between_entries(page_dir):
+    registry = interact.load_registry(page_dir)
+    registry["cq-diff"]["x-example"] = (
+        '<cq-diff id="shared">one changed line</cq-diff>'
+    )
+    registry["cq-tree"]["x-example"] = (
+        '<cq-tree id="shared">one/file.py</cq-tree>'
+    )
+
+    assert (
+        interact.validate_registry_examples(registry, "independent examples")
+        is registry
+    )
 
 
 def test_every_path_a_diff_resolves_names_a_language_the_bundle_carries(page_dir):

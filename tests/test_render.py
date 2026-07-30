@@ -398,6 +398,66 @@ def open_page(browser, url, *, init_script=None, wait_until="networkidle"):
     return page, errors
 
 
+CUSTOM_WIDGET_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>custom widget</title>
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+<main>
+<h1 id="title">Project vocabulary</h1>
+<cq-callout id="custom-note">
+  <strong>Heads up</strong> This widget came from the project layer.
+</cq-callout>
+</main>
+<script type="module" src="/colloquy.js"></script>
+</body>
+</html>
+"""
+
+
+def test_a_scaffolded_project_widget_loads_through_the_real_layer(
+    browser, serve, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        interact.cli, ["customize", "widget", "cq-callout", "--upgrade"]
+    )
+    assert result.exit_code == 0, result.output
+
+    url = serve(CUSTOM_WIDGET_PAGE)
+    page, errors = open_page(browser, url)
+    widget = page.locator("#custom-note")
+    expect(widget).to_have_attribute("data-cq-done", "1")
+    assert widget.evaluate(
+        "(el) => ({display: getComputedStyle(el).display, "
+        "border: getComputedStyle(el).borderTopWidth})"
+    ) == {"display": "block", "border": "1px"}
+    assert errors == []
+    page.close()
+
+
+def test_the_render_gate_rejects_an_upgrade_that_defines_no_element(
+    browser, serve, tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        interact.cli, ["customize", "widget", "cq-callout", "--upgrade"]
+    )
+    assert result.exit_code == 0, result.output
+    module = tmp_path / ".colloquy" / "widgets" / "cq-callout.js"
+    module.write_text("// Valid JavaScript, but no custom-element definition.\n")
+
+    failures = interact.render_version(browser, serve(CUSTOM_WIDGET_PAGE))
+
+    assert any(
+        "upgraded widgets did not define their elements: <cq-callout>" in failure
+        for failure in failures
+    )
+
+
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
 def test_example_renders(browser, serve, example):
     """Every shipped example loads clean and lays out, in both color schemes: no

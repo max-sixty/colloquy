@@ -70,9 +70,11 @@ nobody read.
 `page init` vendors the runtime, theme, registry, widgets, and vendor assets into the
 page directory, overlaying by precedence: colloquy's shipped defaults, then the
 user layer (~/.config/colloquy/), then the project layer
-(./.colloquy/). Files replace files; registry entries merge by top-level
-name, with a later layer replacing one complete entry rather than deep-merging
-its schema. The page directory itself lives wherever the caller says —
+(./.colloquy/). Theme stylesheets concatenate in that order, so a layer
+can override one token or rule without copying the defaults. Registry entries
+merge by top-level name, with a later layer replacing one complete entry rather
+than deep-merging its schema; runtime, widget, and vendor files replace by path.
+The page directory itself lives wherever the caller says —
 conventionally ~/.local/state/colloquy/pages/<slug>/ — and is self-contained,
 so an approved version can't change under its reviewer; re-running `page init`
 is the explicit re-vendor, noted in the next version's changelog.
@@ -140,6 +142,7 @@ closing one from this side would file it away unread.
 
 Commands:
     page       init catalog media
+    customize  theme widget
     version    check publish export
     server     run stop
     review     state wait comment reply events transcript
@@ -181,6 +184,7 @@ instead (`--section`), which is the anchor a click on a diagram makes.
 
 import base64
 import contextlib
+import ctypes
 import errno
 import hashlib
 import json
@@ -316,6 +320,16 @@ MEDIA_TYPES = {
     ".webp": "image/webp",
     ".svg": "image/svg+xml",
 }
+PAGE_STATE_FILES = (
+    "comments.jsonl",
+    "status.json",
+    "heartbeat.json",
+    "cursor.json",
+    "server.json",
+    "session.json",
+)
+PAGE_OWNED_FILES = (*VENDORED_FILES, *PAGE_STATE_FILES)
+PAGE_OWNED_DIRS = ("versions", *VENDORED_DIRS, MEDIA_DIR)
 # What the server exposes from a page directory: exactly what init vendors, plus
 # the media and the versions — built from the vendoring constants, so growing
 # them grows this. The dir patterns are keyed by the directories themselves:
@@ -363,15 +377,59 @@ def read_json(path: Path):
         return None
 
 
+def replace_files(files: list) -> None:
+    """Stage every (path, bytes, follow_symlink) write before replacing targets."""
+    staged = []
+    targets = [
+        path.resolve() if follow_symlink and path.is_symlink() else path
+        for path, _, follow_symlink in files
+    ]
+    if any(
+        paths_same(left, right)
+        for index, left in enumerate(targets)
+        for right in targets[index + 1 :]
+    ):
+        sys.exit("two customization files resolve to the same target")
+    try:
+        for (path, data, follow_symlink), target in zip(files, targets):
+            for _ in range(100):
+                tmp = target.with_name(f".{secrets.token_hex(8)}.tmp")
+                try:
+                    fd = os.open(
+                        tmp,
+                        os.O_WRONLY
+                        | os.O_CREAT
+                        | os.O_EXCL
+                        | getattr(os, "O_BINARY", 0),
+                        0o666,
+                    )
+                    break
+                except FileExistsError:
+                    continue
+            else:  # pragma: no cover - 64 random bits collided 100 times
+                raise FileExistsError(f"could not reserve a temp file beside {target}")
+            staged.append((tmp, target))
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(data)
+            if target.exists() and (follow_symlink or not path.is_symlink()):
+                tmp.chmod(target.stat().st_mode & 0o777)
+        for tmp, target in staged:
+            os.replace(tmp, target)
+    finally:
+        for tmp, _ in staged:
+            tmp.unlink(missing_ok=True)
+
+
+def json_bytes(obj, *, indent=None) -> bytes:
+    return (json.dumps(obj, ensure_ascii=False, indent=indent) + "\n").encode()
+
+
 def write_json(path: Path, obj) -> None:
     # Atomic: the serve process reads these files (cursor.json every poll) while
     # wait/status write them; a torn read of cursor.json would replay declined
-    # actions in the browser, stickily. The tmp name carries the pid so two
-    # writers (wait's status flip racing a `review state` CLI call) can't replace each
-    # other's tmp out from under os.replace.
-    tmp = path.with_suffix(f".{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(obj, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    # actions in the browser, stickily. Each writer stages through an exclusively
+    # created name so simultaneous writers cannot replace one another's temp file.
+    replace_files([(path, json_bytes(obj), False)])
 
 
 def append_event(page_dir: Path, event: dict) -> dict:
@@ -533,7 +591,7 @@ def claim_page(page_dir: Path) -> None:
     sessions = state_home() / "sessions"
     sessions.mkdir(parents=True, exist_ok=True)
     # Sessions that died without a SessionEnd hook leave their file behind; drop
-    # them here rather than on a timer, the way init drops a killed writer's .tmp.
+    # them here when the next live session makes a claim rather than on a timer.
     for stale in sessions.glob("*.json"):
         entry = read_json(stale)
         if entry and not pid_alive(entry["pid"]):
@@ -778,9 +836,209 @@ def layer_dirs() -> list:
     """Widget-layer sources, lowest precedence first: colloquy's shipped defaults,
     the user layer, the project layer (resolved against the working directory).
     Each mirrors the assets layout: theme.css/registry.json/colloquy.js at the
-    top, modules in widgets/, third-party files in vendor/. Registry files are
-    additive by top-level entry; every other file replaces by path."""
+    top, modules in widgets/, third-party files in vendor/. Theme files form one
+    cascade, registry files are additive by top-level entry, and every other
+    file replaces by path."""
     return [ASSETS, config_home(), Path.cwd() / ".colloquy"]
+
+
+def checked_layers(sources: list) -> list:
+    """Existing, structurally complete layer roots.
+
+    An overlay path of the wrong kind is authored input, not an absent
+    customization. Refuse it here once so every merger can assume the layer
+    shape the public guide describes.
+    """
+    layers = []
+    for layer in sources:
+        if not (layer.exists() or layer.is_symlink()):
+            continue
+        if not layer.is_dir():
+            sys.exit(f"{layer} must be a directory")
+        for name in VENDORED_FILES:
+            path = layer / name
+            if (path.exists() or path.is_symlink()) and not path.is_file():
+                sys.exit(f"{path} must be a file")
+        for sub in VENDORED_DIRS:
+            directory = layer / sub
+            if not (directory.exists() or directory.is_symlink()):
+                continue
+            if not directory.is_dir():
+                sys.exit(f"{directory} must be a directory")
+            for path in directory.iterdir():
+                if not path.is_file():
+                    sys.exit(f"{path} must be a file")
+        layers.append(layer)
+    return layers
+
+
+def layer_source_paths(layers: list) -> list:
+    """Every path a layer reads, including the targets of nested symlinks."""
+    paths = []
+    for layer in layers:
+        paths.append(layer.resolve())
+        paths.extend(
+            path.resolve()
+            for name in VENDORED_FILES
+            if (
+                (path := layer / name).exists()
+                or path.is_symlink()
+            )
+        )
+        for sub in VENDORED_DIRS:
+            directory = layer / sub
+            if not (directory.exists() or directory.is_symlink()):
+                continue
+            paths.append(directory.resolve())
+            if directory.is_dir():
+                paths.extend(path.resolve() for path in directory.iterdir())
+    return paths
+
+
+def _path_location(path: Path) -> tuple:
+    """Deepest existing ancestor and the unresolved path components below it."""
+    ancestor = path.resolve()
+    tail = []
+    while True:
+        try:
+            ancestor.stat()
+        except (FileNotFoundError, NotADirectoryError):
+            tail.append(ancestor.name)
+            ancestor = ancestor.parent
+            continue
+        return ancestor, tuple(reversed(tail))
+
+
+def _filesystem_case_sensitive(path: Path) -> bool:
+    """Whether new names on path's filesystem distinguish letter case."""
+    if sys.platform != "darwin":
+        return os.path.normcase("A") != os.path.normcase("a")
+
+    # Darwin exposes this per volume rather than through normcase: APFS can be
+    # mounted either way, and normcase leaves names unchanged in both cases.
+    class AttrList(ctypes.Structure):
+        _fields_ = [
+            ("bitmapcount", ctypes.c_uint16),
+            ("reserved", ctypes.c_uint16),
+            ("commonattr", ctypes.c_uint32),
+            ("volattr", ctypes.c_uint32),
+            ("dirattr", ctypes.c_uint32),
+            ("fileattr", ctypes.c_uint32),
+            ("forkattr", ctypes.c_uint32),
+        ]
+
+    class VolumeCapabilities(ctypes.Structure):
+        _fields_ = [
+            ("length", ctypes.c_uint32),
+            ("capabilities", ctypes.c_uint32 * 4),
+            ("valid", ctypes.c_uint32 * 4),
+        ]
+
+    attr_vol_info = 0x80000000
+    attr_vol_capabilities = 0x00020000
+    case_sensitive = 0x00000100
+    attributes = AttrList(
+        5, 0, 0, attr_vol_info | attr_vol_capabilities, 0, 0, 0
+    )
+    result = VolumeCapabilities()
+    getattrlist = ctypes.CDLL(None, use_errno=True).getattrlist
+    getattrlist.argtypes = [
+        ctypes.c_char_p,
+        ctypes.POINTER(AttrList),
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.c_ulong,
+    ]
+    getattrlist.restype = ctypes.c_int
+    if getattrlist(
+        os.fsencode(path),
+        ctypes.byref(attributes),
+        ctypes.byref(result),
+        ctypes.sizeof(result),
+        0,
+    ):
+        return True
+    if not result.valid[0] & case_sensitive:
+        return True
+    return bool(result.capabilities[0] & case_sensitive)
+
+
+def _same_existing_path(left: Path, right: Path) -> bool:
+    try:
+        return left.samefile(right)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+
+
+def path_is_within(path: Path, root: Path) -> bool:
+    """Filesystem-aware containment, including not-yet-created descendants."""
+    path_ancestor, path_tail = _path_location(path)
+    root_ancestor, root_tail = _path_location(root)
+    if not root_tail:
+        return any(
+            _same_existing_path(candidate, root_ancestor)
+            for candidate in (path_ancestor, *path_ancestor.parents)
+        )
+    if not _same_existing_path(path_ancestor, root_ancestor):
+        return False
+    if not _filesystem_case_sensitive(root_ancestor):
+        path_tail = tuple(part.casefold() for part in path_tail)
+        root_tail = tuple(part.casefold() for part in root_tail)
+    return path_tail[: len(root_tail)] == root_tail
+
+
+def paths_same(left: Path, right: Path) -> bool:
+    return path_is_within(left, right) and path_is_within(right, left)
+
+
+def paths_overlap(left: Path, right: Path) -> bool:
+    return path_is_within(left, right) or path_is_within(right, left)
+
+
+def overlapping_layer_sources(layers: list):
+    """The first resolved path shared by two precedence scopes."""
+    sources = [(layer, layer_source_paths([layer])) for layer in layers]
+    return next(
+        (
+            (left_layer, left, right_layer, right)
+            for index, (left_layer, left_paths) in enumerate(sources)
+            for right_layer, right_paths in sources[index + 1 :]
+            for left in left_paths
+            for right in right_paths
+            if paths_overlap(left, right)
+        ),
+        None,
+    )
+
+
+def layered_dir_files(layers: list, sub: str) -> dict:
+    """The winning source for every file in one overlaid directory."""
+    sources = {}
+    for layer in layers:
+        source_dir = layer / sub
+        if not source_dir.is_dir():
+            continue
+        for source in sorted(source_dir.iterdir()):
+            if source.is_file():
+                sources[source.name] = source
+    return sources
+
+
+def layered_theme(layers: list) -> str:
+    """One stylesheet whose source order is the layer precedence."""
+    sources = [layer / "theme.css" for layer in layers if (layer / "theme.css").is_file()]
+    if not sources:
+        sys.exit("the incoming layer has no theme.css")
+    parts = []
+    for source in sources:
+        try:
+            css = source.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            sys.exit(f"{source} must be UTF-8")
+        if errors := css_syntax_errors(css, str(source)):
+            sys.exit(errors[0])
+        parts.append(css if css.endswith("\n") else css + "\n")
+    return "".join(parts)
 
 
 def cmd_init(page_dir: Path) -> None:
@@ -789,12 +1047,58 @@ def cmd_init(page_dir: Path) -> None:
     # detail schema that no longer accepts an old payload, makes a recorded
     # action foreign on the first reload — the lost-decision bug reintroduced
     # through vocabulary drift instead of version-scoping.
-    layers = [
-        layer
-        for layer in layer_dirs()
-        if layer.is_dir() and layer.resolve() != page_dir.resolve()
+    sources = layer_dirs()
+    page_target = page_dir.resolve()
+    if source := next(
+        (layer for layer in sources if path_is_within(page_target, layer)),
+        None,
+    ):
+        sys.exit(
+            f"{page_dir} is inside the widget-layer customization source "
+            f"{source}, not a page directory"
+        )
+    layers = checked_layers(sources)
+    if overlap := overlapping_layer_sources(layers):
+        left_layer, left, right_layer, right = overlap
+        sys.exit(
+            f"widget-layer sources {left_layer} and {right_layer} overlap "
+            f"at {left} and {right}; layer scopes must be separate"
+        )
+    destinations = [
+        *(page_target / name for name in VENDORED_FILES),
+        *(page_target / sub for sub in ("versions", *VENDORED_DIRS)),
     ]
+    if overlap := next(
+        (
+            (source, destination)
+            for source in layer_source_paths(layers)
+            for destination in destinations
+            if paths_overlap(source, destination)
+        ),
+        None,
+    ):
+        source, destination = overlap
+        sys.exit(
+            f"widget-layer source {source} overlaps page destination "
+            f"{destination}; source and vendored page paths must be separate"
+        )
     incoming = incoming_registry(layers)
+    directory_sources = {
+        sub: layered_dir_files(layers, sub) for sub in VENDORED_DIRS
+    }
+    missing_modules = sorted(
+        tag
+        for tag, entry in incoming.items()
+        if tag.startswith("cq-")
+        and entry["x-upgrade"]
+        and f"{tag}.js" not in directory_sources["widgets"]
+    )
+    if missing_modules:
+        sys.exit(
+            "the incoming registry marks widgets as upgraded but their modules "
+            "are missing:\n"
+            + "\n".join(f"  - widgets/{tag}.js" for tag in missing_modules)
+        )
     events = read_events(page_dir)
     gaps = vocabulary_gaps(page_dir, events, incoming)
     if gaps:
@@ -804,34 +1108,333 @@ def cmd_init(page_dir: Path) -> None:
             + "\nre-vendoring would silently stop these replaying — the reviewer's"
             " recorded decisions among them."
         )
-    (page_dir / "versions").mkdir(parents=True, exist_ok=True)
-    for stray in page_dir.glob("*.tmp"):  # a killed writer's write_json leftovers
-        stray.unlink()
+
+    # Resolve and read the complete incoming layer before the first page write.
+    # A bad late source must not leave the registry newer than the theme or its
+    # modules.
+    top_files = {"theme.css": layered_theme(layers).encode()}
     for name in VENDORED_FILES:
-        if name == "registry.json":
-            write_json(page_dir / name, incoming)
+        if name == "registry.json" or name in top_files:
             continue
-        source = next((layer / name for layer in reversed(layers) if (layer / name).is_file()), None)
-        if source:
-            (page_dir / name).write_bytes(source.read_bytes())
+        source = next(
+            (layer / name for layer in reversed(layers) if (layer / name).is_file()),
+            None,
+        )
+        if source is None:
+            sys.exit(f"the incoming layer has no {name}")
+        top_files[name] = source.read_bytes()
+    # The registry makes the theme and modules live, so it commits last.
+    top_files["registry.json"] = json_bytes(incoming)
+    directory_files = {
+        sub: {name: source.read_bytes() for name, source in directory_sources[sub].items()}
+        for sub in VENDORED_DIRS
+    }
+
+    # Resolve every destination conflict before touching the page. A directory
+    # where one vendored file belongs must not leave the top-level layer newer
+    # than its modules.
+    if (page_dir.exists() or page_dir.is_symlink()) and not page_dir.is_dir():
+        sys.exit(f"{page_dir} must be a directory")
+    directories = [page_dir / "versions"] + [
+        page_dir / sub for sub in VENDORED_DIRS
+    ]
+    for destination in directories:
+        if destination.is_symlink():
+            sys.exit(f"{destination} must be a real directory, not a symlink")
+        if (
+            destination.exists() or destination.is_symlink()
+        ) and not destination.is_dir():
+            sys.exit(f"{destination} must be a directory")
+    file_targets = [
+        *(page_dir / name for name in top_files),
+        *(
+            page_dir / sub / name
+            for sub in VENDORED_DIRS
+            for name in directory_files[sub]
+        ),
+    ]
+    for target in file_targets:
+        if (target.exists() or target.is_symlink()) and not target.is_file():
+            sys.exit(f"{target} must be a file")
+
+    (page_dir / "versions").mkdir(parents=True, exist_ok=True)
     for sub in VENDORED_DIRS:
-        sources = {
-            source.name: source
-            for layer in layers
-            if (source_dir := layer / sub).is_dir()
-            for source in source_dir.iterdir()
-            if source.is_file()
-        }
+        (page_dir / sub).mkdir(exist_ok=True)
+
+    # Stage the whole layer together. The registry is the declaration that
+    # makes every other file live, so it is the final replacement.
+    writes = [
+        (page_dir / name, data, False)
+        for name, data in top_files.items()
+        if name != "registry.json"
+    ]
+    writes.extend(
+        (page_dir / sub / name, data, False)
+        for sub in VENDORED_DIRS
+        for name, data in directory_files[sub].items()
+    )
+    writes.append((page_dir / "registry.json", top_files["registry.json"], False))
+    replace_files(writes)
+
+    for sub in VENDORED_DIRS:
         destination = page_dir / sub
-        destination.mkdir(exist_ok=True)
         for stale in destination.iterdir():
-            if stale.is_file() and stale.name not in sources:
+            if (
+                stale.name not in directory_files[sub]
+                and (stale.is_symlink() or stale.is_file())
+            ):
                 stale.unlink()
-        for name, source in sources.items():
-            (destination / name).write_bytes(source.read_bytes())
     if not (page_dir / "status.json").exists():
         cmd_status(page_dir, "working", "Writing the page")
     print(f"initialized {page_dir}")
+
+
+CUSTOM_THEME = """\
+/* Appended after Colloquy's defaults by `page init`.
+ * Override tokens for broad changes and selectors for specific elements. */
+:root {
+  /* --accent: #7c3aed; */
+}
+"""
+
+
+def customization_dir(user: bool) -> Path:
+    return config_home() if user else Path.cwd() / ".colloquy"
+
+
+def custom_theme_content(layer: Path) -> tuple:
+    path = layer / "theme.css"
+    if path.exists() or path.is_symlink():
+        if not path.is_file():
+            sys.exit(f"{path} must be a file")
+        try:
+            return path, path.read_text(encoding="utf-8"), True
+        except UnicodeDecodeError:
+            sys.exit(f"{path} must be UTF-8")
+    return path, CUSTOM_THEME, False
+
+
+def customization_protected_paths(layer: Path) -> list:
+    """Resolved paths owned by every layer other than the selected write scope."""
+    paths = []
+    for source in layer_dirs():
+        if source == layer:
+            continue
+        paths.append(source.resolve())
+        if source.is_dir():
+            paths.extend(layer_source_paths([source]))
+    return paths
+
+
+def customization_overlap(targets: list, protected: list):
+    return next(
+        (
+            (target.resolve(), source)
+            for target in targets
+            for source in protected
+            if paths_overlap(target.resolve(), source)
+        ),
+        None,
+    )
+
+
+def initialized_page_owning(path: Path):
+    """The initialized page that owns path, if there is one."""
+    resolved = path.resolve()
+    for root in (resolved, *resolved.parents):
+        # Runtime state is disposable and regenerated; it cannot identify the
+        # page whose owned paths this gate protects.
+        if (
+            (root / "versions").is_dir()
+            and all((root / name).is_file() for name in VENDORED_FILES)
+            and all((root / name).is_dir() for name in VENDORED_DIRS)
+        ):
+            if (
+                paths_same(resolved, root)
+                or any(
+                    paths_same(resolved, root / name)
+                    for name in PAGE_OWNED_FILES
+                )
+                or any(
+                    path_is_within(resolved, root / name)
+                    for name in PAGE_OWNED_DIRS
+                )
+            ):
+                return root
+    return None
+
+
+def customization_page_overlap(paths: list):
+    for path in paths:
+        resolved = path.resolve()
+        if page := initialized_page_owning(resolved):
+            return resolved, page
+    return None
+
+
+def validate_customization_dir(layer: Path) -> list:
+    if (layer.exists() or layer.is_symlink()) and not layer.is_dir():
+        sys.exit(f"{layer} must be a directory")
+    if layer.is_dir():
+        checked_layers([layer])
+    protected = customization_protected_paths(layer)
+    selected = layer_source_paths([layer]) if layer.is_dir() else [layer]
+    if overlap := customization_page_overlap(selected):
+        target, page = overlap
+        sys.exit(
+            f"customization path {target} is owned by initialized page {page}; "
+            "customization sources must stay separate from page-owned paths, "
+            "then run `page init` to re-vendor the page"
+        )
+    if overlap := customization_overlap(selected, protected):
+        target, source = overlap
+        sys.exit(
+            f"customization target {target} overlaps another layer source "
+            f"{source}; customization scopes must be separate"
+        )
+    return protected
+
+
+def cmd_customize_theme(user: bool) -> Path:
+    layer = customization_dir(user)
+    protected = validate_customization_dir(layer)
+    path, css, exists = custom_theme_content(layer)
+    if overlap := customization_overlap([path], protected):
+        target, source = overlap
+        sys.exit(
+            f"customization target {target} overlaps another layer source "
+            f"{source}; customization scopes must be separate"
+        )
+    if exists:
+        print(f"using {path}")
+        return path
+    layer.mkdir(parents=True, exist_ok=True)
+    replace_files([(path, css.encode(), True)])
+    print(f"created {path}")
+    return path
+
+
+def custom_widget_entry(tag: str, upgrade: bool) -> dict:
+    stem = tag.removeprefix("cq-")
+    entry = {
+        "description": f"A custom <{tag}> block.",
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$",
+            }
+        },
+        "required": ["id"],
+        "additionalProperties": False,
+        "x-content": "prose",
+        "x-upgrade": upgrade,
+        "x-example": (
+            f'<{tag} id="{stem}-example"><strong>Example</strong> '
+            f"Replace this content.</{tag}>"
+        ),
+    }
+    if upgrade:
+        entry["x-verbatim"] = True
+    return entry
+
+
+def custom_widget_css(tag: str) -> str:
+    return f"""\
+/* <{tag}> */
+{tag} {{
+  display: block;
+  margin: var(--sp-3) 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--card);
+}}
+"""
+
+
+def custom_widget_module(tag: str) -> str:
+    return f"""\
+import {{ once }} from "/colloquy.js";
+
+customElements.define(
+  "{tag}",
+  class extends HTMLElement {{
+    connectedCallback() {{
+      if (!once(this)) return;
+    }}
+  }},
+);
+"""
+
+
+def cmd_customize_widget(tag: str, user: bool, upgrade: bool) -> None:
+    if re.fullmatch(WIDGET_NAME, tag) is None:
+        sys.exit("widget tag must start with `cq-` and use lowercase kebab-case")
+
+    layer = customization_dir(user)
+    protected = validate_customization_dir(layer)
+    registry_path = layer / "registry.json"
+    registry_layers = layer_dirs()[:2] if user else layer_dirs()
+    checked_layers(registry_layers[:-1])
+    for source_layer in registry_layers:
+        source_path = source_layer / "registry.json"
+        source_entries = read_registry_entries(source_path) or {}
+        if tag in source_entries:
+            sys.exit(f"<{tag}> already exists in {source_path}")
+
+    widgets_dir = layer / "widgets"
+    if (
+        widgets_dir.exists() or widgets_dir.is_symlink()
+    ) and not widgets_dir.is_dir():
+        sys.exit(f"{widgets_dir} must be a directory")
+    module_path = layer / "widgets" / f"{tag}.js"
+    if module_path.exists() or module_path.is_symlink():
+        sys.exit(f"{module_path} already exists")
+
+    entries = read_registry_entries(registry_path) or {}
+    entries[tag] = custom_widget_entry(tag, upgrade)
+    merged = {}
+    for source_layer in registry_layers:
+        source_entries = (
+            entries
+            if source_layer.resolve() == layer.resolve()
+            else read_registry_entries(source_layer / "registry.json") or {}
+        )
+        merged.update(source_entries)
+    source = f"custom widget <{tag}>"
+    validate_registry_examples(validate_registry(merged, source), source)
+
+    theme_path, css, _ = custom_theme_content(layer)
+    if css and not css.endswith("\n"):
+        css += "\n"
+    css += "\n" + custom_widget_css(tag)
+    if errors := css_syntax_errors(css, str(theme_path)):
+        sys.exit(errors[0])
+
+    layer.mkdir(parents=True, exist_ok=True)
+    writes = [(theme_path, css.encode(), True)]
+    created = [registry_path, theme_path]
+    if upgrade:
+        writes.append((module_path, custom_widget_module(tag).encode(), False))
+        created.append(module_path)
+    # The registry is the declaration that makes the other files live, so it
+    # commits last after every target has been staged.
+    writes.append((registry_path, json_bytes(entries, indent=2), True))
+    if overlap := customization_overlap(
+        [path for path, _, _ in writes], protected
+    ):
+        target, source = overlap
+        sys.exit(
+            f"customization target {target} overlaps another layer source "
+            f"{source}; customization scopes must be separate"
+        )
+    if upgrade:
+        widgets_dir.mkdir(parents=True, exist_ok=True)
+    replace_files(writes)
+    print("custom widget scaffold:")
+    for path in created:
+        print(f"  {path}")
 
 
 def cmd_media(page_dir: Path, files: list) -> list:
@@ -2164,6 +2767,49 @@ def css_rules(css: str):
     yield from _rules(tinycss2.parse_stylesheet(css, skip_comments=True, skip_whitespace=True))
 
 
+def css_syntax_errors(css: str, source: str, *, block=False) -> list:
+    """Every parse error in a stylesheet or declaration block, including nested rules."""
+    parse = css_block if block else lambda value: tinycss2.parse_stylesheet(
+        value, skip_comments=True, skip_whitespace=True
+    )
+    errors = []
+    seen = set()
+
+    def record(node):
+        key = (node.source_line, node.source_column, node.message)
+        if key in seen:
+            return
+        seen.add(key)
+        errors.append(
+            f"{source} syntax error at "
+            f"{node.source_line}:{node.source_column}: {node.message}"
+        )
+
+    def walk_tokens(tokens):
+        for token in tokens:
+            if token.type == "error":
+                record(token)
+            for attr in ("arguments", "content"):
+                nested = getattr(token, attr, None)
+                if isinstance(nested, list):
+                    walk_tokens(nested)
+
+    def walk_rules(nodes):
+        for node in nodes:
+            if node.type == "error":
+                record(node)
+            for attr in ("prelude", "value"):
+                tokens = getattr(node, attr, None)
+                if isinstance(tokens, list):
+                    walk_tokens(tokens)
+            if node.type in {"qualified-rule", "at-rule"} and node.content is not None:
+                walk_tokens(node.content)
+                walk_rules(css_block(node.content))
+
+    walk_rules(parse(css))
+    return errors
+
+
 def _rules(nodes, conditional=False):
     """`nodes` and every rule nested inside them, as (selector, block, conditional)."""
     for node in nodes:
@@ -2249,10 +2895,14 @@ def _overwide_elements(parser: _StructParser, column: int) -> list:
 
 def read_registry_entries(path: Path):
     """Read the top-level entries one registry layer contributes."""
+    if (path.exists() or path.is_symlink()) and not path.is_file():
+        sys.exit(f"{path}: registry.json must be a file")
     try:
         registry = read_json(path)
     except json.JSONDecodeError as error:
         sys.exit(f"{path}: invalid JSON ({error.msg}, line {error.lineno})")
+    except UnicodeDecodeError:
+        sys.exit(f"{path} must be UTF-8")
     if registry is None:
         if not path.is_file():
             return None
@@ -2436,6 +3086,27 @@ def validate_registry(registry: dict, source) -> dict:
     return registry
 
 
+def validate_registry_examples(registry: dict, source) -> dict:
+    """Validate each independent catalog example where registry layers become one."""
+    known = registry["$languages"]["names"]
+    for tag, entry in registry.items():
+        if not tag.startswith("cq-") or (example := entry.get("x-example")) is None:
+            continue
+        parser = _StructParser()
+        parser.feed(example)
+        parser.close()
+        errors = fragment_errors(parser, registry, known)
+        if parser.duplicate_ids:
+            errors.append(
+                f"duplicate ids (anchors need unique targets): {parser.duplicate_ids}"
+            )
+        if parser.reserved_ids:
+            errors.append(reserved_ids_error(parser.reserved_ids))
+        if errors:
+            sys.exit(f"{source}: <{tag}> x-example is invalid: {errors[0]}")
+    return registry
+
+
 def read_registry(path: Path):
     """Read and validate one complete registry vocabulary."""
     registry = read_registry_entries(path)
@@ -2465,7 +3136,7 @@ def incoming_registry(layers: list) -> dict:
     if not paths:
         sys.exit("the incoming layer has no registry.json")
     source = "merged registry (" + ", ".join(str(path) for path in paths) + ")"
-    return validate_registry(merged, source)
+    return validate_registry_examples(validate_registry(merged, source), source)
 
 
 # ---------- the vocabulary stamp ----------
@@ -3147,6 +3818,10 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
             )
 
     theme_css = (page_dir / "theme.css").read_text(encoding="utf-8") if (page_dir / "theme.css").exists() else ""
+    errors.extend(css_syntax_errors(parser.css, "page <style>"))
+    for number, style in enumerate(parser.inline_styles, 1):
+        errors.extend(css_syntax_errors(style, f"inline style #{number}", block=True))
+    errors.extend(css_syntax_errors(theme_css, "theme.css"))
     column = _column_width(parser.css, theme_css)
     errors.extend(_overwide_elements(parser, column))
 
@@ -3366,9 +4041,10 @@ COVERED_WORDS = """() => {
 
 def render_version(browser, url: str) -> list:
     """Everything wrong with a served version that only a browser can see: a
-    console or page error, a request that 404s, a fail-soft error box, a widget
-    upgraded into a box of no usable size, the page scrolling sideways, words the
-    reviewer can read and can't select, words drawn on top of other words — each
+    console or page error, a request that 404s, a fail-soft error box, an upgrade
+    module that never defines its declared element, a widget upgraded into a box
+    of no usable size, the page scrolling sideways, words the reviewer can read
+    and can't select, words drawn on top of other words — each
     in both color schemes, because the dark theme is real CSS nobody otherwise
     renders — plus, in one scheme, a version that authors widget state the log
     replays over (replay isn't CSS) and, on paper, words the page drops that it
@@ -3414,6 +4090,12 @@ def render_version(browser, url: str) -> list:
         failsoft = page.evaluate(
             "[...document.querySelectorAll('.cq-error')].map(e => e.textContent.trim())"
         )
+        missing_upgrades = page.evaluate("""() => fetch('/registry.json')
+            .then(r => r.json())
+            .then(registry => Object.entries(registry)
+                .filter(([tag, entry]) => tag.startsWith('cq-')
+                    && entry['x-upgrade'] && !customElements.get(tag))
+                .map(([tag]) => tag))""")
         # [hidden] needs its own exclusion: hidden="until-found" (what a closed
         # tab wears) resolves to content-visibility, which checkVisibility
         # reports as visible while the box measures zero. That collapse is the
@@ -3473,6 +4155,11 @@ def render_version(browser, url: str) -> list:
         page.close()
         found = [f"[{scheme}] console: {e}" for e in errors]
         found += [f"[{scheme}] a widget failed soft: {t}" for t in failsoft]
+        if missing_upgrades:
+            found.append(
+                f"[{scheme}] upgraded widgets did not define their elements: "
+                + ", ".join(f"<{tag}>" for tag in missing_upgrades)
+            )
         if tiny:
             found.append(f"[{scheme}] widgets rendered with no usable size: {json.dumps(tiny)}")
         if overflow > 0:
@@ -3712,6 +4399,27 @@ def init(dir: str) -> None:
     the incoming layer cannot read.
     """
     cmd_init(resolve_dir(dir, must_exist=False))
+
+
+@cli.group(short_help="Create theme and widget customizations.")
+def customize() -> None:
+    """Create theme and widget customizations."""
+
+
+@customize.command("theme", short_help="Create the theme override file.")
+@click.option("--user", is_flag=True, help="Use the user layer instead of this project.")
+def customize_theme(user: bool) -> None:
+    """Create the CSS override file without replacing one that exists."""
+    cmd_customize_theme(user)
+
+
+@customize.command("widget", short_help="Add a widget scaffold.")
+@click.argument("tag")
+@click.option("--user", is_flag=True, help="Use the user layer instead of this project.")
+@click.option("--upgrade", is_flag=True, help="Also create an ES-module upgrade.")
+def customize_widget(tag: str, user: bool, upgrade: bool) -> None:
+    """Add a registry entry and CSS scaffold for a cq-* widget."""
+    cmd_customize_widget(tag, user, upgrade)
 
 
 @page.command(short_help="Add images and print their page paths.")
