@@ -538,9 +538,11 @@ hide, they don't discard. Cancel is the only discard.
   harness default is to push and open a draft PR.
 - **A session loads each host's cached copy, not the checkout.** Both repo-root
   marketplaces point at `plugins/colloquy/`, and both hosts install from GitHub main, so a
-  payload change reaches a session only once pushed. `claude plugin update colloquy@colloquy`
-  refreshes Claude Code's copy; Codex installs from a marketplace snapshot it fetches
-  separately, so it takes `codex plugin marketplace upgrade colloquy` and then
-  `codex plugin add colloquy@colloquy`. Neither manifest declares a version, because that
-  string is Claude Code's cache key: an unchanged one leaves the old copy in place and the
-  update reports it as the latest. Without one the key is the commit.
+  payload change reaches a session only once pushed, and reaches the next session rather
+  than the one that pushed it. Neither manifest declares a version, because that string is
+  Claude Code's cache key: an unchanged one leaves the old copy in place and the update
+  reports it as the latest. Without one the key is the commit, so Claude Code's periodic
+  marketplace sweep installs each pushed commit on its own and nothing needs running.
+  Codex installs from a marketplace snapshot it fetches separately and does not sweep, so
+  a change reaches it through `codex plugin marketplace upgrade colloquy` and then
+  `codex plugin add colloquy@colloquy`.
