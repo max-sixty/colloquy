@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -302,6 +303,67 @@ def test_claude_and_codex_load_the_same_plugin_payload():
     ]:
         assert (PLUGIN_ROOT / relative).is_file()
     assert not [path for path in PLUGIN_ROOT.rglob("*") if path.is_symlink()]
+
+
+def test_an_installed_payload_is_complete_and_launches_outside_the_checkout(tmp_path):
+    installed = tmp_path / "host" / "plugins" / "colloquy"
+    shutil.copytree(PLUGIN_ROOT, installed)
+
+    conflicts = []
+    for path in installed.rglob("*"):
+        if not path.is_file() or "vendor" in path.parts:
+            continue
+        try:
+            text = path.read_text()
+        except UnicodeDecodeError:
+            continue
+        for line_no, line in enumerate(text.splitlines(), 1):
+            if re.match(r"^(<{7}|={7}|>{7})(?: |$)", line):
+                conflicts.append(f"{path.relative_to(installed)}:{line_no}")
+    assert conflicts == []
+
+    elsewhere = tmp_path / "unrelated-project"
+    elsewhere.mkdir()
+    launcher = installed / "bin" / "colloquy"
+    page = tmp_path / "state" / "page"
+
+    help_result = subprocess.run(
+        [launcher, "--help"],
+        cwd=elsewhere,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert help_result.returncode == 0, help_result.stderr
+    assert "Build and run interactive review pages." in help_result.stdout
+
+    init_result = subprocess.run(
+        [launcher, "page", "init", page],
+        cwd=elsewhere,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert init_result.returncode == 0, init_result.stderr
+    (page / "versions" / "v1.html").write_text(PAGE)
+    publish_result = subprocess.run(
+        [
+            launcher,
+            "version",
+            "publish",
+            page,
+            "--version",
+            "1",
+            "--text",
+            "installed-payload smoke",
+        ],
+        cwd=elsewhere,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert publish_result.returncode == 0, publish_result.stderr
+    assert interact.published_versions(page, interact.read_events(page)) == [1]
 
 
 def case_alias(path):
@@ -1751,7 +1813,7 @@ def test_check_rejects_a_language_nothing_will_color(page_dir):
             "<h2>Plan</h2>\n"
             '<pre><code class="language-pythn">x = 1</code></pre>\n'
             '<div class="note language-python">not a code block</div>\n'
-            '<cq-code id="walk-bad" lang="pythn">z = 3\n</cq-code>\n'
+            '<cq-code id="walk-bad" language="pythn">z = 3\n</cq-code>\n'
             '<pre><code class="language-python">y = 2</code></pre>',
         )
     )
@@ -1760,7 +1822,7 @@ def test_check_rejects_a_language_nothing_will_color(page_dir):
     out = result.output
     assert 'class="language-pythn"' in out and "not a language this page's layer speaks" in out
     assert 'class="language-python"' in out and "only <pre><code> is colored" in out
-    assert '<cq-code lang="pythn">' in out, out
+    assert '<cq-code language="pythn">' in out, out
     # The well-formed block is not among the complaints.
     assert out.count('class="language-python"') == 1
 
@@ -3561,6 +3623,105 @@ def test_session_end_idles_the_page_and_stops_its_server(claimed):
     assert interact.read_json(claimed / "status.json")["state"] == "idle"
     assert interact.running_server(claimed) is None
     assert interact.session_pages("s1") == []
+
+
+def start_managed_server(page_dir, session_id, session_pid):
+    env = os.environ | {
+        "COLLOQUY_SESSION_ID": session_id,
+        "COLLOQUY_SESSION_PID": str(session_pid),
+        "COLLOQUY_AGENT": "Codex",
+    }
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(interact.__file__),
+            "server",
+            "run",
+            str(page_dir),
+        ],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert process.stdout.readline().startswith("http://127.0.0.1:")
+    return process
+
+
+def test_a_server_exits_when_its_session_is_hard_killed(page_dir):
+    owner = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    server = start_managed_server(page_dir, "abandoned", owner.pid)
+    owner.terminate()
+    owner.wait(timeout=5)
+
+    server.wait(timeout=5)
+    assert server.returncode == 0, server.stderr.read()
+    assert not (page_dir / "server.json").exists()
+
+
+def test_a_live_session_can_take_over_an_existing_server(page_dir):
+    first = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    second = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    server = start_managed_server(page_dir, "first", first.pid)
+    try:
+        interact.write_json(
+            page_dir / "session.json",
+            {"id": "second", "pid": second.pid, "agent": "Codex", "ts": "t"},
+        )
+        first.terminate()
+        first.wait(timeout=5)
+        assert server.poll() is None
+
+        second.terminate()
+        second.wait(timeout=5)
+        server.wait(timeout=5)
+        assert server.returncode == 0, server.stderr.read()
+    finally:
+        for process in (first, second, server):
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=5)
+
+
+def test_a_sessionless_server_ignores_a_stale_claim_and_requires_explicit_stop(page_dir):
+    dead = subprocess.Popen([sys.executable, "-c", ""])
+    dead.wait(timeout=5)
+    interact.write_json(
+        page_dir / "session.json",
+        {"id": "old-session", "pid": dead.pid, "agent": "Codex", "ts": "t"},
+    )
+    env = os.environ.copy()
+    for name in (
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_PID",
+        "COLLOQUY_SESSION_ID",
+        "COLLOQUY_SESSION_PID",
+        "COLLOQUY_AGENT",
+    ):
+        env.pop(name, None)
+    server = subprocess.Popen(
+        [
+            sys.executable,
+            str(interact.__file__),
+            "server",
+            "run",
+            str(page_dir),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    assert server.stdout.readline().startswith("http://127.0.0.1:")
+    try:
+        time.sleep(interact.ORPHAN_GRACE_SECS + 0.5)
+        assert server.poll() is None, "a manual server inherited the stale session claim"
+        assert "stopped server" in interact.cmd_stop(page_dir)
+        server.wait(timeout=5)
+    finally:
+        if server.poll() is None:
+            server.terminate()
+            server.wait(timeout=5)
 
 
 def test_state_reports_whether_the_owning_session_still_exists(claimed):

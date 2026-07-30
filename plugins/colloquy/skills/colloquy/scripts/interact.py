@@ -209,6 +209,10 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
 HEARTBEAT_FRESH_SECS = 8
+# A session-managed server gives a replacement session one short poll window to
+# claim the page before it closes. The claim itself is the ownership record:
+# manual servers have none and therefore remain up until `server stop`.
+ORPHAN_GRACE_SECS = 1
 # The browser's event kinds, and per kind the fields something downstream reads.
 # POST /api/event is the one door they come through, so this is where the shape is
 # checked; every reader indexes the fields rather than asking whether they arrived.
@@ -553,6 +557,28 @@ def running_server(page_dir: Path):
     return None
 
 
+def stop_when_session_ends(httpd: ThreadingHTTPServer, page_dir: Path) -> None:
+    """Stop a session-managed server once the page's current claimant is gone.
+
+    Read the claim afresh on every pass: another live session may take over the
+    already-running server, and then its pid — not the process that originally
+    launched the server — is the one whose lifetime matters. This watcher is
+    only started when `server run` has a claim, so a manually launched server
+    remains an explicit-stop process.
+    """
+    orphaned_at = None
+    while True:
+        session = read_json(page_dir / "session.json")
+        if session and pid_alive(session["pid"]):
+            orphaned_at = None
+        elif orphaned_at is None:
+            orphaned_at = time.monotonic()
+        elif time.monotonic() - orphaned_at >= ORPHAN_GRACE_SECS:
+            httpd.shutdown()
+            return
+        time.sleep(0.1)
+
+
 def config_home() -> Path:
     """$XDG_CONFIG_HOME/colloquy (~/.config/colloquy/) — the user's overlay layer."""
     return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "colloquy"
@@ -566,7 +592,7 @@ def state_home() -> Path:
     return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "colloquy"
 
 
-def claim_page(page_dir: Path) -> None:
+def claim_page(page_dir: Path) -> bool:
     """Record that this agent session is the one working on the page, in
     both directions: the page names its session (so the server can see when that
     session is gone), the session lists its pages (so the hooks can find them
@@ -578,11 +604,12 @@ def claim_page(page_dir: Path) -> None:
     of a reviewer and incurs it, while `review wait` takes it up. Authoring
     commands neither incur the obligation nor discharge it, so a directory a
     session only wrote to, like a throwaway page for testing the widget layer,
-    owes nobody a watcher."""
+    owes nobody a watcher. Return whether this invocation made a claim, so a
+    bare-shell server never inherits a stale claim's lifetime."""
     sid = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("COLLOQUY_SESSION_ID")
     pid = os.environ.get("CLAUDE_PID") or os.environ.get("COLLOQUY_SESSION_PID")
     if not sid or not pid:
-        return
+        return False
     agent = "Claude" if os.environ.get("CLAUDE_CODE_SESSION_ID") else os.environ["COLLOQUY_AGENT"]
     write_json(
         page_dir / "session.json",
@@ -599,6 +626,7 @@ def claim_page(page_dir: Path) -> None:
     entry = read_json(sessions / f"{sid}.json") or {"pages": []}
     pages = sorted({*entry["pages"], str(page_dir)})
     write_json(sessions / f"{sid}.json", {"pid": int(pid), "pages": pages, "ts": now_iso()})
+    return True
 
 
 def session_pages(session_id: str) -> list:
@@ -1460,7 +1488,7 @@ def cmd_media(page_dir: Path, files: list) -> list:
 
 
 def cmd_serve(page_dir: Path) -> None:
-    claim_page(page_dir)
+    claimed = claim_page(page_dir)
     existing = running_server(page_dir)
     if existing:
         print(existing["url"], flush=True)
@@ -1480,6 +1508,12 @@ def cmd_serve(page_dir: Path) -> None:
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
     write_json(page_dir / "server.json", {"port": httpd.server_address[1], "pid": os.getpid(), "url": url})
     print(url, flush=True)
+    if claimed:
+        threading.Thread(
+            target=stop_when_session_ends,
+            args=(httpd, page_dir),
+            daemon=True,
+        ).start()
     try:
         httpd.serve_forever()
     finally:
@@ -3253,7 +3287,7 @@ def language_errors(blocks: list, cq_elements: list, registry: dict, known: list
         if (block["tag"], block["parent"]) != ("code", "pre"):
             errors.append(
                 f"{where}: only <pre><code> is colored, found <{block['tag']}> in "
-                f"<{block['parent'] or 'nothing'}> — move it, or use <cq-code lang=…> "
+                f"<{block['parent'] or 'nothing'}> — move it, or use <cq-code language=…> "
                 f"for a walkthrough"
             )
         elif block["lang"] not in known:
@@ -3670,7 +3704,7 @@ def fragment_errors(parser: _StructParser, registry: dict, known: list) -> list:
     """Structural + registry validation of a markup fragment (an agent reply
     carrying widgets): the discussion-side analog of `version check`. The language
     check comes along because the schema stopped carrying the list: a reply's
-    <cq-code lang=…> is colored by the same tokenizer a version's is, and nothing
+    <cq-code language=…> is colored by the same tokenizer a version's is, and nothing
     else would now refuse it a word that tokenizer doesn't know."""
     return (
         structure_errors(parser)

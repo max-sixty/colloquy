@@ -56,8 +56,8 @@ the product, and nothing sits between them:
   the agent's documentation all read it, so none of them can drift from the others.
 - `plugins/colloquy/skills/colloquy/assets/theme.css` — the tokens and rules every page links, and that the
   runtime styles its own chrome from, so a page themes as one thing.
-- `examples/` — six complete pages that are also the render suite's corpus, plus
-  `gallery.html`, all six on one page (generated; edit the examples, not it).
+- `examples/` — complete pages that are also the render suite's corpus, plus
+  `gallery.html`, all on one page (generated; edit the examples, not it).
 
 `plugins/colloquy/hooks/hooks.json` is shared too: both hosts speak its three events,
 and Codex supplies `CLAUDE_PLUGIN_ROOT` as a compatibility alias. The launcher maps
@@ -177,7 +177,14 @@ occurrence can ever confirm, which silently costs the comment its copy.
 So where the file can't model what a module writes, the reading stops rather than guesses:
 `x-says` and `x-verbatim` cover what the registry can declare, a fence covers the rest, and
 a quote across a fence is refused when it is written instead of detaching later in front of
-the reviewer. A widget that writes words of its own declares them or stays fenced.
+the reviewer. The browser indexes those same fences before upgrades run and clips captured
+context to them afterward, so neither capture claims neighbours the other cannot confirm.
+A widget that writes words of its own declares them or stays fenced.
+
+Context identifies an occurrence only when exactly one candidate confirms it in full.
+If no candidate does, a quote that occurs once can still identify itself; a repeated quote
+cannot. It detaches instead of falling back to document order, because an offset or ordinal
+is not evidence that a revised copy is the one the reviewer meant.
 
 ### Paint; don't wrap
 
@@ -198,8 +205,10 @@ and no ARIA relation puts one back: on a block that isn't focusable, NVDA ignore
 `<p>` at all, VoiceOver reads it only on an interactive, image or landmark role, and
 `aria-details` is supported unevenly and says only that details exist. What every screen
 reader announces in every mode is text, so the same pass writes one hidden, unselectable
-line per block that holds a mark, saying how many comments are on it. It names the block
-rather than the words, because naming the words is wrapping them again.
+button per block that holds a mark, saying how many comments are on it. Focus reveals it
+like a skip link; activating it enters the first matching thread, and j/k continues from
+there. It names the block rather than the words, because naming the words is wrapping them
+again.
 
 State the cost anyway: a norm that hides what it costs gets applied where it shouldn't be.
 Writing text into the author's document is a thing to do carefully rather than freely —
@@ -350,7 +359,7 @@ general shape, not for reaching past the registry.
 
 A fact the whole layer shares belongs to the layer, under a `$` key, rather than to
 whichever widget first needed it. The vendored tokenizer's language list lived in
-`cq-code`'s `lang` enum, and from there the only way for the lint to read it was to name
+`cq-code`'s `language` enum, and from there the only way for the lint to read it was to name
 `cq-code`: the wrong home was the cause and the reach by name only the symptom, which is
 why moving the list (`$languages`) is what let the widgets declare instead (`x-language`
 names the attribute carrying one). The tell is a consumer indexing past the entry it was
@@ -496,8 +505,13 @@ runtime preserves by default, and discarding costs the author a word.
 
 ### Never lose user text
 
-Every draft persists to `localStorage` on input; only a successful send clears one. Escape
-and outside clicks hide, they don't discard. Cancel is the only discard.
+Every draft persists to tab-local `sessionStorage` on input; absence and an empty value
+are different, because deleting all of a `cq-draft` is still an edit. It survives reload
+and version navigation, while another tab's successful send or Cancel cannot erase it;
+submitted actions converge through the log instead. Only a successful send (or finding
+the same value already authored) clears one. A send owns that input until its response,
+so an earlier response can never clear or overtake newer text. Escape and outside clicks
+hide, they don't discard. Cancel is the only discard.
 
 ## Working on it
 

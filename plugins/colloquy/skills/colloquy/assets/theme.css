@@ -10,7 +10,7 @@
  * the same tokens) knows about color schemes. */
 
 :root {
-  --paper: #fbfbf9;  --ink: #1f2328;  --muted: #6b7280;  --rule: #e4e7eb;
+  --paper: #fbfbf9;  --ink: #1f2328;  --muted: #626b78;  --rule: #e4e7eb;
   --accent: #2563eb; --ok: #16a34a;   --warn: #d97706;   --danger: #dc2626;
   --r: 8px;
   --sp-1: 4px; --sp-2: 8px; --sp-3: 16px; --sp-4: 24px;
@@ -34,7 +34,7 @@
      Every scope the tokenizer knows collapses into these in colloquy.js, and what
      it doesn't map keeps --ink, so an unmapped scope reads plain, never wrong. */
   --syn-comment: #6e7781; --syn-keyword: #cf222e; --syn-string: #0a3069;
-  --syn-number: #0550ae;  --syn-name: #8250df;    --syn-type: #953800;
+  --syn-number: #0550ae;  --syn-name: #7b49d1;    --syn-type: #953800;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -80,7 +80,7 @@ pre { background: var(--pre-bg); border: 1px solid var(--rule); border-radius: v
       font-family: var(--mono); }
 pre code { background: none; padding: 0; font-size: 100%; }
 /* Syntax roles. The runtime writes these into any code block that names a language —
-   a <pre><code class="language-*"> or a cq-code with `lang` — having collapsed the
+   a <pre><code class="language-*"> or a cq-code with `language` — having collapsed the
    tokenizer's scopes into six of colloquy's own first. Styled at document level like
    the marks, because they land on the page's own elements; one attribute rather than
    six classes, so the shared class vocabulary doesn't widen at all. A tokenizer swap
@@ -699,14 +699,35 @@ cq-draft:hover .cq-draft-pencil, cq-draft:focus-within .cq-draft-pencil { opacit
 .cq-draft-edit.cq-ui { display: block; width: 100%; padding: 0; border: 0; background: none;
            min-height: 0; max-height: none; overflow: hidden; }
 .cq-draft-edit.cq-ui:focus { box-shadow: none; }
+.cq-draft-controls, .cq-draft-history { display: none; }
 @media screen {
-  cq-draft:has(.cq-draft-edit) { border-style: solid;
-             border-color: color-mix(in srgb, var(--accent) 45%, var(--card));
-             box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
-  cq-draft:has(.cq-draft-edit) > .cq-draft-body,
-  cq-draft:has(.cq-draft-edit) .cq-draft-pencil { display: none; }
+  html:not(.cq-copy) {
+    cq-draft:has(.cq-draft-edit) { border-style: solid;
+               border-color: color-mix(in srgb, var(--accent) 45%, var(--card));
+               box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+    cq-draft:has(.cq-draft-edit) > .cq-draft-body,
+    cq-draft:has(.cq-draft-edit) .cq-draft-pencil { display: none; }
+    .cq-draft-controls { display: flex; }
+    .cq-draft-history { display: block; }
+  }
 }
-.cq-draft-controls { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.cq-draft-controls { justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.cq-draft-history { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule);
+                    font-size: var(--t-5); color: var(--ink-2); }
+.cq-draft-history > summary { width: max-content; cursor: pointer; color: var(--muted); }
+.cq-draft-history > summary:hover { color: var(--ink-2); }
+.cq-draft-current { margin: 10px 0; }
+.cq-draft-current > strong { display: block; margin-bottom: 4px; }
+.cq-draft-revisions { margin: 0; padding-left: 20px; }
+.cq-draft-revisions > li { margin: 8px 0; padding-left: 3px; }
+.cq-draft-revision-head { display: flex; align-items: center; justify-content: space-between;
+                          gap: 8px; margin-bottom: 3px; }
+.cq-draft-delta, .cq-draft-snapshot { white-space: pre-wrap; overflow-wrap: break-word;
+                                     color: var(--ink-2); }
+.cq-draft-delta del { background: var(--del-tint); color: var(--danger-ink); }
+.cq-draft-delta ins { background: var(--add-tint); color: var(--ok-ink);
+                      text-decoration: none; }
+.cq-draft-restore { flex: none; font-size: var(--t-6); }
 
 /* Where a widget upgrade fails, it fails soft into this box. */
 .cq-error { border: 1px solid var(--danger); background: var(--danger-tint);

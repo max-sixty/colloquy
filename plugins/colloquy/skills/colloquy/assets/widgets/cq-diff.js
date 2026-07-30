@@ -181,7 +181,7 @@ customElements.define(
         const nodes = [];
         for (const file of files) {
           // A path with no language — a Dockerfile, a .txt, an extension the table
-          // doesn't name — is a file that stays plain, the way a cq-code without `lang`
+          // doesn't name — is a file that stays plain, the way a cq-code without `language`
           // does. Nothing is guessed from what the lines look like.
           const lang = langForPath(file.path);
           nodes.push(fileNode(file, lang ? await colorHunks(file, lang) : new Map()));

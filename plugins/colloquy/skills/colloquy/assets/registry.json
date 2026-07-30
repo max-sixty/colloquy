@@ -166,19 +166,19 @@
     "x-example": "<cq-tree id=\"feeder-tree\">\nfeeders/\n  mount.py  +2 -2\n  schedule.py  +1\n  sites/\n    north.toml\n</cq-tree>"
   },
   "cq-code": {
-    "description": "An annotated code block — the walkthrough shape. The body is the code verbatim (data, < and > escaped, column 0); `lang` colors it, naming one of $languages; `hi` highlights line ranges (\"3-5,8\"); cq-note children anchor remarks at lines. Leave `lang` off where the body isn't source (a transcript, command output) — nothing guesses, so an undeclared block stays plain.",
+    "description": "An annotated code block — the walkthrough shape. The body is the code verbatim (data, < and > escaped, column 0); `language` colors it, naming one of $languages; `hi` highlights line ranges (\"3-5,8\"); cq-note children anchor remarks at lines. Leave `language` off where the body isn't source (a transcript, command output) — nothing guesses, so an undeclared block stays plain.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
-      "lang": {"type": "string"},
+      "language": {"type": "string"},
       "hi": {"type": "string", "pattern": "^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$"}
     },
     "required": ["id"],
     "additionalProperties": false,
     "x-content": "data",
-    "x-language": "lang",
+    "x-language": "language",
     "x-upgrade": true,
-    "x-example": "<cq-code id=\"bracket-walk\" lang=\"python\" hi=\"2\">\ndef bracket(temp):\n    if temp &lt; 0:\n        return \"steel\"\n    return \"cedar\"\n<cq-note at=\"2\">Freezing is the only threshold that matters.</cq-note>\n</cq-code>"
+    "x-example": "<cq-code id=\"bracket-walk\" language=\"python\" hi=\"2\">\ndef bracket(temp):\n    if temp &lt; 0:\n        return \"steel\"\n    return \"cedar\"\n<cq-note at=\"2\">Freezing is the only threshold that matters.</cq-note>\n</cq-code>"
   },
   "cq-note": {
     "description": "A remark anchored at a line of its cq-code parent. Prose content; `at` is the 1-based line number.",
@@ -222,7 +222,7 @@
     "x-example": "<h3>The option cards</h3>\n<p>Effort and risk now sit above the title, so a scanning eye reads cost before prose.</p>\n<cq-shot id=\"shot-cards\" alt=\"the decision page's option cards\" before=\"/media/0f2c91a4b7de3105.png\" after=\"/media/6b40ac7719ee5d82.png\"></cq-shot>"
   },
   "cq-board": {
-    "description": "A kanban board the reviewer edits directly: cards move between columns or reorder within one — dragged by the grip, or by keyboard (the grip is a button: Enter grabs, arrows move, Enter drops) — and each completed move reaches the agent as a `move` action naming the card, target column, and position. Children are cq-column elements only. Write the board as you mean it and leave it alone afterwards: a recorded move carries onto every later version by itself, so re-emitting a card where you first put it does not undo the reviewer's move. A move rests on its card, so revising one they have moved is the card's `restated` (see $restated in `page catalog`), never the board's.",
+    "description": "A kanban board the reviewer edits directly: cards move between columns or reorder within one — dragged by the grip, or by keyboard (the grip is a button: Enter grabs, arrows move, Enter drops) — and each completed move reaches the agent as a `move` action naming the card, target column, and position. Children are cq-column elements only. Write the board as you mean it and leave it alone afterwards: a recorded move carries onto every later version by itself, so re-emitting a card where you first put it does not undo the reviewer's move. Replay preserves the exact position, but the pending mark, version diff, and restatement gate compare a card's column only: a reorder within one column is deliberately not called out as a separate state change, because raw indexes do not compose when neighbouring cards move. A move rests on its card, so revising one they have moved is the card's `restated` (see $restated in `page catalog`), never the board's.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
@@ -293,7 +293,7 @@
     "x-upgrade": false
   },
   "cq-suggestion": {
-    "description": "One proposed change to content the reviewer has already seen, decided in place. cq-old holds the current markup verbatim, cq-new the proposal: both slots replace, cq-new alone inserts, cq-old alone deletes. Pending, the old reads struck and the new tinted, with accept/reject controls in the page margin; deciding collapses the element to the settled markup and reaches the agent as an `accept` or `reject` action for the next version to carry. `resolves` names the comment whose thread this change answers — accepting resolves that thread too. Suggestions don't nest, and a reply can't carry one (reply markup is frozen in the log, so no version could settle it). Fresh content — a new section, the first version — is written straight instead, and a block the reviewer is to write in their own words is a cq-draft: theirs to rewrite, not the agent's to propose. The reviewer can also just comment on a pending suggestion rather than decide it.",
+    "description": "One proposed change to content the reviewer has already seen, decided in place. cq-old holds the current markup verbatim, cq-new the proposal: both slots replace, cq-new alone inserts, cq-old alone deletes. A widget-state change has no separate patch shape: put the complete old and new widget markup in those slots when one is genuinely needed. Pending, the old reads struck and the new tinted, with accept/reject controls in the page margin; deciding collapses the element to the settled markup and reaches the agent as an `accept` or `reject` action for the next version to carry. Settlement is final on that version — it deliberately leaves ordinary prose rather than an undo mark; a mistaken decision is corrected by a comment or the next version. `resolves` names the comment whose thread this change answers — accepting resolves that thread too. Suggestions don't nest, and a reply can't carry one (reply markup is frozen in the log, so no version could settle it). Fresh content — a new section, the first version — is written straight instead, and a block the reviewer is to write in their own words is a cq-draft: theirs to rewrite, not the agent's to propose. The reviewer can also just comment on a pending suggestion rather than decide it.",
     "type": "object",
     "properties": {
       "id":       {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
@@ -341,7 +341,7 @@
     "x-retired-when": "reject"
   },
   "cq-draft": {
-    "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach the agent as an `edit` action naming the element. The body is the draft text verbatim (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off close the review. Usable anywhere prose flows. The agent rewriting prose of its own goes in a cq-suggestion instead; a draft is the reviewer's own words, so there is nothing for them to accept. Once they have edited one those words are theirs: re-emit the body you wrote and their edit still stands over it — and `review comment` reads it their way, quoting the words their edit left and refusing the ones it replaced. To take the pen back — a fact of yours to fix in a sentence they rewrote — write the new text and mark the element `restated` (see $restated in `page catalog`).",
+    "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach the agent as an `edit` action naming the element. After the first edit, Changes shows a bounded, lossless word-aligned difference from this version, every recorded body in order, and a Restore control for each older body; very large divergent middles appear as one replacement rather than freezing the page. Restoring posts another ordinary `edit`, so it converges across tabs and later versions instead of creating private undo state. The body is the draft text verbatim (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off close the review. Usable anywhere prose flows. The agent rewriting prose of its own goes in a cq-suggestion instead; a draft is the reviewer's own words, so there is nothing for them to accept. Once they have edited one those words are theirs: re-emit the body you wrote and their edit still stands over it — and `review comment` reads it their way, quoting the words their edit left and refusing the ones it replaced. To take the pen back — a fact of yours to fix in a sentence they rewrote — write the new text and mark the element `restated` (see $restated in `page catalog`).",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
@@ -377,7 +377,7 @@
     "x-example": "<cq-specimen id=\"spec-gear\" label=\"next season's kit\">\n  <cq-options>\n    <cq-option id=\"sp-paper\" effort=\"low\" risk=\"high\"><strong>Paper maps</strong> Nothing to charge.</cq-option>\n    <cq-option id=\"sp-gps\" effort=\"med\" risk=\"low\" recommended><strong>Dedicated GPS</strong> Offline maps, week-long battery.</cq-option>\n  </cq-options>\n</cq-specimen>"
   },
   "$languages": {
-    "description": "The languages this page's layer can color, and what a filename means. `names` is the whole vocabulary: what an author may declare, what the lint refuses a word outside, and what scripts/vendor-highlight.sh builds the tokenizer bundle from. It is a property of the page rather than of any widget, which is why it lives here and not under the schema of whichever tag happens to take a `lang` — a widget declares that one of its attributes names a language (x-language) and the lint reads the list from here, so a second tag taking one costs a declaration and no new reader. `paths` is the half nobody writes: the one place a language is derived rather than declared, because a unified diff spans files and so has no attribute to carry one. An extension is the diff's own statement about what a file holds, which is a declaration like any other; an extension absent here leaves that file plain.",
+    "description": "The languages this page's layer can color, and what a filename means. `names` is the whole vocabulary: what an author may declare, what the lint refuses a word outside, and what scripts/vendor-highlight.sh builds the tokenizer bundle from. It is a property of the page rather than of any widget, which is why it lives here and not under the schema of whichever tag happens to take a `language` — a widget declares that one of its attributes names a language (x-language) and the lint reads the list from here, so a second tag taking one costs a declaration and no new reader. `paths` is the half nobody writes: the one place a language is derived rather than declared, because a unified diff spans files and so has no attribute to carry one. An extension is the diff's own statement about what a file holds, which is a declaration like any other; an extension absent here leaves that file plain.",
     "why-diff-is-not-a-path": "`diff` is in `names` and deliberately not in `paths`: a .patch inside a diff would be colored by the diff grammar, whose addition and deletion ink is the same statement the widget's own tints already make — said twice, in two channels, about the same line.",
     "names": ["bash", "css", "diff", "go", "html", "java", "javascript", "json", "markdown", "python", "rust", "sql", "toml", "typescript", "yaml"],
     "paths": {

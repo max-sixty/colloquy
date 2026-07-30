@@ -50,9 +50,9 @@
  * searched and paintAnchors the only place it is marked; CLAUDE.md carries why.
  *
  * Never lose user text (CLAUDE.md): every unsent draft — the general box, each per-thread
- * reply, and the selection composer (text + its anchor) — persists to localStorage on
- * input. localStorage is partitioned by origin and each page directory gets its own port,
- * so the keys are implicitly per-page.
+ * reply, the selection composer (text + its anchor), and an in-place draft edit —
+ * persists to sessionStorage on input. It survives reload and version navigation but is
+ * owned by one tab, so a send or Cancel in another tab cannot erase newer unsent words.
  *
  * Versions: an unpinned page follows the newest version, navigating to each revision as
  * Claude ships it. Picking an older version pins the view (?pin in the URL); a pinned
@@ -94,11 +94,26 @@
 let agent = "Claude";
 export const agentName = () => agent;
 
+// Attributes the runtime itself may paint onto elements the page owns. This is the
+// replay signature's one exclusion vocabulary as well as the source each writer uses:
+// a new kind of paint therefore has one place to join. The rest of data-cq-* is not
+// implicitly ours — a widget can carry real state there, and replay must see it.
+const PAGE_PAINT_ATTRIBUTE = Object.freeze({
+  class: "class",
+  done: "data-cq-done",
+  restated: "data-cq-restated",
+  replayWrote: "data-cq-replay-wrote",
+  applied: "data-cq-applied",
+  pending: "data-cq-pending",
+  upgraded: "data-cq-upgraded",
+});
+const PAGE_PAINT_ATTRIBUTES = new Set(Object.values(PAGE_PAINT_ATTRIBUTE));
+
 // One-shot guard for connectedCallback: re-connection (a parent wrapping or moving an
 // already-upgraded child) must be harmless, so upgrade order can't matter.
 export function once(el) {
-  if (el.dataset.cqDone) return false;
-  el.dataset.cqDone = "1";
+  if (el.hasAttribute(PAGE_PAINT_ATTRIBUTE.done)) return false;
+  el.setAttribute(PAGE_PAINT_ATTRIBUTE.done, "1");
   return true;
 }
 
@@ -161,7 +176,7 @@ const loadHljs = () => (hljsReady ??= import("/vendor/highlight.esm.js").then((m
 // Code as [{text, role}] — a flat run in source order, roles from the table above and
 // null where the block's own ink is the answer. A list rather than markup because the two
 // callers build different DOM from it: a plain <pre> emits one span per token, cq-code
-// interleaves the line spans it numbers. `lang` is validated by `version check` against the
+// interleaves the line spans it numbers. A declared language is validated by `version check` against the
 // registry's $languages.names, so an unknown one here means the vendored bundle was built
 // from a different list — thrown, caught by the caller's failSoft, and reported by the
 // render gate, which fails on a console error.
@@ -188,7 +203,7 @@ export async function syntax(source, lang) {
   // the file holds — and a dropped character slides all three with nothing on screen
   // saying so. Failing here fails the block soft to its plain source, and the console
   // error fails the render gate, which is what puts it in front of whoever can drop the
-  // `lang`.
+// language declaration.
   if (tokens.map((t) => t.text).join("") !== source)
     throw new Error(`the ${lang} tokenizer did not return the source unchanged`);
   return tokens;
@@ -235,7 +250,7 @@ export function tokenLines(tokens) {
 
 // What a filename says it holds, or undefined where the registry's table has no answer
 // and the block stays the colour of its own ink. The only place a language is derived
-// rather than declared: a unified diff spans files, so cq-diff has no `lang` to read and
+// rather than declared: a unified diff spans files, so cq-diff has no `language` to read and
 // each file's path is the diff's own statement about what it is. Still a declaration —
 // the rule that nothing is inferred is about source *text*, which no path is. The table
 // is the registry's ($languages), beside the enum it has to agree with, rather than a
@@ -246,7 +261,7 @@ export const langForPath = (path) =>
 // The page's own code blocks: <pre><code class="language-python">. The class is the
 // universal one — what every Markdown renderer emits, and what `version check` validates — so a
 // block Claude wrote anywhere else needs no translation to land here. cq-code declares
-// `lang` instead, because a custom element's vocabulary is the registry's to state.
+// `language` instead, because a custom element's vocabulary is the registry's to state.
 //
 // The spans change no text: a <span> is no text block, so the anchor pass reads exactly
 // the run of characters it read before. That is what lets this run over the document
@@ -457,6 +472,12 @@ function reveal(el) {
 // fetch still rejects startup rather than becoming an empty vocabulary.
 let registry = {};
 let anchoringReady = false;
+// The file-side passage reader fences an upgraded element and each of its original
+// direct children when the registry cannot promise its body is verbatim. Remember
+// those parts before custom-element definitions can add or move anything, so the
+// browser can stop captured context at the same seams after every upgrade has run.
+const opaquePassageRoots = new WeakSet();
+const opaquePassageParts = new WeakSet();
 
 // Which widgets answer a question the way the caller means it, read from what they
 // declare. Nothing out here names a widget: a behaviour some widgets want is an x- key
@@ -468,12 +489,21 @@ const tagsDeclaring = (holds) =>
     .filter(([tag, entry]) => tag.startsWith("cq-") && holds(entry))
     .map(([tag]) => tag);
 
+function rememberPassageParts() {
+  for (const tag of tagsDeclaring((entry) => entry["x-upgrade"] && !entry["x-verbatim"]))
+    for (const root of document.querySelectorAll(tag)) {
+      opaquePassageRoots.add(root);
+      for (const child of root.children) opaquePassageParts.add(child);
+    }
+}
+
 async function upgradeWidgets() {
   const response = await fetch("/registry.json");
   if (!response.ok) throw new Error(`colloquy: registry failed to load (${response.status})`);
   registry = await response.json();
   if (!registry.$events?.kinds || !registry.$languages?.names || !registry.$languages?.paths)
     throw new Error("colloquy: registry lacks $events or $languages");
+  rememberPassageParts();
   await Promise.all(
     Object.entries(registry)
       .filter(([tag, entry]) => tag.startsWith("cq-") && entry["x-upgrade"])
@@ -606,10 +636,15 @@ style.textContent = `
   .cq-mark-el.cq-pending { outline-color: var(--accent); cursor: auto; }
   /* The one runtime word living inside the page's own elements, so its hiding cannot
      come from the chrome's scoped .cq-unseen — the same recipe, restated at document
-     level. user-select keeps it out of a selection too, so the runtime's own words can
-     never end up inside a quote the reviewer captures. */
+     level. It becomes a skip-link-style control on focus: a reader who hears the count
+     can enter its first thread, then j/k through the rest. user-select keeps it out of
+     a selection, so the runtime's own words never enter a captured quote. */
   .cq-mark-note { position: absolute; width: 1px; height: 1px; padding: 0; border: 0;
     overflow: hidden; clip-path: inset(50%); user-select: none; }
+  .cq-mark-note:focus-visible { position: fixed; z-index: 9050; top: 48px; left: 8px;
+    width: auto; height: auto; padding: 6px 10px; overflow: visible; clip-path: none;
+    border: 1px solid var(--accent); border-radius: var(--r); background: var(--card);
+    color: var(--ink); box-shadow: var(--shadow); }
   .cq-ins-block { background: var(--add-tint); box-shadow: 0 0 0 4px var(--add-tint); border-radius: 2px; }
   /* Paper takes no input, so what a widget injects to be worked goes: the control,
      and the box that holds controls. What stays is a control whose label is one of
@@ -622,8 +657,12 @@ style.textContent = `
      underneath saying it themselves. The runtime's own layer hides as one thing, in
      the @scope block below. */
   @media print { [data-cq-offer]:not([data-cq-said]) { display: none !important; } }
-  @keyframes cq-pulse { 50% { opacity: .35; } }
-  @keyframes cq-flash { 0% { background: var(--hi-tint); } 100% { background: var(--card); } }
+  /* Keyframe names are document-global even beside an @scope block. The stable salt
+     makes this runtime-private in the one CSS namespace scoping cannot protect. */
+  @keyframes cq-runtime-4f3c2a8d-pulse { 50% { opacity: .35; } }
+  @keyframes cq-runtime-4f3c2a8d-flash {
+    0% { background: var(--hi-tint); } 100% { background: var(--card); }
+  }
   /* Everything below is private to the chrome, scoped to the runtime's own container:
      no widget or page class can match a rule here, whatever it is named. (cq-tabs once
      marked itself cq-live — this block's name for the visually-hidden live region —
@@ -638,12 +677,13 @@ style.textContent = `
       display: flex; align-items: center; gap: 10px; padding: 0 14px;
       background: var(--veil); backdrop-filter: blur(6px); border-bottom: 1px solid var(--rule); }
     .cq-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted-2); flex: none; }
-    .cq-dot.working { background: var(--accent); animation: cq-pulse 1.4s ease-in-out infinite; }
+    .cq-dot.working { background: var(--accent);
+      animation: cq-runtime-4f3c2a8d-pulse 1.4s ease-in-out infinite; }
     .cq-dot.listening { background: var(--ok); }
     .cq-dot.away { background: var(--warn); }
     .cq-dot.offline { background: var(--danger); }
     .cq-status-text { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-    .cq-status-text .cq-age { color: var(--muted-2); }
+    .cq-status-text .cq-age { color: var(--muted); }
     .cq-spacer { flex: 1; min-width: 0; }
     .cq-banner select { font: inherit; padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; max-width: 260px; min-width: 0; }
     .cq-latest-chip { background: var(--warn-tint); border: 1px solid var(--warn); color: var(--warn-ink); border-radius: 6px; padding: 3px 8px; }
@@ -656,7 +696,7 @@ style.textContent = `
     .cq-threads { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px; }
     .cq-empty { color: var(--muted); padding: 18px 4px; }
     .cq-thread { border: 1px solid var(--rule); border-radius: var(--r); padding: 10px; margin-bottom: 12px; }
-    .cq-thread.flash { animation: cq-flash 1.2s ease-out; }
+    .cq-thread.flash { animation: cq-runtime-4f3c2a8d-flash 1.2s ease-out; }
     .cq-thread:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .cq-quote { margin: 0 0 8px; padding: 2px 8px; border-left: 3px solid var(--quote-bar); color: var(--muted); font-style: italic; cursor: pointer; overflow-wrap: anywhere; }
     .cq-quote:hover { color: var(--ink-2); }
@@ -820,21 +860,52 @@ let agentMsgCount = -1;
 let panelOpen = false;
 let pendingAnchor = null;
 
+// The fold answers where state stands; this answers how it got there. Widgets receive
+// their own absolute actions in log order, bounded by the version being viewed. A reply
+// widget lives in the chrome rather than in a version, so its frozen log markup sees the
+// whole sequence. Returning fresh event copies keeps the private event store private.
+export function actionSequence(widget, action) {
+  return events
+    .filter(
+      (event) =>
+        event.kind === "action" &&
+        event.widget === widget.id &&
+        (!action || event.action === action) &&
+        (inChrome(widget) || event.version <= VNUM) &&
+        appliedActions.has(event.seq),
+    )
+    .map((event) => structuredClone(event));
+}
+
+// Subscribe after replay has had the last word for a poll. actionSequence exposes only
+// actions replay has settled, so a widget that deferred under live input never narrates
+// a state its body does not hold. The callback also runs immediately, so a module owns
+// its complete rendering in one function whether the first state arrived before or
+// after it connected.
+export function watchActions(widget, action, callback) {
+  const update = () => callback(actionSequence(widget, action));
+  document.addEventListener("cq-actions", update);
+  update();
+  return () => document.removeEventListener("cq-actions", update);
+}
+
 // ---------- draft persistence ----------
 // Text the user typed but hasn't sent must survive navigation, reload, version switches,
-// and server death; only a successful send clears it. Storage failures never break typing.
-// Exported: a widget holding user text (cq-draft's in-place edit) keeps it under the
-// same discipline, in the same store, rather than growing a second one.
+// and server death; only a successful send clears it. It is working state of this tab,
+// not shared page state: sessionStorage keeps another tab's send or Cancel from clearing
+// a newer local edit. Recorded actions in the log are what converge across tabs. Storage
+// failures never break typing. Exported: a widget holding user text (cq-draft's in-place
+// edit) keeps it under the same discipline, in the same store.
 const DRAFT = "cq-draft:";
 export const saveDraft = (ctx, val) => {
   try {
-    if (val) localStorage.setItem(DRAFT + ctx, val);
-    else localStorage.removeItem(DRAFT + ctx);
+    if (val) sessionStorage.setItem(DRAFT + ctx, val);
+    else sessionStorage.removeItem(DRAFT + ctx);
   } catch {}
 };
 export const loadDraft = (ctx) => {
   try {
-    return localStorage.getItem(DRAFT + ctx) || "";
+    return sessionStorage.getItem(DRAFT + ctx) || "";
   } catch {
     return "";
   }
@@ -842,10 +913,10 @@ export const loadDraft = (ctx) => {
 const pruneReplyDrafts = (liveIds) => {
   const rp = DRAFT + "reply:";
   try {
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const k = localStorage.key(i);
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const k = sessionStorage.key(i);
       if (k && k.startsWith(rp) && !liveIds.has(k.slice(rp.length)))
-        localStorage.removeItem(k);
+        sessionStorage.removeItem(k);
     }
   } catch {}
 };
@@ -1299,6 +1370,112 @@ function quoteFrom(segments) {
 // pair is a character no UTF-8 file can hold, and a quote is written to one.
 const cut = (text, from, to) => [...text].slice(from, to).join("");
 
+// One lossless text alignment for every widget that needs to explain a sequence of
+// whole-text states. Segmenter keeps words and punctuation in the language-aware
+// units this runtime already assumes; a linear-space Hirschberg walk supplies the
+// ordered shared spine. Its quadratic *time* is capped: after stripping a common
+// prefix and suffix, a very large divergent middle is one replacement instead of a
+// page-freezing attempt at fine-grained alignment. Joining same+delete reconstructs
+// `before`, and joining same+insert reconstructs `after`, exactly.
+const textUnits = new Intl.Segmenter(undefined, { granularity: "word" });
+const ALIGN_CELLS = 1_000_000;
+
+function lcsRow(left, lo, hi, right, rlo, rhi, reverse) {
+  const width = rhi - rlo;
+  let previous = new Uint32Array(width + 1);
+  for (let at = 0; at < hi - lo; at++) {
+    const current = new Uint32Array(width + 1);
+    const word = reverse ? left[hi - at - 1] : left[lo + at];
+    for (let across = 1; across <= width; across++) {
+      const other = reverse ? right[rhi - across] : right[rlo + across - 1];
+      current[across] =
+        word === other
+          ? previous[across - 1] + 1
+          : Math.max(previous[across], current[across - 1]);
+    }
+    previous = current;
+  }
+  return previous;
+}
+
+function lcsMatches(left, lo, hi, right, rlo, rhi, matches) {
+  if (lo === hi || rlo === rhi) return;
+  if (hi - lo === 1) {
+    for (let at = rlo; at < rhi; at++)
+      if (left[lo] === right[at]) {
+        matches.push([lo, at]);
+        break;
+      }
+    return;
+  }
+
+  const middle = lo + Math.floor((hi - lo) / 2);
+  let split = 0;
+  {
+    const forward = lcsRow(left, lo, middle, right, rlo, rhi, false);
+    const backward = lcsRow(left, middle, hi, right, rlo, rhi, true);
+    let best = -1;
+    const width = rhi - rlo;
+    for (let at = 0; at <= width; at++) {
+      const score = forward[at] + backward[width - at];
+      if (score > best) {
+        best = score;
+        split = at;
+      }
+    }
+  }
+  lcsMatches(left, lo, middle, right, rlo, rlo + split, matches);
+  lcsMatches(left, middle, hi, right, rlo + split, rhi, matches);
+}
+
+export function alignText(before, after) {
+  const left = [...textUnits.segment(before)].map((part) => part.segment);
+  const right = [...textUnits.segment(after)].map((part) => part.segment);
+  const runs = [];
+  const push = (kind, text) => {
+    if (!text) return;
+    const last = runs.at(-1);
+    if (last?.kind === kind) last.text += text;
+    else runs.push({ kind, text });
+  };
+
+  let prefix = 0;
+  while (
+    prefix < left.length &&
+    prefix < right.length &&
+    left[prefix] === right[prefix]
+  )
+    prefix++;
+  let suffix = 0;
+  while (
+    prefix + suffix < left.length &&
+    prefix + suffix < right.length &&
+    left[left.length - suffix - 1] === right[right.length - suffix - 1]
+  )
+    suffix++;
+
+  push("same", left.slice(0, prefix).join(""));
+  const leftEnd = left.length - suffix;
+  const rightEnd = right.length - suffix;
+  const matches = [];
+  if ((leftEnd - prefix) * (rightEnd - prefix) <= ALIGN_CELLS)
+    lcsMatches(left, prefix, leftEnd, right, prefix, rightEnd, matches);
+
+  let i = prefix;
+  let j = prefix;
+  for (const [li, rj] of matches) {
+    push("delete", left.slice(i, li).join(""));
+    push("insert", right.slice(j, rj).join(""));
+    push("same", left[li]);
+    i = li + 1;
+    j = rj + 1;
+  }
+  push("delete", left.slice(i, leftEnd).join(""));
+  push("insert", right.slice(j, rightEnd).join(""));
+  push("same", left.slice(leftEnd).join(""));
+  return runs;
+}
+
 // What an element says, read the way this file reads the page everywhere else. A widget
 // wanting the words in one of its own slots asks for them here rather than through
 // `textContent`, because the two differ: the paint pass writes a hidden line into any text
@@ -1338,7 +1515,8 @@ const EDGE = "\u0000"; // no document holds one, so it can't collide with page t
 // live under one id. Context rather than an offset: an offset goes stale silently when the
 // page is revised, while neighbours can be checked against the page as it now stands — see
 // `holds` for what checking them means, and what it deliberately refuses to do.
-// Anchors written before this carry none and resolve as they did.
+// Anchors written before this carry none: their quote resolves only when it has a
+// single candidate, since there is no evidence that can identify one repeated copy.
 // The characters of raw[lo..hi) as segments, so a neighbourhood can be read back with the
 // same function that wrote it down. Edges hold no character and are simply absent.
 function spanOf(origin, lo, hi) {
@@ -1356,9 +1534,9 @@ function spanOf(origin, lo, hi) {
 // A partial match is not weak evidence for the right copy — it is evidence the page moved
 // on, and acting on it is how a comment ends up somewhere it was never made: a version that
 // rewrote the sentence beside the anchored copy left an untouched copy elsewhere matching
-// better, and the comment followed it there. Demanding the whole stored context is what
-// makes that rare: anything short of certainty falls back to the order the search used
-// before context existed.
+// better, and the comment followed it there. Demanding the whole stored context prevents
+// that: without one exact contextual match, only a quote with a sole candidate resolves;
+// repeated candidates detach rather than inheriting document order.
 //
 // Rare, not impossible. The bar is however much was stored, and the capture reads the
 // neighbours out of the whole document — a section is a filter on where a passage may sit,
@@ -1376,10 +1554,10 @@ function spanOf(origin, lo, hi) {
 // not a missing constraint but the tightest one there is, and it is checkable — a candidate
 // confirms it by also having nothing there, which exactly one occurrence does. Refusing to
 // read it that way handed the last copy's mark to the first.
-const holds = (origin, at, want, before) => {
+const holds = ({ origin, fences }, at, want, before) => {
   // One character is all it takes to refute an empty side, and asking for none would answer
   // with none: doubling zero never grows.
-  const there = neighbourhood(origin, at, want.length || 1, before);
+  const there = neighbourhood(origin, fences, at, want.length || 1, before);
   if (!want) return there === "";
   return before ? there.endsWith(want) : there.startsWith(want);
 };
@@ -1388,14 +1566,18 @@ const holds = (origin, at, want, before) => {
 // indented line inside a <pre> — and the right occurrence then confirms none of its own
 // neighbours. `want` is the stored string's own length rather than the cap the capture
 // spent, because the capture counted code points and this counts code units: an emoji in
-// the neighbourhood makes those different numbers, and a window short by even one character
-// can never confirm, so the anchor would fall back to first-match on that page forever.
-function neighbourhood(origin, at, want, before) {
+// the neighbourhood makes those different numbers, and a window short by even one
+// character can never confirm, so a repeated anchor would detach despite unchanged
+// context.
+function neighbourhood(origin, fences, at, want, before) {
+  const edge = before
+    ? fences.filter((f) => f <= at).at(-1) ?? 0
+    : fences.find((f) => f >= at) ?? origin.length;
   for (let raw = want * 2; ; raw *= 2) {
-    const lo = before ? at - raw : at;
-    const hi = before ? at : at + raw;
+    const lo = before ? Math.max(edge, at - raw) : at;
+    const hi = before ? at : Math.min(edge, at + raw);
     const text = quoteFrom(spanOf(origin, lo, hi));
-    if (text.length >= want || (before ? lo <= 0 : hi >= origin.length)) return text;
+    if (text.length >= want || (before ? lo === edge : hi === edge)) return text;
   }
 }
 // What the page says, once, as one string with a way back to the nodes it came from. Built
@@ -1408,20 +1590,55 @@ function neighbourhood(origin, at, want, before) {
 function pageText() {
   let raw = "";
   const origin = []; // origin[i] = {node, offset} for raw[i]; null for an edge
-  for (const seg of textNodesUnder(document.body)) {
-    if (raw) {
+  const positions = new WeakMap(); // text node -> its offset-zero position in raw
+  const fences = new Set();
+  const segments = textNodesUnder(document.body);
+
+  // Generated page-words that the registry does not model are their own passage
+  // cells. Controls and the hidden comment count contain no accepted text and never
+  // become fences; x-says spans are already present in the file-side reading.
+  const dynamicWords = new WeakSet();
+  for (const seg of segments) {
+    const generated = seg.node.parentElement.closest("[data-cq-gen]");
+    if (!generated) continue;
+    const attr = generated.getAttribute("data-cq-said");
+    const hostEntry = registry[generated.parentElement?.localName];
+    const declared = attr && hostEntry?.["x-says"]?.[attr];
+    if (!declared) dynamicWords.add(generated);
+  }
+  const cellOf = (node) => {
+    for (let el = node.parentElement; el; el = el.parentElement) {
+      if (dynamicWords.has(el)) return el;
+      if (opaquePassageParts.has(el) || opaquePassageRoots.has(el)) return el;
+    }
+    return null;
+  };
+
+  let previousCell = null;
+  let started = false;
+  for (const seg of segments) {
+    const cell = cellOf(seg.node);
+    if (!started) {
+      if (cell) fences.add(0);
+      started = true;
+    } else {
+      if (cell !== previousCell && (cell || previousCell)) fences.add(raw.length);
       origin.push(null);
       raw += EDGE;
     }
+    positions.set(seg.node, raw.length - seg.start);
     for (let i = seg.start; i < seg.end; i++) {
       origin.push({ node: seg.node, offset: i });
       raw += seg.node.data[i];
     }
+    previousCell = cell;
   }
-  return { raw, origin };
+  if (previousCell) fences.add(raw.length);
+  return { raw, origin, positions, fences: [...fences].sort((a, b) => a - b) };
 }
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-function findQuote({ raw, origin }, quote, anchor, within) {
+function findQuote(text, quote, anchor, within) {
+  const { raw, origin } = text;
   const words = quote.trim().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const pattern = new RegExp(
@@ -1430,19 +1647,14 @@ function findQuote({ raw, origin }, quote, anchor, within) {
       .join(`[\\s${EDGE}]+`),
     "g",
   );
-  // The first occurrence inside `within` whose neighbours are all still there; failing
-  // that, the first inside `within` at all — which is what a context-less anchor gets, and
-  // what every anchor got before context existed. `within` is the section the anchor
-  // names: a candidate is a place the passage may sit, so both its ends have to be in the
-  // section, while its neighbours are read from the document at large — which is what
-  // gives a passage closing its section a full suffix to be told apart by. matchAll steps
-  // past each hit, so overlapping occurrences of a quote that repeats inside itself are
-  // not candidates. The neighbourhood is read back through quoteFrom, the same function
-  // that wrote the context down: anything else is a second answer to "what does the page
-  // say here", and the two disagree exactly where a diff puts its line breaks.
+  // A unique exact-context occurrence wins. If no context survives, a sole quote
+  // occurrence is still identifiable; two are not. Document order is not identity:
+  // guessing the first copy after the intended one's neighbours changed quietly moves
+  // a comment to words it was never made on. matchAll steps past each hit, so
+  // overlapping occurrences of a quote that repeats inside itself are not candidates.
   const [pre, post] = [anchor.prefix ?? "", anchor.suffix ?? ""];
-  let first = null;
-  let found = null;
+  const candidates = [];
+  const exact = [];
   for (const at of raw.matchAll(pattern)) {
     const stop = at.index + at[0].length;
     if (
@@ -1450,16 +1662,14 @@ function findQuote({ raw, origin }, quote, anchor, within) {
       !(within.contains(origin[at.index].node) && within.contains(origin[stop - 1].node))
     )
       continue;
-    first ??= at;
-    // Both sides, whole, or this is not the passage. Nothing is weighed against anything: a
-    // side that has moved on is not weak evidence for a copy, it is evidence the page moved
-    // on, and the fallback is where the comment already was.
-    if (holds(origin, at.index, pre, true) && holds(origin, stop, post, false)) {
-      found = at;
-      break;
-    }
+    candidates.push(at);
+    if (holds(text, at.index, pre, true) && holds(text, stop, post, false))
+      exact.push(at);
   }
-  found ??= first;
+  const found =
+    exact.length === 1 ? exact[0] : exact.length === 0 && candidates.length === 1
+      ? candidates[0]
+      : null;
   // The characters the match covers, cut out of the index the same way a neighbourhood is —
   // walking the segments a second time to rebuild the span would be a second answer to
   // "which text is this", and the two disagree wherever an edge falls inside the match.
@@ -1469,7 +1679,7 @@ function findQuote({ raw, origin }, quote, anchor, within) {
 // ---------- view continuity ----------
 // Following a new version is a navigation, so without help the reader lands at the top
 // of a fresh document mid-review. The passage they were reading rides across in
-// sessionStorage — per-tab, unlike the drafts, because a reading position belongs to a
+// sessionStorage — per-tab like unsent drafts, because a reading position belongs to a
 // tab and shouldn't outlive it. It travels as a landmark rather than a pixel offset,
 // since content moves between versions: re-find the passage by its text within its
 // section, then the section alone, and only fall back to the raw offset when neither
@@ -1607,11 +1817,25 @@ const allMarks = () => [...marked.values()].flat();
 // because a screen reader rebuilds its buffer on every mutation and this pass runs on every
 // poll.
 function noteMarks(noted) {
-  for (const [holder, n] of noted) {
+  for (const [holder, threadIds] of noted) {
     const note =
       holder.querySelector(`:scope > .${NOTE}`) ??
-      holder.appendChild(el("span", `cq-ui ${NOTE}`));
-    const said = ` ${n} comment${n === 1 ? "" : "s"}`;
+      holder.appendChild(offer("button", NOTE));
+    note.cqThreads = threadIds;
+    note.onclick = () => {
+      setPanel(true);
+      const id = note.cqThreads.find((threadId) =>
+        threadsBox.querySelector(`:scope > .cq-thread[data-id="${threadId}"]`),
+      );
+      const thread = id &&
+        threadsBox.querySelector(`:scope > .cq-thread[data-id="${id}"]`);
+      if (!thread) return;
+      thread.focus({ preventScroll: true });
+      thread.scrollIntoView({ behavior: SCROLL, block: "nearest" });
+      scrollToThread(id);
+    };
+    const n = threadIds.length;
+    const said = `${n} comment${n === 1 ? "" : "s"}`;
     if (note.textContent !== said) note.textContent = said;
   }
   for (const note of document.querySelectorAll(`.${NOTE}`))
@@ -1628,7 +1852,7 @@ function paintAnchors() {
 
   const text = pageText(); // read once, for every anchor this pass places
   const posted = [];
-  const noted = new Map(); // element -> how many threads mark something inside it
+  const noted = new Map(); // element -> ordered thread ids marking something inside it
   for (const t of buildThreads()) {
     if (t.resolved || !t.root.anchor) continue;
     const found = resolveAnchor(t.root.anchor, text);
@@ -1651,7 +1875,7 @@ function paintAnchors() {
       ? [found.element]
       : [...new Set(found.segments.map((seg) => blockAt(seg.node)))].filter(Boolean);
     for (const holder of blocks.length ? blocks : [sectionOf(t.root.anchor)])
-      if (holder) noted.set(holder, (noted.get(holder) ?? 0) + 1);
+      if (holder) noted.set(holder, [...(noted.get(holder) ?? []), t.root.id]);
   }
 
   // The composer's own passage, in the accent rather than the marker amber, so a draft
@@ -1710,7 +1934,7 @@ function paintAnchors() {
     quote.classList.toggle("detached", !found);
     quote.title = found
       ? "Jump to this passage"
-      : "This passage isn't in the version you're viewing";
+      : "This passage can't be identified in the version you're viewing";
   }
 }
 
@@ -1835,19 +2059,28 @@ function selectionAnchor(sel) {
   const node = range.commonAncestorContainer;
   const holder = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   const section = holder.closest("[id]:not(.cq-ui)")?.id || null;
-  // The neighbours, read the same way and out of the same tree the search will read them
-  // from — the whole document, so a passage at its section's edge still gets two full
-  // sides. The section scopes where the search may land, never what surrounds a passage.
-  const upto = document.createRange();
-  upto.selectNodeContents(document.body);
-  upto.setEnd(range.startContainer, range.startOffset);
-  const after = document.createRange();
-  after.selectNodeContents(document.body);
-  after.setStart(range.endContainer, range.endOffset);
-  const whole = quoteFrom(segmentsIn(range));
+  // The neighbours come from the same indexed reading the search uses and stop at
+  // the same opaque-widget fences as the file-side capture. The browser knows words
+  // a module generated and may quote them; it does not pretend the file can confirm
+  // context across their seam.
+  const segments = segmentsIn(range);
+  const whole = quoteFrom(segments);
   const quote = cut(whole, 0, QUOTE_CAP);
-  const prefix = cut(quoteFrom(segmentsIn(upto)), -CONTEXT, Infinity);
-  const suffix = cut(quoteFrom(segmentsIn(after)), 0, CONTEXT);
+  const reading = pageText();
+  const first = segments[0];
+  const last = segments.at(-1);
+  const start = first ? reading.positions.get(first.node) + first.start : 0;
+  const stop = last ? reading.positions.get(last.node) + last.end : start;
+  const prefix = cut(
+    neighbourhood(reading.origin, reading.fences, start, CONTEXT, true),
+    -CONTEXT,
+    Infinity,
+  );
+  const suffix = cut(
+    neighbourhood(reading.origin, reading.fences, stop, CONTEXT, false),
+    0,
+    CONTEXT,
+  );
   // Only what there is, and only what follows the quote. A passage against the document's
   // own edge has no neighbour on that side, and writing that down as an empty string puts
   // a field in the event that never says anything. A quote cut to the cap ends inside the
@@ -2545,7 +2778,10 @@ const midComposition = () =>
   composerOpen ||
   Boolean(fabAnchor) ||
   Boolean(document.querySelector(".cq-dragging")) ||
-  (document.activeElement?.tagName === "TEXTAREA" && document.activeElement.value !== "");
+  Boolean(document.querySelector('cq-draft[aria-busy="true"]')) ||
+  (document.activeElement?.tagName === "TEXTAREA" &&
+    (document.activeElement.value !== "" ||
+      document.activeElement.classList.contains("cq-draft-edit")));
 versionSelect.onchange = () => goVersion(Number(versionSelect.value));
 latestChip.onclick = () => (location.href = "/");
 
@@ -2597,9 +2833,9 @@ function retractionFloors(upto) {
 // place among its id-bearing kin. Text is deliberately absent — words are the
 // static gate's subject (restatement_errors); this is the rest, the state no
 // version file can speak. What the runtime itself paints onto page elements —
-// its marks' classes, its data-cq bookkeeping — is absent too: no version can
-// assert those, and looking away from them keeps a reading taken from the live
-// DOM equal to one taken from the file. Diffed around each replay batch to
+// exactly PAGE_PAINT_ATTRIBUTES — is absent too: no version can assert those,
+// and looking away from them keeps a reading taken from the live DOM equal to
+// one taken from the file without hiding a widget's own data-cq state. Diffed around each replay batch to
 // record what replay wrote, and imported by version check --render to read the version
 // files with the same eyes, so the two readings cannot drift.
 export function shallowSigs(root) {
@@ -2607,7 +2843,7 @@ export function shallowSigs(root) {
   for (const el of [root, ...root.querySelectorAll("[id]")]) {
     if (!el.id) continue;
     const attrs = [...el.attributes]
-      .filter((a) => a.name !== "class" && !a.name.startsWith("data-cq-"))
+      .filter((a) => !PAGE_PAINT_ATTRIBUTES.has(a.name))
       .map((a) => `${a.name}=${a.value}`).sort().join(" ");
     const kin = [...(el.parentElement?.children ?? [])].filter((c) => c.id);
     sigs.set(el.id, `${el.tagName} [${attrs}] in=${el.parentElement?.id ?? ""}#${kin.indexOf(el)}`);
@@ -2654,7 +2890,7 @@ function applyActions() {
         // made, and the reviewer is owed the difference.
         for (const id of gone) {
           const target = document.getElementById(id);
-          if (target) target.dataset.cqRestated = "1";
+          if (target) target.setAttribute(PAGE_PAINT_ATTRIBUTE.restated, "1");
         }
         appliedActions.add(e.seq);
         continue;
@@ -2681,8 +2917,12 @@ function applyActions() {
         !inChrome(document.getElementById(id)),
     );
     if (wrote.length) {
-      const prior = document.body.dataset.cqReplayWrote?.split(" ") ?? [];
-      document.body.dataset.cqReplayWrote = [...new Set([...prior, ...wrote])].join(" ");
+      const prior =
+        document.body.getAttribute(PAGE_PAINT_ATTRIBUTE.replayWrote)?.split(" ") ?? [];
+      document.body.setAttribute(
+        PAGE_PAINT_ATTRIBUTE.replayWrote,
+        [...new Set([...prior, ...wrote])].join(" "),
+      );
     }
     // A replay moves the page's text — a card to another column, a suggestion to its
     // settled slot — so the marks are repainted where they now belong. Said here rather
@@ -2694,7 +2934,7 @@ function applyActions() {
   // Every action in the log is now decided (applied, skipped, or retired), and
   // the stamp says so — it is what version check --render awaits before reading the
   // replay's record, so the gate never reads a page mid-replay.
-  document.body.dataset.cqApplied = String(appliedActions.size);
+  document.body.setAttribute(PAGE_PAINT_ATTRIBUTE.applied, String(appliedActions.size));
 }
 
 // ---------- decided, awaiting the honoring version ----------
@@ -2776,15 +3016,15 @@ function stateFold(upto) {
 // with (honoring retires the wrapper), so it stays marked while the wrapper
 // stands.
 function paintPending() {
-  for (const el of document.querySelectorAll("[data-cq-pending]"))
-    delete el.dataset.cqPending;
+  for (const el of document.querySelectorAll(`[${PAGE_PAINT_ATTRIBUTE.pending}]`))
+    el.removeAttribute(PAGE_PAINT_ATTRIBUTE.pending);
   for (const [unit, { e, spec }] of stateFold(VNUM)) {
     const el = document.getElementById(unit);
     if (!el) continue;
     const behind = spec.record
       ? foldedFacet(e, spec.record) !== authoredFacets.get(unit)
       : true;
-    if (behind) el.dataset.cqPending = "1";
+    if (behind) el.setAttribute(PAGE_PAINT_ATTRIBUTE.pending, "1");
   }
 }
 async function poll() {
@@ -2836,6 +3076,11 @@ async function poll() {
   // on the page by now, so an action naming one that isn't names a widget no version
   // holds, and applyActions can retire it instead of looking for it forever.
   applyActions();
+  // Sequence consumers render after replay, so their history and the widget's
+  // standing body describe the same poll. This also fires when the event list did
+  // not grow: applyAction may have deferred while a reviewer was typing, then become
+  // applicable on the next poll after they close the editor.
+  document.dispatchEvent(new Event("cq-actions"));
 }
 // ---------- restore ----------
 // The general box and reply textareas repopulate as they render; a saved composer draft
@@ -2895,5 +3140,5 @@ upgradeWidgets().then(() => {
   // other way to know it arrived: a load event fires before the modules run, and
   // networkidle only says a bundle finished downloading, not that it finished
   // drawing. The stamp says the document is done becoming itself.
-  document.body.dataset.cqUpgraded = "1";
+  document.body.setAttribute(PAGE_PAINT_ATTRIBUTE.upgraded, "1");
 });

@@ -79,7 +79,7 @@ gallery</a> holds a complete page for each kind of write-up.</p>
 </section>
 
 <section id="loop">
-<h2>Example: A review</h2>
+<h2>Example: Review a plan</h2>
 <ol class="steps">
 <li id="loop-ask"><strong>Ask.</strong> "Write up the migration options as a page"
 triggers it, as does <code>/colloquy</code> in Claude Code or
@@ -104,6 +104,64 @@ pages that seek approval carry the button, informational ones take comments only
 <code>review transcript</code> prints the whole thread as Markdown for a PR
 description.</li>
 </ol>
+</section>
+
+<figure class="shot" id="loop-demo">
+<img src="demo.gif" width="1120" height="700"
+     alt="A live colloquy review. The reviewer selects Backfill history and writes a
+comment while the passage stays highlighted. The agent replies, publishes a new version
+whose rehearsal count advances, and the reviewer drags an on-call task to During.">
+<figcaption>The real loop, recorded by <code>scripts/record-demo.sh</code>: comment on
+a passage, watch a new version advance the work, then move a card.</figcaption>
+</figure>
+
+<section id="interact-example">
+<h2>Example: Re-prioritize a queue</h2>
+<p id="interact-setup">The
+<a href="../examples/triage-board.html">release-triage example</a> hands the ordering
+to the reviewer. Run the shipped page, then drag “CSV export quotes numerics” from
+“Fix in 2.4.1” to “Blocking release”:</p>
+<pre><code>scripts/preview.py triage-board</code></pre>
+<figure>
+<cq-specimen id="tour-board-specimen" label="release triage">
+<cq-board id="tour-board">
+  <cq-column id="tour-col-blocking" label="Blocking release">
+    <cq-card id="tour-card-migration"><strong>Migration reruns on every deploy</strong>
+    The version stamp never lands.</cq-card>
+    <cq-card id="tour-card-logout"><strong>Logout fails with an expired session</strong>
+    The session key is deleted twice.</cq-card>
+  </cq-column>
+  <cq-column id="tour-col-next" label="Fix in 2.4.1">
+    <cq-card id="tour-card-export"><strong>CSV export quotes numerics</strong>
+    Breaks one downstream import.</cq-card>
+  </cq-column>
+</cq-board>
+</cq-specimen>
+<figcaption>The browser sends the placement as structured detail:
+<code>{"widget":"release-board","action":"move","detail":{"card":"card-export",
+"to":"col-blocking","index":2}}</code>. The move appears immediately, reaches the
+agent as an action, and remains on later versions.</figcaption>
+</figure>
+</section>
+
+<section id="track-example">
+<h2>Example: Watch work finish</h2>
+<p id="track-setup">The
+<a href="../examples/live-progress.html">cutover-rehearsal example</a> is a page the
+agent keeps current while it works. It names what is running now, separates blocked
+work from the critical path, and records completed checks. Run it like any other
+example:</p>
+<pre><code>scripts/preview.py live-progress</code></pre>
+<ol class="steps" id="track-versions">
+<li><strong>v4:</strong> 11 of 18 checks are done; traffic has just moved to the new
+checkout service.</li>
+<li><strong>v5:</strong> 14 are done; rollback is running, so that milestone becomes
+active and the event timeline gains the cutover result.</li>
+<li><strong>v6:</strong> rollback is done; the report becomes active and the browser
+follows the version without a reload.</li>
+</ol>
+<p id="track-source">The example is the middle state, with metrics, milestones,
+a blocker, and an event log for the next version to update in place.</p>
 </section>
 
 <section id="install">

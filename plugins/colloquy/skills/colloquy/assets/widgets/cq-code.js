@@ -3,7 +3,7 @@
  * line. Notes are moved, never rewritten, so their text stays quotable — the
  * annotated-walkthrough shape.
  *
- * `lang` colors it. A token can span a newline (a docstring, a block comment)
+ * `language` colors it. A token can span a newline (a docstring, a block comment)
  * and a line is the unit this widget numbers, so the tokens are cut at each
  * newline (tokenLines) rather than the source being colored a line at a time —
  * coloring line by line would restart the tokenizer inside the docstring and
@@ -49,7 +49,7 @@ customElements.define(
       }
       source = source.replace(/^\n+/, "").replace(/\s+$/, "");
       try {
-        const lang = this.getAttribute("lang");
+        const lang = this.getAttribute("language");
         // One representation either way: an uncolored block is the whole source as a
         // single roleless token, so the line walk below has one shape to handle.
         const lines = tokenLines(lang ? await syntax(source, lang) : [{ text: source }]);

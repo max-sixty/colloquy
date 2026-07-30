@@ -6,7 +6,7 @@
 # vendored file is one we produce — core plus exactly the languages the registry
 # enumerates, bundled to ESM and minified. Each language registers under
 # colloquy's own name (`html`, not hljs's `xml`), so the page's vocabulary and
-# the tokenizer's cannot drift: `lang="html"` either resolves or the bundle was
+# the tokenizer's cannot drift: `language="html"` either resolves or the bundle was
 # built from a different list than the registry states.
 #
 # The language list is not stated here: it is read out of registry.json's
@@ -45,7 +45,7 @@ print(" ".join(json.load(open(sys.argv[1]))["$languages"]["names"]))
     alias_var="ALIAS_$name"
     echo "import $name from \"./package/es/languages/${!alias_var:-$name}.js\";"
   done
-  # Registered under colloquy's name, not highlight.js's, so `lang="html"` resolves
+  # Registered under colloquy's name, not highlight.js's, so `language="html"` resolves
   # without a translation table living anywhere at runtime.
   for name in $languages; do
     echo "hljs.registerLanguage(\"$name\", $name);"

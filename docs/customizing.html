@@ -138,7 +138,11 @@ customElements.define(
 scaffold sets <code>x-verbatim</code> because this starter preserves its body;
 set it to false if the module renders different words. Runtime helpers cover
 fail-soft rendering, asynchronous settling, controls, announcements, and
-actions. The shipped
+actions. <code>actionSequence(this, "verb")</code> reads one widget's
+version-bounded action history, and
+<code>watchActions(this, "verb", render)</code> reruns a renderer after replay;
+use them when a widget needs to explain how its folded state was reached rather
+than copying or retaining the event log itself. The shipped
 <a href="../plugins/colloquy/skills/colloquy/assets/widgets/cq-options.js">options module</a>
 and its
 <a href="../plugins/colloquy/skills/colloquy/assets/registry.json">registry entry</a> form a

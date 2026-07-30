@@ -189,7 +189,7 @@ and the comment layer left behind.
   arrowheaded edges. Never box-drawing (`┌─┐ │ ▼`) in a `<pre>`.
 - **Name a code block's language and it gets colored.** Two shapes, by what the block
   is for: `<pre><code class="language-python">` for a literal the reader selects and
-  quotes — a command, a config, a snippet of output — and `<cq-code lang="python">` for
+  quotes — a command, a config, a snippet of output — and `<cq-code language="python">` for
   a walkthrough, which adds line numbers, `hi` ranges, and `cq-note` remarks anchored at
   a line. The language names are the same set either way, `page catalog` lists them, and
   `version check` refuses one outside it. Nothing is inferred from the text, so a block
@@ -392,8 +392,9 @@ stop replaying.
 The server binds `127.0.0.1`, so the browser must be on the same machine (a local
 terminal, the desktop app, or an IDE that forwards localhost ports — VS Code Remote-SSH
 and devcontainers do this automatically, so the URL opens as-is). In a session with no
-path to localhost there is no hand-over; present in the terminal instead. An opt-in
-tunnel is on the backlog.
+path to localhost there is no hand-over; present in the terminal instead. Colloquy does
+not expose its document, assets, state reads, or event writes through a public tunnel:
+localhost or the host's authenticated port forwarding is the security boundary.
 
 ## Before the URL goes out
 

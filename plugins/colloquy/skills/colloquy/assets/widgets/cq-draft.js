@@ -33,7 +33,20 @@
  * an edit — one row of the same button either way, so opening one changes what the box
  * offers without changing its shape. Unsent keystrokes ride the runtime's draft store
  * (saveDraft/loadDraft), the composer's discipline: written on input, cleared only by a
- * successful send, so reload, version switch, and server death all recover.
+ * successful send or explicit Cancel, so reload, version switch, and server death all
+ * recover. The stored value is an object rather than the text bare: an empty string is a
+ * real replacement here, while the shared store uses a bare empty string to mean remove.
+ * Recovery is tab-local; submitted actions converge through the log, but one tab's
+ * successful send or Cancel must not erase another tab's newer unsent edit.
+ * A send owns the widget until its response, as a composer does; otherwise a second save
+ * can overtake the first on the network and the earlier response can clear newer text.
+ *
+ * Once an edit exists, a native disclosure compares the authored body with the
+ * standing one and lists the widget's absolute edit actions in log order. The runtime
+ * owns that sequence and its version boundary (`watchActions`); the module owns only
+ * its presentation. Restoring a row sends its text as one more ordinary edit, which
+ * keeps one state model and lets another tab converge without knowing that the gesture
+ * happened in a history view.
  *
  * The fast path is taken on the second mousedown rather than on dblclick, because the
  * word the browser selects is selected *by* that mousedown and painted before dblclick
@@ -50,8 +63,9 @@
  * also earns the edit box the runtime's one textarea rule. Presentation is theme CSS, the
  * swap between the two views included: an open edit is the box being in the document, so
  * the CSS reads that and this module writes no display state at all. Which is also what
- * lets paper disagree — it drops the box and keeps the words. Authored content is never
- * discarded, so there is no failSoft.
+ * lets paper disagree — it drops the box and keeps the words. History is chrome too and
+ * exists only on a live page; a scriptless copy cannot honestly offer restore. Authored
+ * content is never discarded, so there is no failSoft.
  */
 import {
   agentName,
@@ -63,11 +77,27 @@ import {
   keyHelp,
   saveDraft,
   loadDraft,
+  alignText,
+  watchActions,
 } from "/colloquy.js";
 
 // The store key for a draft's unsent edit. The page's port is its own origin, so
 // the id alone is unambiguous — the same scoping every composer draft relies on.
 const ctx = (id) => "edit:" + id;
+// Presence and content are different for this widget: deleting every character is an
+// unsent edit, so wrap the text in a truthy record before handing it to the shared store.
+const saveEdit = (id, text) => saveDraft(ctx(id), JSON.stringify({ text }));
+const clearEdit = (id) => saveDraft(ctx(id), "");
+function loadEdit(id) {
+  const stored = loadDraft(ctx(id));
+  if (!stored) return null;
+  try {
+    const value = JSON.parse(stored);
+    if (typeof value?.text === "string") return value.text;
+  } catch {}
+  clearEdit(id);
+  return null;
+}
 
 // Where the browser's own double-click would have drawn the word's edges. Segmenter
 // knows the boundaries of the language the draft is written in, which /\w+/ does not:
@@ -107,12 +137,18 @@ function capture(el) {
 customElements.define(
   "cq-draft",
   class extends HTMLElement {
-    #body; #pencil; #row; #ta = null;
+    #body; #pencil; #row; #raw;
+    #history = null;
+    #historyKey = "";
+    #alignments = new Map();
+    #ta = null;
+    #sending = false;
 
     connectedCallback() {
       if (!once(this)) return;
 
       const raw = capture(this);
+      this.#raw = raw;
       this.textContent = "";
 
       this.#body = document.createElement("div");
@@ -138,6 +174,7 @@ customElements.define(
       this.#row = offer("div", "cq-draft-controls");
       this.#row.append(this.#pencil);
       this.append(this.#row);
+      watchActions(this, "edit", (actions) => this.#renderHistory(actions));
 
       // The fast path, taken before the browser paints the selection this gesture
       // would have made (see above). The word it aimed at opens selected in the box.
@@ -153,8 +190,9 @@ customElements.define(
 
       // A recovered edit outranks the authored text: the reviewer typed it and never
       // got it sent, so it must survive exactly as the composer's drafts do.
-      const pending = loadDraft(ctx(this.id));
-      if (pending && pending !== raw) this.#open(pending);
+      const pending = loadEdit(this.id);
+      if (pending !== null && pending !== raw) this.#open(pending);
+      else if (pending === raw) clearEdit(this.id);
     }
 
     #button(text, onClick, variant) {
@@ -163,12 +201,133 @@ customElements.define(
       return b;
     }
 
+    #delta(before, after, cache = true) {
+      const line = document.createElement("div");
+      line.className = "cq-draft-delta";
+      const key = JSON.stringify([before, after]);
+      let alignment = this.#alignments.get(key);
+      if (!alignment) {
+        alignment = alignText(before, after);
+        if (cache) this.#alignments.set(key, alignment);
+      }
+      for (const run of alignment) {
+        const node = document.createElement(
+          run.kind === "delete" ? "del" : run.kind === "insert" ? "ins" : "span",
+        );
+        node.textContent = run.text;
+        line.append(node);
+      }
+      if (!line.childNodes.length) line.textContent = "Empty";
+      return line;
+    }
+
+    #snapshot(label, text, comparison, standing) {
+      const item = document.createElement("li");
+      const head = document.createElement("div");
+      head.className = "cq-draft-revision-head";
+      const name = document.createElement("strong");
+      name.textContent = label;
+      head.append(name);
+      if (text !== standing) {
+        const restore = this.#button(`Restore ${label.toLowerCase()}`, () =>
+          this.#restore(text, label),
+        );
+        restore.classList.add("cq-draft-restore");
+        head.append(restore);
+      }
+      let body;
+      if (comparison === null) {
+        body = document.createElement("div");
+        body.className = "cq-draft-snapshot";
+        body.textContent = text || "Empty";
+      } else body = this.#delta(comparison, text);
+      item.append(head, body);
+      return item;
+    }
+
+    #renderHistory(actions) {
+      if (this.#sending) return;
+      const standing = this.#body.textContent;
+      const key = JSON.stringify([
+        this.#raw,
+        standing,
+        actions.map((event) => [event.seq, event.version, event.detail.text]),
+      ]);
+      if (key === this.#historyKey) return;
+      this.#historyKey = key;
+      if (!actions.length && standing === this.#raw) {
+        this.#history?.remove();
+        this.#history = null;
+        return;
+      }
+
+      const wasOpen = this.#history?.open ?? false;
+      const keepFocus = Boolean(this.#history?.contains(document.activeElement));
+      const history = offer("details", "cq-draft-history");
+      history.open = wasOpen;
+      const summary = document.createElement("summary");
+      summary.textContent = `Changes · ${actions.length} ${actions.length === 1 ? "edit" : "edits"}`;
+
+      const current = document.createElement("section");
+      current.className = "cq-draft-current";
+      const currentLabel = document.createElement("strong");
+      currentLabel.textContent =
+        standing === this.#raw ? "Standing text matches this version" : "This version → standing text";
+      current.append(currentLabel);
+      // This pair changes with every standing edit. Recomputing it once for the new
+      // history render is cheaper than retaining every obsolete full-body comparison;
+      // adjacent log revisions below are stable and remain worth caching.
+      if (standing !== this.#raw) current.append(this.#delta(this.#raw, standing, false));
+
+      const list = document.createElement("ol");
+      list.className = "cq-draft-revisions";
+      list.append(this.#snapshot("Version text", this.#raw, null, standing));
+      let previous = null;
+      actions.forEach((event, index) => {
+        const text = event.detail.text;
+        list.append(
+          this.#snapshot(`Edit ${index + 1} · v${event.version}`, text, previous, standing),
+        );
+        previous = text;
+      });
+      history.append(summary, current, list);
+      this.#history?.replaceWith(history);
+      if (!this.#history) this.append(history);
+      this.#history = history;
+      if (keepFocus) summary.focus();
+    }
+
+    async #restore(text, label) {
+      if (this.#sending) {
+        toast("Wait for the current edit to finish sending");
+        return;
+      }
+      if (this.#ta) {
+        toast("Save or cancel the open edit before restoring history");
+        return;
+      }
+      if (text === this.#body.textContent) return;
+      const previous = this.#body.textContent;
+      this.#sending = true;
+      this.setAttribute("aria-busy", "true");
+      this.#body.textContent = text;
+      const ok = await sendAction(this, "edit", { text });
+      this.#sending = false;
+      this.removeAttribute("aria-busy");
+      if (ok) toast(`Restored ${label.toLowerCase()} — sent to ${agentName()}`);
+      else this.#body.textContent = previous;
+    }
+
     #open(seed, at) {
       if (this.#ta) return;
+      if (this.#sending) {
+        toast("Wait for the current edit to finish sending");
+        return;
+      }
       const ta = offer("textarea", "cq-draft-edit");
       ta.value = seed ?? this.#body.textContent;
       ta.setAttribute("aria-label", `Edit ${this.id}`);
-      ta.addEventListener("input", () => saveDraft(ctx(this.id), ta.value));
+      ta.addEventListener("input", () => saveEdit(this.id, ta.value));
       // Cmd/Ctrl+Enter saves, Escape cancels — the composer's bindings.
       ta.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) this.#commit();
@@ -188,7 +347,7 @@ customElements.define(
 
     #close(discard) {
       if (!this.#ta) return;
-      if (discard) saveDraft(ctx(this.id), "");
+      if (discard) clearEdit(this.id);
       this.#ta.remove();
       this.#ta = null;
       // States the whole row rather than removing two buttons from it, so read mode
@@ -199,7 +358,8 @@ customElements.define(
       this.#pencil.focus();
     }
 
-    #commit() {
+    async #commit() {
+      if (!this.#ta || this.#sending) return;
       const text = this.#ta.value;
       if (text === this.#body.textContent) {
         this.#close(true);
@@ -208,17 +368,21 @@ customElements.define(
       const previous = this.#body.textContent;
       this.#body.textContent = text;
       this.#close(false);
-      sendAction(this, "edit", { text }).then((ok) => {
-        if (ok) {
-          saveDraft(ctx(this.id), "");
-          toast(`Edited “${this.id}” — sent to ${agentName()}`);
-        } else {
-          // Unsent means unrecorded. Put the words back on screen and keep the
-          // reviewer's text in storage so nothing they typed is lost.
-          this.#body.textContent = previous;
-          saveDraft(ctx(this.id), text);
-        }
-      });
+      this.#sending = true;
+      this.setAttribute("aria-busy", "true");
+      const ok = await sendAction(this, "edit", { text });
+      this.#sending = false;
+      this.removeAttribute("aria-busy");
+      if (ok) {
+        clearEdit(this.id);
+        toast(`Edited “${this.id}” — sent to ${agentName()}`);
+      } else {
+        // Unsent means unrecorded. Put the words back on screen and keep the
+        // reviewer's text in storage so nothing they typed is lost.
+        this.#body.textContent = previous;
+        saveEdit(this.id, text);
+        this.#open(text);
+      }
     }
 
     // An absolute value, so replaying this tab's own edit is a no-op and a second
@@ -227,7 +391,8 @@ customElements.define(
     // the authored text and marks data-cq-pending for every widget alike.
     applyAction(action, detail) {
       if (action !== "edit" || typeof detail?.text !== "string") return;
-      if (this.#ta) return false; // defer rather than yank words out from under a live edit
+      if (this.#ta || this.#sending)
+        return false; // defer rather than yank words out from under a live edit/send
       this.#body.textContent = detail.text;
     }
   },

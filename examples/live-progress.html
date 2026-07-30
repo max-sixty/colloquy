@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live progress: checkout cutover rehearsal</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<p class="eyebrow">live progress · rehearsal 4 of 5</p>
+<h1>Checkout cutover rehearsal</h1>
+<p class="lede" id="lp-lede">The agent republishes this page as each check finishes.
+The browser is following the newest version, so statuses and counts change without a
+refresh. The rollback drill is running now.</p>
+
+<cq-metrics id="lp-metrics">
+  <cq-metric id="lp-k-done" value="14 of 18" delta="+3" direction="up-good">checks complete</cq-metric>
+  <cq-metric id="lp-k-running" value="2">running now</cq-metric>
+  <cq-metric id="lp-k-blocked" value="1">blocked</cq-metric>
+  <cq-metric id="lp-k-elapsed" value="31 min">elapsed</cq-metric>
+</cq-metrics>
+
+<section id="lp-now">
+<h2>Right now</h2>
+<aside class="callout" id="lp-active">
+<strong>Rollback drill is on step 3 of 4.</strong> Traffic is back on the old
+checkout service. The agent is comparing order counts before it marks the drill done.
+</aside>
+</section>
+
+<section id="lp-work">
+<h2>Work</h2>
+<cq-milestones id="lp-milestones">
+  <cq-milestone id="lp-ms-baseline" status="done" when="14:02">
+    <strong>Capture the baseline</strong> Error rate, p95, order count, and queue depth
+    recorded before the rehearsal.
+  </cq-milestone>
+  <cq-milestone id="lp-ms-shadow" status="done" when="14:08">
+    <strong>Shadow production traffic</strong> New and old services agreed on 2,000
+    sampled checkouts.
+  </cq-milestone>
+  <cq-milestone id="lp-ms-cutover" status="done" when="14:19">
+    <strong>Cut traffic to the new service</strong> Guardrails held for ten minutes at
+    100% traffic.
+  </cq-milestone>
+  <cq-milestone id="lp-ms-rollback" status="active" when="running" tags="rollback">
+    <strong>Prove rollback</strong> Old service is live again; order-count comparison
+    is still running.
+  </cq-milestone>
+  <cq-milestone id="lp-ms-report" status="planned" when="next">
+    <strong>Publish the rehearsal report</strong> Attach timings and name the one
+    blocked follow-up.
+  </cq-milestone>
+</cq-milestones>
+</section>
+
+<section id="lp-blocker">
+<h2>Blocked</h2>
+<p id="lp-blocked-copy"><strong>Finance export reconciliation</strong> needs a fixture
+with a partially refunded order. The rest of the rehearsal does not depend on it; the
+agent left the check open and moved on.</p>
+</section>
+
+<section id="lp-events">
+<h2>Latest events</h2>
+<cq-timeline id="lp-timeline">
+  <cq-event id="lp-e-cutover" at="14:19" kind="action">
+    <strong>Cutover complete</strong> New checkout took 100% of traffic.
+  </cq-event>
+  <cq-event id="lp-e-guardrails" at="14:29" kind="info">
+    <strong>Guardrails held</strong> Error rate 0.08%; p95 181 ms.
+  </cq-event>
+  <cq-event id="lp-e-rollback" at="14:31" kind="action">
+    <strong>Rollback started</strong> Traffic returned to the old service in 42 seconds.
+  </cq-event>
+</cq-timeline>
+</section>
+</main>
+</body>
+</html>

@@ -32,6 +32,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -44,6 +45,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from axe_playwright_python.sync_playwright import Axe
 from click.testing import CliRunner
 from conftest import interact
 from playwright.sync_api import expect, sync_playwright
@@ -382,9 +384,13 @@ def serve(tmp_path, monkeypatch):
         httpd.shutdown()
 
 
-def open_page(browser, url, *, init_script=None, wait_until="networkidle"):
+def open_page(browser, url, *, init_script=None, wait_until="networkidle", context=None):
     """A page with its console errors collected, settled enough for mermaid."""
-    page = browser.new_page(viewport={"width": 1200, "height": 900}, color_scheme="light")
+    page = (
+        context.new_page()
+        if context
+        else browser.new_page(viewport={"width": 1200, "height": 900}, color_scheme="light")
+    )
     errors = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -470,6 +476,53 @@ def test_example_renders(browser, serve, example):
     assert interact.render_version(browser, serve(example.read_text())) == []
 
 
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
+@pytest.mark.parametrize("color_scheme", ["light", "dark"])
+def test_examples_have_no_serious_wcag_a_or_aa_violations(
+    browser, serve, example, color_scheme
+):
+    """Axe covers semantic failures the render gate cannot see: an unnamed control,
+    an invalid role relationship, or a contrast failure can occupy a perfectly good
+    box and still shut a reviewer out. Keep the scope to WCAG A/AA and actionable
+    serious/critical findings; layout and accessibility-tree snapshots belong to
+    specific regressions, not a corpus baseline that changes with every restyle."""
+    page, errors = open_page(browser, serve(example.read_text()))
+    page.emulate_media(color_scheme=color_scheme)
+    result = Axe().run(
+        page,
+        options={
+            "runOnly": {
+                "type": "tag",
+                "values": [
+                    "wcag2a",
+                    "wcag2aa",
+                    "wcag21a",
+                    "wcag21aa",
+                    "wcag22a",
+                    "wcag22aa",
+                ],
+            },
+            "resultTypes": ["violations"],
+        },
+    )
+    violations = [
+        violation
+        for violation in result.response["violations"]
+        if violation["impact"] in {"serious", "critical"}
+    ]
+    report = "\n\n".join(
+        f"{violation['id']} ({violation['impact']}): {violation['help']}\n"
+        + "\n".join(
+            f"  {', '.join(node['target'])}: {node['failureSummary']}"
+            for node in violation["nodes"]
+        )
+        for violation in violations
+    )
+    assert violations == [], report
+    assert errors == []
+    page.close()
+
+
 def test_the_gate_passes_a_page_that_carries_a_comment(browser, serve):
     """The gate refuses words under `.cq-ui` inside a widget, because a widget reaching for
     that marker is how a reviewer ends up unable to comment on a heading they can see. The
@@ -523,6 +576,56 @@ def test_check_render_refuses_what_only_a_browser_can_see(serve):
     broken = gate("--version", "2")
     assert broken.returncode == 1
     assert "scrolls sideways" in broken.stderr
+
+
+def test_an_installed_payload_passes_its_real_browser_gate(tmp_path):
+    """Exercise the copied artifact a host installs, never an import from this checkout."""
+    root = Path(__file__).parent.parent
+    installed = tmp_path / "host" / "plugins" / "colloquy"
+    shutil.copytree(root / "plugins" / "colloquy", installed)
+    launcher = installed / "bin" / "colloquy"
+    elsewhere = tmp_path / "unrelated-project"
+    elsewhere.mkdir()
+    page_dir = tmp_path / "state" / "page"
+
+    init = subprocess.run(
+        [launcher, "page", "init", page_dir],
+        cwd=elsewhere,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert init.returncode == 0, init.stderr
+    (page_dir / "versions" / "v1.html").write_text(
+        (root / "examples" / "release-notes.html").read_text()
+    )
+    publish = subprocess.run(
+        [
+            launcher,
+            "version",
+            "publish",
+            page_dir,
+            "--version",
+            "1",
+            "--text",
+            "installed-payload smoke",
+        ],
+        cwd=elsewhere,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert publish.returncode == 0, publish.stderr
+
+    rendered = subprocess.run(
+        [launcher, "version", "check", page_dir, "--render"],
+        cwd=elsewhere,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rendered.returncode == 0, rendered.stderr
+    assert "renders clean" in rendered.stdout
 
 
 # A page that says one of its words on screen only. The rule is the page's own, which is
@@ -1000,6 +1103,44 @@ def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
         "cq-ui", "cq-btn", "cq-over-mark", "cq-mark-el", "cq-pending", "cq-ins-block",
         "cq-mark-note",
     }, "the document-level class surface changed: widen the shared vocabulary on purpose"
+    page.close()
+
+
+def test_the_runtime_does_not_replace_a_pages_keyframes(browser, serve):
+    """Keyframe names ignore @scope, so the runtime's private animation must be
+    globally unique enough to leave a page's own animation alone. The page coins the
+    old generic name on purpose; sampling its midpoint makes a collision deterministic
+    rather than asking where a running animation happened to be when the test looked."""
+    page, errors = open_page(browser, serve(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>t</title>'
+        '<link rel="stylesheet" href="/theme.css"><style>'
+        '@keyframes cq-pulse { from { transform: translateX(0px); } '
+        'to { transform: translateX(40px); } }'
+        '#page-pulse { animation: cq-pulse 10s linear infinite; }'
+        '</style><script type="module" src="/colloquy.js"></script></head>'
+        '<body><main><h1>t</h1><p id="page-pulse">Page-owned motion.</p></main></body></html>'
+    ))
+    sampled = page.evaluate("""() => {
+        const pageAnimation = document.getElementById("page-pulse").getAnimations()[0];
+        pageAnimation.pause();
+        pageAnimation.currentTime = pageAnimation.effect.getTiming().duration / 2;
+        const transform = getComputedStyle(document.getElementById("page-pulse")).transform;
+
+        const dot = document.querySelector(".cq-dot");
+        dot.classList.add("working");
+        const runtimeAnimation = dot.getAnimations()[0];
+        return {
+            pageDistance: transform === "none" ? null : new DOMMatrix(transform).m41,
+            runtimeName: runtimeAnimation?.animationName ?? null,
+        };
+    }""")
+    assert sampled["pageDistance"] == pytest.approx(20), (
+        f"the runtime replaced the page's cq-pulse keyframes: {sampled}"
+    )
+    assert sampled["runtimeName"] and sampled["runtimeName"] != "cq-pulse", (
+        f"the chrome lost its own private pulse animation: {sampled}"
+    )
+    assert errors == []
     page.close()
 
 
@@ -1959,6 +2100,50 @@ def test_render_reports_markup_the_log_replays_over(browser, serve):
     assert any("id=work" in f and "card-importer" in f for f in failures), failures
 
 
+def test_replay_signatures_distinguish_widget_state_from_runtime_paint(browser, serve):
+    """A widget may use the runtime's namespace for state without making that state
+    runtime paint. Replaying a suggestion changes only data-cq-state on its authored
+    element, so the replay record must name it; data-cq-pending on the same element is
+    the runtime's own annotation and must not change the signature."""
+    url = serve(SUGGESTION_PAGE)
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "sug-refill",
+            "action": "accept",
+            "detail": {},
+        },
+    )
+    page, errors = open_page(browser, url)
+    expect(page.locator("#sug-refill")).to_have_attribute("data-cq-state", "accept")
+    page.wait_for_function(
+        "() => (document.body.dataset.cqReplayWrote ?? '').split(' ').includes('sug-refill')"
+    )
+
+    signatures = page.evaluate("""async () => {
+        const { shallowSigs } = await import("/colloquy.js");
+        const widget = document.getElementById("sug-refill");
+        const read = () => shallowSigs(document.body).get(widget.id);
+        const decided = read();
+        widget.setAttribute("data-cq-pending", "probe");
+        const painted = read();
+        widget.removeAttribute("data-cq-state");
+        const undecided = read();
+        return { decided, painted, undecided };
+    }""")
+    assert signatures["decided"] == signatures["painted"], (
+        "runtime-owned pending paint became authored state in the replay signature"
+    )
+    assert signatures["decided"] != signatures["undecided"], (
+        "widget-owned data-cq-state disappeared with the runtime's private attributes"
+    )
+    assert errors == []
+    page.close()
+
+
 def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
     """A move outlives its toast: the card the reviewer moved stays visibly
     marked as recorded-but-unwritten and its grip says so, in the tab that moved
@@ -2400,8 +2585,8 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
             d, {"kind": "comment", "author": "user", "version": 1, "text": text,
                 "anchor": anchor})["id"]
 
-    comment({"quote": "first passage"}, "Sharpen this.")
-    comment({"quote": "two separate remarks"}, "Second thought.")
+    c1 = comment({"quote": "first passage"}, "Sharpen this.")
+    c2 = comment({"quote": "two separate remarks"}, "Second thought.")
     comment({"section": "fig"}, "The figure too.")
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
@@ -2415,6 +2600,23 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
     assert page.locator("#p1 .cq-mark-note").evaluate(
         "el => { const r = el.getBoundingClientRect(); return r.width <= 1 && r.height <= 1; }"
     ), "the hidden line is painting on screen"
+    note = page.locator("#p1 .cq-mark-note")
+    expect(note).to_have_role("button")
+    note.focus()
+    expect(note).to_be_focused()
+    assert note.evaluate("el => el.getBoundingClientRect().width > 1"), (
+        "the comment path stayed invisible when a keyboard reader reached it"
+    )
+    note.press("Enter")
+    expect(page.locator(f'.cq-thread[data-id="{c1}"]')).to_be_focused()
+    page.keyboard.press("j")
+    expect(page.locator(f'.cq-thread[data-id="{c2}"]')).to_be_focused()
+
+    # Once the first thread resolves, the same control enters the next one.
+    interact.append_event(d, {"kind": "resolve", "author": "user", "parent": c1})
+    expect(note).to_have_text("1 comment")
+    note.press("Enter")
+    expect(page.locator(f'.cq-thread[data-id="{c2}"]')).to_be_focused()
     # An element anchor has no text to paint, and the element it names holds the line.
     assert "1 comment" in page.locator("#fig").aria_snapshot()
 
@@ -2461,13 +2663,13 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
     # A resolved thread takes its line with it: the pass owns what it wrote.
     interact.append_event(d, {"kind": "resolve", "author": "user", "parent": c4})
     expect(page.locator("#p2 .cq-mark-note")).to_have_count(0)
-    assert "2 comments" in page.locator("#p1").aria_snapshot()
+    assert "1 comment" in page.locator("#p1").aria_snapshot()
 
     # A passage crossing two blocks says so in both: a reader landing on either block
     # hears about the comment, the way the paint reaches both.
     comment({"quote": "to land in it. A short second"}, "Crosses the boundary.")
     expect(page.locator("#p2 .cq-mark-note")).to_have_count(1)
-    assert "3 comments" in page.locator("#p1").aria_snapshot()
+    assert "2 comments" in page.locator("#p1").aria_snapshot()
     assert "1 comment" in page.locator("#p2").aria_snapshot()
     assert errors == []
     page.close()
@@ -2768,6 +2970,91 @@ def test_a_widgets_attribute_takes_a_comment_like_any_other_passage(browser, ser
     assert page.evaluate(
         "() => [...document.querySelectorAll('.cq-ins-block')].map(e => e.id)"
     ) == ["c-backfill"], "the diff read the runtime's own spans as text the base lacked"
+    assert errors == []
+    page.close()
+
+
+FENCED_CAPTURE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>fenced capture</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Roadmap</h1>
+<cq-milestones>
+  <cq-milestone id="gate-milestone" status="active" when="week-1" tags="wood,solar">
+    <strong>Build feeders</strong> Two classic models.
+  </cq-milestone>
+</cq-milestones>
+<p id="after-milestone">Ready next.</p>
+<cq-options id="fence-options">
+  <cq-option id="fence-option" effort="low">
+    <strong>Classic feeder</strong> Easy to clean.
+  </cq-option>
+</cq-options>
+</main>
+</body>
+</html>
+"""
+
+
+def test_browser_and_file_captures_stop_at_the_same_widget_fences(browser, serve):
+    """Module-only words may sit between authored parts, but they cannot give the
+    browser more context than the version file can confirm."""
+    page, errors = open_page(browser, serve(FENCED_CAPTURE_PAGE))
+    expect(page.locator("#gate-milestone .cq-chips")).to_have_count(1)
+    registry = json.loads((serve.page_dir / "registry.json").read_text())
+    cases = [
+        ("#gate-milestone strong", "Build feeders", "gate-milestone"),
+        ("#gate-milestone", "Two classic models.", "gate-milestone"),
+        ("#after-milestone", "Ready next.", "after-milestone"),
+        ('#fence-option > [data-cq-said="effort"]', "low", "fence-option"),
+    ]
+
+    for index, (selector, quote, section) in enumerate(cases, 1):
+        expected_anchor = interact.capture_anchor(
+            FENCED_CAPTURE_PAGE, registry, quote, section
+        )
+        selected = page.evaluate(
+            """([selector, quote]) => {
+                const root = document.querySelector(selector);
+                const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+                let node;
+                while ((node = walker.nextNode())) {
+                    const at = node.data.indexOf(quote);
+                    if (at === -1) continue;
+                    const range = document.createRange();
+                    range.setStart(node, at);
+                    range.setEnd(node, at + quote.length);
+                    const selection = getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    return selection.toString();
+                }
+                return null;
+            }""",
+            [selector, quote],
+        )
+        assert selected == quote
+        page.dispatch_event("body", "mouseup")
+        expect(page.locator(".cq-fab")).to_be_visible()
+        page.locator(".cq-fab").click()
+        page.locator(".cq-composer textarea").fill(f"fence {index}")
+        page.get_by_role("button", name="Comment", exact=True).click()
+        expect(page.locator(".cq-thread")).to_have_count(index)
+        actual_anchor = [
+            event["anchor"]
+            for event in interact.read_events(serve.page_dir)
+            if event["kind"] == "comment"
+        ][-1]
+        assert actual_anchor == expected_anchor, (
+            f"{selector} captured {actual_anchor}, file captured {expected_anchor}"
+        )
+
     assert errors == []
     page.close()
 
@@ -3173,7 +3460,7 @@ CODE_PAGE = """<!doctype html>
 <h1 id="t">Code</h1>
 <section id="walk">
 <p id="lede">The key changes shape:</p>
-<cq-code id="walk-code" lang="python" hi="2">
+<cq-code id="walk-code" language="python" hi="2">
 def bucket_key(request):
     if request.token:
         return f"tok:{request.token.id}"
@@ -3200,8 +3487,8 @@ def test_code_is_colored_without_a_word_moving(browser, serve):
     block the file knows nothing about, and what keeps `review comment` able to quote
     into one.
 
-    One pass serves both shapes a page has for code, cq-code's `lang` and a plain
-    <pre><code class="language-*">, and neither guesses: a cq-code with no `lang` stays
+    One pass serves both shapes a page has for code, cq-code's `language` and a plain
+    <pre><code class="language-*">, and neither guesses: a cq-code with no `language` stays
     the color of its own ink. The quote below is written the way `review comment` writes
     one — against the file — and spans a token boundary on its way back."""
     url = serve(CODE_PAGE)
@@ -3218,7 +3505,7 @@ def test_code_is_colored_without_a_word_moving(browser, serve):
     assert {r for r, _ in roles["widget"]} >= {"kw", "st", "fn"}, roles["widget"]
     assert ["cm", "# apply the migration, then run the marked suite"] in roles["plain"]
     assert roles["undeclared"] == [], (
-        f"a cq-code with no lang was colored anyway: {roles['undeclared']}"
+        f"a cq-code with no language was colored anyway: {roles['undeclared']}"
     )
 
     # The words each block holds, unchanged by the spans: what the file says is what the
@@ -3358,7 +3645,7 @@ diff --git a/deploy/Dockerfile b/deploy/Dockerfile
 
 def test_a_diff_is_colored_by_each_files_own_path(browser, serve):
     """A diff is the page's most code-dense shape and it sits beside cq-code on the pages
-    that carry both, so leaving it plain said the evidence was not code. It has no `lang`
+    that carry both, so leaving it plain said the evidence was not code. It has no `language`
     to read — a unified diff spans files — so each file's path is what says what it holds,
     and a path naming nothing leaves that file the colour of its own ink.
 
@@ -3413,7 +3700,7 @@ def test_a_diff_is_colored_by_each_files_own_path(browser, serve):
     assert [l["text"] for l in note] == ["\\ No newline at end of file\n"], py
     assert note[0]["roles"] == [], note
 
-    # No extension the table names: plain, the way a cq-code with no `lang` is.
+    # No extension the table names: plain, the way a cq-code with no `language` is.
     assert all(l["roles"] == [] for l in by_path["deploy/Dockerfile"]), by_path["deploy/Dockerfile"]
 
     # Every displayed source line still reads exactly as authored, sign column and all.
@@ -3565,13 +3852,12 @@ DRIFT_V2 = (DRIFT_V1.replace("Cache warmup runs first.", "Cache warmup is gone n
                     .replace("lands. Retries are capped at three.", "lands. Backoff is capped at three."))
 
 
-def test_a_revised_neighbourhood_does_not_hand_the_comment_to_another_copy(browser, serve):
+def test_an_ambiguous_revised_passage_detaches_instead_of_guessing(browser, serve):
     """Context tells two copies apart; it must not relocate a comment when the page moves
     on. If a later version rewrites the words beside the anchored copy, that copy confirms
-    almost nothing while an untouched copy elsewhere still matches what was stored — and
-    following that is worse than having stored no context at all, which would have left the
-    comment where it was. So a copy has to confirm its neighbours in full to be preferred,
-    and otherwise the search falls back to the order it used before context existed."""
+    almost nothing while another copy remains. Neither is now identifiable: document
+    order is not evidence, so the comment detaches visibly instead of moving to words it
+    was never made on."""
     url = serve(DRIFT_V1)
     page, errors = open_page(browser, url)
     landed = page.evaluate("""async () => {
@@ -3600,13 +3886,10 @@ def test_a_revised_neighbourhood_does_not_hand_the_comment_to_another_copy(brows
     (d / "versions" / "v2.html").write_text(DRIFT_V2)
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"})
     page.wait_for_url("**/v2.html", timeout=15000)
-    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
-    where = page.evaluate("""() => {
-        const r = [...CSS.highlights.get('cq-mark')][0];
-        return r.startContainer.parentElement.textContent.slice(0, 24);
-    }""")
-    assert where.startswith("Cache warmup"), (
-        f"the revision moved the comment to a copy it was never made on: {where!r}"
+    expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(1)
+    assert page.evaluate("() => CSS.highlights.get('cq-mark')?.size ?? 0") == 0
+    expect(page.locator(".cq-thread .cq-quote")).to_have_attribute(
+        "title", re.compile("can't be identified")
     )
     assert errors == []
     page.close()
@@ -3780,7 +4063,8 @@ def test_an_anchor_stored_under_the_section_clipped_capture_still_resolves(brows
     interact.append_event(serve.page_dir, {
         "kind": "comment", "author": "claude", "version": 1, "text": "old bar",
         "anchor": {"section": "edge", "quote": "the run is retried until it lands",
-                   "prefix": "fails again in the night,", "suffix": "."}})
+                   "prefix": "ails again in the night,",
+                   "suffix": ". Nothing else moves."}})
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     where = page.evaluate("""() => {
@@ -3794,13 +4078,12 @@ def test_an_anchor_stored_under_the_section_clipped_capture_still_resolves(brows
     page.close()
 
 
-def test_a_one_sided_anchor_from_an_older_capture_falls_back(browser, serve):
+def test_an_ambiguous_one_sided_anchor_from_an_older_capture_detaches(browser, serve):
     """A capture that stopped at the section root wrote no prefix at all for a passage
     opening its section. Read the way the search now reads an empty side — nothing preceded
     this passage anywhere on the page — that claim is false wherever the section wasn't
-    first, so no occurrence confirms it and the comment stays where it always went, on the
-    first copy in its section. Taking the one side it does carry as enough would instead
-    hand the comment to whichever copy that side happens to fit."""
+    first, so no occurrence confirms it. With two quote candidates left, the passage is
+    ambiguous and detaches rather than using document order."""
     url = serve(EDGE_PAGE)
     # A suffix that fits the second copy and nothing else, stored with no prefix beside it.
     interact.append_event(serve.page_dir, {
@@ -3808,14 +4091,8 @@ def test_a_one_sided_anchor_from_an_older_capture_falls_back(browser, serve):
         "anchor": {"section": "edge", "quote": "the run is retried until it lands",
                    "suffix": ". Rollout resumes"}})
     page, errors = open_page(browser, url)
-    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
-    where = page.evaluate("""() => {
-        const r = [...CSS.highlights.get('cq-mark')][0];
-        return r.startContainer.parentElement.textContent.slice(0, 11);
-    }""")
-    assert where == "First pass:", (
-        f"one side was taken as enough, and the comment went to the copy it fits: {where!r}"
-    )
+    expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(1)
+    assert page.evaluate("() => CSS.highlights.get('cq-mark')?.size ?? 0") == 0
     assert errors == []
     page.close()
 
@@ -3907,13 +4184,13 @@ THIN_V2 = THIN_V1.replace(
     "lands. Backoff is capped at three.</p>\n<p>An unrelated")
 
 
-def test_one_neighbour_is_not_enough_to_move_a_comment(browser, serve):
+def test_one_neighbour_is_not_enough_to_identify_a_revised_comment(browser, serve):
     """Context may place a comment only where both of a passage's neighbours are still
     there. A passage at the edge of its section has just one, and one is a bar another copy
     clears — so a revision that rewrites the commented copy's only neighbour would hand the
     comment to a copy it was never made on, silently, a version after anyone was looking.
-    The cost of refusing is visible instead: a passage like this is placed by document
-    order, and a reviewer watching sees it land."""
+    The cost of refusing is visible instead: the thread detaches until a later version
+    makes its passage unique again."""
     url = serve(THIN_V1)
     page, errors = open_page(browser, url)
     posted = page.evaluate("""async () => {
@@ -3942,14 +4219,8 @@ def test_one_neighbour_is_not_enough_to_move_a_comment(browser, serve):
     (d / "versions" / "v2.html").write_text(THIN_V2)
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"})
     page.wait_for_url("**/v2.html", timeout=15000)
-    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
-    where = page.evaluate("""() => {
-        const r = [...CSS.highlights.get('cq-mark')][0];
-        return r.startContainer.parentElement.textContent.slice(0, 40);
-    }""")
-    assert where.startswith("The version stamp never lands. Backoff"), (
-        f"one neighbour was enough to move the comment: {where!r}"
-    )
+    expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(1)
+    assert page.evaluate("() => CSS.highlights.get('cq-mark')?.size ?? 0") == 0
     assert errors == []
     page.close()
 
@@ -4194,11 +4465,12 @@ def test_review_round_trip(browser, serve):
         ("action", "user", 1),
         ("note", "claude", 2),
     ]
+    # The board after the paragraph is module-rendered and therefore an opaque
+    # passage cell. Context stops at that shared browser/file fence.
     assert events[1]["anchor"] == {
         "section": "intro",
         "quote": SENTENCE,
         "prefix": "Journey",
-        "suffix": "Todo Guard the session d",
     }
     assert events[1]["text"] == "Is 0041 idempotent?"
     assert {k: events[2][k] for k in ("widget", "action", "detail")} == {
@@ -4357,14 +4629,371 @@ def test_a_foreign_edit_waits_for_a_live_draft_and_replays_in_order(browser, ser
 
     expect(page.locator("#col-done #card-x")).to_have_count(1, timeout=10000)
     expect(editor).to_have_value("Local unsent words.")
+    expect(draft.locator(".cq-draft-history")).to_have_count(0)
 
     page.keyboard.press("Escape")
     expect(draft.locator(".cq-draft-body")).to_have_text(
         "Foreign committed words.", timeout=10000
     )
+    expect(draft.locator(".cq-draft-history > summary")).to_have_text("Changes · 2 edits")
     expect(page.locator("body")).to_have_attribute("data-cq-applied", "3")
     assert errors == []
     page.close()
+
+
+def test_an_empty_draft_survives_reload_and_blocks_a_version_switch(browser, serve):
+    """Empty text is a real replacement, not the absence of a saved draft. Deleting
+    the whole body must survive reload, keep the current version under the active
+    editor, and arrive in the log as an ordinary absolute edit."""
+    url = serve(JOURNEY_V1)
+    page, errors = open_page(browser, url)
+    draft = page.locator("#draft-ops")
+    draft.locator(".cq-draft-body").dblclick()
+    draft.locator("textarea").fill("")
+    assert page.evaluate(
+        """() => JSON.parse(
+          sessionStorage.getItem('cq-draft:edit:draft-ops')
+        ).text"""
+    ) == ""
+
+    d = serve.page_dir
+    (d / "versions" / "v2.html").write_text(JOURNEY_V2)
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "v2"}
+    )
+    expect(page.locator(".cq-latest-chip")).to_be_visible(timeout=10000)
+    assert "/v1.html" in page.url, "an empty live edit was mistaken for no composition"
+
+    page.reload(wait_until="networkidle")
+    page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+    expect(draft.locator("textarea")).to_be_visible()
+    expect(draft.locator("textarea")).to_have_value("")
+
+    page.evaluate(
+        """() => {
+          window.cqActualFetch = window.fetch.bind(window);
+          window.cqFailDraft = true;
+          window.fetch = (input, init) => {
+            const event = String(input).endsWith('/api/event') && init?.body
+              ? JSON.parse(init.body) : null;
+            if (window.cqFailDraft &&
+                event?.kind === 'action' && event.action === 'edit')
+              return Promise.resolve(new Response('offline', {status: 503}));
+            return window.cqActualFetch(input, init);
+          };
+        }"""
+    )
+    draft.get_by_role("button", name="Save").click()
+    expect(draft.locator("textarea")).to_be_focused()
+    expect(draft.locator("textarea")).to_have_value("")
+    assert page.evaluate(
+        """() => JSON.parse(
+          sessionStorage.getItem('cq-draft:edit:draft-ops')
+        ).text"""
+    ) == ""
+
+    page.evaluate("window.cqFailDraft = false")
+    draft.get_by_role("button", name="Save").click()
+    page.wait_for_url("**/v2.html", timeout=10000)
+    expect(page.locator("#draft-ops .cq-draft-body")).to_have_text("")
+    page.wait_for_function(
+        "() => sessionStorage.getItem('cq-draft:edit:draft-ops') === null"
+    )
+    events = [
+        json.loads(line)
+        for line in (d / "comments.jsonl").read_text().splitlines()
+        if '"kind": "action"' in line
+    ]
+    assert events[-1]["action"] == "edit"
+    assert events[-1]["detail"] == {"text": ""}
+    assert errors == []
+    page.close()
+
+
+def test_a_draft_send_owns_the_editor_until_its_response(browser, serve):
+    """A second gesture cannot overtake an earlier request or let that request clear
+    newer unsent text. Hold the first POST in the browser: while it owns the draft,
+    every edit door stays closed and the exact body remains recoverable."""
+    page, errors = open_page(browser, serve(JOURNEY_V1))
+    page.evaluate(
+        """() => {
+          const actualFetch = window.fetch.bind(window);
+          let held = true;
+          window.fetch = (input, init) => {
+            const event = String(input).endsWith('/api/event') && init?.body
+              ? JSON.parse(init.body) : null;
+            if (held && event?.kind === 'action' && event.action === 'edit') {
+              return new Promise((resolve, reject) => {
+                window.releaseDraftSend = () => {
+                  held = false;
+                  actualFetch(input, init).then(resolve, reject);
+                };
+              });
+            }
+            return actualFetch(input, init);
+          };
+        }"""
+    )
+    draft = page.locator("#draft-ops")
+    sent = "The first save still owns this body."
+    draft.locator(".cq-draft-body").dblclick()
+    draft.locator("textarea").fill(sent)
+    draft.get_by_role("button", name="Save").click()
+    expect(draft).to_have_attribute("aria-busy", "true")
+    assert page.evaluate(
+        """() => JSON.parse(
+          sessionStorage.getItem('cq-draft:edit:draft-ops')
+        ).text"""
+    ) == sent
+
+    draft.locator(".cq-draft-pencil").click()
+    expect(draft.locator("textarea")).to_have_count(0)
+    expect(page.locator(".cq-toast")).to_contain_text("Wait for the current edit")
+
+    page.evaluate("window.releaseDraftSend()")
+    page.wait_for_function(
+        """() => !document.getElementById('draft-ops').hasAttribute('aria-busy')
+          && sessionStorage.getItem('cq-draft:edit:draft-ops') === null"""
+    )
+    events = [
+        json.loads(line)
+        for line in (serve.page_dir / "comments.jsonl").read_text().splitlines()
+        if '"kind": "action"' in line
+    ]
+    assert [event["detail"]["text"] for event in events] == [sent]
+
+    draft.locator(".cq-draft-pencil").click()
+    expect(draft.locator("textarea")).to_be_focused()
+    page.keyboard.press("Escape")
+    assert errors == []
+    page.close()
+
+
+def test_unsent_draft_recovery_belongs_to_its_tab(browser, serve):
+    """Recorded edits converge through the log; unsent words do not. Two pages in
+    one BrowserContext are real same-origin tabs, unlike Browser.new_page's isolated
+    contexts. A send and a Cancel in one must leave the other's newer empty edit
+    recoverable through a reload."""
+    context = browser.new_context(
+        viewport={"width": 1200, "height": 900}, color_scheme="light"
+    )
+    try:
+        url = serve(JOURNEY_V1)
+        first, first_errors = open_page(browser, url, context=context)
+        second, second_errors = open_page(browser, url, context=context)
+        first_draft = first.locator("#draft-ops")
+        second_draft = second.locator("#draft-ops")
+
+        sent = "The first tab submits this body."
+        first_draft.locator(".cq-draft-body").dblclick()
+        first_draft.locator("textarea").fill(sent)
+        second_draft.locator(".cq-draft-body").dblclick()
+        second_draft.locator("textarea").fill("")
+
+        first_draft.get_by_role("button", name="Save").click()
+        expect(first_draft.locator(".cq-draft-history > summary")).to_have_text(
+            "Changes · 1 edit"
+        )
+        expect(second_draft.locator("textarea")).to_have_value("")
+        assert second.evaluate(
+            """() => JSON.parse(
+              sessionStorage.getItem('cq-draft:edit:draft-ops')
+            ).text"""
+        ) == ""
+
+        first_draft.locator(".cq-draft-body").dblclick()
+        first_draft.locator("textarea").fill("This tab discards these words.")
+        first.keyboard.press("Escape")
+        assert second.evaluate(
+            """() => JSON.parse(
+              sessionStorage.getItem('cq-draft:edit:draft-ops')
+            ).text"""
+        ) == ""
+
+        second.reload(wait_until="networkidle")
+        second.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+        expect(second_draft.locator("textarea")).to_be_visible()
+        expect(second_draft.locator("textarea")).to_have_value("")
+        events = [
+            json.loads(line)
+            for line in (serve.page_dir / "comments.jsonl").read_text().splitlines()
+            if '"kind": "action"' in line
+        ]
+        assert [event["detail"]["text"] for event in events] == [sent]
+        assert first_errors == []
+        assert second_errors == []
+    finally:
+        context.close()
+
+
+def test_text_alignment_is_lossless_and_keeps_a_shared_spine(browser, serve):
+    """The draft renderer is allowed to choose where an ambiguous repeated word
+    aligns, but never to lose or invent a character. The two projections are the
+    contract: same+delete is the old text, same+insert the new one. Unicode,
+    whitespace and repetition are where a character or regex diff quietly breaks."""
+    page, errors = open_page(browser, serve(JOURNEY_V1))
+    cases = [
+        ("", ""),
+        ("one line", "one longer line"),
+        ("first\nsecond  line", "first\nsecond line\nthird"),
+        ("l’écran est prêt 😀", "l’écran était prêt 🟢"),
+        ("迁移完成。再次迁移。", "迁移完成。回滚完成。"),
+        ("Retry once. Retry once. Then stop.", "Retry once. Retry twice. Then stop."),
+        (
+            "shared " + " ".join(f"old-{i}" for i in range(2500)) + " ending",
+            "shared " + " ".join(f"new-{i}" for i in range(2500)) + " ending",
+        ),
+    ]
+    aligned = page.evaluate(
+        """async (pairs) => {
+          const {alignText} = await import('/colloquy.js');
+          return pairs.map(([before, after]) => alignText(before, after));
+        }""",
+        cases,
+    )
+    for (before, after), runs in zip(cases, aligned):
+        assert "".join(run["text"] for run in runs if run["kind"] != "insert") == before
+        assert "".join(run["text"] for run in runs if run["kind"] != "delete") == after
+        assert all(a["kind"] != b["kind"] for a, b in zip(runs, runs[1:]))
+
+    repeated = aligned[-2]
+    assert "".join(r["text"] for r in repeated if r["kind"] == "delete") == "once"
+    assert "".join(r["text"] for r in repeated if r["kind"] == "insert") == "twice"
+    assert "Then stop." in "".join(r["text"] for r in repeated if r["kind"] == "same")
+    assert [run["kind"] for run in aligned[-1]] == ["same", "delete", "insert", "same"]
+    assert errors == []
+    page.close()
+
+
+def test_a_draft_explains_its_change_and_restores_history_as_an_edit(browser, serve):
+    """One disclosure answers both deferred draft asks. It compares this version's
+    authored body with the standing body, retains every absolute edit in log order,
+    and walks back by posting another ordinary edit. A second tab proves restore is
+    durable replay rather than local history state; copy mode proves the generated
+    controls do not survive without their handlers."""
+    page, errors = open_page(browser, serve(JOURNEY_V1))
+    draft = page.locator("#draft-ops")
+    edits = [
+        "Run the migration before deploying. It takes one minute.",
+        "Run the migration after the backup. It takes two minutes.",
+    ]
+    for index, text in enumerate(edits, 1):
+        draft.locator(".cq-draft-body").dblclick()
+        draft.locator("textarea").fill(text)
+        draft.get_by_role("button", name="Save").click()
+        expect(draft.locator(".cq-draft-history > summary")).to_have_text(
+            f"Changes · {index} {'edit' if index == 1 else 'edits'}"
+        )
+
+    draft.locator(".cq-draft-history > summary").click()
+    current_deleted = "".join(draft.locator(".cq-draft-current del").all_inner_texts())
+    current_inserted = "".join(draft.locator(".cq-draft-current ins").all_inner_texts())
+    assert "before" in current_deleted and "deploying" in current_deleted
+    assert "afterthebackup" in re.sub(r"\s+", "", current_inserted)
+    labels = draft.locator(".cq-draft-revision-head strong").all_inner_texts()
+    assert labels == ["Version text", "Edit 1 · v1", "Edit 2 · v1"]
+    # Adjacent recorded edits are aligned too, rather than rendered as two unrelated
+    # snapshots. The first has no knowable predecessor on a later pinned version.
+    second_delta = draft.locator(".cq-draft-revisions > li").nth(2)
+    second_deleted = "".join(second_delta.locator("del").all_inner_texts())
+    second_inserted = "".join(second_delta.locator("ins").all_inner_texts())
+    assert "before" in second_deleted and "deploying" in second_deleted
+    assert "afterthebackup" in re.sub(r"\s+", "", second_inserted)
+
+    page.evaluate("document.documentElement.classList.add('cq-copy')")
+    expect(draft.locator(".cq-draft-history")).not_to_be_visible()
+    expect(draft.locator(".cq-draft-controls")).not_to_be_visible()
+    expect(draft.locator(".cq-draft-body")).to_be_visible()
+    page.evaluate("document.documentElement.classList.remove('cq-copy')")
+
+    draft.get_by_role("button", name="Restore edit 1 · v1").focus()
+    page.keyboard.press("Enter")
+    expect(draft.locator(".cq-draft-body")).to_have_text(edits[0])
+    expect(draft.locator(".cq-draft-history > summary")).to_have_text("Changes · 3 edits")
+    expect(draft.locator(".cq-draft-history > summary")).to_be_focused()
+    expect(draft).to_have_attribute("data-cq-pending", "1")
+
+    events = [
+        json.loads(line)
+        for line in (serve.page_dir / "comments.jsonl").read_text().splitlines()
+        if '"kind": "action"' in line
+    ]
+    assert [event["detail"]["text"] for event in events] == [edits[0], edits[1], edits[0]]
+    assert [event["action"] for event in events] == ["edit", "edit", "edit"]
+
+    sequence = page.evaluate(
+        """async () => {
+          const {actionSequence} = await import('/colloquy.js');
+          const widget = document.getElementById('draft-ops');
+          const first = actionSequence(widget, 'edit');
+          first[0].detail.text = 'A widget must not mutate the runtime log.';
+          return actionSequence(widget, 'edit')
+            .map(event => [event.seq, event.detail.text]);
+        }"""
+    )
+    assert [text for _, text in sequence] == [edits[0], edits[1], edits[0]]
+    assert [seq for seq, _ in sequence] == sorted(seq for seq, _ in sequence)
+
+    other, other_errors = open_page(browser, page.url)
+    expect(other.locator("#draft-ops .cq-draft-body")).to_have_text(edits[0])
+    expect(other.locator("#draft-ops .cq-draft-history > summary")).to_have_text(
+        "Changes · 3 edits"
+    )
+    assert errors == []
+    assert other_errors == []
+    other.close()
+    page.close()
+
+
+def test_action_history_is_bounded_by_the_pinned_version(browser, serve):
+    """A historical page cannot narrate an edit that had not happened yet. The
+    helper owns the same version boundary replay does, so every future widget that
+    consumes a sequence gets this right without copying the filter."""
+    url = serve(JOURNEY_V1)
+    d = serve.page_dir
+    for version, text in ((1, "First recorded body."), (2, "Second recorded body.")):
+        if version == 2:
+            (d / "versions" / "v2.html").write_text(JOURNEY_V2)
+            interact.append_event(
+                d, {"kind": "note", "author": "claude", "version": 2, "text": "v2"}
+            )
+        interact.append_event(
+            d,
+            {
+                "kind": "action",
+                "author": "user",
+                "version": version,
+                "widget": "draft-ops",
+                "action": "edit",
+                "detail": {"text": text},
+            },
+        )
+
+    old, old_errors = open_page(browser, url + "?pin=1")
+    expect(old.locator("#draft-ops .cq-draft-history > summary")).to_have_text(
+        "Changes · 1 edit"
+    )
+    old_sequence = old.evaluate(
+        """async () => (await import('/colloquy.js'))
+          .actionSequence(document.getElementById('draft-ops'), 'edit')
+          .map(event => event.version)"""
+    )
+    assert old_sequence == [1]
+
+    latest, latest_errors = open_page(browser, url.replace("v1.html", "v2.html") + "?pin=1")
+    expect(latest.locator("#draft-ops .cq-draft-history > summary")).to_have_text(
+        "Changes · 2 edits"
+    )
+    latest_sequence = latest.evaluate(
+        """async () => (await import('/colloquy.js'))
+          .actionSequence(document.getElementById('draft-ops'), 'edit')
+          .map(event => event.version)"""
+    )
+    assert latest_sequence == [1, 2]
+    assert old_errors == []
+    assert latest_errors == []
+    old.close()
+    latest.close()
 
 
 def test_a_decision_claude_has_seen_still_survives_the_next_version(browser, serve):
@@ -4505,6 +5134,54 @@ def test_a_press_takes_the_keys_a_button_came_with(browser, serve):
     assert len([e for e in sent if e.get("action") == "choose"]) == 1, (
         "a held key sent one decision per repeat"
     )
+    assert errors == []
+    page.close()
+
+
+def test_global_shortcuts_leave_browser_navigation_keys_alone(browser, serve):
+    """The document-level dispatcher owns a few single-character shortcuts, not the
+    keyboard. In particular, Space, arrows, Home/End, and PageUp/PageDown must reach
+    the browser when focus is in the authored page rather than a widget control.
+
+    Observe `defaultPrevented` on real key events instead of asserting that Chrome
+    happened to scroll: scrolling depends on viewport and focus geometry, while
+    canceling the event is the runtime decision under test. `?` is the positive
+    control proving this observer sees a key the dispatcher intentionally consumes."""
+    page, errors = open_page(browser, serve(KEYS_PAGE))
+    keys = [
+        " ",
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        "Home",
+        "End",
+        "PageUp",
+        "PageDown",
+        "?",
+    ]
+    page.evaluate(
+        """keys => {
+          const pageContent = document.querySelector("main");
+          pageContent.tabIndex = -1;
+          pageContent.focus();
+          window.cqObservedKeys = {};
+          document.addEventListener("keydown", event => {
+            if (keys.includes(event.key))
+              window.cqObservedKeys[event.key] = event.defaultPrevented;
+          });
+        }""",
+        keys,
+    )
+    for key in keys:
+        page.keyboard.press(key)
+
+    observed = page.evaluate("() => window.cqObservedKeys")
+    assert observed.pop("?") is True, (
+        "the positive-control shortcut was not consumed, so the probe did not "
+        "observe the runtime dispatcher"
+    )
+    assert observed == dict.fromkeys(keys[:-1], False)
     assert errors == []
     page.close()
 

@@ -2,6 +2,7 @@
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -48,5 +49,36 @@ def test_customizing_guide_uses_the_current_layer_and_cli_names():
         "colloquy page init ",
         "colloquy page catalog ",
         "colloquy version check ",
+        'actionSequence(this, "verb")',
+        'watchActions(this, "verb", render)',
     ):
         assert current in customizing
+
+
+def test_tour_walks_the_interactive_and_live_workflows():
+    tour = (DOCS / "index.html").read_text()
+
+    for example in ("triage-board", "live-progress"):
+        assert f'href="../examples/{example}.html"' in tour
+        assert f"scripts/preview.py {example}" in tour
+    assert '"widget":"release-board","action":"move","detail":{"card":"card-export"' in tour
+    assert 'src="demo.gif"' in tour
+
+    live = (ROOT / "examples" / "live-progress.html").read_text()
+    assert "browser is following the newest version" in live.lower()
+    for status in ("done", "active", "planned"):
+        assert f'status="{status}"' in live
+    assert "<h2>Blocked</h2>" in live
+
+
+def test_demo_recording_drives_the_browser_journey(tmp_path):
+    output = tmp_path / "demo.gif"
+    recorded = subprocess.run(
+        [ROOT / "scripts" / "record-demo.sh", "--output", output],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert recorded.stdout.strip() == f"Recorded {output}"
+    assert output.read_bytes().startswith(b"GIF89a")
