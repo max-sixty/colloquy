@@ -665,7 +665,13 @@ def test_the_shim_runs_the_gate_from_anywhere(serve, tmp_path):
     d = serve.page_dir
     assert CliRunner().invoke(interact.cli, ["version", "check", str(d)]).exit_code == 0
 
-    shim = Path(__file__).parent.parent / "bin" / "colloquy"
+    shim = (
+        Path(__file__).parent.parent
+        / "plugins"
+        / "colloquy"
+        / "bin"
+        / "colloquy"
+    )
     run = subprocess.run(
         [str(shim), "version", "check", str(d), "--render"],
         cwd=tmp_path,
@@ -4808,13 +4814,14 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
     d = tmp_path / "page"
     text, dot = page.locator(".cq-status-text"), page.locator(".cq-dot")
 
-    def declare(state, detail="", *, handoff=False, quiet_for=0, session_pid=None):
+    def declare(state, detail="", *, agent="Claude", handoff=False, quiet_for=0, session_pid=None):
         ts = datetime.now().astimezone() - timedelta(seconds=quiet_for)
         status = {"state": state, "detail": detail, "ts": ts.isoformat(timespec="seconds")}
         if handoff:
             status["handoff"] = True
         interact.write_json(
-            d / "session.json", {"id": "s", "pid": session_pid or os.getpid(), "ts": "t"}
+            d / "session.json",
+            {"id": "s", "pid": session_pid or os.getpid(), "agent": agent, "ts": "t"},
         )
         interact.write_json(d / "status.json", status)
 
@@ -4850,6 +4857,9 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
         "The Claude session reviewing this page has ended. 1 comment waiting."
         " Start one in the terminal to pick it up."
     )
+
+    declare("working", "revising the plan", agent="Codex")
+    expect(text).to_have_text(re.compile(r"^Codex is working — revising the plan"))
 
     declare("idle")
     expect(text).to_have_text("Review closed")
@@ -4976,22 +4986,31 @@ def test_a_written_anchor_keeps_its_copy_when_the_page_grows_another(browser, se
     page.close()
 
 
-def test_a_written_comment_opens_a_thread_the_reviewer_answers(browser, serve):
-    """Claude's side of a thread is the reviewer's side with the author flipped: the panel
-    names it, counts it as open, and offers the reply box and Resolve that close it."""
+def test_a_written_comment_keeps_its_originating_agent(browser, serve):
+    """An agent's side of a thread is the reviewer's side with the author flipped.
+    Its label belongs to the message, so another host claiming the page later
+    cannot rewrite who said it."""
     url = serve(TWIN_V1)
     d = serve.page_dir
+    interact.write_json(
+        d / "session.json",
+        {"id": "codex", "pid": os.getpid(), "agent": "Codex", "ts": "t"},
+    )
     assert CliRunner().invoke(
         interact.cli,
         ["review", "comment", str(d), "--quote", "Retries are capped at three", "--text", "is three right?"],
     ).exit_code == 0
+    interact.write_json(
+        d / "session.json",
+        {"id": "claude", "pid": os.getpid(), "agent": "Claude", "ts": "t"},
+    )
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     toggle = page.locator("button[aria-expanded]")
     expect(toggle).to_have_text("Comments (1)")  # counted as open, like any other thread
     toggle.click()
     thread = page.locator(".cq-thread").first
-    expect(thread.locator(".cq-msg.claude .cq-msg-head b")).to_have_text("Claude")
+    expect(thread.locator(".cq-msg.claude .cq-msg-head b")).to_have_text("Codex")
     expect(thread.locator(".cq-quote")).to_have_text("“Retries are capped at three”")
 
     thread.locator("textarea").fill("three is the retry budget, not a guess")
@@ -5003,6 +5022,43 @@ def test_a_written_comment_opens_a_thread_the_reviewer_answers(browser, serve):
     kinds = [(e["kind"], e.get("author")) for e in interact.read_events(d)]
     assert ("comment", "claude") in kinds
     assert ("reply", "user") in kinds and ("resolve", "user") in kinds
+    assert errors == []
+    page.close()
+
+
+def test_a_reply_toast_keeps_its_originating_agent(browser, serve):
+    url = serve(TWIN_V1)
+    d = serve.page_dir
+    root = interact.append_event(
+        d,
+        {
+            "kind": "comment",
+            "author": "user",
+            "version": 1,
+            "text": "which host answers?",
+        },
+    )
+    interact.write_json(
+        d / "session.json",
+        {"id": "claude", "pid": os.getpid(), "agent": "Claude", "ts": "t"},
+    )
+    page, errors = open_page(browser, url)
+    expect(page.locator("button[aria-expanded]")).to_have_text("Comments (1)")
+
+    interact.append_event(
+        d,
+        {
+            "kind": "reply",
+            "author": "claude",
+            "agent": "Codex",
+            "parent": root["id"],
+            "text": "this one does",
+        },
+    )
+    expect(page.locator(".cq-toast")).to_have_text(
+        "Codex replied — open Comments",
+        timeout=5000,
+    )
     assert errors == []
     page.close()
 

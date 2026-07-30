@@ -38,24 +38,30 @@ field rather than asking a second time whether it arrived.
 
 ## Shape
 
-Six things, and nothing between them:
+Claude Code and Codex both resolve `plugins/colloquy/` as the plugin payload:
+`.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` are the two
+repo-root pointers, and the payload carries one manifest for each host. Six things make
+the product, and nothing sits between them:
 
-- `skills/colloquy/scripts/interact.py` — a `uv` script: the server, the event log, the
+- `plugins/colloquy/skills/colloquy/scripts/interact.py` — a `uv` script: the server, the event log, the
   lint (`version check`), vendoring, export. No daemon, no database. Reached as `colloquy`,
-  through the `bin/` shim Claude Code puts on PATH for every enabled plugin, so the skill
-  can hand an agent commands with no path to resolve and nothing shell-specific to
-  expand.
-- `skills/colloquy/assets/colloquy.js` — the runtime the page loads. One ES module owning
+  through the payload's `bin/` shim: Claude Code puts it on PATH and Codex resolves it
+  from the active skill directory.
+- `plugins/colloquy/skills/colloquy/assets/colloquy.js` — the runtime the page loads. One ES module owning
   the widget layer and the comment layer, with its stylesheet in a `<style>` block inside
   it. No build step.
-- `skills/colloquy/assets/widgets/*.js` — one module per interactive widget, importing a
+- `plugins/colloquy/skills/colloquy/assets/widgets/*.js` — one module per interactive widget, importing a
   small helper surface from the runtime.
-- `skills/colloquy/assets/registry.json` — the vocabulary. The renderer, the linter, and
+- `plugins/colloquy/skills/colloquy/assets/registry.json` — the vocabulary. The renderer, the linter, and
   the agent's documentation all read it, so none of them can drift from the others.
-- `skills/colloquy/assets/theme.css` — the tokens and rules every page links, and that the
+- `plugins/colloquy/skills/colloquy/assets/theme.css` — the tokens and rules every page links, and that the
   runtime styles its own chrome from, so a page themes as one thing.
 - `examples/` — six complete pages that are also the render suite's corpus, plus
   `gallery.html`, all six on one page (generated; edit the examples, not it).
+
+`plugins/colloquy/hooks/hooks.json` is shared too: both hosts speak its three events,
+and Codex supplies `CLAUDE_PLUGIN_ROOT` as a compatibility alias. The launcher maps
+Codex's thread identity into the session record that Claude Code supplies directly.
 
 The whole layer is vendored into each page directory by `page init`. A page you approved
 can't change under you when the defaults do.
@@ -516,8 +522,8 @@ and outside clicks hide, they don't discard. Cancel is the only discard.
 - **Merge locally.** The project isn't at the stage of PRs: a finished branch lands with
   `wt merge`, a direct squash merge to main. That holds for background jobs too, whose
   harness default is to push and open a draft PR.
-- **The main checkout is the installed plugin.** `.claude-plugin/marketplace.json` sets
-  `source: "./"`, so Claude Code loads skills, commands, hooks, and `bin/` from the
-  directory the marketplace points at, and landing on main publishes them. `claude plugin
-  install` also copies the tree under `~/.claude/plugins/cache/colloquy/`, which nothing
-  loads.
+- **The main checkout is the marketplace source.** Both repo-root marketplaces point at
+  `plugins/colloquy/`, and both hosts install a copy into their plugin cache. Keep the
+  two manifest versions equal and bump them together after changing the payload (a
+  cachebusting version is fine), then run `claude plugin update colloquy@colloquy` and
+  `codex plugin add colloquy@colloquy`; a new session loads the refreshed copy.

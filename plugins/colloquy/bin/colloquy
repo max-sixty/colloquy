@@ -1,7 +1,6 @@
 #!/bin/sh
-# The one entry point. Claude Code appends every enabled plugin's bin/ to PATH, so
-# the skill's examples can be this command verbatim — no path for the agent to
-# resolve, and no shell-specific variable expansion to get wrong.
+# The one entry point. Claude Code appends every enabled plugin's bin/ to PATH;
+# Codex resolves this launcher from the active skill directory.
 #
 # Two subcommands open a browser: `version check --render` looks at the page and
 # `version export` copies it. Both need Playwright, and declaring it in the script's
@@ -10,6 +9,14 @@
 # Chrome.
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 script=$root/skills/colloquy/scripts/interact.py
+
+# Codex exposes the thread id to shell tools. Carry it and the long-lived Codex
+# process into the same session record Claude Code supplies directly.
+if [ -z "${CLAUDE_CODE_SESSION_ID:-}" ] && [ -n "${CODEX_THREAD_ID:-}" ]; then
+  export COLLOQUY_SESSION_ID=$CODEX_THREAD_ID
+  export COLLOQUY_SESSION_PID=$PPID
+  export COLLOQUY_AGENT=Codex
+fi
 
 if [ "${1-}" = "version" ] && [ "${2-}" = "export" ]; then
   exec uv run --with playwright "$script" "$@"
@@ -22,5 +29,4 @@ if [ "${1-}" = "version" ] && [ "${2-}" = "check" ]; then
     fi
   done
 fi
-
 exec uv run "$script" "$@"

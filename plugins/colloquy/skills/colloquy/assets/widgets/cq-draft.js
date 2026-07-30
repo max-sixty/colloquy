@@ -53,7 +53,17 @@
  * lets paper disagree — it drops the box and keeps the words. Authored content is never
  * discarded, so there is no failSoft.
  */
-import { once, offer, quoted, sendAction, toast, keyHelp, saveDraft, loadDraft } from "/colloquy.js";
+import {
+  agentName,
+  once,
+  offer,
+  quoted,
+  sendAction,
+  toast,
+  keyHelp,
+  saveDraft,
+  loadDraft,
+} from "/colloquy.js";
 
 // The store key for a draft's unsent edit. The page's port is its own origin, so
 // the id alone is unambiguous — the same scoping every composer draft relies on.
@@ -201,7 +211,7 @@ customElements.define(
       sendAction(this, "edit", { text }).then((ok) => {
         if (ok) {
           saveDraft(ctx(this.id), "");
-          toast(`Edited “${this.id}” — sent to Claude`);
+          toast(`Edited “${this.id}” — sent to ${agentName()}`);
         } else {
           // Unsent means unrecorded. Put the words back on screen and keep the
           // reviewer's text in storage so nothing they typed is lost.

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>how colloquy works</title>
 <meta name="description" content="The mechanism behind colloquy: one uv script, an append-only event log, a background wait that ends when you comment, and a vendored theme-and-widget layer.">
-<link rel="stylesheet" href="../skills/colloquy/assets/theme.css">
+<link rel="stylesheet" href="../plugins/colloquy/skills/colloquy/assets/theme.css">
 <style>
 /* Landing layer over the stock theme: the architecture diagram. Every color
    and size below rides theme.css tokens. */
@@ -32,9 +32,9 @@ and version picker.</p>
 
 <svg class="arch" id="arch" viewBox="0 0 720 190" role="img"
      aria-labelledby="arch-title">
-<title id="arch-title">Claude writes version files and runs colloquy commands,
+<title id="arch-title">The agent writes version files and runs colloquy commands,
 both reaching the browser through interact.py's loopback server; a comment ends
-the background wait, which re-invokes Claude.</title>
+the background wait, which re-invokes the agent.</title>
 <defs>
 <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7"
         markerHeight="7" orient="auto-start-reverse">
@@ -49,7 +49,7 @@ the background wait, which re-invokes Claude.</title>
 <rect x="8" y="44" width="180" height="68" rx="8" fill="var(--card)"
       stroke="var(--rule)"></rect>
 <text x="98" y="72" text-anchor="middle" font-size="14" font-weight="600"
-      fill="var(--ink)">Claude Code session</text>
+      fill="var(--ink)">agent session</text>
 <text x="98" y="93" text-anchor="middle" font-size="11.5"
       fill="var(--muted)">version files · commands</text>
 </g>
@@ -76,10 +76,10 @@ the background wait, which re-invokes Claude.</title>
 <path d="M622 116 L622 160 L98 160 L98 122" fill="none" stroke="var(--accent)"
       stroke-width="1.5" marker-end="url(#arr-accent)"></path>
 <text x="360" y="152" text-anchor="middle" font-size="12"
-      fill="var(--accent)">a comment ends the background wait · Claude wakes</text>
+      fill="var(--accent)">a comment ends the background wait · agent wakes</text>
 </svg>
 
-<p id="wait-trick">Claude's turn ends on a background <code>review wait</code> that
+<p id="wait-trick">The agent's turn ends on a background <code>review wait</code> that
 exits the moment an event lands, re-invoking the session. Nothing runs between
 rounds and there is nothing to keep alive: the server exists to hand events
 across, and the page directory (versions plus the event log) is the whole
@@ -88,16 +88,16 @@ state.</p>
 
 <section id="agent">
 <h2>A command never edits the page</h2>
-<p id="agent-split">Claude has two ways in, and only one of them is HTML. A
-version is a file: Claude writes the whole document into the page directory, an
+<p id="agent-split">The agent has two ways in, and only one of them is HTML. A
+version is a file: the agent writes the whole document into the page directory, an
 ordinary file write with nothing mediating it. Everything it has to
 <em>say</em> goes through the <code>colloquy</code> command instead — a reply in
 a thread, a comment it opens on a passage of its own, the changelog note that
 publishes a version — and each of those appends one event to the log. The log
-takes a command rather than a file write because it isn't Claude's alone: the
+takes a command rather than a file write because it isn't the agent's alone: the
 browser appends to it too, and one writer is what gives every event an id to
 reply to and a place in the order.</p>
-<p id="agent-render">So Claude's words reach the page without the page changing.
+<p id="agent-render">So the agent's words reach the page without the page changing.
 What the reviewer looks at is the version composed with the log, recomposed on a
 two-second poll: the reply appears in a thread in the injected panel, the
 passage it answers is lit by the browser's highlight registry — which paints a
@@ -112,7 +112,7 @@ publishes it. Until the publication note lands the file is on disk and unreachab
 and publishing lints it first, so a broken version is never exposed. The next poll
 moves the tab onto the new document, keeping the reader's place — the whole of
 what a round changes on screen. Coming back the other way, <code>review wait</code>
-hands over each event exactly once, so a comment posted while Claude was working
+hands over each event exactly once, so a comment posted while the agent was working
 is still there on the next round.</p>
 </section>
 
@@ -196,7 +196,7 @@ version ships with your choice marked.</figcaption>
 </cq-board>
 </cq-specimen>
 <figcaption>In a session, cards drag between columns by a grip, and each drop
-reaches Claude as a structured move.</figcaption>
+reaches the agent as a structured move.</figcaption>
 </figure>
 
 <p id="catalog">The committed catalog runs wider: mermaid diagrams, unified
@@ -209,12 +209,12 @@ gallery</a> holds complete pages showing the range.</p>
 
 <section id="edits">
 <h2>Edits are events; the document stays the state</h2>
-<p>Dragging a card or clicking an option reaches Claude as a structured action
+<p>Dragging a card or clicking an option reaches the agent as a structured action
 on the same channel as comments, and the next version ships with the board as
 you left it and your pick marked. Until it ships, the page shows the version
 plus your own edits; a reload replays them, and a second tab follows along
 live.</p>
-<p id="decline">Declining is a version too. When Claude disagrees with an edit,
+<p id="decline">Declining is a version too. When the agent disagrees with an edit,
 it ships the next version without the change, says why in the changelog, and the
 page rolls back to the authored state as that version lands.</p>
 </section>
@@ -224,7 +224,7 @@ page rolls back to the authored state as that version lands.</p>
 <p><code>page init</code> vendors the whole layer (runtime, theme, registry, widget
 modules) into the page's directory, overlaying the shipped defaults with
 <code>~/.config/colloquy/</code> and the project's
-<code>.claude/colloquy/</code>. Override one CSS token to change the accent
+<code>.colloquy/</code>. Override one CSS token to change the accent
 everywhere; replace <code>theme.css</code> to change the voice; add a registry
 entry and a module to add a widget. Because pages are self-contained, a version
 you approved can't change under you when the defaults do.</p>

@@ -91,6 +91,9 @@
 
 // ---------- widget layer ----------
 
+let agent = "Claude";
+export const agentName = () => agent;
+
 // One-shot guard for connectedCallback: re-connection (a parent wrapping or moving an
 // already-upgraded child) must be harmless, so upgrade order can't matter.
 export function once(el) {
@@ -736,7 +739,7 @@ const toggleBtn = el("button", "cq-btn", "Comments");
 toggleBtn.title = "Show or hide the comment panel (c toggles, Esc closes, ? lists all keys)";
 toggleBtn.setAttribute("aria-expanded", "false");
 const approveBtn = el("button", "cq-btn primary", "✓ Looks good");
-approveBtn.title = "Sign off — Claude stops watching this page";
+approveBtn.title = "Sign off — the agent stops watching this page";
 banner.append(
   dot,
   statusText,
@@ -813,7 +816,7 @@ let lastEventSeq = -1;
 let lastVersionsKey = "";
 let latestVersion = null;
 let versions = [];
-let claudeMsgCount = -1;
+let agentMsgCount = -1;
 let panelOpen = false;
 let pendingAnchor = null;
 
@@ -1011,7 +1014,7 @@ function msgNode(m) {
   const div = el("div", `cq-msg ${m.author}`);
   const head = el("div", "cq-msg-head");
   head.append(
-    el("b", "", m.author === "claude" ? "Claude" : "You"),
+    el("b", "", m.author === "claude" ? m.agent || "Agent" : "You"),
     el("time", "", ago(m.ts)),
   );
   let body = msgBodies.get(m.id);
@@ -2458,22 +2461,22 @@ function renderStatus(state) {
   } else if (alive && status.state === "working" && !quiet) {
     cls = "working";
     showAge = Boolean(status.ts);
-    text = `Claude is working${status.detail ? " — " + status.detail : ""}`;
+    text = `${agentName()} is working${status.detail ? " — " + status.detail : ""}`;
   } else if (alive && listening) {
     cls = "listening";
-    text = "Claude is listening — select text to comment";
+    text = `${agentName()} is listening — select text to comment`;
   } else {
     // Nobody is attending: say why, what's waiting, and what to do. A dead session is
     // never coming back, a recent check-in means Claude is mid-turn, and a long silence
     // means it lost the thread.
     const [why, how] = !alive
       ? [
-          "The Claude session reviewing this page has ended.",
+          `The ${agentName()} session reviewing this page has ended.`,
           "Start one in the terminal to pick it up.",
         ]
       : quiet
-        ? [`Claude last checked in ${ago(status.ts)}.`, "Nudge it in the terminal."]
-        : ["Claude isn't watching right now.", "It picks them up next turn."];
+        ? [`${agentName()} last checked in ${ago(status.ts)}.`, "Nudge it in the terminal."]
+        : [`${agentName()} isn't watching right now.`, "It picks them up next turn."];
     // Comments land in the append-only log either way; what changes is when they're read.
     const held = pending
       ? `${pending} comment${pending === 1 ? "" : "s"} waiting.`
@@ -2799,6 +2802,7 @@ async function poll() {
   // every event-derived view backwards until the next poll.
   if (eventSeq < lastEventSeq) return;
   events = nextEvents;
+  agent = state.agent || "Claude";
   renderStatus(state);
   renderVersions(state);
   if (eventSeq > lastEventSeq) {
@@ -2818,12 +2822,15 @@ async function poll() {
     const approved = events.some((e) => e.kind === "done");
     approveBtn.disabled = approved;
     approveBtn.textContent = approved ? "✓ Approved" : "✓ Looks good";
-    const claudeMsgs = events.filter(
+    const agentReplies = events.filter(
       (e) => e.author === "claude" && e.kind === "reply",
-    ).length;
-    if (claudeMsgCount >= 0 && claudeMsgs > claudeMsgCount && !panelOpen)
-      showToast("Claude replied — open Comments", () => setPanel(true));
-    claudeMsgCount = claudeMsgs;
+    );
+    if (agentMsgCount >= 0 && agentReplies.length > agentMsgCount && !panelOpen)
+      showToast(
+        `${agentReplies.at(-1).agent || "Agent"} replied — open Comments`,
+        () => setPanel(true),
+      );
+    agentMsgCount = agentReplies.length;
   }
   // Last, because the panel has just rendered the log: a widget carried by a reply is
   // on the page by now, so an action naming one that isn't names a widget no version

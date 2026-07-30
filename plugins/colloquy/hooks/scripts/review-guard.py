@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Stop / UserPromptSubmit / SessionEnd hook — keeps the review loop honest.
 
-The review loop asks Claude to restart `review wait` after every round, and a page
+The review loop asks the agent to restart `review wait` after every round, and a page
 whose watcher never came back is invisible from the browser: it looks exactly
 like a page whose reviewer has said nothing yet. These hooks make the loop the
 harness's business rather than the model's memory — Stop refuses to end a turn
 that leaves one of this session's pages unwatched, UserPromptSubmit surfaces
-comments Claude hasn't picked up, and SessionEnd idles the pages and stops
+comments the agent hasn't picked up, and SessionEnd idles the pages and stops
 their servers.
 
 The decision lives in interact.py, which owns the page-directory model. This
@@ -20,9 +20,10 @@ place for a colloquy bug to strand the user.
 
 The sessions path assumes the hook's environment and the Bash tool's agree on
 XDG_STATE_HOME: `server run` and `review wait` write the registry from a shell
-initialized by the user's profile, while this script reads it from Claude
-Code's own process environment. A value set only in the shell profile makes the
-guard silently stand down — fail-open, like everything else here.
+initialized by the user's profile, while this script reads it from the agent
+host's process environment.
+A value set only in the shell profile makes the guard silently stand down —
+fail-open, like everything else here.
 """
 
 import json

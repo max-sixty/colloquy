@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 
 _spec = importlib.util.spec_from_file_location(
-    "interact", Path(__file__).parent.parent / "skills" / "colloquy" / "scripts" / "interact.py"
+    "interact",
+    Path(__file__).parent.parent
+    / "plugins"
+    / "colloquy"
+    / "skills"
+    / "colloquy"
+    / "scripts"
+    / "interact.py",
 )
 interact = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(interact)
@@ -25,3 +32,6 @@ def isolated_session(tmp_path_factory, monkeypatch):
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("COLLOQUY_SESSION_ID", raising=False)
+    monkeypatch.delenv("COLLOQUY_SESSION_PID", raising=False)
+    monkeypatch.delenv("COLLOQUY_AGENT", raising=False)

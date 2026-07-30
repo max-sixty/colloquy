@@ -22,6 +22,7 @@
  * once, as the list's name, rather than twice. */
 import Sortable from "/vendor/sortable.esm.js";
 import {
+  agentName,
   once,
   offer,
   quoted,
@@ -253,7 +254,7 @@ customElements.define(
         to: to.id,
         index: this.#cards(to).indexOf(card),
       }).then((ok) => {
-        if (ok) toast(`Moved to ${to.getAttribute("label")} — sent to Claude`);
+        if (ok) toast(`Moved to ${to.getAttribute("label")} — sent to ${agentName()}`);
         else this.#place(card, from, oldIndex);
       });
     }

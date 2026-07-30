@@ -8,12 +8,11 @@ origin — nothing upgrades, and a tabbed page renders as every tab at once. So
 this builds the directory the runtime expects and hands it to `server run`, the same
 path a session takes.
 
-The result is a page, not a picture of one: it takes comments. Served from a
-session, `review wait` on the same directory carries them to Claude and the example
-gets revised like any other page; run from a bare shell, they queue in the log
-until Claude next reads it. Which of those happens follows from the environment,
-since interact.py claims a page for the session in CLAUDE_CODE_SESSION_ID and
-Claude Code is what sets it.
+The result is a page, not a picture of one: it takes comments. Served from an
+agent session, `review wait` on the same directory carries them to the agent and the
+example gets revised like any other page; run from a bare shell, they queue in
+the log until an agent next reads it. Which of those happens follows from the
+host identity the launcher puts in the environment.
 
 Vendoring runs fresh each time, so an edit to the theme, the registry, or a
 widget shows up on the next run. `version publish` lints the example on the way past. The
@@ -31,7 +30,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-COLLOQUY = ROOT / "bin" / "colloquy"  # the one entry point, as the skill uses it
+COLLOQUY = ROOT / "plugins" / "colloquy" / "bin" / "colloquy"
 PAGE = ROOT / ".tmp" / "preview"  # gitignored, and stable so the port persists
 
 

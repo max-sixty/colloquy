@@ -5,13 +5,13 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-ASSETS = ROOT / "skills" / "colloquy" / "assets"
+ASSETS = ROOT / "plugins" / "colloquy" / "skills" / "colloquy" / "assets"
 DOCS = ROOT / "docs"
 
 
 def test_docs_pages_link_the_shipped_theme():
-    target = "../skills/colloquy/assets/theme.css"
-    assert (ROOT / "skills" / "colloquy" / "assets" / "theme.css").is_file()
+    target = "../plugins/colloquy/skills/colloquy/assets/theme.css"
+    assert (ASSETS / "theme.css").is_file()
     for page in DOCS.glob("*.html"):
         assert f'<link rel="stylesheet" href="{target}">' in page.read_text()
 

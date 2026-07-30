@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>colloquy · collaborate with your agent in HTML</title>
-<meta name="description" content="colloquy is a Claude Code plugin: Claude presents plans, findings, and work in progress as a commentable web page, your comments wake Claude, and revised versions ship with changelogs.">
-<link rel="stylesheet" href="../skills/colloquy/assets/theme.css">
+<meta name="description" content="colloquy is a Claude Code and Codex plugin: your agent presents plans, findings, and work in progress as a commentable web page, your comments wake the session, and revised versions ship with changelogs.">
+<link rel="stylesheet" href="../plugins/colloquy/skills/colloquy/assets/theme.css">
 <style>
 /* Landing layer over the stock theme: hero scale and the session screenshot.
    Every color and size below rides theme.css tokens. */
@@ -22,15 +22,15 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 <main>
 
 <header class="hero" id="top">
-<p class="eyebrow">colloquy · a Claude Code plugin</p>
+<p class="eyebrow">colloquy · a Claude Code and Codex plugin</p>
 <h1>Collaborate with your agent in HTML.</h1>
-<p class="lede" id="lede">Claude builds you a page rather than a scroll of terminal
+<p class="lede" id="lede">Your agent builds you a page rather than a scroll of terminal
 text: diagrams, boards you drag, a list of work that ticks over as it goes. Select any
-line and comment on it like a shared doc; the comment itself wakes Claude, and a revised
+line and comment on it like a shared doc; the comment itself wakes the session, and a revised
 version arrives with the change.</p>
 <p id="scope">It works for anything that would otherwise land as a wall of terminal
 text: a migration plan, an architecture write-up, an incident diagnosis, a PR
-walkthrough, a review, or a list of things to work through that ticks over as Claude
+walkthrough, a review, or a list of things to work through that ticks over as the agent
 does them. <a href="#install">Two commands install it</a>. No accounts,
 no daemon, no config; you need <a href="https://docs.astral.sh/uv/"><code>uv</code></a>
 on your PATH and a browser on the same machine.</p>
@@ -61,14 +61,14 @@ it backs, and real links out to the source line or the ticket. It prints, too.</
 <li id="range-collaborate"><strong>Collaborate.</strong> Ask about one part of the page
 rather than the whole of it. Every passage carries its own thread, so several
 conversations run at once and each stays anchored to the words it is about: yours and
-Claude's alike, since it opens threads on the page the same way you do.</li>
+the agent's alike, since it opens threads on the page the same way you do.</li>
 <li id="range-interact"><strong>Interact.</strong> The page takes input back. Drag cards
 to re-prioritize a board, click an option to decide it, accept or reject a proposed
 edit, or rewrite a draft (an email, a release note) in your own words. Each edit reaches
-Claude as a structured action and holds its place on every later version.</li>
+the agent as a structured action and holds its place on every later version.</li>
 <li id="range-track"><strong>Track.</strong> A page can be a working dashboard rather
 than a document: the state of the resources you asked about, a queue draining, a
-checklist ticking over. Claude republishes as the work moves and your browser follows on
+checklist ticking over. The agent republishes as the work moves and your browser follows on
 its own, so you watch it happen rather than reading a summary afterwards.</li>
 </ul>
 <p id="more"><a href="how-it-works.html">How it works</a> shows the widget system
@@ -81,18 +81,19 @@ gallery</a> holds a complete page for each kind of write-up.</p>
 <h2>Example: A review</h2>
 <ol class="steps">
 <li id="loop-ask"><strong>Ask.</strong> "Write up the migration options as a page"
-triggers it, as does <code>/colloquy</code>. Claude writes the page, serves it on a
+triggers it, as does <code>/colloquy</code> in Claude Code or
+<code>$colloquy</code> in Codex. The agent writes the page, serves it on a
 loopback port, and prints the URL.</li>
 <li id="loop-comment"><strong>Mark it up.</strong> Select any passage and comment; the
 passage stays lit while you write, and the comment anchors to it and stays anchored as
 versions change — to the passage you picked, even where the page says the same thing
 twice. Diagrams and images take comments by click, and a suggestion mode proposes
-replacement text that Claude takes verbatim or answers with why not. Claude opens
+replacement text that the agent takes verbatim or answers with why not. The agent opens
 threads the same way — a question about one sentence arrives in the margin beside
 it, not in the terminal.</li>
-<li id="loop-wake"><strong>Your comment wakes Claude.</strong> The session's turn
+<li id="loop-wake"><strong>Your comment wakes the agent.</strong> The session's turn
 ends on a background <code>review wait</code> that exits the moment an event lands,
-re-invoking Claude. Nothing runs between rounds.</li>
+re-invoking the agent. Nothing runs between rounds.</li>
 <li id="loop-revise"><strong>A revision ships.</strong> Versions are immutable,
 each with a one-line changelog. The page follows the newest while keeping your
 place on it, and the Δ toggle marks every passage that changed since the version
@@ -106,10 +107,15 @@ description.</li>
 
 <section id="install">
 <h2>Install</h2>
+<p><strong>Claude Code</strong></p>
 <pre><code>/plugin marketplace add max-sixty/colloquy
 /plugin install colloquy@colloquy</code></pre>
-<p>Then ask Claude to "write it up as a page", or run <code>/colloquy</code>.
-Claude also reaches for it on its own when a plan or write-up would be easier to
+<p><strong>Codex</strong></p>
+<pre><code>codex plugin marketplace add max-sixty/colloquy
+codex plugin add colloquy@colloquy</code></pre>
+<p>Then ask the agent to "write it up as a page", run <code>/colloquy</code> in
+Claude Code, or run <code>$colloquy</code> in Codex. The agent also reaches for it
+on its own when a plan or write-up would be easier to
 review as a page than as terminal text.</p>
 <p id="links"><a href="how-it-works.html">How it works</a> ·
 <a href="https://github.com/max-sixty/colloquy">GitHub</a> ·

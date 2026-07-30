@@ -34,7 +34,7 @@
  * takes the rest), where it isn't the row docks into flow where it was hoisted to,
  * a control line under the block it follows; and whether two rows land on top of
  * each other, which a translate nudges apart without touching layout. */
-import { offer, once, quoted, says, sendAction, toast } from "/colloquy.js";
+import { agentName, offer, once, quoted, says, sendAction, toast } from "/colloquy.js";
 
 // Every row on the page against the anchor it hangs from, so one observer serves
 // all of them and the pass can ask each whether its change is on screen.
@@ -204,7 +204,7 @@ customElements.define(
           return false;
         }
         toast(
-          `${outcome === "accept" ? "Accepted" : "Rejected"} “${label}” — sent to Claude`,
+          `${outcome === "accept" ? "Accepted" : "Rejected"} “${label}” — sent to ${agentName()}`,
         );
         return true;
       });

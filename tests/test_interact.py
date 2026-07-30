@@ -22,8 +22,11 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+ROOT = Path(__file__).parent.parent
+PLUGIN_ROOT = ROOT / "plugins" / "colloquy"
+
 _spec = importlib.util.spec_from_file_location(
-    "interact", Path(__file__).parent.parent / "skills" / "colloquy" / "scripts" / "interact.py"
+    "interact", PLUGIN_ROOT / "skills" / "colloquy" / "scripts" / "interact.py"
 )
 interact = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(interact)
@@ -138,10 +141,10 @@ Options:
   --help  Show this message and exit.
 
 Commands:
-  comment     Open a Claude thread on a page passage.
+  comment     Open an agent thread on a page passage.
   events      Print the event log as JSON lines.
-  reply       Reply to a thread as Claude.
-  state       Set Claude's banner state.
+  reply       Reply to a thread as the agent.
+  state       Set the agent's banner state.
   transcript  Print the review as Markdown.
   wait        Print new reviewer events, then exit.
 """,
@@ -196,7 +199,7 @@ def test_shim_adds_playwright_only_for_browser_commands(
     fake_uv.write_text('#!/bin/sh\nfor cli_arg in "$@"; do\n  printf "%s\\n" "$cli_arg"\ndone\n')
     fake_uv.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
-    shim = Path(__file__).parent.parent / "bin" / "colloquy"
+    shim = PLUGIN_ROOT / "bin" / "colloquy"
 
     result = subprocess.run(
         [shim, *args],
@@ -252,6 +255,38 @@ def fragment_errors(html, registry):
     return interact.fragment_errors(parser, registry, registry["$languages"]["names"])
 
 
+def test_claude_and_codex_load_the_same_plugin_payload():
+    claude_marketplace = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
+    codex_marketplace = json.loads(
+        (ROOT / ".agents" / "plugins" / "marketplace.json").read_text()
+    )
+    claude_manifest = json.loads(
+        (PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text()
+    )
+    codex_manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text())
+
+    assert claude_marketplace["plugins"][0]["source"] == "./plugins/colloquy"
+    assert codex_marketplace["plugins"][0]["source"] == {
+        "source": "local",
+        "path": "./plugins/colloquy",
+    }
+    assert codex_marketplace["plugins"][0]["policy"] == {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL",
+    }
+    assert claude_manifest["name"] == codex_manifest["name"] == "colloquy"
+    assert claude_manifest["version"] == codex_manifest["version"]
+    for relative in [
+        "bin/colloquy",
+        "hooks/hooks.json",
+        "hooks/scripts/review-guard.py",
+        "skills/colloquy/SKILL.md",
+        "skills/colloquy/scripts/interact.py",
+    ]:
+        assert (PLUGIN_ROOT / relative).is_file()
+    assert not [path for path in PLUGIN_ROOT.rglob("*") if path.is_symlink()]
+
+
 def test_init_vendors_the_layer(page_dir):
     for name in ["colloquy.js", "theme.css", "registry.json"]:
         assert (page_dir / name).is_file()
@@ -277,8 +312,8 @@ def test_init_user_layer_applies(tmp_path, monkeypatch):
 
 def test_init_project_layer_wins(tmp_path, monkeypatch):
     project = tmp_path / "proj"
-    (project / ".claude" / "colloquy").mkdir(parents=True)
-    (project / ".claude" / "colloquy" / "theme.css").write_text(":root { --accent: red }")
+    (project / ".colloquy").mkdir(parents=True)
+    (project / ".colloquy" / "theme.css").write_text(":root { --accent: red }")
     monkeypatch.chdir(project)
     d = tmp_path / "page"
     CliRunner().invoke(interact.cli, ["page", "init", str(d)])
@@ -296,7 +331,7 @@ def test_init_merges_registry_layers_by_complete_entry(tmp_path, monkeypatch):
     """
     user = tmp_path / "config" / "colloquy"
     project = tmp_path / "project"
-    project_layer = project / ".claude" / "colloquy"
+    project_layer = project / ".colloquy"
     user.mkdir(parents=True)
     project_layer.mkdir(parents=True)
     user_entry = {
@@ -1105,6 +1140,32 @@ def test_init_refuses_a_log_the_incoming_layer_no_longer_speaks(page_dir):
     assert "decide" in result.output
 
 
+def test_init_refuses_a_logged_event_field_the_incoming_layer_no_longer_speaks(
+    page_dir,
+):
+    """An older or custom layer may have added a field without adding a kind.
+    The vocabulary stamp promises both, so retaining the kind alone cannot make
+    the recorded field meaningful to the incoming runtime."""
+    publish(page_dir)
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "comment",
+            "author": "claude",
+            "agent": "Codex",
+            "mood": "uncertain",
+            "version": 1,
+            "text": "Does this still mean anything?",
+        },
+    )
+
+    result = CliRunner().invoke(interact.cli, ["page", "init", str(page_dir)])
+
+    assert result.exit_code != 0
+    assert "no longer speaks" in result.output
+    assert "comment" in result.output and "mood" in result.output
+
+
 def test_init_tracks_logged_verbs_by_the_widget_that_declared_them(page_dir):
     """Another tag using the same verb cannot keep a retired contract alive."""
     registry = json.loads((page_dir / "registry.json").read_text())
@@ -1130,7 +1191,7 @@ def test_init_tracks_logged_verbs_by_the_widget_that_declared_them(page_dir):
     # Reusing the generic verb on another widget leaves the global verb set
     # unchanged, but cannot make an old cq-board action meaningful there.
     registry["cq-draft"]["x-state"]["move"] = move_spec
-    overlay = page_dir.parent / ".claude" / "colloquy"
+    overlay = page_dir.parent / ".colloquy"
     overlay.mkdir(parents=True)
     (overlay / "registry.json").write_text(
         json.dumps(
@@ -1172,7 +1233,7 @@ def test_init_refuses_an_incoming_detail_contract_that_rejects_logged_actions(
     registry["cq-board"]["x-state"]["move"]["detail"]["properties"]["index"][
         "minimum"
     ] = 1
-    overlay = page_dir.parent / ".claude" / "colloquy"
+    overlay = page_dir.parent / ".colloquy"
     overlay.mkdir(parents=True)
     (overlay / "registry.json").write_text(
         json.dumps({"cq-board": registry["cq-board"]})
@@ -1409,7 +1470,7 @@ def test_retirement_verbs_fold_by_the_parent_widget(page_dir):
 
 @pytest.mark.parametrize("section", ["$events", "$languages"])
 def test_init_requires_the_complete_registry_contract(page_dir, tmp_path, section):
-    overlay = tmp_path / ".claude" / "colloquy"
+    overlay = tmp_path / ".colloquy"
     overlay.mkdir(parents=True)
     # Omission inherits the lower layer; supplying an entry replaces it whole,
     # so this incomplete replacement must fail merged-registry validation.
@@ -1424,7 +1485,7 @@ def test_init_requires_the_complete_registry_contract(page_dir, tmp_path, sectio
 def test_init_requires_the_event_vocabulary_the_layer_writes(
     page_dir, tmp_path, field
 ):
-    overlay = tmp_path / ".claude" / "colloquy"
+    overlay = tmp_path / ".colloquy"
     overlay.mkdir(parents=True)
     registry = json.loads((page_dir / "registry.json").read_text())
     if field is None:
@@ -1670,6 +1731,7 @@ def test_server_round_trip(server, page_dir):
                 "kind": "comment",
                 "id": "c9",
                 "author": "claude",
+                "agent": "Codex",
                 "ts": "1900-01-01T00:00:00Z",
                 "version": 1,
                 "text": "hm",
@@ -1679,6 +1741,7 @@ def test_server_round_trip(server, page_dir):
     assert status == 200
     posted = interact.read_events(page_dir)[-1]
     assert posted["author"] == "user" and posted["id"] != "c9"
+    assert "agent" not in posted
     assert posted["ts"] != "1900-01-01T00:00:00Z"
     status, body = fetch(f"{server}/api/state")
     state = json.loads(body)
@@ -1853,7 +1916,7 @@ def test_server_rejects_an_action_from_a_widget_removed_by_revendoring(
 ):
     """An open old tab may outlive the custom layer that upgraded its widget."""
     shipped = json.loads((page_dir / "registry.json").read_text())
-    overlay = page_dir.parent / ".claude" / "colloquy"
+    overlay = page_dir.parent / ".colloquy"
     (overlay / "widgets").mkdir(parents=True)
     (overlay / "registry.json").write_text(
         json.dumps({"cq-local-draft": shipped["cq-draft"]})
@@ -2010,6 +2073,50 @@ def claimed(page_dir, monkeypatch):
     return page_dir
 
 
+@pytest.fixture
+def codex_claimed_page(tmp_path, request):
+    page = tmp_path / "codex-page"
+    launcher = PLUGIN_ROOT / "bin" / "colloquy"
+    env = os.environ | {"CODEX_THREAD_ID": "codex-thread"}
+
+    subprocess.run(
+        [launcher, "page", "init", page],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    server = subprocess.Popen(
+        [launcher, "server", "run", page],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    def stop():
+        subprocess.run(
+            [launcher, "server", "stop", page],
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        server.wait(timeout=5)
+
+    request.addfinalizer(stop)
+    assert server.stdout.readline().startswith("http://127.0.0.1:")
+    return page
+
+
+def test_codex_launcher_claims_the_page_for_its_thread(codex_claimed_page):
+    session = interact.read_json(codex_claimed_page / "session.json")
+    assert session["id"] == "codex-thread"
+    assert session["pid"] == os.getpid()
+    assert session["agent"] == "Codex"
+    assert page_state(codex_claimed_page)["agent"] == "Codex"
+
+
 def test_stop_hook_blocks_a_turn_that_leaves_a_page_unwatched(claimed, capsys):
     """Between turns a page is either watched or idle. The failure this prevents:
     a `review wait` exits, its notification is buried behind the next thing the
@@ -2099,7 +2206,7 @@ def test_review_guard_agrees_with_interact_on_state_home(tmp_path, monkeypatch):
         monkeypatch.delenv("XDG_STATE_HOME", raising=False)
         for key, value in env.items():
             monkeypatch.setenv(key, value)
-        guard = load(root / "hooks" / "scripts" / "review-guard.py")
+        guard = load(PLUGIN_ROOT / "hooks" / "scripts" / "review-guard.py")
         assert guard.SESSIONS == interact.state_home() / "sessions"
 
 
@@ -2388,7 +2495,15 @@ def test_export_prints_threads_and_versions(page_dir):
         {"kind": "comment", "id": "c1", "author": "user", "anchor": {"quote": "flip reads"}, "text": "why?"},
     )
     interact.append_event(
-        page_dir, {"kind": "reply", "id": "r1", "author": "claude", "parent": "c1", "text": "reversibility"}
+        page_dir,
+        {
+            "kind": "reply",
+            "id": "r1",
+            "author": "claude",
+            "agent": "Claude",
+            "parent": "c1",
+            "text": "reversibility",
+        },
     )
     interact.append_event(page_dir, {"kind": "resolve", "id": "x1", "author": "user", "parent": "r1"})
     interact.append_event(
@@ -2485,6 +2600,7 @@ def test_comment_anchors_on_a_quote_and_posts_as_claude(page_dir):
     assert result.exit_code == 0, result.output
     event = json.loads(result.output)
     assert event["kind"] == "comment" and event["author"] == "claude" and event["version"] == 1
+    assert event["agent"] == "Agent"
     assert event["anchor"]["quote"] == "Ship dark"
     # The section is derived the way the browser derives it — the nearest enclosing id.
     assert event["anchor"]["section"] == "flag-first"

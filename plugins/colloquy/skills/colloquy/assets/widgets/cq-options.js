@@ -40,7 +40,17 @@
  * channel and not presentation.
  *
  * Authored content is never replaced, so there is no failSoft. */
-import { HIDDEN, offer, once, quoted, relabel, says, sendAction, toast } from "/colloquy.js";
+import {
+  HIDDEN,
+  agentName,
+  offer,
+  once,
+  quoted,
+  relabel,
+  says,
+  sendAction,
+  toast,
+} from "/colloquy.js";
 
 // An option's lede, or nothing where it has none — each caller has its own answer to that,
 // and the settled title's is to say "Settled" rather than name an id nobody wrote. Read
@@ -100,7 +110,9 @@ customElements.define(
         const next = option === prev ? null : option;
         this.#choose(next);
         const title = optionLede(option) || option.id;
-        const sent = next ? `Chose “${title}” — sent to Claude` : "Cleared your pick — sent to Claude";
+        const sent = next
+          ? `Chose “${title}” — sent to ${agentName()}`
+          : `Cleared your pick — sent to ${agentName()}`;
         sendAction(this, "choose", { option: next?.id ?? null }).then((ok) => {
           if (ok) toast(sent);
           // Unsent means unrecorded: rewind rather than show a pick Claude will

@@ -8,12 +8,11 @@
 A `uv` script: the PEP 723 header above declares the dependencies, and `uv` is
 the one prerequisite for the whole plugin — no venv to create, no build step.
 Run it with `uv run interact.py <group> <command> …`, or as
-`colloquy <group> <command> …`: the plugin ships `bin/colloquy`, which Claude
-Code puts on PATH, so the skill can hand an agent a command that resolves
-nothing and expands nothing.
+`colloquy <group> <command> …` through the plugin's `bin/colloquy` launcher.
+Claude Code puts that launcher on PATH; Codex resolves it from the active skill.
 
 A page directory holds:
-    versions/v1.html…    immutable page versions (Claude writes them). The server
+    versions/v1.html…    immutable page versions (the agent writes them). The server
                          exposes a version only once `version publish` lands its
                          note, after `version check` passes, so a half-written or
                          broken file is never live to an open browser.
@@ -34,15 +33,15 @@ A page directory holds:
                          and two versions showing the same screenshot share the one
                          file rather than a copy each
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
-    status.json          Claude's declared state: {"state": working|waiting|idle, "detail", "ts"};
+    status.json          the agent's declared state: {"state": working|waiting|idle, "detail", "ts"};
                          when delivery wakes a non-working page, `review wait` writes
-                         it working with "handoff": true until Claude's own
+                         it working with "handoff": true until the agent's own
                          `review state` lands
     heartbeat.json       watcher liveness, bumped by `review wait` while it runs
-    cursor.json          seq of the last event delivered to Claude, written by
+    cursor.json          seq of the last event delivered to the agent, written by
                          `review wait` on exit
     server.json          {"port", "pid", "url"} for the running server
-    session.json         {"id", "pid"} of the Claude Code session last working on the page
+    session.json         {"id", "pid", "agent"} of the agent session last working on the page
 
 status.json is a claim, and a claim never expires on its own: an agent that
 stopped watching renders exactly like one that is watching and has nothing to
@@ -62,16 +61,16 @@ Stop, UserPromptSubmit and SessionEnd, it refuses to let a turn end with one of
 this session's pages unwatched, surfaces undelivered comments at the next
 prompt, and idles the pages and stops their servers when the session exits. It
 finds them through ~/.local/state/colloquy/sessions/<session id>.json, which
-`server run` and `review wait` write from CLAUDE_CODE_SESSION_ID — absent that
-(interact.py run outside Claude Code), nothing is claimed and the hooks stand
-down. Undelivered events are the one thing `review state <page> idle` can't
-close over: idling is how a review ends, and a review can't end on comments
+`server run` and `review wait` write the host session identity supplied by the launcher —
+absent that (interact.py run outside an agent host), nothing is claimed and the
+hooks stand down. Undelivered events are the one thing `review state <page> idle`
+can't close over: idling is how a review ends, and a review can't end on comments
 nobody read.
 
 `page init` vendors the runtime, theme, registry, widgets, and vendor assets into the
 page directory, overlaying by precedence: colloquy's shipped defaults, then the
 user layer (~/.config/colloquy/), then the project layer
-(./.claude/colloquy/). Files replace files; registry entries merge by top-level
+(./.colloquy/). Files replace files; registry entries merge by top-level
 name, with a later layer replacing one complete entry rather than deep-merging
 its schema. The page directory itself lives wherever the caller says —
 conventionally ~/.local/state/colloquy/pages/<slug>/ — and is self-contained,
@@ -120,13 +119,14 @@ passages apart), reply (parent=id),
 resolve (parent=id), done (user sign-off; the banner offers it only on a page
 declaring <meta name="cq-review" content="sign-off">), action (user; a widget reporting the
 user editing the document through it — widget=element id, action=verb, detail
-per widget, version the edit was made against), note (claude; per-version
+per widget, version the edit was made against), note (agent; per-version
 changelog, carrying `restated`: the element ids whose decisions the publishing
 version took back). The server stamps every browser-posted event author=user;
-`review comment`, `review reply`, and `version publish` stamp author=claude. A
-Claude comment or reply may carry widget markup — both validate it against the
-vendored registry, the discussion-side analog of `version check`; user
-comments stay plain text.
+Agent-side `review comment`, `review reply`, and `version publish` stamp the wire
+role author=claude, and comments/replies also carry the originating host's display
+name. An agent comment or reply may carry widget markup — both validate it against
+the vendored registry, the discussion-side analog of `version check`; user comments
+stay plain text.
 
 Either side can open a thread, and `author` is the whole difference between them. The
 reviewer selects a passage and the browser writes the anchor from the
@@ -219,13 +219,14 @@ BROWSER_EVENT_FIELDS = {
 # id/ts/author/kind and read_events' seq. A registry may grow this vocabulary,
 # but it cannot omit a word the producers beside it already speak.
 EVENT_VOCABULARY = {
-    "comment": {"version", "text", "anchor", "suggestion"},
-    "reply": {"parent", "version", "text"},
+    "comment": {"version", "text", "anchor", "suggestion", "agent"},
+    "reply": {"parent", "version", "text", "agent"},
     "resolve": {"parent"},
     "done": {"version", "text"},
     "action": {"widget", "action", "detail", "version"},
     "note": {"version", "text", "restated"},
 }
+EVENT_BASE_FIELDS = {"id", "ts", "author", "kind", "seq"}
 HTML_NAME = r"[a-z][a-z0-9-]*"
 WIDGET_NAME = r"cq-[a-z0-9]+(?:-[a-z0-9]+)*"
 STATE_SCHEMA = {
@@ -508,11 +509,11 @@ def state_home() -> Path:
 
 
 def claim_page(page_dir: Path) -> None:
-    """Record that this Claude Code session is the one working on the page, in
+    """Record that this agent session is the one working on the page, in
     both directions: the page names its session (so the server can see when that
     session is gone), the session lists its pages (so the hooks can find them
-    wherever they live). Claude Code puts the id and its pid in the environment
-    of every Bash tool call, so this needs no cooperation from the agent.
+    wherever they live). The host identity reaches this process through the
+    environment, so this needs no cooperation from the agent.
 
     `server run` and `review wait` claim; nothing else does. The claim tracks
     the watch obligation the hooks enforce: `server run` puts the page in front
@@ -520,10 +521,15 @@ def claim_page(page_dir: Path) -> None:
     commands neither incur the obligation nor discharge it, so a directory a
     session only wrote to, like a throwaway page for testing the widget layer,
     owes nobody a watcher."""
-    sid, pid = os.environ.get("CLAUDE_CODE_SESSION_ID"), os.environ.get("CLAUDE_PID")
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("COLLOQUY_SESSION_ID")
+    pid = os.environ.get("CLAUDE_PID") or os.environ.get("COLLOQUY_SESSION_PID")
     if not sid or not pid:
         return
-    write_json(page_dir / "session.json", {"id": sid, "pid": int(pid), "ts": now_iso()})
+    agent = "Claude" if os.environ.get("CLAUDE_CODE_SESSION_ID") else os.environ["COLLOQUY_AGENT"]
+    write_json(
+        page_dir / "session.json",
+        {"id": sid, "pid": int(pid), "agent": agent, "ts": now_iso()},
+    )
     sessions = state_home() / "sessions"
     sessions.mkdir(parents=True, exist_ok=True)
     # Sessions that died without a SessionEnd hook leave their file behind; drop
@@ -576,7 +582,8 @@ def full_state(page_dir: Path, events: list, versions: list) -> dict:
         "listening": time.time() - heartbeat["t"] < HEARTBEAT_FRESH_SECS,
         "cursor": cursor,
         "pending": len(undelivered(events, cursor)),
-        # None when nothing claimed the page — interact.py run outside Claude Code.
+        "agent": session.get("agent", "Claude") if session else "Claude",
+        # None when nothing claimed the page — interact.py run outside an agent host.
         "session_alive": pid_alive(session["pid"]) if session else None,
         "events": events,
     }
@@ -677,7 +684,7 @@ class Handler(BaseHTTPRequestHandler):
         # Identity, authorship, and time belong to the server. Drop client copies
         # before checking the kind's declared payload, so none can be forged into
         # the append-only record.
-        for field in ("id", "author", "ts"):
+        for field in ("id", "author", "agent", "ts"):
             event.pop(field, None)
         unexpected = set(event) - {"kind"} - EVENT_VOCABULARY[kind]
         if unexpected:
@@ -773,7 +780,7 @@ def layer_dirs() -> list:
     Each mirrors the assets layout: theme.css/registry.json/colloquy.js at the
     top, modules in widgets/, third-party files in vendor/. Registry files are
     additive by top-level entry; every other file replaces by path."""
-    return [ASSETS, config_home(), Path.cwd() / ".claude" / "colloquy"]
+    return [ASSETS, config_home(), Path.cwd() / ".colloquy"]
 
 
 def cmd_init(page_dir: Path) -> None:
@@ -1026,7 +1033,7 @@ def action_contract_error(page_dir: Path, event: dict, events: list, registry: d
     if tag is None:
         return (
             f"unknown action widget {event['widget']!r} in v{event['version']} "
-            "or Claude-authored thread markup"
+            "or agent-authored thread markup"
         )
     entry = registry.get(tag)
     if entry is None:
@@ -1070,7 +1077,7 @@ def reserved_ids_error(ids: list) -> str:
 def check_thread_markup(
     page_dir: Path, kind: str, body: str, events: list, registry: dict | None
 ) -> None:
-    """A comment or reply of Claude's carrying widget markup renders live in the panel, so
+    """An agent comment or reply carrying widget markup renders live in the panel, so
     it validates against the vendored registry at post time — the discussion-side
     `version check`. Exits with what's wrong; returns on plain text, which is most
     of them."""
@@ -1102,6 +1109,12 @@ def check_thread_markup(
         sys.exit(f"{kind} widget ids already taken by the page or an earlier message: {clash}")
 
 
+def message_agent(page_dir: Path) -> str:
+    """The agent originating a new message, or a generic label when no host
+    session has claimed the page."""
+    return (read_json(page_dir / "session.json") or {}).get("agent", "Agent")
+
+
 def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
     """Open a thread on a passage, as the reviewer's own selection does. The anchor is
     captured against the version they are looking at — the newest published one, since a
@@ -1130,7 +1143,14 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
     check_thread_markup(page_dir, "comment", body, events, registry)
     event = append_event(
         page_dir,
-        {"kind": "comment", "author": "claude", "version": version, "anchor": anchor, "text": body},
+        {
+            "kind": "comment",
+            "author": "claude",
+            "agent": message_agent(page_dir),
+            "version": version,
+            "anchor": anchor,
+            "text": body,
+        },
     )
     print(json.dumps(event, ensure_ascii=False))
 
@@ -1143,7 +1163,16 @@ def cmd_reply(page_dir: Path, to: str, text) -> None:
     body = read_text_arg(text)
     registry = load_registry(page_dir) if "<cq-" in body else None
     check_thread_markup(page_dir, "reply", body, events, registry)
-    event = append_event(page_dir, {"kind": "reply", "author": "claude", "parent": to, "text": body})
+    event = append_event(
+        page_dir,
+        {
+            "kind": "reply",
+            "author": "claude",
+            "agent": message_agent(page_dir),
+            "parent": to,
+            "text": body,
+        },
+    )
     print(json.dumps(event, ensure_ascii=False))
 
 
@@ -1230,7 +1259,7 @@ def cmd_transcript(page_dir: Path) -> None:
             head = "> (page-level)"
         print(head + ("  — resolved" if t["resolved"] else ""))
         for m in t["msgs"]:
-            who = "Claude" if m["author"] == "claude" else "User"
+            who = m.get("agent", "Agent") if m["author"] == "claude" else "User"
             body = m["text"].replace("\n", "\n  ")
             print(f"- **{who}**: {body}")
         print()
@@ -2449,18 +2478,20 @@ def incoming_registry(layers: list) -> dict:
 
 def vocabulary_gaps(page_dir: Path, events: list, incoming: dict) -> list:
     """What the page's log says that the *incoming* layer no longer speaks:
-    event kinds with no $events entry, or actions whose sending tag, verb, or
-    detail the incoming x-state contract rejects. Empty for a fresh page.
+    event kinds or fields with no $events entry, or actions whose sending tag,
+    verb, or detail the incoming x-state contract rejects. Empty for a fresh page.
     Counted, because the number is the cost — each is a recorded event that
     would never replay again."""
     if not events:
         return []
-    kinds = set(incoming["$events"]["kinds"])
+    kind_fields = incoming["$events"]["kinds"]
     missing = {}
     for e in events:
         kind = e["kind"]
-        if kind not in kinds:
+        if kind not in kind_fields:
             key = f"kind `{kind}`"
+        elif fields := set(e) - EVENT_BASE_FIELDS - set(kind_fields[kind]):
+            key = f"kind `{kind}` fields {sorted(fields)}"
         elif kind == "action" and (
             error := action_contract_error(page_dir, e, events, incoming)
         ):
@@ -2965,7 +2996,7 @@ def structure_errors(parser: _StructParser) -> list:
 
 
 def fragment_errors(parser: _StructParser, registry: dict, known: list) -> list:
-    """Structural + registry validation of a markup fragment (a Claude reply
+    """Structural + registry validation of a markup fragment (an agent reply
     carrying widgets): the discussion-side analog of `version check`. The language
     check comes along because the schema stopped carrying the list: a reply's
     <cq-code lang=…> is colored by the same tokenizer a version's is, and nothing
@@ -3487,8 +3518,7 @@ def render_check(page_dir: Path, version: int) -> int:
             "version check --render needs Playwright; run it as\n"
             "  colloquy version check <page> --render\n"
             "or, from a checkout,\n"
-            "  uv run --with playwright skills/colloquy/scripts/interact.py "
-            "version check <page> --render",
+            "  plugins/colloquy/bin/colloquy version check <page> --render",
             file=sys.stderr,
         )
         return 1
@@ -3619,8 +3649,7 @@ def cmd_export(page_dir: Path, out: Path, version) -> int:
             "export needs Playwright; run it as\n"
             "  colloquy version export <page> -o <file>\n"
             "or, from a checkout,\n"
-            "  uv run --with playwright skills/colloquy/scripts/interact.py "
-            "version export <page> -o <file>"
+            "  plugins/colloquy/bin/colloquy version export <page> -o <file>"
         )
     published = published_versions(page_dir, read_events(page_dir))
     if not published:
@@ -3798,12 +3827,12 @@ def review() -> None:
     """Watch and write to a live review."""
 
 
-@review.command(short_help="Set Claude's banner state.")
+@review.command(short_help="Set the agent's banner state.")
 @click.argument("dir", metavar="PAGE")
 @click.argument("state", type=click.Choice(["working", "waiting", "idle"]))
 @click.argument("detail", required=False, default="")
 def state(dir: str, state: str, detail: str) -> None:
-    """Set Claude's banner state."""
+    """Set the agent's banner state."""
     page_dir = resolve_dir(dir)
     # Idling over undelivered events ends the review on a reviewer still owed an
     # answer. Here rather than in cmd_status because SessionEnd idles pages whose
@@ -3834,13 +3863,13 @@ def wait(dir: str) -> None:
     sys.exit(cmd_wait(resolve_dir(dir)))
 
 
-@review.command(short_help="Open a Claude thread on a page passage.")
+@review.command(short_help="Open an agent thread on a page passage.")
 @click.argument("dir", metavar="PAGE")
 @click.option("--quote", help="passage text from the published version")
 @click.option("--section", metavar="ID", help="element ID to anchor or scope --quote")
 @click.option("--text", help="comment text (default: stdin)")
 def comment(dir: str, quote: str, section: str, text: str) -> None:
-    """Open a Claude thread on a page passage.
+    """Open a thread on a passage as the agent (--text or stdin).
 
     The reviewer answers it in the browser and resolves it there. Refuses a quote the
     published version does not hold, or holds more than once.
@@ -3848,12 +3877,12 @@ def comment(dir: str, quote: str, section: str, text: str) -> None:
     cmd_comment(resolve_dir(dir), quote, section, text)
 
 
-@review.command(short_help="Reply to a thread as Claude.")
+@review.command(short_help="Reply to a thread as the agent.")
 @click.argument("dir", metavar="PAGE")
 @click.option("--to", required=True, metavar="ID", help="comment or reply ID to answer")
 @click.option("--text", help="reply text (default: stdin)")
 def reply(dir: str, to: str, text: str) -> None:
-    """Reply to a thread as Claude."""
+    """Post a threaded reply as the agent (--text or stdin)."""
     cmd_reply(resolve_dir(dir), to, text)
 
 
@@ -3883,7 +3912,7 @@ def transcript(dir: str) -> None:
 
 @cli.command(hidden=True)
 def hook() -> None:
-    """Answer a Claude Code hook on stdin."""
+    """Answer an agent-host hook on stdin."""
     cmd_hook(json.load(sys.stdin))
 
 

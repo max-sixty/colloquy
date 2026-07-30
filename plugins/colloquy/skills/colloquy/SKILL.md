@@ -2,12 +2,11 @@
 name: colloquy
 description:
   'Presents a concept, design, decisions, findings, or a run of work in progress as an
-  HTML page the user comments on in the browser — Claude watches for comments, replies
+  HTML page the user comments on in the browser — the agent watches for comments, replies
   in-thread, and ships revised versions as the work moves. Use instead of a wall-of-text
   plan or a handed-over .md report. Triggers: "explain this in HTML", "write it up as a
   page", "write up the findings", "I want to see the options", a run of work whose items
   the user will want to watch go by, or an intricate design that needs review.'
-argument-hint: "[--export] [concept, decision, or work to show]"
 allowed-tools:
   - Bash(colloquy:*)
 ---
@@ -58,9 +57,9 @@ and is where every version, the event log, and the vendored widget layer live. I
 review state, not an archive: content with a life beyond the review leaves through
 `version export` or a copied version, to wherever that content belongs.
 
-`colloquy` mediates everything, and is on PATH because Claude Code puts each enabled
-plugin's `bin/` there. Nothing below has a path to resolve or a variable to expand, so
-it runs verbatim in any shell.
+The launcher is `${CLAUDE_SKILL_DIR}/../../bin/colloquy`. Resolve
+`${CLAUDE_SKILL_DIR}` to this skill's directory and use that launcher for every command
+shown as `colloquy` below. Claude Code also puts the same launcher on PATH.
 
 ```bash
 colloquy page init <page>                    # create layout, vendor the widget layer
@@ -79,11 +78,8 @@ colloquy review events <page>                # full event log
 colloquy review transcript <page>            # review as Markdown
 ```
 
-`command not found` means colloquy isn't installed as a plugin — say so rather than
-hunting for the script. From a checkout of the repo the same command is
-`uv run skills/colloquy/scripts/interact.py`; that script's module docstring documents
-the page directory's layout, and its PEP 723 header is why `uv` is the plugin's one
-prerequisite.
+If the resolved launcher does not exist, the plugin payload is incomplete; say so. In a
+repository checkout it lives at `plugins/colloquy/bin/colloquy`.
 
 1. Run `page init <page>`, then read `page catalog <page>`. It prints the vendored
    registry (widget schemas with examples) and the theme's class idioms, which vary per
@@ -250,7 +246,7 @@ and the comment layer left behind.
 
 Whenever you hand over the URL or finish a round of work, run
 `review state <page> waiting`, start `review wait <page>` as a background task, and end
-your turn. While `review wait` runs, the banner shows "Claude is listening"; it exits
+your turn. While `review wait` runs, the banner names the current agent as listening; it exits
 — re-invoking you — when the user comments, replies, resolves, approves, or edits an
 interactive widget (a drag on a `cq-board` arrives as an `action` event), printing the
 new events as JSON. `review wait` delivers everything no previous `review wait` has
@@ -264,7 +260,7 @@ On wake:
 
 1. Run `review state <page> working "<what you're doing>"` and refresh the detail at
    each milestone. The banner shows it live, and reads a state left unrefreshed long
-   enough as Claude having gone quiet.
+   enough as the agent having gone quiet.
 2. Address every event `review wait` printed. Each is JSON carrying the server-minted
    `id` that `review reply --to` takes:
    - **A comment**: `review reply` in-thread, and change the page where the comment
@@ -339,11 +335,11 @@ stderr; exit 2 means it couldn't, and the page stays down until `server run`.
 ## Pointing at a passage yourself
 
 `review comment` opens a thread the way the reviewer's selection does — same anchor,
-same panel, same reply box, labelled Claude instead of You. Reach for it when what you
-have to say is about one passage and you can't settle it yourself: a sentence that
-reads two ways, an assumption the paragraph rests on, a line only they have the fact to
-fix. Anything you can settle, settle — ship the fix. In chat, the reader has to find
-the passage again; in the margin it is already beside them.
+same reply box, labelled with the current agent instead of You. Reach for it when what you have to say is
+about one passage and you can't settle it yourself: a sentence that reads two ways, an
+assumption the paragraph rests on, a line only they have the fact to fix. Anything you
+can settle, settle — ship the fix. In chat, the reader has to find the passage again;
+in the margin it is already beside them.
 
 ```bash
 colloquy review comment <page> --quote "<passage from the version file>" --text "…"
@@ -373,7 +369,7 @@ knows that happened.
 ## Customizing the widget layer
 
 `page init` vendors the layer into the page directory from colloquy's shipped defaults,
-then the user's `~/.config/colloquy/`, then the project's `.claude/colloquy/`. Each
+then the user's `~/.config/colloquy/`, then the project's `.colloquy/`. Each
 layer mirrors the same layout (`theme.css`, `registry.json`, `widgets/`, `vendor/`).
 Files replace by path; registry files merge by top-level entry, with a later layer
 replacing one complete entry. A custom widget therefore adds its entry without copying

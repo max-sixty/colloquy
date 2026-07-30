@@ -1,0 +1,20 @@
+{
+  "name": "colloquy",
+  "interface": {
+    "displayName": "Colloquy"
+  },
+  "plugins": [
+    {
+      "name": "colloquy",
+      "source": {
+        "source": "local",
+        "path": "./plugins/colloquy"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

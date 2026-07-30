@@ -3,12 +3,12 @@
 > **Not ready for general use.** Watch this space, and hopefully there'll be more to
 > say soon.
 
-A Claude Code plugin for collaborating with your agent in HTML: Claude presents plans,
-write-ups, and work in flight as a web page rather than a wall of terminal text. Select
-any line to comment on it like a shared doc; your comment wakes the session, and Claude
-ships a revised version. It comments back the same way — in the margin, on the passage
+A Claude Code and Codex plugin for collaborating with your agent in HTML. The agent
+presents plans, write-ups, and work in flight as a web page rather than a wall of
+terminal text. Select any line to comment on it like a shared doc; your comment wakes
+the session, and the agent ships a revised version. It comments back the same way — in the margin, on the passage
 in question, rather than in the terminal. A page tracking work in progress keeps up with
-it: items go from planned to done as Claude works through them, and the browser follows
+it: items go from planned to done as the agent works through them, and the browser follows
 each new version on its own.
 
 ![colloquy demo](docs/demo.gif)
@@ -20,18 +20,27 @@ checkout.
 
 ## Install
 
+Claude Code:
+
 ```
 /plugin marketplace add max-sixty/colloquy
 /plugin install colloquy@colloquy
 ```
 
-That's it. No config, no accounts. It needs [`uv`](https://docs.astral.sh/uv/) on your
-PATH (`interact.py` is a `uv` script, its dependencies declared in a PEP 723 header) and
-a browser on the same machine as the session. Installing puts `colloquy` on the session's
-PATH too, which is how Claude drives a page.
+Codex:
 
-Then ask Claude for a page, or run `/colloquy [topic]`, which with no argument presents
-whatever the session is currently about.
+```
+codex plugin marketplace add max-sixty/colloquy
+codex plugin add colloquy@colloquy
+```
+
+No config or account is required. Colloquy needs
+[`uv`](https://docs.astral.sh/uv/) on `PATH` (`interact.py` declares its dependencies
+in a PEP 723 header) and a browser on the same machine as the session.
+
+Then ask the agent for a page. The explicit skill is `/colloquy [topic]` in Claude Code
+and `$colloquy [topic]` in Codex; with no argument it presents whatever the session is
+currently about.
 
 ## Examples
 
@@ -40,10 +49,10 @@ whatever the session is currently about.
 edit the examples, not it). Serve one against the shipped layer to try it:
 
 ```
-uv run skills/colloquy/scripts/interact.py page init /tmp/demo
+plugins/colloquy/bin/colloquy page init /tmp/demo
 cp examples/triage-board.html /tmp/demo/versions/v1.html
-uv run skills/colloquy/scripts/interact.py version publish /tmp/demo --version 1 --text "demo"
-uv run skills/colloquy/scripts/interact.py server run /tmp/demo
+plugins/colloquy/bin/colloquy version publish /tmp/demo --version 1 --text "demo"
+plugins/colloquy/bin/colloquy server run /tmp/demo
 ```
 
 ## Developing
@@ -70,8 +79,9 @@ uv run --with pytest --with click --with jsonschema --with tinycss2 --with playw
 
 ## Rebuilding the syntax bundle
 
-Code blocks are colored in the browser from `assets/vendor/highlight.esm.js`, which
-upstream doesn't ship in a form a page can import — so it is bundled here.
+Code blocks are colored in the browser from
+`plugins/colloquy/skills/colloquy/assets/vendor/highlight.esm.js`, which upstream
+doesn't ship in a form a page can import — so it is bundled here.
 `scripts/vendor-highlight.sh` rebuilds it, reading the language list out of the
 registry's `$languages.names` so the bundle can't offer a language the lint rejects. Add a
 language there, then rerun the script.
@@ -91,8 +101,8 @@ local files and a loopback port instead of a hosted service; one session present
 one reviewer instead of a fleet co-editing; an authored HTML page with diagrams instead
 of a markdown doc. The trade shows up in the plumbing: a hosted doc cannot invoke your
 agent, so Workbench ships a daemon layer (watchers, heartbeats, supervisors) to keep
-agents responsive, while colloquy runs inside Claude Code, where the harness re-invokes
-the session the moment a comment lands.
+agents responsive, while colloquy runs inside the agent host, which re-invokes the
+session the moment a comment lands.
 
 [html-effectiveness](https://github.com/anthropics/html-effectiveness) is a gallery of
 standalone HTML examples (code review, status reports, diagrams, small editing UIs)
