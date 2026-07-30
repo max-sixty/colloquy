@@ -69,7 +69,6 @@ colloquy version check <page> --render       # browser gate, once per page
 colloquy version publish <page> --version 1 --text "<changelog>"
 colloquy version export <page> -o <file>     # standalone HTML copy
 colloquy server run <page>                   # background task; prints the URL
-colloquy server stop <page>                  # stop the server
 colloquy review state <page> working "<detail>"  # or: waiting, idle
 colloquy review wait <page>                  # background task; exits on reviewer events
 colloquy review comment <page> --quote "<passage>" --text "…"
@@ -307,28 +306,33 @@ On wake:
    `version publish <page> --version 2 --text "<changelog>"`. Keep the changelog brief,
    though a decline's why can take a sentence or two. The browser follows the published
    version automatically.
-4. Return to `review state <page> waiting` and `review wait <page>`.
+4. Restart `review wait <page>`, under `review state <page> waiting` where the next move
+   is the reviewer's and `working` where it is yours.
 
 A `done` event is sign-off — it arrives only from a page declaring it (see the
-conventions). Run `review state <page> idle`, don't restart `review wait`, and carry the
-approval back into the main task. `review transcript` prints the whole review as
-Markdown when a PR description wants it, and `version export` writes the page itself as
-one file when that is what outlives the review. A review ending with record debt
-publishes one final honoring version first — the final version is the page that has to
-read right without the log, and `review transcript` lists what still lags on stderr. A
-comments-only page has no terminal event; when the discussion has served its purpose,
-set `review state <page> idle` yourself. Either way, run `server stop <page>` once the
-page won't be revisited.
+conventions). It approves the work rather than ending the page: carry the approval back
+into the main task, and where the approved work is yours to do, the page keeps up with
+it from here. So the page stays `working` under a live `review wait` — "skip that one"
+then reaches you mid-flight rather than at the end.
+
+`review state <page> idle` ends a page, and is the only thing that does: when the work
+it tracks is finished, or when a comments-only page's discussion has served its purpose
+— that page has no terminal event of its own. The server needs no stopping; it goes
+down with the session. A review ending with record debt publishes one final honoring
+version first, because the final version is the page that has to read right without the
+log; `review transcript` lists what still lags on stderr, and prints the whole review as
+Markdown when a PR description wants it. `version export` writes the page itself as one
+file when that is what outlives the review.
 
 Between turns a page is either watched or idle, and a `Stop` hook holds you to it:
-ending a turn with a page still `waiting` under no live `review wait`, or holding events
+ending a turn with a page not yet idle and no live `review wait`, or holding events
 you never picked up, is blocked and names the page. The invariant is what the reviewer
 is owed — from the browser, a page nobody is listening to looks exactly like a page
 whose reviewer simply hasn't commented yet, so without it they find out by asking. It
 covers the pages you run `server run` or `review wait` on, the two acts that put a
 reviewer on the other end, so a directory you only built or linted is outside it.
-`review state <page> idle` ends a review and refuses while events sit unread: pick them
-up first with `review wait`, which returns at once when events are already there.
+`review state <page> idle` refuses while events sit unread: pick them up first with
+`review wait`, which returns at once when events are already there.
 `review wait` also restarts a server that died under it and reports the restart on
 stderr; exit 2 means it couldn't, and the page stays down until `server run`.
 
