@@ -782,6 +782,103 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
     page.close()
 
 
+def test_covering_panel_keeps_toasts_on_screen_and_clear_of_the_footer(browser, serve):
+    """A covering panel has no beside-panel space for a toast: on a viewport no
+    wider than the sheet, the wide layout's panel-width offset puts the whole
+    message past the left edge. The toast stays inside that sheet instead, above
+    its persistent composer even when that composer grows under a live toast,
+    then returns beside it at the first width where the panel stops covering."""
+    page, _ = open_page(browser, serve(LONG_PAGE))
+    page.set_viewport_size({"width": 320, "height": 600})
+    page.locator("button[aria-expanded]").click()
+    page.locator(".cq-general textarea").fill("The unsent comment stays here.")
+
+    message = (
+        "Couldn't send this detailed comment to Claude — the complete draft "
+        "is still here and ready to retry."
+    )
+    page.evaluate(
+        """async message => {
+            const {toast} = await import("/colloquy.js");
+            toast(message);
+        }""",
+        message,
+    )
+    expect(page.locator(".cq-toast")).to_have_text(message)
+
+    def geometry():
+        return page.evaluate("""() => {
+            const rect = selector => {
+                const r = document.querySelector(selector).getBoundingClientRect();
+                return {left: r.left, top: r.top, right: r.right, bottom: r.bottom};
+            };
+            return {
+                width: innerWidth,
+                height: innerHeight,
+                panel: rect(".cq-panel"),
+                footer: rect(".cq-general"),
+                toast: rect(".cq-toast"),
+            };
+        }""")
+
+    narrow = geometry()
+    assert narrow["toast"]["left"] >= 17 and narrow["toast"]["right"] <= narrow["width"] - 17, (
+        f"the toast left the covering viewport: {narrow}"
+    )
+    assert narrow["toast"]["bottom"] <= narrow["footer"]["top"] - 17, (
+        f"the toast covered the panel's persistent composer: {narrow}"
+    )
+
+    page.set_viewport_size({"width": 721, "height": 600})
+    page.wait_for_function("""() => {
+        const toast = document.querySelector(".cq-toast").getBoundingClientRect();
+        const panel = document.querySelector(".cq-panel").getBoundingClientRect();
+        return Math.abs(toast.right - (panel.left - 18)) < 1
+            && Math.abs(toast.bottom - (innerHeight - 18)) < 1;
+    }""")
+
+    wide = geometry()
+    assert wide["toast"]["left"] >= 0, (
+        f"the long toast left the viewport beside the wide panel: {wide}"
+    )
+    assert abs(wide["toast"]["right"] - (wide["panel"]["left"] - 18)) < 1, (
+        f"the wide toast no longer sits beside the panel: {wide}"
+    )
+    assert abs(wide["toast"]["bottom"] - (wide["height"] - 18)) < 1, (
+        f"the wide toast no longer sits in its original bottom corner: {wide}"
+    )
+
+    page.set_viewport_size({"width": 320, "height": 600})
+    page.wait_for_function("""() => {
+        const toast = document.querySelector(".cq-toast").getBoundingClientRect();
+        const footer = document.querySelector(".cq-general").getBoundingClientRect();
+        return toast.left >= 17 && toast.right <= innerWidth - 17
+            && toast.bottom <= footer.top - 17;
+    }""")
+    before_growth = geometry()
+    page.locator(".cq-general textarea").fill(
+        "The whole unsent comment stays here.\n" * 4
+    )
+    page.wait_for_function(
+        """beforeTop => {
+            const toast = document.querySelector(".cq-toast").getBoundingClientRect();
+            const footer = document.querySelector(".cq-general").getBoundingClientRect();
+            return footer.top < beforeTop - 1
+                && toast.bottom <= footer.top - 17;
+        }""",
+        arg=before_growth["footer"]["top"],
+    )
+    expanded = geometry()
+    assert expanded["footer"]["top"] < before_growth["footer"]["top"] - 1, (
+        f"the composer did not grow under the already-visible toast: "
+        f"{before_growth=}, {expanded=}"
+    )
+    assert expanded["toast"]["bottom"] <= expanded["footer"]["top"] - 17, (
+        f"the growing composer rose through an already-visible toast: {expanded}"
+    )
+    page.close()
+
+
 def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
     """The chrome's private rules live in one @scope block rooted at the runtime's
     own container, so whatever name a widget or a page coins, it matches none of
@@ -1256,7 +1353,7 @@ def test_a_board_says_which_column_each_card_is_in(browser, serve):
     generated content, so the name reaching the tree once (as the list's) rather
     than twice depends on its alt text. Then a card moves, and the assertion is
     the second snapshot — a name set where the move happens goes stale on
-    whichever path forgets to restate it, and there are four such paths."""
+    whichever path forgets to restate its location or durable pending state."""
     page, errors = open_page(browser, serve(BOARD_PAGE))
     board = page.locator("#sprint")
 
@@ -1277,6 +1374,13 @@ def test_a_board_says_which_column_each_card_is_in(browser, serve):
     page.keyboard.press("ArrowRight")
     page.keyboard.press("Enter")
     page.wait_for_selector("#col-done #card-baffle")
+    expect(
+        board.get_by_role(
+            "button",
+            name="Move: Squirrel baffle — Done — awaiting next version",
+            exact=True,
+        )
+    ).to_be_visible()
 
     assert board.aria_snapshot() == (
         '- list "Todo":\n'
@@ -1286,7 +1390,7 @@ def test_a_board_says_which_column_each_card_is_in(browser, serve):
         '- list "Done":\n'
         "  - listitem:\n"
         "    - strong: Squirrel baffle\n"
-        "    - 'button \"Move: Squirrel baffle — Done\"': ⠿"
+        "    - 'button \"Move: Squirrel baffle — Done — awaiting next version\"': ⠿"
     )
     assert errors == []
     page.close()
@@ -1782,13 +1886,13 @@ def test_render_reports_markup_the_log_replays_over(browser, serve):
 
 
 def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
-    """A move outlives its toast: the card the reviewer moved stays marked as
-    recorded-but-unwritten, in the tab that moved it and in a fresh replay
-    alike, because the runtime compares the page's state against the version's
-    own snapshot rather than remembering who wrote what. The card the move
-    displaced stays unmarked — the log named one card, not its neighbours. The
-    honoring version says the state itself, so on it the disagreement and the
-    mark are gone."""
+    """A move outlives its toast: the card the reviewer moved stays visibly
+    marked as recorded-but-unwritten and its grip says so, in the tab that moved
+    it and in a fresh replay alike, because the runtime compares the page's state
+    against the version's own snapshot rather than remembering who wrote what.
+    The card the move displaced stays unmarked — the log named one card, not its
+    neighbours. The honoring version says the state itself, so on it the
+    disagreement and both renderings are gone."""
     url = serve(REPLAYED_PAGE)
     page, errors = open_page(browser, url)
 
@@ -1800,10 +1904,25 @@ def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
     page.keyboard.press("Enter")
     expect(page.locator("#card-importer")).to_have_attribute("data-cq-pending", "1")
     expect(page.locator("#card-notes")).not_to_have_attribute("data-cq-pending", "1")
+    expect(
+        page.get_by_role(
+            "button",
+            name="Move: Wire the importer — Done — awaiting next version",
+            exact=True,
+        )
+    ).to_be_visible()
 
-    # A fresh tab reads the same fact from replay alone, and paints it.
+    # A fresh tab reads the same fact from replay alone, and paints both its
+    # visible outline and its durable spoken state.
     second, second_errors = open_page(browser, url)
     expect(second.locator("#card-importer")).to_have_attribute("data-cq-pending", "1")
+    expect(
+        second.get_by_role(
+            "button",
+            name="Move: Wire the importer — Done — awaiting next version",
+            exact=True,
+        )
+    ).to_be_visible()
     assert (
         second.locator("#card-importer").evaluate("el => getComputedStyle(el).outlineStyle")
         == "solid"
@@ -1822,6 +1941,11 @@ def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
     # Absence only counts once replay has decided every action.
     third.wait_for_function("() => document.body.dataset.cqApplied === '1'")
     expect(third.locator("#card-importer")).not_to_have_attribute("data-cq-pending", "1")
+    expect(
+        third.get_by_role(
+            "button", name="Move: Wire the importer — Done", exact=True
+        )
+    ).to_be_visible()
 
     assert errors == [] and second_errors == [] and third_errors == []
     for tab in (page, second, third):

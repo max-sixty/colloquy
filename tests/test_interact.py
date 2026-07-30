@@ -138,6 +138,58 @@ def test_init_project_layer_wins(tmp_path, monkeypatch):
     assert (d / "registry.json").is_file()
 
 
+def test_init_merges_registry_layers_by_complete_entry(tmp_path, monkeypatch):
+    """A custom widget adds one entry; it need not fork the shipped vocabulary.
+
+    Precedence still belongs to the later layer, but at the entry boundary: the
+    project entry replaces the user's whole schema rather than inheriting stale
+    fields from it.
+    """
+    user = tmp_path / "config" / "colloquy"
+    project = tmp_path / "project"
+    project_layer = project / ".claude" / "colloquy"
+    user.mkdir(parents=True)
+    project_layer.mkdir(parents=True)
+    user_entry = {
+        "description": "user shape",
+        "type": "object",
+        "properties": {"user-only": {"type": "string"}},
+        "additionalProperties": False,
+        "x-content": "none",
+        "x-upgrade": False,
+    }
+    project_entry = {
+        "description": "project shape",
+        "type": "object",
+        "properties": {"project-only": {"type": "string"}},
+        "additionalProperties": False,
+        "x-content": "none",
+        "x-upgrade": False,
+    }
+    project_only = {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+        "x-content": "none",
+        "x-upgrade": False,
+    }
+    (user / "registry.json").write_text(json.dumps({"cq-local": user_entry}))
+    (project_layer / "registry.json").write_text(
+        json.dumps({"cq-local": project_entry, "cq-project-only": project_only})
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.chdir(project)
+
+    page = tmp_path / "page"
+    result = CliRunner().invoke(interact.cli, ["init", str(page)])
+
+    assert result.exit_code == 0, result.output
+    registry = json.loads((page / "registry.json").read_text())
+    assert registry["cq-local"] == project_entry
+    assert registry["cq-project-only"] == project_only
+    assert "cq-options" in registry and "$events" in registry
+
+
 def test_revendoring_removes_files_the_layer_retired(page_dir):
     stale = page_dir / "widgets" / "cq-retired.js"
     stale.write_text("// no longer in any layer")
@@ -171,6 +223,26 @@ def test_check_rejects_widget_violations(page_dir):
     assert "'id' is a required property" in out
     assert "does not match" in out  # id pattern
     assert "its body is data" in out
+
+
+def test_check_rejects_duplicate_attributes_the_browser_reads_differently(page_dir):
+    """A file reading cannot silently choose another id than the live DOM.
+
+    HTML keeps the first duplicate attribute, while HTMLParser reports both and
+    ``dict(attrs)`` keeps the last. Accepting this would let the action gate map
+    a stateful widget under an id its browser can never send.
+    """
+    registry = json.loads((page_dir / "registry.json").read_text())
+    board = registry["cq-board"]["x-example"].replace(
+        'id="feeder-board"', 'id="browser-board" id="file-board"'
+    )
+    version = page_dir / "versions" / "v1.html"
+    version.write_text(version.read_text().replace("</section>", board + "\n</section>"))
+
+    result = check(page_dir)
+
+    assert result.exit_code == 1
+    assert "duplicate attribute" in result.output
 
 
 def test_check_rejects_a_language_nothing_will_color(page_dir):
@@ -865,6 +937,15 @@ def test_init_refuses_a_log_the_incoming_layer_no_longer_speaks(page_dir):
     re-vendoring over one is how recorded decisions fall silent — annabels-drafts
     holds fifteen `decide` events today's widgets would drop on the first reload.
     The re-vendor is refused rather than offering a way to discard that history."""
+    # This models a page made under an older registry where cq-draft declared
+    # `decide`: the tag and widget id survive, but the incoming verb does not.
+    version = page_dir / "versions" / "v1.html"
+    version.write_text(
+        version.read_text().replace(
+            "<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">A decision.</cq-draft>'
+        )
+    )
+    publish(page_dir)
     interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
                                      "widget": "d1", "action": "decide",
                                      "detail": {"decision": "approved"}})
@@ -872,6 +953,87 @@ def test_init_refuses_a_log_the_incoming_layer_no_longer_speaks(page_dir):
     assert result.exit_code != 0
     assert "no longer speaks" in result.output
     assert "decide" in result.output
+
+
+def test_init_tracks_logged_verbs_by_the_widget_that_declared_them(page_dir):
+    """Another tag using the same verb cannot keep a retired contract alive."""
+    registry = json.loads((page_dir / "registry.json").read_text())
+    board = registry["cq-board"]["x-example"]
+    version = page_dir / "versions" / "v1.html"
+    version.write_text(version.read_text().replace("</section>", board + "\n</section>"))
+    publish(page_dir)
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "feeder-board",
+            "action": "move",
+            "detail": {"card": "card-baffle", "to": "col-doing", "index": 0},
+        },
+    )
+
+    move_spec = registry["cq-board"]["x-state"]["move"]
+    board_entry = registry["cq-board"]
+    board_entry.pop("x-state")
+    # Reusing the generic verb on another widget leaves the global verb set
+    # unchanged, but cannot make an old cq-board action meaningful there.
+    registry["cq-draft"]["x-state"]["move"] = move_spec
+    overlay = page_dir.parent / ".claude" / "colloquy"
+    overlay.mkdir(parents=True)
+    (overlay / "registry.json").write_text(
+        json.dumps(
+            {
+                "cq-board": board_entry,
+                "cq-draft": registry["cq-draft"],
+            }
+        )
+    )
+
+    result = CliRunner().invoke(interact.cli, ["init", str(page_dir)])
+
+    assert result.exit_code != 0
+    assert "no longer speaks" in result.output
+    assert "cq-board" in result.output and "move" in result.output
+
+
+def test_init_refuses_an_incoming_detail_contract_that_rejects_logged_actions(
+    page_dir,
+):
+    """Keeping a verb's spelling is not enough if its payload no longer replays."""
+    registry = json.loads((page_dir / "registry.json").read_text())
+    board = registry["cq-board"]["x-example"]
+    version = page_dir / "versions" / "v1.html"
+    version.write_text(version.read_text().replace("</section>", board + "\n</section>"))
+    publish(page_dir)
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "feeder-board",
+            "action": "move",
+            "detail": {"card": "card-baffle", "to": "col-doing", "index": 0},
+        },
+    )
+
+    registry["cq-board"]["x-state"]["move"]["detail"]["properties"]["index"][
+        "minimum"
+    ] = 1
+    overlay = page_dir.parent / ".claude" / "colloquy"
+    overlay.mkdir(parents=True)
+    (overlay / "registry.json").write_text(
+        json.dumps({"cq-board": registry["cq-board"]})
+    )
+
+    result = CliRunner().invoke(interact.cli, ["init", str(page_dir)])
+
+    assert result.exit_code != 0
+    assert "no longer speaks" in result.output
+    assert "cq-board" in result.output and "move" in result.output
+    assert "detail" in result.output
 
 
 def test_check_refuses_a_malformed_registry(page_dir):
@@ -1099,9 +1261,9 @@ def test_retirement_verbs_fold_by_the_parent_widget(page_dir):
 def test_init_requires_the_complete_registry_contract(page_dir, tmp_path, section):
     overlay = tmp_path / ".claude" / "colloquy"
     overlay.mkdir(parents=True)
-    reg = json.loads((page_dir / "registry.json").read_text())
-    del reg[section]
-    (overlay / "registry.json").write_text(json.dumps(reg))
+    # Omission inherits the lower layer; supplying an entry replaces it whole,
+    # so this incomplete replacement must fail merged-registry validation.
+    (overlay / "registry.json").write_text(json.dumps({section: {}}))
 
     result = CliRunner().invoke(interact.cli, ["init", str(page_dir)])
     assert result.exit_code != 0
@@ -1329,6 +1491,13 @@ def fetch(url, data=None):
 
 
 def test_server_round_trip(server, page_dir):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    version = page_dir / "versions" / "v1.html"
+    version.write_text(
+        version.read_text().replace(
+            "</section>", registry["cq-board"]["x-example"] + "\n</section>"
+        )
+    )
     # Unnoted version: nothing published yet.
     status, _ = fetch(f"{server}/")
     assert status == 404
@@ -1418,6 +1587,170 @@ def test_server_round_trip(server, page_dir):
         assert status == 400, bad
 
 
+def test_server_validates_an_action_against_its_version_and_widget(server, page_dir):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    board = registry["cq-board"]["x-example"]
+    v1 = page_dir / "versions" / "v1.html"
+    v1.write_text(v1.read_text().replace("</section>", board + "\n</section>"))
+    publish(page_dir, version=1)
+    (page_dir / "versions" / "v2.html").write_text(PAGE)
+    publish(page_dir, version=2)
+
+    invalid = [
+        (
+            {
+                "kind": "action",
+                "version": 2,
+                "widget": "feeder-board",
+                "action": "move",
+                "detail": {"card": "card-baffle", "to": "col-doing", "index": 0},
+            },
+            "unknown action widget",
+        ),
+        (
+            {
+                "kind": "action",
+                "version": 1,
+                "widget": "flow",
+                "action": "move",
+                "detail": {"card": "card-baffle", "to": "col-doing", "index": 0},
+            },
+            "<cq-diagram> does not declare action verb",
+        ),
+        (
+            {
+                "kind": "action",
+                "version": 1,
+                "widget": "feeder-board",
+                "action": "move",
+                "detail": {"card": "card-baffle", "to": "col-doing", "index": -1},
+            },
+            "detail is invalid",
+        ),
+    ]
+    before = len(interact.read_events(page_dir))
+    for event, message in invalid:
+        status, body = fetch(f"{server}/api/event", data=json.dumps(event).encode())
+        assert status == 400, event
+        assert message in json.loads(body)["error"]
+    assert len(interact.read_events(page_dir)) == before
+
+    # The page may have advanced since the gesture, so resolve the sender from
+    # the action's own published version rather than the newest document.
+    valid = {
+        "kind": "action",
+        "version": 1,
+        "widget": "feeder-board",
+        "action": "move",
+        "detail": {"card": "card-baffle", "to": "col-doing", "index": 0},
+    }
+    assert fetch(f"{server}/api/event", data=json.dumps(valid).encode())[0] == 200
+
+
+def test_server_resolves_actions_from_claude_thread_widgets(server, page_dir):
+    publish(page_dir)
+    interact.append_event(
+        page_dir,
+        {"kind": "comment", "id": "c1", "author": "user", "version": 1, "text": "pick one"},
+    )
+    reply = CliRunner().invoke(
+        interact.cli,
+        [
+            "reply",
+            str(page_dir),
+            "--to",
+            "c1",
+            "--text",
+            '<cq-options id="thread-pick" choose>'
+            '<cq-option id="thread-a"><strong>A</strong></cq-option>'
+            "</cq-options>",
+        ],
+    )
+    assert reply.exit_code == 0, reply.output
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "reply",
+            "author": "user",
+            "parent": "c1",
+            "version": 1,
+            "text": '<cq-options id="quoted-pick" choose></cq-options>',
+        },
+    )
+
+    choose = {
+        "kind": "action",
+        "version": 1,
+        "action": "choose",
+        "detail": {"option": "thread-a"},
+    }
+    status, _ = fetch(
+        f"{server}/api/event",
+        data=json.dumps({**choose, "widget": "thread-pick"}).encode(),
+    )
+    assert status == 200
+    status, body = fetch(
+        f"{server}/api/event",
+        data=json.dumps({**choose, "widget": "quoted-pick"}).encode(),
+    )
+    assert status == 400
+    assert "unknown action widget" in json.loads(body)["error"]
+
+
+def test_server_rejects_an_action_from_a_widget_removed_by_revendoring(
+    server, page_dir
+):
+    """An open old tab may outlive the custom layer that upgraded its widget."""
+    shipped = json.loads((page_dir / "registry.json").read_text())
+    overlay = page_dir.parent / ".claude" / "colloquy"
+    (overlay / "widgets").mkdir(parents=True)
+    (overlay / "registry.json").write_text(
+        json.dumps({"cq-local-draft": shipped["cq-draft"]})
+    )
+    (overlay / "widgets" / "cq-local-draft.js").write_text(
+        "customElements.define('cq-local-draft', class extends HTMLElement {});"
+    )
+    assert (
+        CliRunner().invoke(interact.cli, ["init", str(page_dir)]).exit_code == 0
+    )
+    version = page_dir / "versions" / "v1.html"
+    version.write_text(
+        version.read_text().replace(
+            "<h2>Plan</h2>",
+            '<h2>Plan</h2><cq-local-draft id="local-draft">Words.</cq-local-draft>',
+        )
+    )
+    noted = CliRunner().invoke(
+        interact.cli,
+        ["note", str(page_dir), "--version", "1", "--text", "custom widget"],
+    )
+    assert noted.exit_code == 0, noted.output
+
+    # The explicit re-vendor is allowed because no recorded action rests on this
+    # tag yet. A browser that loaded it before the re-vendor can still send one.
+    (overlay / "registry.json").unlink()
+    (overlay / "widgets" / "cq-local-draft.js").unlink()
+    assert (
+        CliRunner().invoke(interact.cli, ["init", str(page_dir)]).exit_code == 0
+    )
+
+    status, body = fetch(
+        f"{server}/api/event",
+        data=json.dumps(
+            {
+                "kind": "action",
+                "version": 1,
+                "widget": "local-draft",
+                "action": "edit",
+                "detail": {"text": "New words."},
+            }
+        ).encode(),
+    )
+
+    assert status == 400
+    assert "no longer declares" in json.loads(body)["error"]
+
+
 def test_concurrent_posts_never_tear_the_log(server, page_dir):
     CliRunner().invoke(interact.cli, ["note", str(page_dir), "--version", "1", "--text", "cut"])
 
@@ -1444,6 +1777,7 @@ def test_concurrent_posts_never_tear_the_log(server, page_dir):
 def test_wait_delivers_new_user_events_and_flips_status(page_dir, capsys):
     # A live server.json (our own pid) satisfies wait's liveness probe.
     interact.write_json(page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"})
+    interact.cmd_status(page_dir, "waiting", "")
     interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hi"})
     interact.append_event(
         page_dir,
@@ -1469,6 +1803,20 @@ def test_wait_delivers_new_user_events_and_flips_status(page_dir, capsys):
     assert (status["state"], status["handoff"]) == ("working", True)
     interact.cmd_status(page_dir, "working", "revising the plan")
     assert "handoff" not in interact.read_json(page_dir / "status.json")
+
+
+def test_wait_preserves_a_working_status_on_mid_work_delivery(page_dir, capsys):
+    interact.write_json(page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"})
+    interact.cmd_status(page_dir, "working", "running the browser suite")
+    status_path = page_dir / "status.json"
+    before = status_path.read_bytes()
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "one more thing"}
+    )
+
+    assert interact.cmd_wait(page_dir) == 0
+    assert [json.loads(line)["id"] for line in capsys.readouterr().out.splitlines()] == ["c1"]
+    assert status_path.read_bytes() == before
 
 
 def test_wait_restarts_a_server_that_died_under_it(page_dir, capsys):
@@ -1799,6 +2147,19 @@ def test_reply_validates_widget_markup(page_dir):
     )
     assert bad.exit_code != 0
     assert "its body is data" in bad.output
+    duplicate = CliRunner().invoke(
+        interact.cli,
+        [
+            "reply",
+            str(page_dir),
+            "--to",
+            "c1",
+            "--text",
+            '<cq-diagram id="browser-id" id="file-id">graph LR\nA --> B</cq-diagram>',
+        ],
+    )
+    assert duplicate.exit_code != 0
+    assert "duplicate attribute" in duplicate.output
     good = CliRunner().invoke(
         interact.cli,
         ["reply", str(page_dir), "--to", "c1", "--text", 'See:\n<cq-diagram id="f">\ngraph LR\n  A --> B\n</cq-diagram>'],

@@ -11,30 +11,12 @@ stands alone.
       branch), the vendored layer and event log would need gitignoring, and
       repo-less pages (personal-admin topics) still need the global home — so it
       would be a second convention beside it, not a replacement.
-- [ ] Additive registry overlay: adding one widget means forking the whole
-      registry.json today — init's overlay replaces the file, and the fork goes
-      stale as the shipped vocabulary evolves. Merge overlay entries by tag
-      instead. The theme needs no counterpart: a page-local `<style>` block
-      already customizes tokens and idioms without forking theme.css.
 - [ ] A server outlives a session killed hard enough to skip its `SessionEnd` hook,
       so a page's port stays held by a process nothing will revisit. The banner
       already reports the page as orphaned (the owning pid is gone), so this costs a
       stray process rather than a misled reviewer. Closing it properly means deciding
       whether a server may outlive the session that started it at all — a fresh
       session `serve`-ing an old page is the case that says yes.
-- [ ] A comment delivered mid-work reads as a dropped pickup. `wait` stamps `handoff` on
-      the status as it delivers, and the banner gives that mark a two-minute rope rather
-      than the working state's fifteen, because Claude's first act on waking is its own
-      `status` — a handoff mark still standing minutes later is a pickup that never
-      happened. The skill now has Claude keep `wait` running while it works, so a
-      delivery can land in the middle of a step with no wake behind it and nothing to
-      refresh the status until that step ends; two minutes on, the banner tells the
-      reviewer "Claude last checked in 3 minutes ago. 1 comment waiting. Nudge it in the
-      terminal" — wrong about what is happening, and inviting an interruption of the work
-      it is wrong about. The mark measures the gap between delivery and pickup, which is
-      only a gap when the delivery was the wake, so `wait` could leave a page it found
-      `working` as it found it. The cost is the other direction: a pickup genuinely
-      dropped mid-work would then take fifteen minutes to surface instead of two.
 - [ ] Opt-in tunnel for remote sessions (`cloudflared`/`tailscale` when present),
       gated behind an auth token added to the server first.
 - [ ] A written anchor can't quote across a widget's parts, or reach a label a module
@@ -75,20 +57,12 @@ stands alone.
       write the same text under the same rules is false by exactly that margin. The only
       alignment on offer is the browser stopping at fences too, since the file cannot
       learn to read through one; the cost is context the browser could legitimately use.
-- [ ] A move's awaiting mark is visual only: `data-cq-awaiting` outlines the card, and a
-      screen reader hears the move announced when it is made but nothing durable after.
-      The grip's label (the board module's names pass) is the natural place to say it,
-      and the board module is that label's one writer.
 - [ ] The hidden line that tells a screen reader a block carries a comment can't be
       followed to the thread it counts: whoever hears "2 comments" goes to the panel to
       find which passage each one is on. Making it followable means a focusable element
       inside the author's prose, which is either a visible affordance on focus or an
       invisible tab stop, and neither is obviously worth it while j/k walks every thread
       with its quote.
-- [ ] The toast steps aside for the panel (`right:` panel width + 18px), which beside a
-      covering sheet on a very narrow window puts it off-canvas. The covering layout
-      wants its own answer here, as it got for scrolling, rather than the wide
-      layout's offset.
 - [ ] Re-record `docs/demo.gif`: its step 2 is a select-and-comment, which now lights
       the passage while the composer is open and no longer repeats it inside the box, so
       the hero image shows the old behavior twice over.
@@ -149,12 +123,6 @@ stands alone.
       unmarked by the pending pass and the diff's state half, and outside the
       restatement gate. A stated degradation rather than a bug; closing it wants a
       per-column sequence facet with its own composition rules.
-- [ ] The x-state detail schemas document the payload half of the log's
-      forever-contract but nothing enforces them: `do_POST` validates an action's
-      shape generically, not against the sending widget's declared schema. The
-      structural fix is validation at the POST edge — the server would need the
-      version's markup to map widget id → tag, which is why it is here rather
-      than done.
 - [ ] Widget-aware suggestions: `cq-suggestion` proposes markup, so a change to a
       widget's own state (a card moved between columns, an option marked `chosen`)
       has no form yet — proposing it means re-stating the whole widget in both

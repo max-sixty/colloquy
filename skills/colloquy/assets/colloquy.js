@@ -688,8 +688,9 @@ style.textContent = `
     .cq-msg p.cq-suggest-body { background: var(--add-tint); padding: 4px 8px; border-radius: 6px; }
     .cq-composer textarea { width: 100%; min-height: 56px; }
     .cq-composer-row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
-    .cq-toast { position: fixed; bottom: 18px; right: 18px; z-index: 9200; background: var(--ink); color: var(--paper);
-      padding: 9px 14px; border-radius: var(--r); opacity: 0; transition: opacity .25s; pointer-events: none; }
+    .cq-toast { position: fixed; bottom: 18px; right: 18px; z-index: 9200; max-width: calc(100vw - 36px);
+      overflow-wrap: anywhere; background: var(--ink); color: var(--paper); padding: 9px 14px;
+      border-radius: var(--r); opacity: 0; transition: opacity .25s; pointer-events: none; }
     .cq-toast.show { opacity: .95; }
     .cq-toast.clickable { pointer-events: auto; cursor: pointer; }
     .cq-live { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -861,9 +862,11 @@ function syncLayout() {
   const covering = panelOpen && innerWidth <= 720;
   document.body.style.marginRight = panelOpen && !covering ? panel.offsetWidth + "px" : "";
   document.body.style.overflowY = covering ? "hidden" : "";
-  // The toast lives in the same corner as the panel's Send button; step it aside so a
-  // "couldn't send" message never covers the button it's talking about.
-  toastEl.style.right = (panelOpen ? panel.offsetWidth + 18 : 18) + "px";
+  // The toast lives in the same corner as the panel's Send button. Beside a wide
+  // panel it steps left; over a covering sheet it stays inside the viewport and
+  // rises above the whole composer, including a textarea grown by an unsent draft.
+  toastEl.style.right = (panelOpen && !covering ? panel.offsetWidth + 18 : 18) + "px";
+  toastEl.style.bottom = (covering ? generalRow.offsetHeight + 18 : 18) + "px";
 }
 function setPanel(open) {
   panelOpen = open;
@@ -880,11 +883,14 @@ function setPanel(open) {
 }
 toggleBtn.onclick = () => setPanel(!panelOpen);
 addEventListener("resize", syncLayout);
+// field-sizing and every other rendered-size change feed the one geometry writer.
+new ResizeObserver(syncLayout).observe(generalRow);
 
 let toastTimer = 0;
 function showToast(msg, onClick) {
   announce(msg);
   toastEl.textContent = msg;
+  syncLayout();
   toastEl.onclick = onClick || null;
   toastEl.classList.add("show");
   toastEl.classList.toggle("clickable", Boolean(onClick));

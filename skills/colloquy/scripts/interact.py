@@ -34,8 +34,8 @@ A page directory holds:
                          screenshot share the one file rather than a copy each
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
     status.json          Claude's declared state: {"state": working|waiting|idle, "detail", "ts"};
-                         `wait` writes it working with "handoff": true when it delivers events,
-                         covering the gap until Claude's own `status` lands
+                         when delivery wakes a non-working page, `wait` writes it working
+                         with "handoff": true until Claude's own `status` lands
     heartbeat.json       watcher liveness, bumped by `wait` while it runs
     cursor.json          seq of the last event delivered to Claude, written by `wait` on exit
     server.json          {"port", "pid", "url"} for the running server
@@ -47,10 +47,12 @@ say, so a comment can sit unread with the page still reading "Claude is
 working". The directory therefore also carries what it can prove — a heartbeat
 only a live `wait` bumps, the delivery cursor, and the owning session's pid —
 and `/api/state` ships those beside the claim, so the banner can say when the
-claim has outlived them. `wait` marks the status it writes on delivery
-"handoff", which dates it: Claude's first act on waking is its own `status`, so
-the mark surviving is a dropped pickup rather than a long turn, and the banner
-gives it a much shorter rope.
+claim has outlived them. When delivery wakes a non-working page, `wait` marks
+the status it writes "handoff", which dates it: Claude's first act on waking is
+its own `status`, so the mark surviving is a dropped pickup rather than a long
+turn, and the banner gives it a much shorter rope. A delivery that lands while
+Claude is already working leaves that claim untouched; there is no pickup gap
+to date.
 
 The `hook` command closes the same gap from the agent's side. Registered on
 Stop, UserPromptSubmit and SessionEnd, it refuses to let a turn end with one of
@@ -63,19 +65,21 @@ events are the one thing `status idle` can't close over: idling is how a review
 ends, and a review can't end on comments nobody read.
 
 `init` vendors the runtime, theme, registry, widgets, and vendor assets into the
-page directory, overlaying per file by precedence: colloquy's shipped defaults,
-then the user layer (~/.config/colloquy/), then the project layer
-(./.claude/colloquy/). The page directory itself lives wherever the caller says
-— conventionally ~/.local/state/colloquy/pages/<slug>/ — and is self-contained,
+page directory, overlaying by precedence: colloquy's shipped defaults, then the
+user layer (~/.config/colloquy/), then the project layer
+(./.claude/colloquy/). Files replace files; registry entries merge by top-level
+name, with a later layer replacing one complete entry rather than deep-merging
+its schema. The page directory itself lives wherever the caller says —
+conventionally ~/.local/state/colloquy/pages/<slug>/ — and is self-contained,
 so an approved version can't change under its reviewer; re-running `init` is the
 explicit re-vendor, noted in the next version's changelog.
 
-The registry drives four consumers — the JS runtime (which tags upgrade), this
-file's `check` and thread-markup validation, the passage reader `comment` anchors
-through, and the `catalog` the agent reads. Each
-entry is JSON Schema over the instance built from the element's attributes
-(values as strings, flag attributes as True). What JSON
-Schema has no vocabulary for rides in x- keywords:
+The registry is shared by the JS runtime, the POST and re-vendor action gates,
+this file's `check` and thread-markup validation, the passage reader `comment`
+anchors through, and the `catalog` the agent reads. Each entry is JSON Schema
+over the instance built from the element's attributes (values as strings, flag
+attributes as True). What JSON Schema has no vocabulary for rides in the custom
+keywords below:
     x-parent    the tag this element must be a direct child of
     x-content   the content model: "prose" (flow content, widgets welcome),
                 "items" (element children only, no loose text), "data" (a text
@@ -100,9 +104,9 @@ Schema has no vocabulary for rides in x- keywords:
                 unit, and the record form its state takes in markup. Every
                 applyAction is absolute, so the reviewer's standing state is a
                 fold — the last surviving action per unit — and one declaration
-                drives check's state gate, the record-lag report, the runtime's
-                pending mark, and the diff's state half (see $state in the
-                registry).
+                drives the POST and re-vendor contract gates, check's state gate,
+                the record-lag report, the runtime's pending mark, and the diff's
+                state half (see $state in the registry).
     x-example   one authored example, printed by `catalog`
 
 Event kinds: comment (optional anchor {section, quote, and the neighbouring
@@ -717,6 +721,14 @@ class Handler(BaseHTTPRequestHandler):
                     400,
                 )
                 return
+        if kind == "action":
+            registry = load_registry(self.page_dir)
+            if registry is None:
+                self._json({"error": "the page has no registry.json"}, 400)
+                return
+            if error := action_contract_error(self.page_dir, event, events, registry):
+                self._json({"error": error}, 400)
+                return
         # A parent names a message in a thread, the same rule `reply` holds Claude
         # to. Enforced here so a walk up the log always terminates at a comment.
         if "parent" in event and event["parent"] not in {
@@ -745,14 +757,16 @@ def layer_dirs() -> list:
     """Widget-layer sources, lowest precedence first: colloquy's shipped defaults,
     the user layer, the project layer (resolved against the working directory).
     Each mirrors the assets layout: theme.css/registry.json/colloquy.js at the
-    top, modules in widgets/, third-party files in vendor/."""
+    top, modules in widgets/, third-party files in vendor/. Registry files are
+    additive by top-level entry; every other file replaces by path."""
     return [ASSETS, config_home(), Path.cwd() / ".claude" / "colloquy"]
 
 
 def cmd_init(page_dir: Path) -> None:
     # Re-vendoring is the one moment a page's vocabulary changes hands, so it is
-    # where drift has to be caught: an applyAction ignores a verb it doesn't
-    # know, silently, on the first reload — the lost-decision bug reintroduced
+    # where drift has to be caught: a tag or verb the new layer omits, or a
+    # detail schema that no longer accepts an old payload, makes a recorded
+    # action foreign on the first reload — the lost-decision bug reintroduced
     # through vocabulary drift instead of version-scoping.
     layers = [
         layer
@@ -761,7 +775,7 @@ def cmd_init(page_dir: Path) -> None:
     ]
     incoming = incoming_registry(layers)
     events = read_events(page_dir)
-    gaps = vocabulary_gaps(events, incoming)
+    gaps = vocabulary_gaps(page_dir, events, incoming)
     if gaps:
         sys.exit(
             "this page's log holds vocabulary the incoming layer no longer speaks:\n"
@@ -773,6 +787,9 @@ def cmd_init(page_dir: Path) -> None:
     for stray in page_dir.glob("*.tmp"):  # a killed writer's write_json leftovers
         stray.unlink()
     for name in VENDORED_FILES:
+        if name == "registry.json":
+            write_json(page_dir / name, incoming)
+            continue
         source = next((layer / name for layer in reversed(layers) if (layer / name).is_file()), None)
         if source:
             (page_dir / name).write_bytes(source.read_bytes())
@@ -891,16 +908,21 @@ def cmd_wait(page_dir: Path) -> int:
                     print(json.dumps(event, ensure_ascii=False), flush=True)
                 # cursor after print: a kill mid-wait redelivers rather than drops
                 write_json(page_dir / "cursor.json", {"seq": events[-1]["seq"]})
-                # flip status here, not in Claude's next turn: the handoff gap
-                # between this exit and Claude's pickup must not show "waiting".
-                # handoff=True dates the claim — Claude's own `status` clears it,
-                # so this detail still standing minutes later means the pickup
-                # never happened, and the banner says so.
-                # "update", not "comment": the batch may mix comments and widget actions
-                n = len(new_user)
-                cmd_status(
-                    page_dir, "working", f"picking up {n} update{'s' if n != 1 else ''}", handoff=True
-                )
+                status = read_json(page_dir / "status.json") or {"state": "idle"}
+                if status["state"] != "working":
+                    # Flip before Claude's next turn: the handoff gap between this
+                    # exit and pickup must not show "waiting". handoff=True dates
+                    # that claim; Claude's own `status` clears it. Mid-work delivery
+                    # has no pickup gap, so leave the existing claim byte-for-byte
+                    # untouched instead of shortening its freshness window.
+                    # "update", not "comment": a batch may mix comments and actions.
+                    n = len(new_user)
+                    cmd_status(
+                        page_dir,
+                        "working",
+                        f"picking up {n} update{'s' if n != 1 else ''}",
+                        handoff=True,
+                    )
                 return 0
             if time.time() > server_check_at:
                 server_check_at = time.time() + 5
@@ -948,6 +970,62 @@ def thread_widget_ids(events: list) -> set:
             p.feed(e["text"])
             ids |= p.ids
     return ids
+
+
+def action_widget_tags(page_dir: Path, version: int, events: list) -> dict:
+    """Widget id → tag in the document that sent an action.
+
+    Page widgets come from the action's own published version, not whichever
+    version is newest now. Claude-authored thread widgets are the other live
+    document the runtime renders; user messages quote markup as text and do not
+    join this map. Both readings use _StructParser, the same structure reading
+    `check` and thread-markup validation already trust.
+    """
+    sources = [version_path(page_dir, version).read_text(encoding="utf-8")]
+    sources.extend(
+        e["text"]
+        for e in events
+        if e["kind"] in ("comment", "reply")
+        and e["author"] == "claude"
+        and "<cq-" in e["text"]
+    )
+    widgets = {}
+    for source in sources:
+        parser = _StructParser()
+        parser.feed(source)
+        parser.close()
+        widgets.update(
+            (rec["attrs"]["id"], rec["tag"])
+            for rec in parser.cq_elements
+            if rec["attrs"].get("id")
+        )
+    return widgets
+
+
+def action_contract_error(page_dir: Path, event: dict, events: list, registry: dict):
+    """Why a structurally complete action violates its sending widget's contract."""
+    tag = action_widget_tags(page_dir, event["version"], events).get(event["widget"])
+    if tag is None:
+        return (
+            f"unknown action widget {event['widget']!r} in v{event['version']} "
+            "or Claude-authored thread markup"
+        )
+    entry = registry.get(tag)
+    if entry is None:
+        return (
+            f"registry no longer declares <{tag}> for action widget "
+            f"{event['widget']!r}"
+        )
+    state = entry.get("x-state", {})
+    if event["action"] not in state:
+        return f"<{tag}> does not declare action verb {event['action']!r}"
+    errors = sorted(
+        Draft202012Validator(state[event["action"]]["detail"]).iter_errors(event["detail"]),
+        key=str,
+    )
+    if errors:
+        return f"<{tag}> action {event['action']!r} detail is invalid: {errors[0].message}"
+    return None
 
 
 def version_ids(page_dir: Path) -> set:
@@ -1447,8 +1525,24 @@ class _StructParser(HTMLParser):
             v for v in attrs_d.values() if v and v.startswith(f"/{MEDIA_DIR}/")
         )
 
+    def _attributes(self, tag, attrs):
+        """The browser's attribute reading: first value wins, duplicates are invalid."""
+        values = {}
+        duplicates = set()
+        for name, value in attrs:
+            if name in values:
+                duplicates.add(name)
+            else:
+                values[name] = value
+        if duplicates:
+            self.errors.append(
+                f"<{tag}> at line {self.getpos()[0]} has duplicate attribute "
+                f"names {sorted(duplicates)}; HTML keeps the first value"
+            )
+        return values
+
     def handle_starttag(self, tag, attrs):
-        attrs_d = dict(attrs)
+        attrs_d = self._attributes(tag, attrs)
         # Before _harvest, whose id attribution reads the open suggestion: a
         # slot's contents belong to the suggestion that encloses them.
         if tag in ("cq-old", "cq-new"):
@@ -1508,7 +1602,7 @@ class _StructParser(HTMLParser):
         # <foo/> — self-closing; still harvest but never pushed. For cq-* the
         # slash is a trap: HTML ignores it, the element stays open in a browser
         # and swallows the rest of its parent, so reject the form outright.
-        self._harvest(tag, dict(attrs))
+        self._harvest(tag, self._attributes(tag, attrs))
         if self._svg_depth:  # SVG has real self-closing syntax
             return
         if tag.startswith("cq-"):
@@ -2100,19 +2194,27 @@ def _overwide_elements(parser: _StructParser, column: int) -> list:
     return hits
 
 
-def read_registry(path: Path):
-    """Read and validate one complete registry vocabulary."""
+def read_registry_entries(path: Path):
+    """Read the top-level entries one registry layer contributes."""
     try:
         registry = read_json(path)
     except json.JSONDecodeError as error:
         sys.exit(f"{path}: invalid JSON ({error.msg}, line {error.lineno})")
     if registry is None:
-        return None
+        if not path.is_file():
+            return None
+        sys.exit(f"{path}: registry must be a JSON object")
     if not isinstance(registry, dict):
         sys.exit(f"{path}: registry must be a JSON object")
     non_objects = [name for name, entry in registry.items() if not isinstance(entry, dict)]
     if non_objects:
         sys.exit(f"{path}: registry entries must be objects: {non_objects}")
+    return registry
+
+
+def validate_registry(registry: dict, source) -> dict:
+    """Validate one complete vocabulary after its top-level overlays are merged."""
+    path = source
     try:
         kinds = registry["$events"]["kinds"]
         names = registry["$languages"]["names"]
@@ -2281,55 +2383,64 @@ def read_registry(path: Path):
     return registry
 
 
+def read_registry(path: Path):
+    """Read and validate one complete registry vocabulary."""
+    registry = read_registry_entries(path)
+    return None if registry is None else validate_registry(registry, path)
+
+
 def load_registry(page_dir: Path):
     """The page's complete vendored vocabulary, or None before `init`."""
     return read_registry(page_dir / "registry.json")
 
 
 def incoming_registry(layers: list) -> dict:
-    """The highest-precedence registry `init` will vendor."""
-    path = next(
-        (layer / "registry.json" for layer in reversed(layers) if (layer / "registry.json").is_file()),
-        None,
-    )
-    if path is None:
+    """The merged registry `init` will vendor.
+
+    Layers are additive at the top level. A later entry replaces the earlier
+    entry whole; schemas never deep-merge, because a half-old, half-new contract
+    is no layer's vocabulary.
+    """
+    merged = {}
+    paths = []
+    for layer in layers:
+        path = layer / "registry.json"
+        if not path.is_file():
+            continue
+        paths.append(path)
+        merged.update(read_registry_entries(path))
+    if not paths:
         sys.exit("the incoming layer has no registry.json")
-    return read_registry(path)
+    source = "merged registry (" + ", ".join(str(path) for path in paths) + ")"
+    return validate_registry(merged, source)
 
 
 # ---------- the vocabulary stamp ----------
 # The registry vendored into a page is also that page's statement of what its
 # runtime speaks: $events names the event kinds and the fields each carries,
-# x-state (per widget) the action verbs. Nothing else on disk says so. `init`
-# refuses a re-vendor that would retire vocabulary still present in the log.
+# x-state (per widget) each tag's verbs and detail schemas. Nothing else on disk
+# says so. `init` refuses a re-vendor that would retire or reshape a contract
+# still present in the log.
 
 
-def declared_verbs(registry: dict) -> set:
-    """Every action verb the layer's widgets declare (x-state), across tags."""
-    return {
-        verb
-        for entry in (registry or {}).values()
-        if isinstance(entry, dict)
-        for verb in (entry.get("x-state") or {})
-    }
-
-
-def vocabulary_gaps(events: list, incoming: dict) -> list:
+def vocabulary_gaps(page_dir: Path, events: list, incoming: dict) -> list:
     """What the page's log says that the *incoming* layer no longer speaks:
-    event kinds with no $events entry, action verbs with no x-state declaration.
-    Empty for a fresh page. Counted, because the number is the cost — each is a
-    recorded event that would never replay again."""
+    event kinds with no $events entry, or actions whose sending tag, verb, or
+    detail the incoming x-state contract rejects. Empty for a fresh page.
+    Counted, because the number is the cost — each is a recorded event that
+    would never replay again."""
     if not events:
         return []
     kinds = set(incoming["$events"]["kinds"])
-    verbs = declared_verbs(incoming)
     missing = {}
     for e in events:
         kind = e["kind"]
         if kind not in kinds:
             key = f"kind `{kind}`"
-        elif kind == "action" and e["action"] not in verbs:
-            key = f"verb `{e['action']}`"
+        elif kind == "action" and (
+            error := action_contract_error(page_dir, e, events, incoming)
+        ):
+            key = f"action contract: {error}"
         else:
             continue
         missing[key] = missing.get(key, 0) + 1

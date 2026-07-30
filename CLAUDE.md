@@ -360,10 +360,10 @@ An `applyAction` implementation states an absolute placement, never a relative m
 because the poll replays it and the sender's own action must be a no-op. The verb, its
 detail schema, its fold unit, and its record form are declared in the registry
 (`x-state`), not known privately to the module: absoluteness is what makes the
-reviewer's standing state a fold over the log, and the declaration is what lets four
-consumers read it — check's state gate, the record-lag report, the runtime's uniform
-decided-but-unhonored mark, and the diff's state half — without any of them being
-taught a widget by name. The registry doubles as the page's vocabulary stamp
+reviewer's standing state a fold over the log, and the declaration drives the POST and
+re-vendor contract gates, check's state gate, the record-lag report, the runtime's
+uniform decided-but-unhonored mark, and the diff's state half without teaching any
+consumer a widget by name. The registry doubles as the page's vocabulary stamp
 (`$events`): the log is append-only and its verbs are a forever-contract, so `note`
 refuses to write a shape the page's vendored layer doesn't read, and `init` refuses to
 re-vendor over a log recorded in vocabulary the incoming layer no longer speaks — the

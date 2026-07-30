@@ -252,7 +252,9 @@ arrives as an `action` event), printing the new events as JSON. `wait` delivers
 everything no previous `wait` has delivered — including events posted while you were
 working, so comments never get lost between rounds; reading the log another way
 (`events`) doesn't count as delivery. User comments exist only through the browser —
-`comment` posts as you, never as them.
+`comment` posts as you, never as them. A delivery while the page already says
+`working` leaves that status untouched; `handoff` dates only a pickup from a
+non-working state.
 
 On wake:
 
@@ -365,15 +367,20 @@ knows that happened.
 
 ## Customizing the widget layer
 
-`init` vendors the layer into the page directory by overlaying, per file: colloquy's
-shipped defaults, then the user's `~/.config/colloquy/`, then the project's
-`.claude/colloquy/` — each mirroring the same layout (`theme.css`, `registry.json`,
-`widgets/`, `vendor/`) — so a project can override `theme.css`, extend `registry.json`,
-or add widget modules, and `catalog` always reflects what this page actually has. The
-page directory is self-contained: an approved version can't change under its reviewer.
-Re-running `init` on a live page is the explicit re-vendor; note it in the next
-version's changelog. It refuses when the page's log holds event kinds or action verbs
-the incoming layer no longer speaks — those events would silently never replay again.
+`init` vendors the layer into the page directory from colloquy's shipped defaults, then
+the user's `~/.config/colloquy/`, then the project's `.claude/colloquy/`. Each layer
+mirrors the same layout (`theme.css`, `registry.json`, `widgets/`, `vendor/`). Files
+replace by path; registry files merge by top-level entry, with a later layer replacing
+one complete entry. A custom widget therefore adds its entry without copying the shipped
+registry, while overriding a tag supplies its whole schema. The merged vocabulary is
+validated before vendoring, and its `x-state.detail` schema validates every action at
+`POST /api/event`. `catalog` reflects the result.
+
+The page directory is self-contained: an approved version can't change under its
+reviewer. Re-running `init` on a live page is the explicit re-vendor; note it in the
+next version's changelog. It refuses when the incoming layer no longer accepts a logged
+event kind or action contract (tag, verb, and detail), since that event would stop
+replaying.
 
 ## When the browser can't reach the server
 

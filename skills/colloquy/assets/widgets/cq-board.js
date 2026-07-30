@@ -15,11 +15,11 @@
  *
  * The board also says what it is non-visually: columns are labeled lists and
  * cards their items (#structure), and each grip is named for the column its
- * card now sits in (#names). Both are attributes on authored elements — the
- * light DOM stays verbatim, which is what the anchor pass and the version diff
- * walk. The theme's column heading is CSS generated content with empty alt
- * text, so the label reaches the tree once, as the list's name, rather than
- * twice. */
+ * card now sits in and whether its move awaits a version (#names). Both are
+ * attributes on authored elements — the light DOM stays verbatim, which is
+ * what the anchor pass and the version diff walk. The theme's column heading
+ * is CSS generated content with empty alt text, so the label reaches the tree
+ * once, as the list's name, rather than twice. */
 import Sortable from "/vendor/sortable.esm.js";
 import {
   once,
@@ -57,14 +57,21 @@ customElements.define(
         this.#grip(card);
       for (const col of this.querySelectorAll(":scope > cq-column")) this.#sortable(col);
       this.#names();
-      // Grip names come from where their cards sit, so the board's own mutations
-      // are what restate them — not the four paths that move a card (arrow step,
-      // drag, cancel, replay), one of which would eventually forget, and one of
-      // which is Sortable reparenting cards without telling us. Setting an
-      // attribute records no childList mutation, so the pass can't feed itself.
-      const moves = new MutationObserver(() => this.#names());
-      for (const col of this.querySelectorAll(":scope > cq-column"))
-        moves.observe(col, { childList: true });
+      // Grip names come from where their cards sit and whether the runtime has
+      // marked their move as awaiting a version, so mutations of those two inputs
+      // restate them — not the four paths that move a card (arrow step, drag,
+      // cancel, replay) plus the pending pass, any of which would eventually
+      // forget. Only the pending attribute is observed, so #names writing an
+      // aria-label cannot feed the pass back into itself.
+      const names = new MutationObserver(() => this.#names());
+      for (const col of this.querySelectorAll(":scope > cq-column")) {
+        names.observe(col, { childList: true });
+        for (const card of this.#cards(col))
+          names.observe(card, {
+            attributes: true,
+            attributeFilter: ["data-cq-pending"],
+          });
+      }
     }
 
     // What a board is, said in roles: each column a labeled list, each card an
@@ -104,13 +111,19 @@ customElements.define(
 
     // Every grip's name, in the idiom the live region already announces moves in
     // ("card — column"): the reviewer who lands on a grip by Tab hears where the
-    // card is without having read the list it sits in.
+    // card is without having read the list it sits in, and whether the move still
+    // awaits a version after its transient announcement has faded.
     #names() {
       for (const col of this.querySelectorAll(":scope > cq-column")) {
         const where = col.getAttribute("label");
         for (const card of this.#cards(col)) {
-          const name = `Move: ${this.#title(card)} — ${where}`;
-          card.querySelector(":scope > .cq-grip")?.setAttribute("aria-label", name);
+          const pending = card.hasAttribute("data-cq-pending")
+            ? " — awaiting next version"
+            : "";
+          const name = `Move: ${this.#title(card)} — ${where}${pending}`;
+          const grip = card.querySelector(":scope > .cq-grip");
+          if (grip && grip.getAttribute("aria-label") !== name)
+            grip.setAttribute("aria-label", name);
         }
       }
     }
