@@ -133,7 +133,7 @@ defines for shapes HTML has no element for, among them <code>.eyebrow</code>,
 <code>.facts</code>, and <code>ol.steps</code>, which numbers this list.</li>
 <li id="src-widgets"><strong><code>cq-*</code> widgets.</strong> Custom
 elements that say what things are: <code>&lt;cq-options&gt;</code> for a
-decision's alternatives, <code>&lt;cq-board&gt;</code> for work in columns.
+question the reader answers, <code>&lt;cq-board&gt;</code> for work in columns.
 Attributes carry scalars, children carry prose, a leading
 <code>&lt;strong&gt;</code> is an item's title, and a JSON-Schema registry
 keeps the renderer, the linter, and the agent's documentation agreeing about
@@ -174,9 +174,19 @@ an example decision never reads as one the page is asking you to make.</p>
   stages</strong> New fields land on the new schema while reads fall back,
   table by table.</cq-option>
 </cq-options>
+<p id="spec-jobs-ask">Whichever way that goes, which of the three jobs behind it are
+worth starting now?</p>
+<cq-options id="spec-jobs">
+  <cq-option id="sj-backfill">Backfill last month's rows</cq-option>
+  <cq-option id="sj-contract">Contract tests against the old schema</cq-option>
+  <cq-option id="sj-fallback">A read fallback behind a flag</cq-option>
+</cq-options>
 </cq-specimen>
-<figcaption>In a session the group takes your pick by click, and the next
-version ships with your choice marked.</figcaption>
+<figcaption>The form follows the options, and nothing declares it: options that argue
+their own case render as cards, bare labels as rows — a question about the page, where
+each row can name the section that makes its case. In a session either form takes your
+pick by click, the next version ships with your choice marked, and a box under the
+group takes anything the options don't cover.</figcaption>
 </figure>
 
 <figure>
