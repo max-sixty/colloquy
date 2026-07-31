@@ -1009,7 +1009,9 @@ export function watchActions(widget, action, callback) {
 // Text the user typed but hasn't sent must survive navigation, reload, version switches,
 // and server death; only a successful send clears it. It is working state of this tab,
 // not shared page state: sessionStorage keeps another tab's send or Cancel from clearing
-// a newer local edit. Recorded actions in the log are what converge across tabs. Storage
+// a newer local edit. Recorded actions in the log are what converge across tabs.
+// Surviving the tab's own close is the open question (TODO.md), and it is a question
+// about what a second tab then sees rather than about where a draft lives. Storage
 // failures never break typing. Exported: a widget holding user text (cq-draft's in-place
 // edit) keeps it under the same discipline, in the same store.
 const DRAFT = "cq-draft:";

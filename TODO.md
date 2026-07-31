@@ -83,3 +83,21 @@
   startup that throws before the stamp, where today the reviewer gets a readable page
   with broken chrome. Which of those is worse is a judgment about page-load feel
   rather than a defect with a right answer, which is why it is here rather than fixed.
+
+- (2026-07-31) An unsent draft dies with the tab. sessionStorage carries one through a
+  reload, a version navigation, and a server restart — the port is derived from the page
+  directory, so a re-serve lands on the same origin — and a closed tab is the one case
+  it doesn't cover. That is the ordinary case here rather than a rare one: each round's
+  reply hands the URL over again and the reviewer opens the page from the turn in front
+  of them, so a page's tabs accumulate. Swapping the store for localStorage trades the
+  gap for a worse failure, since one store shared across those tabs means a send or a
+  Cancel in an old tab clears text being typed in the new one. The build that avoids
+  both is localStorage for durability plus a channel (`BroadcastChannel`) that says what
+  happened, so every tab renders one copy and a cleared draft arrives as "sent" rather
+  than as words going missing — a value diff cannot tell those apart. What it costs is
+  an index from a draft's context to the box showing it, which nothing needs today: each
+  box closes over its own context where it is built, and the panel rebuilds its reply
+  boxes on every render, so the index has to be built in that same pass or it is one
+  more thing to keep in step. The server is where Slack keeps drafts and the one place
+  these cannot go: here the server is the agent, and an unsent draft would be words the
+  reviewer has not decided to say, sitting where the next `review wait` can read them.
