@@ -4,7 +4,8 @@ round-trip that the review loop rides on.
 
 Run from the repo root:
 
-    uv run --with pytest --with click --with jsonschema python -m pytest tests
+    uv run --with pytest --with click --with jsonschema --with markdown-it-py \
+      --with tinycss2 python -m pytest tests
 """
 
 import http.cookiejar
@@ -4107,10 +4108,10 @@ def test_widget_ids_are_one_universe_across_page_and_replies(page_dir):
 
 
 def test_the_runtimes_cq_id_namespace_is_off_limits(page_dir):
-    """colloquy.js coins document ids under cq- for its own chrome — cq-msg-<event> on a
-    message body, cq-composer-quote — and points ARIA at them. An authored id there would
-    aim those references at the page instead, silently. One rule over both places an id
-    can be authored: a version, and the widget markup in Claude's reply."""
+    """colloquy.js coins document ids under cq- for its own chrome — cq-composer-quote —
+    and points ARIA at them. An authored id there would aim those references at the page
+    instead, silently. One rule over both places an id can be authored: a version, and
+    the widget markup in Claude's reply."""
     (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace('<section id="plan">', '<section id="plan"><p id="cq-msg-7">mine</p>')
     )
@@ -4126,6 +4127,129 @@ def test_the_runtimes_cq_id_namespace_is_off_limits(page_dir):
     )
     assert reply.exit_code != 0
     assert "cq- namespace" in reply.output and "cq-pick" in reply.output
+
+
+# ---------- messages: one rendering of what a message says ----------
+
+
+def message_reply(page_dir, text):
+    return CliRunner().invoke(
+        interact.cli, ["review", "reply", str(page_dir), "--to", "c1", "--text", text]
+    )
+
+
+def test_a_message_arrives_rendered_and_the_log_keeps_its_source(page_dir):
+    """A message body is Markdown, rendered on the way to the panel. Both directions
+    matter: the browser is handed HTML it never parses, and the log still holds the
+    words `review wait` prints and the transcript reprints."""
+    interact.append_event(
+        page_dir,
+        {"kind": "comment", "id": "c1", "author": "user", "text": "two things:\n\n- one\n- **two**"},
+    )
+    reply = message_reply(page_dir, "Fixed in `poll()`.\nSecond line.")
+    assert reply.exit_code == 0, reply.output
+    wire = {e["kind"]: e for e in page_state(page_dir)["events"]}
+    assert "<li>one</li>" in wire["comment"]["html"]
+    assert "<strong>two</strong>" in wire["comment"]["html"]
+    assert wire["comment"]["text"] == "two things:\n\n- one\n- **two**"
+    assert "<code>poll()</code>" in wire["reply"]["html"]
+    # A typed newline is a line break: nobody ends a line with two spaces to mean one.
+    assert "<br>" in wire["reply"]["html"]
+
+
+def test_a_reviewers_markup_is_words_about_a_widget(page_dir):
+    """Raw HTML is Claude's alone, and the escaping is the whole of that boundary — no
+    reader downstream restates it as an author rule of its own. So the id in a quoted
+    tag is claimed by nobody, and a later reply may still use it."""
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "comment",
+            "id": "c1",
+            "author": "user",
+            "text": 'why not <cq-diagram id="quoted">? and *emphasis*',
+        },
+    )
+    wire = page_state(page_dir)["events"][-1]
+    assert "&lt;cq-diagram" in wire["html"] and "<cq-diagram" not in wire["html"]
+    assert "<em>emphasis</em>" in wire["html"]
+    assert interact.thread_widget_ids(interact.read_events(page_dir)) == set()
+
+
+def test_widget_markup_in_a_message_survives_a_blank_line(page_dir):
+    """CommonMark ends a raw-HTML block at the first blank line and parses the rest as
+    prose. A message's widget markup is the markup a version carries — written with air
+    between its panels like any other — so it ends where its closing tag does."""
+    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "?"})
+    result = message_reply(
+        page_dir,
+        "Like so:\n\n"
+        '<cq-tabs id="t1">\n'
+        '<cq-tab id="t1-a" label="Before">\n\ntext with a gap\n\n</cq-tab>\n'
+        '<cq-tab id="t1-b" label="After">tight</cq-tab>\n'
+        "</cq-tabs>",
+    )
+    assert result.exit_code == 0, result.output
+    html = interact.message_html(interact.read_events(page_dir)[-1])
+    assert "<p>text with a gap</p>" not in html
+    assert html.count("<cq-tab ") == 2 and "</cq-tabs>" in html
+    assert interact.thread_widget_ids(interact.read_events(page_dir)) == {"t1", "t1-a", "t1-b"}
+
+
+def test_only_the_vocabulary_reaches_a_message_as_markup(page_dir):
+    """A message is prose, and prose says `Vec<T>`. Raw HTML whole would open an element
+    there — as `if a<b and c>d` opens one with two attributes — and swallow the words in
+    front of the reviewer, with nothing on either side to say it happened. So what
+    reaches the panel as markup is what the gate has a schema for."""
+    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "?"})
+    result = message_reply(page_dir, "the type is Vec<T>, and <div>this</div> is not a widget")
+    assert result.exit_code == 0, result.output
+    html = interact.message_html(interact.read_events(page_dir)[-1])
+    assert "Vec&lt;T&gt;" in html
+    assert "&lt;div&gt;this&lt;/div&gt;" in html
+
+
+def test_a_fence_shows_markup_without_claiming_it(page_dir):
+    """A reply explaining how to write a widget quotes the tag, and the fence is what
+    says it is a picture of one. Read from the source this was a widget: it would have
+    been refused for taking `flow`, the page's own diagram id."""
+    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "?"})
+    result = message_reply(
+        page_dir,
+        'Write it like this:\n\n```html\n<cq-diagram id="flow">\ngraph LR\n  A --> B\n'
+        "</cq-diagram>\n```",
+    )
+    assert result.exit_code == 0, result.output
+    assert interact.thread_widget_ids(interact.read_events(page_dir)) == set()
+
+
+def test_a_reply_is_held_to_the_languages_the_page_can_color(page_dir):
+    """The panel colors a fenced block from the list a version's <pre><code> is held to,
+    so a word the vendored tokenizer doesn't know is refused where it is written — the
+    alternative is a block that quietly never colors and nobody to tell."""
+    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "?"})
+    bad = message_reply(page_dir, "```klingon\ntlhIngan Hol\n```")
+    assert bad.exit_code != 0
+    assert "not a language this page's layer speaks" in bad.output
+    good = message_reply(page_dir, "```python\ndef f():\n    return 1\n```")
+    assert good.exit_code == 0, good.output
+
+
+def test_a_suggestion_shows_the_characters_it_proposes(page_dir):
+    """A suggestion's words are bound for the page verbatim, so the panel shows them as
+    typed. Rendering them would promise the reviewer an italic where the next version
+    carries the asterisks they wrote."""
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "comment",
+            "id": "s1",
+            "author": "user",
+            "suggestion": True,
+            "text": "Retry up to *five* times.",
+        },
+    )
+    assert page_state(page_dir)["events"][-1]["html"] == "<p>Retry up to *five* times.</p>"
 
 
 def test_export_prints_threads_and_versions(page_dir):
@@ -4176,28 +4300,15 @@ def test_export_prints_threads_and_versions(page_dir):
     assert "> § flow" in result.output  # element-anchored comments keep their target
 
 
-def test_plain_reply_needs_no_registry(page_dir):
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
-    result = CliRunner().invoke(
-        interact.cli, ["review", "reply", str(page_dir), "--to", "c1", "--text", "plain answer, x < y"]
-    )
-    assert result.exit_code == 0, result.output
-
-
-def test_widget_reply_requires_a_registry(page_dir):
+def test_a_reply_requires_the_registry_its_runtime_reads(page_dir):
+    """Every reply is validated, not only one carrying a widget: a fenced block is
+    colored from the vendored list too, so the registry is what a reply is checked
+    against whatever it holds."""
     (page_dir / "registry.json").unlink()
     interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
     result = CliRunner().invoke(
         interact.cli,
-        [
-            "review",
-            "reply",
-            str(page_dir),
-            "--to",
-            "c1",
-            "--text",
-            '<cq-diagram id="reply-flow">graph LR; A --&gt; B</cq-diagram>',
-        ],
+        ["review", "reply", str(page_dir), "--to", "c1", "--text", "plain answer, x < y"],
     )
     assert result.exit_code != 0
     assert "no registry.json" in result.output

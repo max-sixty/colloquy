@@ -94,7 +94,7 @@ as the fixtures do, opening the page with that key in the query (`?t=…`). `ser
 review-loop hooks then hold it to watching that page.
 
 ```
-uv run --with pytest --with click --with jsonschema --with tinycss2 --with playwright \
+uv run --with pytest --with click --with jsonschema --with markdown-it-py --with tinycss2 --with playwright \
   --with axe-playwright-python python -m pytest tests
 ```
 

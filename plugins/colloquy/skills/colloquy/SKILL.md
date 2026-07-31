@@ -275,12 +275,17 @@ On wake:
 2. Address every event `review wait` printed. Each is JSON carrying the server-minted
    `id` that `review reply --to` takes:
    - **A comment**: `review reply` in-thread, and change the page where the comment
-     warrants it — usually both. A reply is brief plain text, or may carry widget
-     markup (a small `cq-diagram` explaining a fix renders live in the thread);
-     `review reply` validates widgets against the vendored registry and rejects what
-     `version check` would, and their ids must be fresh — `review reply` refuses ids
-     the page or an earlier reply already uses, and `version check` keeps later
-     versions off a reply's.
+     warrants it — usually both. A reply is brief Markdown — lists, `code`, fenced
+     blocks (in a language the page can color, as `version check` requires of one), a
+     table — and may carry widget markup besides (a small `cq-diagram` explaining a fix
+     renders live in the thread). A `cq-` tag is the only markup a message injects —
+     write `<T>` or `<div>` in prose and the reviewer reads those characters — and it
+     passes through whole, blank lines and all. A fenced block showing a `cq-` tag is a
+     picture of one and claims nothing, which is how to write about the vocabulary
+     without building it. `review reply` validates what the reply renders to
+     against the vendored registry and rejects what `version check` would, and a
+     widget's ids must be fresh — `review reply` refuses ids the page or an earlier
+     reply already uses, and `version check` keeps later versions off a reply's.
    - **A suggestion** (a comment with `"suggestion": true`) proposes replacement text
      for its quoted passage: take it verbatim into the next version, or reply with
      why not — never silently rewrite it.
@@ -352,7 +357,7 @@ stderr; exit 2 means it couldn't, and the page stays down until `server run`.
 ## Pointing at a passage yourself
 
 `review comment` opens a thread the way the reviewer's selection does — same anchor,
-same reply box, labelled with the current agent instead of You. Reach for it when what you have to say is
+same Markdown, same reply box, labelled with the current agent instead of You. Reach for it when what you have to say is
 about one passage and you can't settle it yourself: a sentence that reads two ways, an
 assumption the paragraph rests on, a line only they have the fact to fix. Anything you
 can settle, settle — ship the fix. In chat, the reader has to find the passage again;

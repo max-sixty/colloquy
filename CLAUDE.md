@@ -44,7 +44,7 @@ repo-root pointers, and the payload carries one manifest for each host. Six thin
 the product, and nothing sits between them:
 
 - `plugins/colloquy/skills/colloquy/scripts/interact.py` — a `uv` script: the server, the event log, the
-  lint (`version check`), vendoring, export. No daemon, no database. Reached as `colloquy`,
+  lint (`version check`), what a message renders to, vendoring, export. No daemon, no database. Reached as `colloquy`,
   through the payload's `bin/` shim: Claude Code puts it on PATH and Codex resolves it
   from the active skill directory.
 - `plugins/colloquy/skills/colloquy/assets/colloquy.js` — the runtime the page loads. One ES module owning
@@ -154,6 +154,27 @@ own; and still told a fixed `900px` from a `calc(100% - 900px)` by asking whethe
 string ended in `px`, which `900px !important` does not. CSS has no parser in the stdlib,
 so the dependency is a real cost — one more wheel behind every `version check`, ~6ms to
 read the theme — and it buys the grammar whole rather than one bug's worth at a time.
+
+A message is written in a third language, and the same rule places its parser: Markdown
+has none in the stdlib either, so `markdown-it-py` reads it whole. Where that runs is
+what had a choice. The page's own code blocks are colored in the browser, because
+coloring them in Python would put spans in the file Claude writes the next version from;
+a message has no file, and reading it in the browser would have stood a second answer
+beside the one the post-time gate uses — the two then having to keep agreeing about which
+`<cq-tabs>` is a widget and which is a fenced picture of one. So it renders once, in
+Python, and the panel injects the string that was validated. What a message *says* is
+still the log's: the render is derived on every read and stored nowhere, which is what
+leaves `review wait` and the transcript printing the words that were typed. The one
+exception is what makes this about honesty rather than uniformity — a suggestion's
+characters are bound for the page verbatim, so it arrives unrendered rather than showing
+the reviewer an italic the next version will spell in asterisks.
+
+What a message may inject is the vocabulary, not HTML. Prose says `Vec<T>`, and raw HTML
+reads that as an element to open — `if a<b and c>d` as one with two attributes — so a
+message written whole would lose its own words in front of the reviewer with nothing on
+either side to say so. Every tag the registry can't name is escaped to the characters it
+was written in, which leaves the markup that reaches the panel exactly the markup the
+gate has a schema for.
 
 ### A widget's form follows its content, and each form states its own rules
 

@@ -90,8 +90,10 @@
  * crosses into typing context, backing out one layer per press without ever eating
  * text.
  *
- * Claude's replies may carry widget markup (`review reply` validates it against the vendored
- * registry at post time), rendered live in the thread; user comments stay plain text. */
+ * A message body arrives rendered — Markdown from either side, and the raw widget
+ * markup only Claude's may carry, which `review reply` validated against the vendored
+ * registry at post time. This file parses none of it: one rendering, made where the
+ * gate reads it, injected here. */
 
 // ---------- widget layer ----------
 
@@ -793,7 +795,19 @@ style.textContent = `
     .cq-msg-head b { font-size: 12.5px; }
     .cq-msg.claude .cq-msg-head b { color: var(--accent); }
     .cq-msg time { color: var(--muted-2); font-size: 11.5px; }
-    .cq-msg p { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    /* A message body is rendered Markdown, which is why this dresses a box and not a
+       paragraph. The theme's element rules are at document level and reach in here, so a
+       reply's lists, code, quotes and tables already read as the page's do; what is left
+       is the panel's narrower column — tighter blocks, headings that don't shout at
+       360px, and no margin where the body meets its own head. */
+    .cq-msg-body { margin: 2px 0 0; overflow-wrap: anywhere; }
+    .cq-msg-body > :first-child { margin-top: 0; }
+    .cq-msg-body > :last-child { margin-bottom: 0; }
+    .cq-msg-body :is(p, ul, ol, pre, blockquote, table, hr) { margin: 6px 0; }
+    .cq-msg-body :is(h1, h2, h3, h4, h5, h6) { margin: 8px 0 4px; font-size: var(--t-5); }
+    .cq-msg-body li { margin: 2px 0; }
+    .cq-msg-body pre { padding: 8px 10px; }
+    .cq-msg-body blockquote { padding: 2px 10px; }
     /* Send buttons sit at the bottom so a growing textarea doesn't stretch them. */
     .cq-compose, .cq-general { display: flex; gap: 6px; margin-top: 8px; align-items: flex-end; }
     .cq-compose textarea, .cq-general textarea { flex: 1; min-width: 0; }
@@ -812,7 +826,10 @@ style.textContent = `
     .cq-suggest-row { display: none; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
     .cq-suggest-row input { margin: 0; accent-color: var(--accent); }
     .cq-suggest-label { font-size: var(--t-6); letter-spacing: .05em; text-transform: uppercase; color: var(--ok-ink); margin: 4px 0 2px; }
-    .cq-msg p.cq-suggest-body { background: var(--add-tint); padding: 4px 8px; border-radius: 6px; }
+    /* A suggestion arrives unrendered — its characters are what the next version
+       carries (see message_html) — so this is where they keep their own line breaks. */
+    .cq-msg-body.cq-suggest-body { background: var(--add-tint); padding: 4px 8px;
+      border-radius: 6px; white-space: pre-wrap; }
     .cq-composer textarea { width: 100%; min-height: 56px; }
     .cq-composer-row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
     .cq-toast { position: fixed; bottom: 18px; right: 18px; z-index: 9200; max-width: calc(100vw - 36px);
@@ -1205,14 +1222,19 @@ function msgNode(m) {
   );
   let body = msgBodies.get(m.id);
   if (!body) {
-    body = el("p", "");
-    // Claude's messages may carry widget markup, validated server-side by
-    // `review comment` and `review reply`; already-defined widgets upgrade on insertion.
-    // User text is always plain.
-    if (m.author === "claude" && /<cq-[a-z]/.test(m.text)) {
-      body.innerHTML = m.text;
-      renderSaid(body); // custom elements upgrade themselves on insertion; this doesn't
-    } else body.textContent = m.text;
+    body = el("div", "cq-msg-body");
+    // A message body arrives rendered: Markdown for both sides, and raw HTML only where
+    // the server let it through, which is Claude's messages with their widget markup
+    // already validated against this page's registry. Nothing here re-decides that.
+    // Already-defined widgets upgrade on insertion; these two passes don't come along
+    // with them — the said pass writes a widget's declared words, and a fenced block is
+    // a <pre><code class="language-…"> like any the page holds.
+    body.innerHTML = m.html;
+    renderSaid(body);
+    // Not settle()d: that queue holds the page's geometry still for the first anchor
+    // pass, and a message colors in the panel, where no anchor is captured and nothing
+    // waits. Each block already fails soft to its own plain source.
+    highlightBlocks(body);
     if (m.suggestion) body.classList.add("cq-suggest-body");
     msgBodies.set(m.id, body); // the id is server-minted, on every event
   }

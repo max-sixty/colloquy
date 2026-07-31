@@ -2668,6 +2668,47 @@ def test_a_decision_that_empties_its_widget_detaches_the_element_anchor(browser,
     page.close()
 
 
+MARKDOWN_REPLY = """Two things, then the fix:
+
+- the poll drops a response **behind** the one already rendered
+- `lastEventSeq` is what it compares
+
+```python
+def resolve(a, b):
+    return a if a.seq > b.seq else b
+```
+
+> which one wins?
+"""
+
+
+def test_a_reply_renders_the_markdown_it_was_written_in(browser, serve):
+    """A message body is Markdown, and the panel injects the rendering the server made
+    (see message_html) — nothing in the browser parses any, which is why nothing here
+    can come to disagree with the gate that read the same string at post time. What the
+    panel adds is the page's own dress: the theme's element rules are at document level
+    and reach in, and a fenced block colors from the tokenizer a version's <pre><code>
+    uses, which no message could reach before there were fences in one."""
+    url = serve(REPLY_HOST_PAGE)
+    d = serve.page_dir
+    interact.append_event(d, {"kind": "comment", "id": "c-ask", "author": "user",
+                              "version": 1, "text": "which one wins?"})
+    interact.append_event(d, {"kind": "reply", "author": "claude", "parent": "c-ask",
+                              "version": 1, "text": MARKDOWN_REPLY})
+    page, errors = open_page(browser, url)
+    page.get_by_role("button", name="Comments", exact=False).click()
+    body = page.locator(".cq-msg.claude .cq-msg-body")
+    expect(body.locator("li")).to_have_count(2)
+    expect(body.locator("strong")).to_have_text("behind")
+    expect(body.locator("blockquote")).to_have_text("which one wins?")
+    expect(body.locator('pre code [data-cq-syn="kw"]').first).to_have_text("def")
+    # The paragraph's asterisks are gone from the words, not merely hidden: what the
+    # reviewer can select is what the message says.
+    assert "**" not in body.inner_text()
+    assert errors == []
+    page.close()
+
+
 def test_a_reply_widget_replays_its_action_when_the_page_loads(browser, serve):
     """A widget inside a reply exists only once the panel has rendered the log,
     which is later than everything on the page — so the replay runs at the end of
