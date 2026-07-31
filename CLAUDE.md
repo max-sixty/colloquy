@@ -248,6 +248,44 @@ the line has to stay out of a selection, out of the next quote, out of what a wi
 back as its own, and out of the mutation stream a screen reader rebuilds its buffer on.
 Each of those is a rule the pass keeps rather than a property it gets for free.
 
+### The page holds still under the reviewer's aim
+
+A reviewer works by pointing, and the gestures this product is made of are the long ones:
+a double-click that opens an editor, a drag across three lines, a press on a row hanging
+in the margin. Anything that moves between deciding where to point and arriving there is
+aim thrown away. So a state change may repaint whatever it likes and must move nothing,
+and where something has to move it moves as motion rather than as a jump, which is the
+form the eye can follow to where the sentence went.
+
+Two of the three ways a page moves are layout, and any geometry read catches them. An
+element that resizes pushes its neighbours. A control that shows its state in metrics does
+the same thing smaller — a selected tab set in 600 weight is a wider tab, so the strip
+reshuffled under the pointer that had just pressed it — which is why the state a control
+wears is paint (ink, rule, fill) and never weight or size. Metrics are shared with the
+neighbours; paint is not.
+
+The third moves nothing and is the one no measurement reaches. The draft's editor wore an
+outset focus ring, so a double-click aimed at one word was answered by the frame around it
+growing 2px on every side, corners rounding wider to match. Every rect was identical,
+because in layout nothing had happened; what found it was a screenshot diff of the pixels
+outside the box, which is the check to reach for whenever the fix is a border, a ring, or
+a shadow. Emphasis paints inside the box it belongs to.
+
+Said positively, room is reserved before it is needed rather than taken when it is: the
+draft's control row exists in both its views, so opening the editor adds no height; a
+`choose` group holds the pick mark's strip on every card, because the pick can land on any
+of them; the version chooser states a width rather than taking one from the longest note
+Claude has yet published. Each spends something on a case that may not arrive, and that is
+the trade — the alternative is paid at the moment the reviewer had something to say.
+
+A shift before the first paint is not jerk, since nothing was on screen to move, and every
+widget upgrade measured on the shipped examples lands there, ahead of its own page's first
+paint — so hiding them behind `:not(:defined)` would buy nothing and cost every rendering
+of the vocabulary that carries no script. And a change the reviewer asked for may change
+the page: accepting a suggestion replaces the words, and the paragraph below moves because
+the content did. What is forbidden is movement they did not ask for, and movement that
+answers a small gesture with a large rearrangement.
+
 ### Assume the browser it already assumes
 
 The runtime requires ES modules, custom elements, `field-sizing`, `color-mix`, `:has()`,

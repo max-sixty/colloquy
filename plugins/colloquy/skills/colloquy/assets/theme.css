@@ -515,7 +515,10 @@ cq-tabs.cq-rendered > cq-tab { margin-top: 14px; }
                border-bottom: 2px solid transparent; margin-bottom: -1px;
                border-radius: var(--r) var(--r) 0 0; }
 .cq-tabstrip .cq-tab-btn:hover { color: var(--ink-2); background: var(--chip); }
-.cq-tabstrip .cq-tab-btn[aria-selected="true"] { color: var(--ink); font-weight: 600;
+/* Ink and the accent underline, and deliberately not weight: a bolder label is a
+ * wider label, so every tab after the selected one slid a couple of pixels on each
+ * switch and the strip reshuffled under the pointer that had just pressed it. */
+.cq-tabstrip .cq-tab-btn[aria-selected="true"] { color: var(--ink);
                border-bottom-color: var(--accent); }
 .cq-tabdiff { font-size: var(--t-6); font-weight: 400; margin-left: 6px;
               padding: 0 6px; border-radius: 999px;
@@ -766,7 +769,14 @@ cq-code cq-note { display: block; }
    the widget's JS writes none of it. Paper drops the box with the other offers, and
    without this scope it dropped the hidden body too and printed a draft as an empty
    frame — the words a page states have to survive a medium that has no box to type in,
-   and an unsent edit is not yet among them. */
+   and an unsent edit is not yet among them.
+
+   The ring is inset, which is the metrics above carried out one layer: every word held
+   still and the frame around them did not, because an outset ring paints 2px past the
+   border on every side with the corners rounding wider to match. A shadow costs no
+   layout, so every rect agreed nothing had happened and it took a screenshot diff to
+   find. Inside the border there is padding to paint on and nothing of the page's to
+   disturb. */
 cq-draft { display: block; border: 1px dashed var(--border-2); border-radius: 6px;
            padding: 10px 14px; margin: 12px 0; background: var(--card); }
 .cq-draft-body, .cq-draft-edit.cq-ui { white-space: pre-wrap; overflow-wrap: break-word; }
@@ -780,7 +790,7 @@ cq-draft:hover .cq-draft-pencil, cq-draft:focus-within .cq-draft-pencil { opacit
   html:not(.cq-copy) {
     cq-draft:has(.cq-draft-edit) { border-style: solid;
                border-color: color-mix(in srgb, var(--accent) 45%, var(--card));
-               box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+               box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
     cq-draft:has(.cq-draft-edit) > .cq-draft-body,
     cq-draft:has(.cq-draft-edit) .cq-draft-pencil { display: none; }
     .cq-draft-controls { display: flex; }

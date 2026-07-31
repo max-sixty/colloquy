@@ -620,6 +620,12 @@ const PINNED = new URLSearchParams(location.search).has("pin");
 const SIGNOFF =
   document.querySelector('meta[name="cq-review"]')?.content === "sign-off";
 const POLL_MS = 2000;
+// The panel's width, and so also the strip the page yields to it and the breakpoint
+// under which yielding one is worse than being covered by it. One number, written
+// into the stylesheet below rather than read back off the panel: the two have to
+// agree, and the panel measures zero for as long as it is closed, which is exactly
+// when the page most needs to know how wide it will be.
+const PANEL_W = 360;
 
 // ---------- styles ----------
 const style = document.createElement("style");
@@ -628,9 +634,32 @@ style.textContent = `
      scrolled the viewport, its scrollbar would paint at the viewport's right edge —
      over the panel, in the same few pixels as the panel's own, so the two thumbs
      stack. Body owns the document's scroll instead, and syncLayout keeps its box
-     clear of the panel, which puts each region's scrollbar inside that region. */
+     clear of the panel, which puts each region's scrollbar inside that region.
+
+     The gutter is stable because the column is measured off it: a page that grows
+     past the window mid-session — a suggestion accepted, a panel of tabs opened —
+     would otherwise gain a scrollbar, and the column would re-centre in what was
+     left. Stated rather than measured, because it can't be measured here: macOS
+     draws overlay scrollbars, which take no room and reserve none, so on this
+     machine the declaration is a no-op and the shift it prevents cannot be made to
+     happen (neither scrollbar-width nor a styled ::-webkit-scrollbar nor
+     --disable-features=OverlayScrollbar brings a room-taking one back). It is kept
+     on the platforms where scrollbars do take room, which is most of them, and on
+     the reasoning that reserving a gutter never costs more than the shift not
+     reserving it produces. Nothing in the suite pins it; there is nothing here to
+     pin it with. */
   html { height: 100%; overflow: hidden; }
-  body { box-sizing: border-box; height: 100%; overflow-y: auto; scroll-padding-top: 54px; }
+  body { box-sizing: border-box; height: 100%; overflow-y: auto; scroll-padding-top: 54px;
+         scrollbar-gutter: stable; }
+  /* The strip the panel takes is given up as motion rather than as a jump, so the eye
+     can follow the sentence it was reading to where it went. Keyed on the stamp that
+     says the document is done becoming itself, because until then every margin the
+     page has is one it arrived with: a panel restored open would otherwise slide into
+     place on load, and a version switch is a load, so every revision would arrive
+     sliding sideways under a reviewer who asked for a revision and not for motion.
+     The stamp lands at the end of the start chain, long after the restore. Reduced
+     motion is handled globally by the theme's guard. */
+  body[${PAGE_PAINT_ATTRIBUTE.upgraded}="1"] { transition: margin-right .18s ease; }
   @media print { html, body { height: auto; overflow: visible; } }
   /* Rules at this level are the shared vocabulary: classes whose whole job is
      elements the page owns — a widget's controls wear cq-ui and cq-btn, and the
@@ -730,9 +759,14 @@ style.textContent = `
     .cq-status-text { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
     .cq-status-text .cq-age { color: var(--muted); }
     .cq-spacer { flex: 1; min-width: 0; }
-    .cq-banner select { font: inherit; padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; max-width: 260px; min-width: 0; }
+    /* A stated width, not one taken from the widest option: the label carries the
+       version's note, so a select sized by its content is a control that changes
+       width every time Claude publishes — and the row is packed to the right, so
+       each change slides every button left of it. What the note doesn't fit, its
+       menu still holds. */
+    .cq-banner select { font: inherit; padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; width: 190px; min-width: 0; text-overflow: ellipsis; }
     .cq-latest-chip { background: var(--warn-tint); border: 1px solid var(--warn); color: var(--warn-ink); border-radius: 6px; padding: 3px 8px; }
-    .cq-panel { position: fixed; top: 42px; right: 0; bottom: 0; width: min(360px, 100vw); z-index: 8900;
+    .cq-panel { position: fixed; top: 42px; right: 0; bottom: 0; width: min(${PANEL_W}px, 100vw); z-index: 8900;
       background: var(--card); border-left: 1px solid var(--rule); display: none; flex-direction: column; }
     .cq-panel.open { display: flex; }
     .cq-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--rule); font-weight: 600; }
@@ -783,7 +817,7 @@ style.textContent = `
     .cq-composer-row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
     .cq-toast { position: fixed; bottom: 18px; right: 18px; z-index: 9200; max-width: calc(100vw - 36px);
       overflow-wrap: anywhere; background: var(--ink); color: var(--paper); padding: 9px 14px;
-      border-radius: var(--r); opacity: 0; transition: opacity .25s; pointer-events: none; }
+      border-radius: var(--r); opacity: 0; transition: opacity .25s, right .18s ease; pointer-events: none; }
     .cq-toast.show { opacity: .95; }
     .cq-toast.clickable { pointer-events: auto; cursor: pointer; }
     .cq-live { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -825,6 +859,13 @@ acceptAllBtn.title = "Accept every suggested change still pending";
 const versionSelect = document.createElement("select");
 versionSelect.title = "Version";
 versionSelect.setAttribute("aria-label", "Version");
+// Which version this is, is the document's own answer (VNUM, off the path), so the
+// chooser states it now rather than standing empty until the first poll answers.
+// A blank control beside a rendered page is a page still loading, which this one
+// isn't; the width is the theme's either way, so the list arriving moves nothing.
+if (VNUM !== null)
+  versionSelect.append(Object.assign(document.createElement("option"),
+                                     { value: VNUM, textContent: `v${VNUM}` }));
 const toggleBtn = el("button", "cq-btn", "Comments");
 toggleBtn.title = "Show or hide the comment panel (c toggles, Esc closes, ? lists all keys)";
 toggleBtn.setAttribute("aria-expanded", "false");
@@ -983,13 +1024,20 @@ function syncLayout() {
   // place for when the sheet closes — a hidden-overflow scroller keeps its position,
   // and still moves for a j/k walk or a version switch restoring where the reviewer
   // was, so the passage behind the sheet is the one the panel is talking about.
-  const covering = panelOpen && innerWidth <= 720;
-  document.body.style.marginRight = panelOpen && !covering ? panel.offsetWidth + "px" : "";
+  //
+  // The strip is taken from the page rather than held aside for it, which makes
+  // opening the panel the largest movement in the product: the column re-centres by
+  // half the panel's width, and on a window narrow enough to lose width as well it
+  // rewraps every line. Both are carried as motion rather than as a jump — the
+  // transition granted to body at the end of the restore — because an eye can follow
+  // a sentence that slides and cannot find one that teleports.
+  const covering = panelOpen && innerWidth <= PANEL_W * 2;
+  document.body.style.marginRight = panelOpen && !covering ? PANEL_W + "px" : "";
   document.body.style.overflowY = covering ? "hidden" : "";
   // The toast lives in the same corner as the panel's Send button. Beside a wide
   // panel it steps left; over a covering sheet it stays inside the viewport and
   // rises above the whole composer, including a textarea grown by an unsent draft.
-  toastEl.style.right = (panelOpen && !covering ? panel.offsetWidth + 18 : 18) + "px";
+  toastEl.style.right = (panelOpen && !covering ? PANEL_W + 18 : 18) + "px";
   toastEl.style.bottom = (covering ? generalRow.offsetHeight + 18 : 18) + "px";
 }
 function setPanel(open) {
@@ -2871,6 +2919,10 @@ function renderVersions(state) {
       versionSelect.append(opt);
     }
     versionSelect.value = current ?? "";
+    // The box states its width rather than taking one (see the theme), so a note
+    // longer than it ends in an ellipsis. Carrying the whole label as the tooltip
+    // puts the rest a hover away instead of only inside the open menu.
+    versionSelect.title = versionSelect.selectedOptions[0]?.textContent || "Version";
   }
   latestVersion = state.versions.at(-1) ?? null;
   const behind = latestVersion !== null && VNUM !== null && latestVersion !== VNUM;

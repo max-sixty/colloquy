@@ -412,6 +412,32 @@ def open_page(browser, url, *, init_script=None, wait_until="networkidle", conte
     return page, errors
 
 
+def panel_settled(page, open=True):
+    """Wait for the panel to reach `open` and the page to finish making room for it.
+
+    Two things happen, and they don't finish together: the class flips at once and the
+    document slides into its new width over about a fifth of a second (syncLayout). A
+    geometry read taken on the flip is a read of the page mid-flight — its right edge
+    still under the panel, its column still the width it had — so an assertion fed by
+    one is about a layout that exists for a sixth of a second and then doesn't.
+
+    Two consecutive frames at the same margin is the transition finishing, said in the
+    transition's own terms: it interpolates on every frame while it runs and holds
+    still after. Waiting a duration instead would encode a number the stylesheet is
+    free to change, and would still be a guess on a loaded machine."""
+    page.wait_for_function(
+        "(open) => document.querySelector('.cq-panel').classList.contains('open') === open",
+        arg=open,
+    )
+    page.evaluate("() => { window.__cqMargin = null; }")
+    page.wait_for_function(
+        """() => { const m = getComputedStyle(document.body).marginRight;
+                   const settled = window.__cqMargin === m;
+                   window.__cqMargin = m;
+                   return settled; }"""
+    )
+
+
 CUSTOM_WIDGET_PAGE = """<!doctype html>
 <html lang="en">
 <head>
@@ -862,7 +888,7 @@ def test_page_and_panel_scroll_in_separate_regions(browser, serve):
     stack. The regions must not share an edge."""
     page, _ = open_page(browser, serve(LONG_PAGE, comments=12))
     page.get_by_role("button", name="Comments", exact=False).click()
-    page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
+    panel_settled(page)
 
     geom = page.evaluate("""() => {
         const box = el => el.getBoundingClientRect();
@@ -904,7 +930,7 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
     before = page.evaluate("() => document.body.scrollTop")
 
     page.locator("button[aria-expanded]").click()
-    page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
+    panel_settled(page)
 
     # One wheel over the page's visible sliver, one over the sheet. Waiting on the
     # second proves both were processed — input stays in order — so the first
@@ -944,7 +970,7 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
     # scrollTop a pixel to keep the visible content put. The passage staying put is the
     # promise; the number is one rendering of it.
     page.get_by_role("button", name="Close comments").click()
-    page.wait_for_function("() => !document.querySelector('.cq-panel').classList.contains('open')")
+    panel_settled(page, open=False)
     page.wait_for_function(
         """(top) => Math.abs(document.getElementById('p40').getBoundingClientRect().top - top) < 2""",
         arg=mark_top,
@@ -955,7 +981,7 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
 
     # The resize path: narrowing onto an open panel locks, widening unlocks.
     page.locator("button[aria-expanded]").click()
-    page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
+    panel_settled(page)
     page.set_viewport_size({"width": 1000, "height": 600})
     page.wait_for_function(
         "() => getComputedStyle(document.body).overflowY !== 'hidden' && document.body.style.marginRight !== ''"
@@ -1929,7 +1955,7 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     # other. Measured after the layout has moved, since opening the panel resizes
     # the page and the rows re-place on the frame after that.
     page.get_by_role("button", name="Comments", exact=False).click()
-    page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
+    panel_settled(page)
     page.wait_for_function(
         "() => [...document.querySelectorAll("
         "'[data-cq-for=sug-refill], [data-cq-for=sug-thistle]')]"
@@ -3339,6 +3365,30 @@ CONTROL_LABEL_PAGE = """<!doctype html>
 """
 
 
+def test_selecting_a_tab_leaves_the_strip_where_it_was(browser, serve):
+    """A control says which state it is in with paint, never with metrics.
+
+    The selected tab used to be set in 600 weight, and a bolder label is a wider one:
+    every tab after it slid a couple of pixels the instant one was pressed, so the strip
+    reshuffled under the pointer that had just pressed it and the next tab along was no
+    longer where the reviewer had been aiming. Nothing about that is visible in a
+    screenshot of either state — both strips lay out perfectly well — which is why it is
+    the two together that get asserted.
+
+    Which panel is showing is content, and content is allowed to change the widget's
+    height; the strip is the control, and controls hold still."""
+    page, errors = open_page(browser, serve(CONTROL_LABEL_PAGE))
+    strip = "() => [...document.querySelectorAll('cq-tabs [role=tab]')].map(e => { \
+             const r = e.getBoundingClientRect(); return [e.textContent, r.x, r.width]; })"
+    before = page.evaluate(strip)
+    assert len(before) == 2, "the strip didn't render, so this asserts nothing"
+
+    page.get_by_role("tab", name="Heated bird bath").click()
+    expect(page.locator("#p-bath")).to_be_visible()
+    assert page.evaluate(strip) == before, "selecting a tab moved the strip it sits in"
+    assert errors == []
+
+
 def test_a_widgets_label_takes_a_comment_inside_the_control_it_labels(browser, serve):
     """The other half of the pair above: a word the page says that the widget renders
     into a control. A tab's name is the case with nowhere else to go — the panel heading
@@ -3639,7 +3689,7 @@ def test_an_open_composer_does_not_eat_the_next_click(browser, serve):
     page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
 
     page.mouse.click(*mark_point(page, "cq-mark"))
-    page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
+    panel_settled(page)
 
     # And the composer's own mark belongs to no thread, so it opens nothing. Its first
     # range runs up to the posted one, so this lands on the draft and nothing else.
@@ -3675,13 +3725,13 @@ def test_a_click_on_a_mark_decides_once(browser, serve):
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     if page.locator(".cq-panel.open").count():
         page.get_by_role("button", name="Close comments").click()
-        page.wait_for_function("() => !document.querySelector('.cq-panel').classList.contains('open')")
+        panel_settled(page, open=False)
 
     page.locator("#fig").scroll_into_view_if_needed()
     spot = page.evaluate("""() => { const r = [...CSS.highlights.get('cq-mark')][0].getClientRects()[0];
                                     return {x: r.left + r.width / 2, y: r.top + r.height / 2}; }""")
     page.mouse.click(spot["x"], spot["y"])
-    page.wait_for_function("() => document.querySelector('.cq-panel').classList.contains('open')")
+    panel_settled(page)
     assert not page.locator(".cq-fab").is_visible(), (
         "the click opened the thread and then offered to comment on it as well"
     )
@@ -4653,6 +4703,10 @@ def test_review_round_trip(browser, serve):
     # The anchor pass painted the passage — a range in the highlight registry, not an
     # element, so there is no selector for it.
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
+    # Posting opened the panel, and the page is sliding into the width that leaves for
+    # it. Measuring a column mid-slide aims the drag below at where it was, not where
+    # it is going, and the drop lands outside the column it was meant for.
+    panel_settled(page)
 
     # Drag the card between columns through the pointer path — the seam where
     # the vendored SortableJS meets the runtime, which is where drags break.
@@ -4792,11 +4846,27 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
     }"""
     read = page.evaluate(metrics, ".cq-draft-body")
     host = page.locator("#draft-ops").bounding_box()
+    # A 4px band above the box, and the box's own top-left corner. The band is where
+    # the answer to "did the frame move" lives and no measurement of geometry can
+    # reach it: an outset ring is paint, so every rect stayed exactly as asserted
+    # below while the frame the reviewer sees grew 2px on every side, corners
+    # rounding wider to match. Bytes, not pixels — the same encoder over the same
+    # content gives the same file, so identical files are identical paint.
+    band = dict(x=host["x"] - 4, y=host["y"] - 4, width=host["width"] + 8, height=4)
+    inside = dict(x=host["x"], y=host["y"], width=40, height=40)
+    outside_before = page.screenshot(clip=band)
+    inside_before = page.screenshot(clip=inside)
 
     box = page.locator("#draft-ops .cq-draft-body").bounding_box()
     page.mouse.dblclick(box["x"] + 60, box["y"] + 8)
     editor = page.locator("#draft-ops textarea")
     expect(editor).to_be_focused()
+    assert page.screenshot(clip=band) == outside_before, (
+        "opening the editor painted outside the box the draft already occupied"
+    )
+    assert page.screenshot(clip=inside) != inside_before, (
+        "the open editor is indistinguishable from the read view at the box's edge"
+    )
     assert page.evaluate(metrics, "textarea") == read, (
         "the editor's text sits somewhere the read view's text did not"
     )

@@ -57,3 +57,16 @@
   names, so the twelfth widget can claim a conversation without core hearing of it; and
   whether ownership is a property of the anchor or of the widget, which decides what
   happens to the thread when a later version drops the element it was anchored on.
+
+- (2026-07-30) A diagram lands after the page does. `cq-diagram` loads the vendored
+  mermaid bundle lazily and renders asynchronously, so the SVG replaces the source
+  block around 100ms after the first paint (146ms against 46ms on
+  `examples/incident-report.html`), growing its element by up to 93px and carrying
+  everything below it down — a page the reader can already read, and then a jump in
+  the middle of it. Nothing can reserve the room: the SVG's height is a fact only the
+  render knows, and the source block's height bears no relation to it. The one honest
+  fix is to hold the first paint until `settling` resolves, which the runtime already
+  awaits before restoring the view — and that trades a jump for a blank page on any
+  startup that throws before the stamp, where today the reviewer gets a readable page
+  with broken chrome. Which of those is worse is a judgment about page-load feel
+  rather than a defect with a right answer, which is why it is here rather than fixed.
