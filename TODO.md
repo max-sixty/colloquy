@@ -58,32 +58,6 @@
   whether ownership is a property of the anchor or of the widget, which decides what
   happens to the thread when a later version drops the element it was anchored on.
 
-- (2026-07-30) The banner's right-hand group moves when nothing was pressed, and the
-  press sweep cannot see it because no gesture causes it. Three of those controls come
-  and go on what the poll finds — the latest-version chip, `✓ Accept all (N)`, the diff
-  Δ — and the Comments button's count widens by about 14px when it crosses a digit. The
-  row is packed to the right against a `flex: 1` spacer, so each of those shoves every
-  control to its left, in the middle of whatever the reviewer was doing. Reserving for
-  the digit alone is the small end and would read as a fix; a chip that appears is worth
-  far more than 14px, and holding room for three sometimes-absent buttons leaves a gappy
-  banner on the pages that never show them. So this is a question about what the banner
-  owes a reviewer who is not looking at it — announce in place, or somewhere that costs
-  the row nothing — rather than a width to state. Whatever it becomes needs a check that
-  drives the poll rather than a press, since that is the half the sweep structurally
-  can't reach.
-- (2026-07-30) A diagram lands after the page does. `cq-diagram` loads the vendored
-  mermaid bundle lazily and renders asynchronously, so the SVG replaces the source
-  block around 100ms after the first paint (146ms against 46ms on
-  `examples/incident-report.html`), growing its element by up to 93px and carrying
-  everything below it down — a page the reader can already read, and then a jump in
-  the middle of it. Nothing can reserve the room: the SVG's height is a fact only the
-  render knows, and the source block's height bears no relation to it. The one honest
-  fix is to hold the first paint until `settling` resolves, which the runtime already
-  awaits before restoring the view — and that trades a jump for a blank page on any
-  startup that throws before the stamp, where today the reviewer gets a readable page
-  with broken chrome. Which of those is worse is a judgment about page-load feel
-  rather than a defect with a right answer, which is why it is here rather than fixed.
-
 - (2026-07-31) An unsent draft dies with the tab. sessionStorage carries one through a
   reload, a version navigation, and a server restart — the port is derived from the page
   directory, so a re-serve lands on the same origin — and a closed tab is the one case

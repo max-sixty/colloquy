@@ -124,11 +124,22 @@ good", so signing off slid the version chooser and the Comments button right; a 
 pick mark took the room for the word it says at the moment it was pressed, dragging that
 row's § reference 54px out from under the pointer.
 
-The sweep is also what makes a reserved width safe to state as a number. Room reserved
-before it is needed gets measured in a browser, so it is a fact about one font, free to
-stop covering when the words change or where the system font sets them wider. Reserving
-and checking are one mechanism rather than two: the number alone is a guess that stops
-being true silently, which is the failure this whole norm is made of.
+News arriving has no gesture behind it, so there is no press to draw a line around and the
+edge falls around the whole of the chrome instead: its controls are addresses the reviewer
+is holding whether or not they are looking at them, while the document below may still
+change, because a fact arriving is what they are here to see. The banner takes all of it,
+packed to the right against a spacer, and that decides who pays — a control that grows
+moves itself and everything to its left, while everything to its right keeps its place. A
+comment posted from the terminal took `Comments (9)` to `Comments (10)` and the version
+chooser 6px with it; a second tab deciding the last pending suggestion took the ✓ Accept
+all away and slid the New-version chip 148px right, under whoever was reaching for it.
+
+Two sweeps are what make a reserved width safe to state as a number, and between them they
+work every one: a press, and the poll, which is the half no gesture can reach. Room
+reserved before it is needed gets measured in a browser, so it is a fact about one font,
+free to stop covering when the words change or where the system font sets them wider.
+Reserving and checking are one mechanism rather than two: the number alone is a guess that
+stops being true silently, which is the failure this whole norm is made of.
 
 A stylesheet lint was the first attempt at that check, and the shape is wrong. It reads
 the selector, and the state a control shows is not reliably in one: a class the module
@@ -137,13 +148,42 @@ real cases, missed the ring that prompted all this, and objected to every delibe
 lift. What a control does to its neighbours is a fact about a rendered page, so the page is
 where to ask.
 
-A shift before the first paint is not jerk, since nothing was on screen to move, and every
-widget upgrade measured on the shipped examples lands there, ahead of its own page's first
-paint — so hiding them behind `:not(:defined)` would buy nothing and cost every rendering
-of the vocabulary that carries no script. And a change the reviewer asked for may change
-the page: accepting a suggestion replaces the words, and the paragraph below moves because
-the content did. What is forbidden is movement they did not ask for, and movement that
-answers a small gesture with a large rearrangement.
+The poll then asks two things of reserving that a press never did. A control that comes and
+goes claims its room the first time it appears and keeps it for the rest of the page's
+life: reserving from the start would hold room on every row for news that page will never
+get, and reserving nothing is the movement, so this spends only where the alternative is a
+control moving and only on the pages that got the news. And a row out of room takes it from
+whatever will give, so which control that is has to be chosen rather than left to the
+stylesheet: the chooser was the one that could, so it did, dropping under the width it
+states and putting every arrival back in play on any window narrow enough. What gives now
+is the status text and the chip, both of them left of everything else on the row, where
+what they give up moves nothing.
+
+A shift before the first paint is not jerk, since nothing was on screen to move, and nearly
+every widget upgrade measured on the shipped examples lands there, ahead of its own page's
+first paint — so hiding them behind `:not(:defined)` would buy nothing and cost every
+rendering of the vocabulary that carries no script. The one that doesn't is where the
+rule's lower edge is. A diagram arrives at 163ms against a 52ms first paint and grows its
+element 93px, so the page does move with something on it; it is still not jerk, because aim
+needs a target and a moment to reach it and at a tenth of a second the reviewer has
+neither. What would make it jerk is that number growing, and the number is a fact about the
+vendored bundle rather than about the widget: mermaid's fetch completes 12ms *before* first
+paint, and the 123ms after it is parsing and drawing 2.75MB, so nothing about when the load
+is started reaches it.
+
+Holding the first paint until the page is done becoming itself is the fix that suggests
+itself, and the trade is bad. It buys that tenth of a second with a permanently blank page
+whenever anything between the hide and the reveal throws or hangs — for a product whose
+whole deliverable is the page, where the failure today is a readable page with broken
+chrome. The one arrival that does have aim behind it needs none of it: a version switch is
+a load the reviewer asked for, and the reading position is restored after the same
+`settling` the SVG lands in, so it is re-found in the page that grew rather than in the one
+that was about to.
+
+And a change the reviewer asked for may change the page: accepting a suggestion replaces
+the words, and the paragraph below moves because the content did. What is forbidden is
+movement they did not ask for, and movement that answers a small gesture with a large
+rearrangement.
 
 ## Assume the browser it already assumes
 

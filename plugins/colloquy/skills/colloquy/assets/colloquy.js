@@ -761,21 +761,31 @@ style.textContent = `
     .cq-status-text { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
     .cq-status-text .cq-age { color: var(--muted); }
     .cq-spacer { flex: 1; min-width: 0; }
-    /* A stated width, not one taken from the widest option: the label carries the
-       version's note, so a select sized by its content is a control that changes
-       width every time Claude publishes — and the row is packed to the right, so
-       each change slides every button left of it. What the note doesn't fit, its
-       menu still holds. */
-    .cq-banner select { font: inherit; padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; width: 190px; min-width: 0; text-overflow: ellipsis; }
-    /* The same rule the select above states, for the one other control on this row whose
-       label changes: "✓ Approved" is 12px narrower than "✓ Looks good", and the spacer
-       absorbing that slid the select and the Comments button 12px right at the moment a
-       reviewer had just pressed something. The number is measured rather than derived, so
-       it is only as good as the font it was measured in — which is what
-       test_a_press_leaves_its_neighbours_where_they_were is for: it fails the day the
-       reservation stops covering, rather than the day someone notices the row twitching. */
+    /* This row is packed to the right against the spacer, and that decides who pays for
+       a control changing size: it moves itself and everything to its left, while
+       everything to its right keeps its place. Four of these rewrite their own words —
+       the chooser's label carries the version's note, "✓ Approved" is 12px narrower than
+       "✓ Looks good", and two of them count something that gains a digit — so each states
+       a width rather than taking one, and the row holds still whichever of them speaks.
+       What a stated width cuts off, the chooser's own menu and its tooltip still hold.
+
+       The numbers are measured rather than derived, so they are only as good as the font
+       they were measured in. That is what the two sweeps are for: a press, and the poll,
+       which between them work every one of these. Either fails the day a reservation
+       stops covering, rather than the day someone notices the row twitching. */
+    .cq-banner select { font: inherit; padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; flex: none; width: 190px; text-overflow: ellipsis; }
     .cq-signoff { min-width: 110px; }
-    .cq-latest-chip { background: var(--warn-tint); border: 1px solid var(--warn); color: var(--warn-ink); border-radius: 6px; padding: 3px 8px; }
+    /* The two that count reserve the widest they reach anywhere below a thousand, so no
+       arithmetic on the count can move them and none of it has to be thought about again.
+       A page with a thousand open threads on it is not one anyone hands a reviewer. */
+    .cq-comments { min-width: 129px; }
+    .cq-accept-all { min-width: 138px; }
+    /* The one control on the right of the row that may give, because it is the leftmost
+       of them and giving there moves nothing; the status text, off at the other end, is
+       the other. The rest are .cq-btn, floored at their own words by nowrap — the chooser
+       was the exception, so a row with no room left took the width it states back off it,
+       which put every reservation above back in play on any narrow enough window. */
+    .cq-latest-chip { background: var(--warn-tint); border: 1px solid var(--warn); color: var(--warn-ink); border-radius: 6px; padding: 3px 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .cq-panel { position: fixed; top: 42px; right: 0; bottom: 0; width: min(${PANEL_W}px, 100vw); z-index: 8900;
       background: var(--card); border-left: 1px solid var(--rule); display: none; flex-direction: column; }
     .cq-panel.open { display: flex; }
@@ -874,13 +884,29 @@ const el = (tag, cls, text) => {
 const banner = el("div", "cq-ui cq-banner");
 const dot = el("span", "cq-dot");
 const statusText = el("span", "cq-status-text", "Connecting…");
+// The three controls the banner's news arrives as, each present only while it has
+// something to say. Room a control has once taken is room it keeps for the rest of the
+// page's life: before it first appears there is nothing to hold, so a page that never
+// falls behind pays nothing for the chip, and once one has stood somewhere the others
+// can't close ranks over it — a second tab deciding the last pending suggestion took the
+// ✓ Accept all away and slid the New-version chip 148px right, under whoever was
+// reaching for it. Reserving from the start instead would hold room on every row for news
+// that page will never get, which shows as a gap the moment one of them is there and its
+// neighbour isn't; reserving nothing is the movement. This spends only where the
+// alternative is a control moving, and only on the pages that got the news.
+//
+// One setter stating the whole outcome, per showComposer and showFab, so no caller has
+// to know which of the two ways of being absent this control is currently in.
+const showNews = (control, on) => {
+  if (on) control.dataset.cqStood = "1";
+  control.style.display = on || control.dataset.cqStood ? "" : "none";
+  control.style.visibility = on ? "" : "hidden";
+};
 const latestChip = el("button", "cq-ui cq-btn cq-latest-chip", "");
-latestChip.style.display = "none";
 const diffBtn = el("button", "cq-btn", "Δ");
-diffBtn.style.display = "none";
-const acceptAllBtn = el("button", "cq-btn", "");
-acceptAllBtn.style.display = "none";
+const acceptAllBtn = el("button", "cq-btn cq-accept-all", "");
 acceptAllBtn.title = "Accept every suggested change still pending";
+for (const control of [latestChip, diffBtn, acceptAllBtn]) showNews(control, false);
 const versionSelect = document.createElement("select");
 versionSelect.title = "Version";
 versionSelect.setAttribute("aria-label", "Version");
@@ -891,7 +917,7 @@ versionSelect.setAttribute("aria-label", "Version");
 if (VNUM !== null)
   versionSelect.append(Object.assign(document.createElement("option"),
                                      { value: VNUM, textContent: `v${VNUM}` }));
-const toggleBtn = el("button", "cq-btn", "Comments");
+const toggleBtn = el("button", "cq-btn cq-comments", "Comments");
 toggleBtn.title = "Show or hide the comment panel (c toggles, Esc closes, ? lists all keys)";
 toggleBtn.setAttribute("aria-expanded", "false");
 const approveBtn = el("button", "cq-btn primary cq-signoff", "✓ Looks good");
@@ -2712,7 +2738,7 @@ const pendingSuggestions = () =>
   );
 function syncSuggestions() {
   const n = pendingSuggestions().length;
-  acceptAllBtn.style.display = n ? "" : "none";
+  showNews(acceptAllBtn, Boolean(n));
   acceptAllBtn.textContent = `✓ Accept all (${n})`;
 }
 // A decision also changes what text the page has — the retired slot leaves it
@@ -2965,12 +2991,12 @@ function renderVersions(state) {
     location.replace(`/versions/v${latestVersion}.html`);
     return;
   }
-  latestChip.style.display = behind ? "" : "none";
+  showNews(latestChip, behind);
   if (behind)
     latestChip.textContent = `New version available → open v${latestVersion}`;
   const idx = current === null ? -1 : state.versions.indexOf(current);
   diffBase = idx > 0 ? state.versions[idx - 1] : null;
-  diffBtn.style.display = diffBase ? "" : "none";
+  showNews(diffBtn, Boolean(diffBase));
   if (diffBase) {
     diffBtn.textContent = `Δ v${diffBase}`;
     diffBtn.title = `Highlight what changed since v${diffBase}`;

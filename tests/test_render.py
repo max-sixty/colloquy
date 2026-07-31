@@ -536,6 +536,14 @@ PRESS = "[data-cq-offer], [role=tab], [role=button], .cq-btn, .cq-pick, button, 
 # it was pressed for. `[hidden]` is asked separately because hidden="until-found", which is
 # what a folded region wears, measures zero and still reports itself visible.
 ON_SCREEN = "(n) => n.checkVisibility() && !n.closest('[hidden]') && n.offsetWidth > 0"
+# What to call a control in a failure message. Its words are in it because they are
+# usually the whole of what distinguishes one button in a row from the next — and out of
+# the key it is looked up by, since a control that rewrites them (a count gaining a
+# digit) is the same control saying something new.
+NAMED = """(n) => n.tagName.toLowerCase()
+    + (typeof n.className === 'string' && n.className.trim()
+       ? '.' + n.className.trim().split(/\\s+/).join('.') : '')
+    + ' ' + JSON.stringify((n.textContent || '').trim().slice(0, 24))"""
 NEIGHBOURHOOD = f"""(el, sel) => {{
   const band = el.getBoundingClientRect();
   const sameLine = (n) => {{
@@ -547,13 +555,16 @@ NEIGHBOURHOOD = f"""(el, sel) => {{
       .filter((n) => n !== el && !n.contains(el))
       .flatMap((n) => (n.matches(sel) ? [n] : [...n.querySelectorAll(sel)]))
       .filter((n) => window.__cqOnScreen(n) && sameLine(n));
-  return {{
-    names: window.__cqNeighbours.map((n) => n.tagName.toLowerCase()
-        + (typeof n.className === 'string' && n.className.trim()
-           ? '.' + n.className.trim().split(/\\s+/).join('.') : '')
-        + ' ' + JSON.stringify((n.textContent || '').trim().slice(0, 24))),
-    boxes: window.__cqBoxes(),
-  }};
+  return {{ names: window.__cqNeighbours.map({NAMED}), boxes: window.__cqBoxes() }};
+}}"""
+# The same capture, of the banner rather than of one control's line: every control the
+# chrome is showing, held by identity so the news can rewrite their words without
+# changing who they are.
+BANNER_WATCH = f"""(sel) => {{
+  window.__cqOnScreen = {ON_SCREEN};
+  window.__cqNeighbours = [...document.querySelector(".cq-banner").querySelectorAll(sel)]
+      .filter(window.__cqOnScreen);
+  return {{ names: window.__cqNeighbours.map({NAMED}), boxes: window.__cqBoxes() }};
 }}"""
 # One reading, named once, so the settle loop and the assertion cannot measure differently.
 DEFINE_BOXES = """() => { window.__cqBoxes = () => window.__cqNeighbours.map(
@@ -610,6 +621,19 @@ WATCH_TRAFFIC = """
     return res;
   };
 """
+
+
+def displaced(before, boxes):
+    """Which of the watched controls are somewhere else, in the failure's own words.
+
+    A control that has gone off screen reads None and is left out: it was put away
+    rather than moved, which is a thing both sweeps below deliberately allow."""
+    return [
+        f"{name} moved by "
+        f"{[round(a - b, 1) for a, b in zip(now, was)]} (left, top, width, height)"
+        for name, was, now in zip(before["names"], before["boxes"], boxes)
+        if now is not None and was != now
+    ]
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
@@ -694,18 +718,118 @@ def test_a_press_leaves_its_neighbours_where_they_were(browser, serve, example):
         page.wait_for_function(ROUND_TRIP)
         page.evaluate("() => { window.__cqSettle = null; window.__cqSince = null; }")
         page.wait_for_function(SETTLED, arg=SETTLE_MS)
-        moved = [
-            f"{name} moved by "
-            f"{[round(a - b, 1) for a, b in zip(now, was)]} (left, top, width, height)"
-            for name, was, now in zip(before["names"], before["boxes"], page.evaluate(
-                "() => window.__cqBoxes()"))
-            if now is not None and was != now
-        ]
+        moved = displaced(before, page.evaluate("() => window.__cqBoxes()"))
         assert not moved, (
             f"pressing {label} in {example.name} moved the controls beside it:\n  "
             + "\n  ".join(moved)
         )
     assert pressed, f"{example.name} pressed nothing, so it asserts nothing"
+    assert errors == []
+    page.close()
+
+
+def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
+    """The other half of the same rule, for the changes nobody asked for.
+
+    A press has a line — the row the pressed control stands on, where the next gesture
+    is already aimed — and below it the page is content and may move. News arriving on
+    the poll has no gesture at all, so there is no line to draw: the reviewer was
+    somewhere else entirely, and every control in the chrome is an address they are
+    holding. The document may still change under them, because a fact arriving is what
+    they are here to see; the address it arrives at may not.
+
+    The banner is where all of it lands, and it is packed to the right against a spacer,
+    which decides who pays. A control that grows moves itself and everything to its
+    *left*; everything to its right keeps its place. So `Comments (9)` becoming
+    `Comments (10)` — a comment posted from the terminal while the reviewer reads —
+    slid the version chooser 6px left, and the ✓ Accept all a second tab's decision puts
+    away took the New-version chip with it.
+
+    Driven by writing the events a real one would leave, since that is what the page
+    reads either way, and there is no other way to reach this half: every gesture the
+    press sweep above can make is one the reviewer made, and none of these are."""
+    # Three pending suggestions, so the ✓ Accept all count has somewhere to go before it
+    # runs out; sign-off asked, so the row is the full one; nine comments already, so the
+    # tenth crosses a digit; and pinned, so a v2 landing leaves the page where it is and
+    # offers the chip rather than following it.
+    html = SUGGESTION_PAGE.replace(
+        "<title>suggestions</title>",
+        '<title>suggestions</title>\n<meta name="cq-review" content="sign-off">')
+    url = serve(html, comments=9)
+    d = serve.page_dir
+    page, errors = open_page(browser, url, pin=True)
+    page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+    comments = ".cq-banner button[aria-expanded]"
+    accept_all = '.cq-banner [title^="Accept every"]'
+    page.wait_for_function(f"() => document.querySelector('{comments}')"
+                           ".textContent === 'Comments (9)'")
+
+    def publish_v2():
+        (d / "versions" / "v2.html").write_text(html)
+        interact.append_event(d, {"kind": "note", "author": "claude",
+                                  "version": 2, "text": "two"})
+
+    # The same events a second tab's presses would have posted, which is the only way one
+    # reviewer's browser hears about another's decisions.
+    def decide(*widgets):
+        for widget in widgets:
+            interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
+                                      "widget": widget, "action": "accept", "detail": {}})
+
+    for what, drive, arrived in [
+        ("a tenth comment arrives",
+         lambda: interact.append_event(d, {"kind": "comment", "author": "user",
+                                           "version": 1, "text": "A tenth."}),
+         f"() => document.querySelector('{comments}').textContent === 'Comments (10)'"),
+        ("a new version is published",
+         publish_v2,
+         "() => document.querySelector('.cq-latest-chip')"
+         ".checkVisibility({visibilityProperty: true})"),
+        ("another tab decides two of the three pending suggestions",
+         lambda: decide("sug-refill", "sug-thistle"),
+         f"() => document.querySelector('{accept_all}')"
+         ".textContent === '\\u2713 Accept all (1)'"),
+        ("another tab decides the last one",
+         lambda: decide("sug-in-card"),
+         # Gone, asked the way it is now gone: a control that has stood on this row keeps
+         # its room, so its box is exactly what must not have changed here.
+         f"() => !document.querySelector('{accept_all}')"
+         ".checkVisibility({visibilityProperty: true})"),
+    ]:
+        page.evaluate(DEFINE_BOXES)
+        before = page.evaluate(BANNER_WATCH, NEIGHBOUR)
+        assert len(before["names"]) >= 4, (
+            f"before {what} the banner was showing only {before['names']}, which is "
+            "fewer controls than it always has — this step asserts almost nothing"
+        )
+        drive()
+        page.wait_for_function(arrived, timeout=15_000)
+        page.evaluate("() => { window.__cqSettle = null; window.__cqSince = null; }")
+        page.wait_for_function(SETTLED, arg=SETTLE_MS)
+        moved = displaced(before, page.evaluate("() => window.__cqBoxes()"))
+        assert not moved, f"{what} and the banner moved:\n  " + "\n  ".join(moved)
+
+    # A reservation is a promise the row can keep only while it has the room, and a row
+    # out of room takes it from whatever will give. Every control up there but the
+    # chooser is a .cq-btn, floored at its own words by nowrap, so the chooser was the
+    # one thing that could — and it did, dropping under the width it states and putting
+    # every arrival above back in play on any window narrow enough. What gives now is the
+    # status text and the chip, which is where the spacer's slack was: both are left of
+    # everything else on the row, so what they give up moves nothing.
+    states_a_width = ("() => ['select', '.cq-comments', '.cq-signoff', '.cq-accept-all']"
+                      ".map((s) => document.querySelector('.cq-banner ' + s).offsetWidth)")
+    wide = page.evaluate(states_a_width)
+    page.set_viewport_size({"width": 900, "height": 900})
+    # Out of room, and something has visibly given: no spacer left, and the chip showing
+    # less than it holds. Without both, a window that still had slack would assert nothing.
+    page.wait_for_function(
+        "() => { const chip = document.querySelector('.cq-latest-chip');"
+        "        return document.querySelector('.cq-spacer').offsetWidth === 0"
+        "               && chip.offsetWidth < chip.scrollWidth; }")
+    assert page.evaluate(states_a_width) == wide, (
+        "a banner with no room left took it out of the controls that state a width, "
+        "which is what leaves them free to move on the next thing that arrives"
+    )
     assert errors == []
     page.close()
 
