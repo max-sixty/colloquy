@@ -1,0 +1,39 @@
+# The developer's environment, not the plugin's.
+#
+# What colloquy itself needs is declared in `interact.py`'s PEP 723 header and
+# resolved by `uv` at each invocation — that is what lets the plugin install with
+# no build step and no venv, and this file does not change it. What is here is
+# what the *suite* needs: that same set, because the tests load `interact.py` by
+# path and so import its dependencies into their own process, plus the browser
+# driver and pytest.
+#
+# The overlap is a mirror, not a second source of truth. A dependency
+# `interact.py` gains and this file doesn't fails the suite on the next run with
+# an ImportError, so the two cannot drift quietly — which is the only kind of
+# drift worth defending against.
+#
+# `uv.lock` beside it pins the whole resolution, so a run installs what was last
+# tested rather than whatever released this morning, and `setup-uv` has a file to
+# key its cache on.
+
+[project]
+name = "colloquy"
+version = "0"
+requires-python = ">=3.10"
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "playwright>=1.49",
+  "axe-playwright-python>=0.1.4",
+  # Mirrors interact.py's PEP 723 header, per the note above.
+  "click>=8",
+  "jsonschema>=4",
+  "markdown-it-py>=3",
+  "tinycss2>=1.4",
+]
+
+# Nothing here is built or installed as a package; the repo is scripts and a
+# plugin payload, and this project exists to name their environment.
+[tool.uv]
+package = false

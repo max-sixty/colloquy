@@ -112,9 +112,13 @@ for the directory, then serve it from `interact.handler_for(page_dir, token)` in
 as the fixtures do, opening the page with that key in the query (`?t=…`). `server run` instead puts a live review behind the session, and the
 review-loop hooks then hold it to watching that page.
 
+The suite runs in the environment `pyproject.toml` names and `uv.lock` pins. That is the
+developer's environment only: colloquy declares what it needs in `interact.py`'s PEP 723
+header, which is what installs it with no build step, and the project file leaves that
+alone. The tests need the same set anyway, because they load `interact.py` by path.
+
 ```
-uv run --with pytest --with click --with jsonschema --with markdown-it-py --with tinycss2 --with playwright \
-  --with axe-playwright-python python -m pytest tests
+uv run pytest tests
 ```
 
 ## Rebuilding the syntax bundle
