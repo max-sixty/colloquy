@@ -567,19 +567,19 @@ NEIGHBOURHOOD = f"""(el, sel) => {{
 DEFINE_BOXES = """() => { window.__cqBoxes = () => window.__cqNeighbours.map(
     (n) => window.__cqOnScreen(n)
       ? [n.offsetLeft, n.offsetTop, n.offsetWidth, n.offsetHeight] : null); }"""
-# Settled means "has not moved for longer than it can take to learn the press landed".
-# Two matching frames is not that where the press sent something: what the banner does
-# about a send arrives on the next /api/state poll rather than on the send's own
-# response, so a reading taken a frame later is a reading of the page from before the
-# press had an effect — and it passes or fails by where the poll happened to be. That is
-# the flake CLAUDE.md calls worse than an outright failure, and it hid the sign-off
-# regression on about half the runs meant to prove this test catches it.
+# A press that sends is not over when its response lands. The runtime answers a post by
+# polling, and what the banner does about the press arrives with that poll rather than
+# with the post, so two matching frames read the page from before the press had an
+# effect — passing or failing by where the round trip happened to be. That is the flake
+# CLAUDE.md calls worse than an outright failure, and it hid the sign-off regression on
+# about half the runs meant to prove this test catches it.
 #
-# Which is also why the window is the send's and not every press's: a tab switch and a
-# fold are done in the frame they were asked in, and paying a poll interval for each of
-# those is most of this sweep's wall clock for nothing.
-SENT_SETTLE_MS = 2000 + 400  # colloquy.js POLL_MS, and room for the round trip after it
-QUIET_SETTLE_MS = 50  # a few frames: enough for a transition, no round trip to wait on
+# So the wait is the round trip itself, watched rather than timed. Holding for the poll
+# interval instead would state a number the runtime is free to change, and would still
+# be a guess on a loaded machine — while charging every press two seconds for a trip
+# that takes ten milliseconds.
+ROUND_TRIP = "() => window.__cqRead >= window.__cqSends"
+SETTLE_MS = 50  # a few frames: enough for a transition to finish
 SETTLED = """(hold) => {
   const now = JSON.stringify(window.__cqBoxes());
   if (now !== window.__cqSettle) {
@@ -589,15 +589,33 @@ SETTLED = """(hold) => {
   }
   return performance.now() - window.__cqSince > hold;
 }"""
-# Whether the press sent, counted where the sending happens. The runtime posts every
-# action and comment through fetch, so one wrapper sees them all and no widget has to
-# say anything. Init scripts run on every navigation, so the reloads below keep it.
-COUNT_SENDS = """
-  window.__cqSends = 0;
+# What the page has sent and how much of it has come back, counted where the traffic is.
+# The runtime posts every action and comment through fetch and reads state back the same
+# way, so one wrapper sees both halves and no widget has to say anything. A poll notes the
+# posts already answered when it goes out, so what it has told the page on arrival is
+# those and no later ones — which is what makes ROUND_TRIP a statement about this press
+# rather than about whichever poll happened to land last. Init scripts run on every
+# navigation, so the reloads below keep it.
+WATCH_TRAFFIC = """
+  window.__cqSends = 0;  // events posted
+  window.__cqAcked = 0;  // posts the server has answered
+  window.__cqRead = 0;   // answered posts the newest state the page has read accounts for
   const inner = window.fetch;
   window.fetch = function (...args) {
-    if (String(args[0] ?? "").includes("/api/event")) window.__cqSends++;
-    return inner.apply(this, args);
+    const url = String(args[0] ?? "");
+    const posting = url.includes("/api/event");
+    const polling = url.includes("/api/state");
+    const asOf = window.__cqAcked;
+    if (posting) window.__cqSends++;
+    const res = inner.apply(this, args);
+    const over = () => {
+      if (posting) window.__cqAcked++;
+      // Two polls can be in flight at once — a post's own and the timer's — so the
+      // freshest reading stands rather than the last one to arrive.
+      if (polling) window.__cqRead = Math.max(window.__cqRead, asOf);
+    };
+    res.then(over, over);  // over either way: a post the server refuses is over too
+    return res;
   };
 """
 
@@ -635,7 +653,7 @@ def test_a_press_leaves_its_neighbours_where_they_were(browser, serve, example):
     the status text takes up the slack instead of the buttons — a real regression,
     silently masked by the sweep's own previous gesture."""
     url = serve(example.read_text())
-    page, errors = open_page(browser, url, init_script=COUNT_SENDS)
+    page, errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
     total = page.locator(PRESS).count()
     pressed, dirty = 0, False
     for i in range(total):
@@ -675,17 +693,15 @@ def test_a_press_leaves_its_neighbours_where_they_were(browser, serve, example):
         before = control.evaluate(NEIGHBOURHOOD, NEIGHBOUR)
         if not before["names"]:
             continue
-        sends = page.evaluate("() => window.__cqSends")
         control.click()
         pressed, dirty = pressed + 1, True
-        # The press's own effect is synchronous; what follows it is the send's round trip
-        # and whatever the poll after it repaints, which is as much part of pressing as
-        # the frame before it. Idle covers the first, and the hold below the second — for
-        # a press that sent, which is the only one with a poll to wait on.
-        page.wait_for_load_state("networkidle")
-        sent = page.evaluate("() => window.__cqSends") > sends
+        # The press's own effect is synchronous; what follows it is the round trip the
+        # press started and whatever its answer repaints, which is as much part of
+        # pressing as the frame before it. A press that sent nothing satisfies ROUND_TRIP
+        # already, so both kinds take the same short hold.
+        page.wait_for_function(ROUND_TRIP)
         page.evaluate("() => { window.__cqSettle = null; window.__cqSince = null; }")
-        page.wait_for_function(SETTLED, arg=SENT_SETTLE_MS if sent else QUIET_SETTLE_MS)
+        page.wait_for_function(SETTLED, arg=SETTLE_MS)
         moved = [
             f"{name} moved by "
             f"{[round(a - b, 1) for a, b in zip(now, was)]} (left, top, width, height)"

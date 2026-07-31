@@ -640,14 +640,16 @@ hide, they don't discard. Cancel is the only discard.
   with `expect(...)`, never a bare `is_hidden()` or `count()`: every gesture that sends
   is a round trip, and a plain read taken right after one passes on a fast run and fails
   on a slow one, which is worse than failing outright.
-- **A round trip is not over when its response lands.** What the page does about a send
-  mostly arrives on the next `/api/state` poll, so anything waiting on a send waits out
-  `POLL_MS` and not a frame or two. The press sweep learned this the expensive way: two
-  matching frames read the page from before the press had an effect, and it caught its
-  own regression on about half of the runs written to prove it caught it. Where the wait
-  costs real wall clock, take it only for the presses that actually sent — the runtime
-  posts everything through `fetch`, so one wrapper counts them and no widget declares
-  anything.
+- **A round trip is not over when its response lands.** The runtime answers a post by
+  polling, so what the page does about a send arrives with that poll rather than with the
+  post. The press sweep learned this the expensive way: two matching frames read the page
+  from before the press had an effect, and it caught its own regression on about half of
+  the runs written to prove it caught it. Watch the trip rather than timing it. The
+  runtime posts and reads state back through `fetch`, so one wrapper sees both halves and
+  no widget declares anything; a hold sized to `POLL_MS` states a number the runtime is
+  free to change, still guesses on a loaded machine, and charges every press two seconds
+  for a trip that takes ten milliseconds. `wait_for_load_state("networkidle")` is not the
+  wait either: with no navigation to answer for, it returns at once.
 - **A sweep that walks controls by index must prove it pressed them.** A list read before
   the runtime injects its banner is a short list, and a short list skips silently rather
   than failing — which is the vacuous pass, wearing the same green as the real one. Pin
