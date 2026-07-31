@@ -392,8 +392,12 @@ def serve(tmp_path, monkeypatch):
         httpd.shutdown()
 
 
-def open_page(browser, url, *, init_script=None, wait_until="networkidle", context=None):
-    """A page with its console errors collected, settled enough for mermaid."""
+def open_page(browser, url, *, pin=False, init_script=None, wait_until="networkidle", context=None):
+    """A page with its console errors collected, settled enough for mermaid.
+
+    `pin` asks for the version the URL names rather than the newest, and is a keyword
+    because the URL a handover carries already has a query holding the page's key: a
+    test appending its own `?pin` overwrote that key and got a page that never loaded."""
     page = (
         context.new_page()
         if context
@@ -407,6 +411,8 @@ def open_page(browser, url, *, init_script=None, wait_until="networkidle", conte
     page.on("response", lambda r: errors.append(f"{r.status} {r.url}") if r.status >= 400 else None)
     if init_script:
         page.add_init_script(init_script)
+    if pin:
+        url += ("&" if "?" in url else "?") + "pin"
     page.goto(url, wait_until=wait_until)
     page.wait_for_function("() => document.querySelector('.cq-banner') !== null")
     return page, errors
@@ -4550,7 +4556,7 @@ def test_the_picker_runs_in_number_order_past_v9(browser, serve):
 
     # Pinned to the oldest, the chip naming the newest is the runtime's one place
     # that spells a version out in a sentence.
-    page, errors = open_page(browser, url + "&pin")
+    page, errors = open_page(browser, url, pin=True)
     expect(page.locator(".cq-latest-chip")).to_have_text(
         "New version available → open v10"
     )
@@ -5288,7 +5294,7 @@ def test_action_history_is_bounded_by_the_pinned_version(browser, serve):
             },
         )
 
-    old, old_errors = open_page(browser, url + "&pin=1")
+    old, old_errors = open_page(browser, url, pin=True)
     expect(old.locator("#draft-ops .cq-draft-history > summary")).to_have_text(
         "Changes · 1 edit"
     )
@@ -5299,7 +5305,7 @@ def test_action_history_is_bounded_by_the_pinned_version(browser, serve):
     )
     assert old_sequence == [1]
 
-    latest, latest_errors = open_page(browser, url.replace("v1.html", "v2.html") + "&pin=1")
+    latest, latest_errors = open_page(browser, url.replace("v1.html", "v2.html"), pin=True)
     expect(latest.locator("#draft-ops .cq-draft-history > summary")).to_have_text(
         "Changes · 2 edits"
     )
