@@ -91,7 +91,8 @@ customElements.define(
     // them. Same marker (the theme styles [data-cq-said]) and same contract
     // (generated, so the diff looks away; not .cq-ui, so the anchor pass doesn't)
     // — a widget with a module of its own does the part only it can, which is
-    // the line CLAUDE.md draws and cq-milestone's chips are the other case of.
+    // the line the layer's CLAUDE.md draws and cq-milestone's chips are the
+    // other case of.
     #structure() {
       for (const col of this.querySelectorAll(":scope > cq-column")) {
         col.setAttribute("role", "list");

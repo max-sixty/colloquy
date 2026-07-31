@@ -31,7 +31,12 @@ A page directory holds:
                          name means one set of bytes forever, so a version the
                          reviewer approved cannot show them different pixels later,
                          and two versions showing the same screenshot share the one
-                         file rather than a copy each
+                         file rather than a copy each. It is also the only door an
+                         image has: the page's author is a language model, and a
+                         screenshot is a megabyte of base64 it cannot type — nor
+                         should each version carry a copy of one that `version check`
+                         walks and a browser reloads. The transport was never an
+                         optimisation over inlining; inlining was never available
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
     status.json          the agent's declared state: {"state": working|waiting|idle, "detail", "ts"};
                          when delivery wakes a non-working page, `review wait` writes
@@ -167,7 +172,9 @@ declaration with an allowed value; each cq-suggestion is well formed (at most
 one of each slot, at least one of them, no nesting, `resolves` naming a real
 comment); ids are unique and every id from the previous version survives
 unless the log settled the suggestion holding it; no fixed-pixel-width element
-is wider than the readable column.
+is wider than the readable column. Near-free and deterministic is what makes
+running it on every version affordable, so keep a new check that way; anything
+needing a browser belongs in `--render`.
 
 `version check --render` adds the browser half, run once before a page's URL is first
 handed over: the version loads in the machine's installed Chrome (Playwright
@@ -190,6 +197,13 @@ fenced. A quote never spans a fence, so "the page has words here that the file
 doesn't" is a refusal when the comment is written rather than an anchor that
 detaches later in the reviewer's browser. Element-anchor an opaque widget
 instead (`--section`), which is the anchor a click on a diagram makes.
+
+A version is written in more than one language, and each is read by a parser for
+that language: _StructParser for what the markup declares, page_passages for what
+it says, tinycss2 for the CSS a <style> block holds, markdown-it for a message. A
+new question about a version is a field on one of those readings rather than a
+pattern over the file's text, because a pattern answers something adjacent to the
+question asked — the readable-column check below carries what that cost.
 """
 
 import base64
@@ -789,7 +803,13 @@ def _cq_raw_block(state, start_line: int, end_line: int, silent: bool) -> bool:
 def _cq_only(self, tokens, idx, options, env) -> str:
     """A raw tag reaches the page as markup when it is one of ours, and as the
     characters it is written in otherwise. One rule for the block a widget opens and
-    the inline one a sentence holds, since the question is the same."""
+    the inline one a sentence holds, since the question is the same.
+
+    What a message may inject is the vocabulary, not HTML. Prose says `Vec<T>`, and raw
+    HTML reads that as an element to open — `if a<b and c>d` as one with two attributes
+    — so a message rendered whole would lose its own words in front of the reviewer with
+    nothing on either side to say so. Escaping every tag the registry can't name leaves
+    the markup that reaches the panel exactly the markup the gate has a schema for."""
     raw = tokens[idx].content
     return raw if CQ_TAG.match(raw.lstrip()) else escape(raw)
 
@@ -820,6 +840,17 @@ MESSAGE_MD = {"claude": _message_md(True), "user": _message_md(False)}
 
 def message_html(event: dict) -> str:
     """A message body as the panel shows it.
+
+    Markdown has no parser in the stdlib either, so markdown-it-py reads it whole; where
+    that runs is what had a choice. The page's own code blocks are colored in the
+    browser, because coloring them here would put spans in the file Claude writes the
+    next version from. A message has no file, and reading it in the browser would stand a
+    second answer beside the one the post-time gate uses — the two then having to keep
+    agreeing about which <cq-tabs> is a widget and which is a fenced picture of one. So
+    it renders once, here, and the panel injects the string that was validated. What a
+    message says is still the log's: this render is derived on every read and stored
+    nowhere, which is what leaves `review wait` and the transcript printing the words
+    that were typed.
 
     Prose renders as Markdown. A suggestion doesn't: its words are bound for the page
     verbatim, so a rendering would show the reviewer an italic where the next version
@@ -2600,6 +2631,10 @@ class _StructParser(HTMLParser):
 # fenced. A quote never spans a fence, which turns "the page has words here that the file
 # doesn't" from an anchor that silently detaches in the reviewer's browser into a refusal
 # at the moment it is written, addressed to the one party who can still fix it.
+#
+# Retirement drops and rewriting substitutes rather than fencing, because that is what
+# each leaves on the screen. A fence says the reading doesn't know what stands there, and
+# in both of these it knows exactly.
 
 # What a text node's "block" resolves to, matching the runtime's TEXT_BLOCK: one space
 # goes wherever two runs of text sit in different blocks, and none where they share one,
@@ -3014,6 +3049,21 @@ def _removed_by(html, registry, wanted: str, section: str, decided, rewritten):
 # A rule, a style="" and a width="" are the three places a document states a width.
 # The first two are CSS, so tinycss2 reads them; the third is an attribute, so the
 # markup parser does.
+#
+# Three patterns over the file's text came first, and each answered something adjacent
+# to the question asked: the document read as a stylesheet handed a screenshot's base64
+# to the rule walker, `width` needed a lookbehind to exclude `max-width` because it
+# matched a name instead of reading a property, and the scan for `style=""` never saw
+# one written with the other quote. Hand-rolling the parser is the same mistake a level
+# down, and harder to see, because a hand-rolled parser is right about the grammar it
+# was written against: the brace walk those patterns became knew that a comment's braces
+# are not braces, and still read a `}` inside `content: "}"` as the end of the block,
+# dropping every declaration after it in that rule; still read a rule holding both
+# declarations and a nested rule as declaring nothing of its own; and still told a fixed
+# `900px` from a `calc(100% - 900px)` by asking whether the string ended in `px`, which
+# `900px !important` does not. CSS has no parser in the stdlib, so the dependency is a
+# real cost — one more wheel behind every `version check`, ~6ms to read the theme — and
+# it buys the grammar whole rather than one bug's worth at a time.
 
 
 def css_block(css):
@@ -3424,6 +3474,11 @@ def incoming_registry(layers: list) -> dict:
 # x-state (per widget) each tag's verbs and detail schemas. Nothing else on disk
 # says so. `page init` refuses a re-vendor that would retire or reshape a contract
 # still present in the log.
+#
+# That refusal is the third door a decision can be lost through, after version-scoping
+# and hand-copying: the log is append-only and its verbs are a forever-contract, so
+# fifteen of one page's own `decide` events fell silent when the verb was retired under
+# them. Only the stamp makes that a refusal rather than a quiet no-op.
 
 
 def vocabulary_gaps(page_dir: Path, events: list, incoming: dict) -> list:

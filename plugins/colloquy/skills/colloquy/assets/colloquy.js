@@ -2998,10 +2998,10 @@ latestChip.onclick = () => (location.href = "/");
 //
 // The log outranks the markup, and that is the whole rule: authored state is the
 // initial condition, never a later correction, so nothing a version does or
-// omits can un-make a decision by itself. CLAUDE.md carries why, and what it
-// cost to learn. Replay used to stop at the delivery cursor, on the premise that
-// a version written after Claude was handed an action encoded it — a premise
-// nothing checked, and delivery is not assent. Only a version can say what
+// omits can un-make a decision by itself. The repo's own CLAUDE.md carries why,
+// and what it cost to learn. Replay used to stop at the delivery cursor, on the
+// premise that a version written after Claude was handed an action encoded it — a
+// premise nothing checked, and delivery is not assent. Only a version can say what
 // Claude did with an action, and saying it is `version check`'s business now
 // (restatement_errors), not something inferred here from silence.
 const appliedActions = new Set();
