@@ -13,11 +13,11 @@ each new version on its own.
 
 ![colloquy demo](docs/demo.gif)
 
-[`docs/index.html`](docs/index.html) is the tour: what it does and a review end to end.
-[`docs/how-it-works.html`](docs/how-it-works.html) covers the mechanism, and
-[`docs/customizing.html`](docs/customizing.html) covers themes and project widgets.
-All three use colloquy's own theme, so they double as specimens. Open them in a browser
-from a checkout.
+[`docs/`](docs/) is the site, published at <https://max-sixty.github.io/colloquy/>:
+`index.html` is the tour (what it does, and a review end to end), `examples.html` lists
+the example pages, `how-it-works.html` covers the mechanism, and `customizing.html`
+covers themes and project widgets. Each uses colloquy's own theme, so they double as
+specimens, and each opens the same from a checkout as from the web.
 
 ## Install
 
@@ -75,6 +75,21 @@ plugins/colloquy/bin/colloquy version publish /tmp/demo --version 1 --text "demo
 plugins/colloquy/bin/colloquy server run /tmp/demo
 ```
 
+## The website
+
+`scripts/site.py` assembles <https://max-sixty.github.io/colloquy/> into `.tmp/site`,
+and `.github/workflows/publish-site.yaml` runs it on every push to `main` that touches
+the pages, the examples, or the layer. The docs pages are copied with their three
+checkout-relative paths substituted (the theme, a link into the payload, and a link to
+an example), and each
+example is exported through the shipped `version export`, so what a visitor reads is
+Chrome's own drawing of the page with the comment layer removed. The build resolves
+every local link it wrote and refuses a site holding one that reaches nothing.
+
+```
+scripts/site.py
+```
+
 ## Developing
 
 The suite is integration tests over the real thing. `test_interact.py` exercises the
@@ -87,7 +102,10 @@ script sizing it, and pressing any control leaves the controls beside it exactly
 they were. One journey test drives the whole review loop through the real UI
 (select a passage, comment, drag a card, follow the next version, find the comment still
 anchored) and pins the event log it leaves. `test_product_page.py` holds the pages under
-`docs/` to the shipped theme and widget registry. Playwright attaches to the Chrome
+`docs/` to the shipped theme and widget registry, and `test_site.py` builds the site and
+reads it back: the theme it serves is the shipped file, each exported example stands up
+with its scripts gone, both palettes reach the site's own layer, and no page scrolls
+sideways on a phone. Playwright attaches to the Chrome
 already installed (`channel="chrome"`), so there is no browser download and still no
 build step. Driving a page by hand to check a change works the same way: run `page init`
 for the directory, then serve it from `interact.handler_for(page_dir, token)` in-process

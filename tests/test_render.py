@@ -48,7 +48,7 @@ import pytest
 from axe_playwright_python.sync_playwright import Axe
 from click.testing import CliRunner
 from conftest import interact
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
 
 EXAMPLES = sorted((Path(__file__).parent.parent / "examples").glob("*.html"))
 assert EXAMPLES, "no examples found — parametrizing over an empty list tests nothing"
@@ -344,14 +344,6 @@ REPLAYED_PAGE = """<!doctype html>
 </body>
 </html>
 """.format(card=IMPORTER_CARD)
-
-
-@pytest.fixture(scope="module")
-def browser():
-    with sync_playwright() as p:
-        b = p.chromium.launch(channel="chrome")
-        yield b
-        b.close()
 
 
 # A page's key is minted per page; fixed here so a test can build a URL for a

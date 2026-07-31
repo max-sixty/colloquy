@@ -1,0 +1,74 @@
+/* The site layer: what a published page needs beyond a document. It rides
+ * theme.css tokens throughout and states no colour or size of its own, so the
+ * site inherits both palettes and every later change to them — which is the
+ * claim the site is making about the theme, tested rather than asserted
+ * (test_site.py holds this file to the tokens).
+ *
+ * Loaded after theme.css by every page under docs/, so the pages open the same
+ * from a checkout as from the web. The examples the build exports carry the
+ * theme inlined and do not link this file; a copy of a review page is that page,
+ * not a page of this site. */
+
+/* ---------- what a phone changes ---------- */
+
+/* A review page is served to the machine its session runs on, so the theme sizes
+ * for a desktop and lets a token like `$XDG_CONFIG_HOME/colloquy/` set the width
+ * of the cell holding it. The site is read wherever the link is opened, and on a
+ * 390px column that one token is wider than the page: it takes the table with
+ * it, and the table takes the document, which then scrolls sideways under
+ * everything. Breaking inside a word is the smaller loss, and it costs nothing
+ * at a width where the word fits. */
+code { overflow-wrap: anywhere; }
+
+/* ---------- the bar across the top ---------- */
+
+/* Sits inside main, at the document's own column: a header band spanning wider
+ * than the words under it would be a second column to read, and there is one
+ * thing here to read. Nothing in it changes metrics on hover or on the current
+ * page — a nav that reflows under the pointer is the one gesture a nav exists
+ * for, thrown away (see "The page holds still under the reviewer's aim"). */
+nav.sitenav { display: flex; flex-wrap: wrap; align-items: baseline;
+              gap: var(--sp-2) var(--sp-3); margin: 0 0 40px;
+              padding-bottom: 10px; border-bottom: 1px solid var(--rule);
+              font-size: var(--t-5); }
+nav.sitenav .brand { margin-right: auto; color: var(--ink); font-weight: 600;
+                     letter-spacing: -0.01em; text-decoration: none; }
+nav.sitenav a { color: var(--muted); text-decoration: none; }
+nav.sitenav a:hover { color: var(--ink); text-decoration: underline; }
+nav.sitenav [aria-current="page"] { color: var(--ink); }
+
+/* ---------- the hero ---------- */
+
+header.hero { margin-bottom: 36px; }
+header.hero h1 { font-size: 36px; letter-spacing: -0.015em; }
+header.hero .lede { font-size: 19px; line-height: 1.45; }
+/* One host per block, each a label over its two lines. Stacked rather than side
+ * by side: half a 760px column is narrower than `codex plugin marketplace add
+ * max-sixty/colloquy`, and a command a reader has to scroll to finish reading is
+ * a command they will copy half of. */
+.hosts { display: grid; grid-template-columns: minmax(0, 1fr);
+         gap: var(--sp-3); margin: 18px 0; }
+.hosts h3 { margin: 0 0 6px; font-size: var(--t-5); color: var(--muted); }
+.hosts pre { margin: 0; }
+
+/* ---------- figures ---------- */
+
+figure.shot img { border: 1px solid var(--rule); border-radius: var(--r);
+                  box-shadow: 0 12px 32px rgba(0, 0, 0, .08); }
+svg.arch { display: block; margin: 20px auto; width: 100%; max-width: 720px;
+           height: auto; }
+
+/* ---------- the exhibit list ---------- */
+
+/* One row per example: what it is on the left, the page itself on the right.
+ * A grid rather than a list, so the links line up as a column to run down. */
+.exhibits { display: grid; gap: var(--sp-1) var(--sp-3); margin: 16px 0;
+            grid-template-columns: minmax(11rem, max-content) 1fr; }
+.exhibits dt { font-weight: 600; }
+.exhibits dd { margin: 0 0 10px; color: var(--ink-2); font-size: var(--t-5); }
+
+/* ---------- the foot ---------- */
+
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
+         font-size: var(--t-5); color: var(--muted); }
+footer p { margin: 6px 0; }

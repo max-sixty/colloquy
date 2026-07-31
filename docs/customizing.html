@@ -5,17 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>customize colloquy</title>
 <meta name="description" content="Customize colloquy's theme and add project or user widgets through the registry, CSS, and optional ES modules.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="customize colloquy">
+<meta property="og:description" content="Theme overlays and project widgets: a registry entry, CSS, and an optional ES module, vendored into each page.">
+<meta property="og:url" content="https://max-sixty.github.io/colloquy/customizing.html">
+<meta property="og:image" content="https://max-sixty.github.io/colloquy/session-light.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="../plugins/colloquy/skills/colloquy/assets/theme.css">
-<style>
-footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
-         font-size: var(--t-5); color: var(--muted); }
-</style>
+<link rel="stylesheet" href="site.css">
 </head>
 <body>
 <main>
 
+<nav class="sitenav" aria-label="Site">
+<a class="brand" href="index.html">colloquy</a>
+<a href="examples.html">Examples</a>
+<a href="how-it-works.html">How it works</a>
+<a href="customizing.html" aria-current="page">Customize</a>
+<a href="https://github.com/max-sixty/colloquy">GitHub</a>
+</nav>
+
 <header id="top">
-<p class="eyebrow"><a href="index.html">colloquy</a> · customize</p>
+<p class="eyebrow">customize</p>
 <h1>Customize colloquy</h1>
 <p class="lede" id="lede">A customization layer can change the theme, add
 <code>cq-*</code> elements, and supply browser behavior. <code>page init</code>
@@ -168,9 +180,12 @@ vendored theme and widgets unchanged.</p>
 </section>
 
 <footer id="colophon">
-<p><a href="index.html">What colloquy offers</a> ·
+<p id="links"><a href="index.html">Tour</a> ·
+<a href="examples.html">Examples</a> ·
 <a href="how-it-works.html">How it works</a> ·
-<a href="https://github.com/max-sixty/colloquy">GitHub</a> · MIT license.</p>
+<a href="customizing.html">Customize</a> ·
+<a href="https://github.com/max-sixty/colloquy">GitHub</a> ·
+<a href="https://github.com/max-sixty/colloquy/blob/main/LICENSE">MIT license</a></p>
 </footer>
 
 </main>

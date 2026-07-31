@@ -2,9 +2,19 @@
 not an installed module."""
 
 import importlib.util
+import subprocess
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import sync_playwright
+
+# uv keeps its cache under the developer's home, and the fixture below moves that
+# home, so every `bin/colloquy` subprocess would otherwise resolve its
+# dependencies from scratch — a second per call. Pinning the cache leaves the
+# isolation to the thing it is for, which is the colloquy overlay.
+UV_CACHE = subprocess.run(
+    ["uv", "cache", "dir"], capture_output=True, text=True, check=True
+).stdout.strip()
 
 _spec = importlib.util.spec_from_file_location(
     "interact",
@@ -29,6 +39,7 @@ def isolated_session(tmp_path_factory, monkeypatch):
     a dozen throwaway fixtures per run. An untagged page is nobody's, which is
     what a fixture should be."""
     monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
+    monkeypatch.setenv("UV_CACHE_DIR", UV_CACHE)
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
@@ -36,3 +47,13 @@ def isolated_session(tmp_path_factory, monkeypatch):
     monkeypatch.delenv("COLLOQUY_SESSION_ID", raising=False)
     monkeypatch.delenv("COLLOQUY_SESSION_PID", raising=False)
     monkeypatch.delenv("COLLOQUY_AGENT", raising=False)
+
+
+@pytest.fixture(scope="module")
+def browser():
+    """The Chrome already on the machine, driven for the tests a static read
+    can't answer: what a widget upgrades into, and what the site fits on."""
+    with sync_playwright() as p:
+        b = p.chromium.launch(channel="chrome")
+        yield b
+        b.close()

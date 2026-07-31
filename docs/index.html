@@ -5,24 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>colloquy · collaborate with your agent in HTML</title>
 <meta name="description" content="colloquy is a Claude Code and Codex plugin: your agent presents plans, findings, and work in progress as a commentable web page, your comments reach the session, and revised versions ship with changelogs.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="colloquy · collaborate with your agent in HTML">
+<meta property="og:description" content="Your agent presents plans, findings, and work in progress as a commentable web page. Your comments reach the session, and revised versions ship with changelogs.">
+<meta property="og:url" content="https://max-sixty.github.io/colloquy/">
+<meta property="og:image" content="https://max-sixty.github.io/colloquy/session-light.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="../plugins/colloquy/skills/colloquy/assets/theme.css">
-<style>
-/* Landing layer over the stock theme: hero scale and the session screenshot.
-   Every color and size below rides theme.css tokens. */
-header.hero { margin-bottom: 36px; }
-header.hero h1 { font-size: 36px; letter-spacing: -0.015em; }
-header.hero .lede { font-size: 19px; line-height: 1.45; }
-figure.shot img { border: 1px solid var(--rule); border-radius: var(--r);
-                  box-shadow: 0 12px 32px rgba(0, 0, 0, .08); }
-footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
-         font-size: var(--t-5); color: var(--muted); }
-</style>
+<link rel="stylesheet" href="site.css">
 </head>
 <body>
 <main>
 
+<nav class="sitenav" aria-label="Site">
+<span class="brand">colloquy</span>
+<a href="examples.html">Examples</a>
+<a href="how-it-works.html">How it works</a>
+<a href="customizing.html">Customize</a>
+<a href="https://github.com/max-sixty/colloquy">GitHub</a>
+</nav>
+
 <header class="hero" id="top">
-<p class="eyebrow">colloquy · a Claude Code and Codex plugin</p>
+<p class="eyebrow">a Claude Code and Codex plugin</p>
 <h1>Collaborate with your agent in HTML.</h1>
 <p class="lede" id="lede">Your agent builds you a page rather than a scroll of terminal
 text: diagrams, boards you drag, a list of work that ticks over as it goes. Select any
@@ -73,11 +78,10 @@ than a document: the state of the resources you asked about, a queue draining, a
 checklist ticking over. The agent republishes as the work moves and your browser follows on
 its own, so you watch it happen rather than reading a summary afterwards.</li>
 </ul>
-<p id="more"><a href="how-it-works.html">How it works</a> shows the widget system
-rendering live; <a href="customizing.html">Customize</a> covers theme overlays
-and project widgets. The
-<a href="https://github.com/max-sixty/colloquy/tree/main/examples">examples
-gallery</a> holds a complete page for each kind of write-up.</p>
+<p id="more">The <a href="examples.html">examples</a> are complete pages, one per kind of
+write-up, published here as the browser draws them.
+<a href="how-it-works.html">How it works</a> shows the widget system rendering live, and
+<a href="customizing.html">Customize</a> covers theme overlays and project widgets.</p>
 </section>
 
 <section id="loop">
@@ -121,8 +125,8 @@ a passage, watch a new version advance the work, then move a card.</figcaption>
 <h2>Example: Re-prioritize a queue</h2>
 <p id="interact-setup">The
 <a href="../examples/triage-board.html">release-triage example</a> hands the ordering
-to the reviewer. Run the shipped page, then drag “CSV export quotes numerics” from
-“Fix in 2.4.1” to “Blocking release”:</p>
+to the reviewer. Run the shipped page from a checkout, then drag “CSV export quotes
+numerics” from “Fix in 2.4.1” to “Blocking release”:</p>
 <pre><code>scripts/preview.py triage-board</code></pre>
 <figure>
 <cq-specimen id="tour-board-specimen" label="release triage">
@@ -162,30 +166,37 @@ active and the event timeline gains the cutover result.</li>
 <li><strong>v6:</strong> rollback is done; the report becomes active and the browser
 follows the version without a reload.</li>
 </ol>
-<p id="track-source">The example is the middle state, with metrics, milestones,
-a blocker, and an event log for the next version to update in place.</p>
+<p id="track-source">The published example is the middle state, with metrics,
+milestones, a blocker, and an event log for the next version to update in place.</p>
 </section>
 
 <section id="install">
 <h2>Install</h2>
-<p><strong>Claude Code</strong></p>
+<div class="hosts">
+<div>
+<h3>Claude Code</h3>
 <pre><code>/plugin marketplace add max-sixty/colloquy
 /plugin install colloquy@colloquy</code></pre>
-<p><strong>Codex</strong></p>
+</div>
+<div>
+<h3>Codex</h3>
 <pre><code>codex plugin marketplace add max-sixty/colloquy
 codex plugin add colloquy@colloquy</code></pre>
+</div>
+</div>
 <p>Then ask the agent to "write it up as a page", run <code>/colloquy</code> in
 Claude Code, or run <code>$colloquy</code> in Codex. The agent also reaches for it
 on its own when a plan or write-up would be easier to
 review as a page than as terminal text.</p>
-<p id="links"><a href="how-it-works.html">How it works</a> ·
-<a href="customizing.html">Customize</a> ·
-<a href="https://github.com/max-sixty/colloquy">GitHub</a> ·
-<a href="https://github.com/max-sixty/colloquy/tree/main/examples">examples</a> ·
-MIT license</p>
 </section>
 
 <footer id="colophon">
+<p id="links"><a href="index.html">Tour</a> ·
+<a href="examples.html">Examples</a> ·
+<a href="how-it-works.html">How it works</a> ·
+<a href="customizing.html">Customize</a> ·
+<a href="https://github.com/max-sixty/colloquy">GitHub</a> ·
+<a href="https://github.com/max-sixty/colloquy/blob/main/LICENSE">MIT license</a></p>
 <p>This page is a static render of colloquy's own theme; the comment layer joins
 in when a live session serves a page.</p>
 </footer>

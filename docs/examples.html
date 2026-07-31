@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>colloquy examples</title>
+<meta name="description" content="A complete colloquy page for each kind of write-up — a decision, an incident, a PR walkthrough, a live dashboard — published as the browser draws them.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="colloquy examples">
+<meta property="og:description" content="A complete colloquy page for each kind of write-up — a decision, an incident, a PR walkthrough, a live dashboard.">
+<meta property="og:url" content="https://max-sixty.github.io/colloquy/examples.html">
+<meta property="og:image" content="https://max-sixty.github.io/colloquy/session-light.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="../plugins/colloquy/skills/colloquy/assets/theme.css">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+
+<nav class="sitenav" aria-label="Site">
+<a class="brand" href="index.html">colloquy</a>
+<a href="examples.html" aria-current="page">Examples</a>
+<a href="how-it-works.html">How it works</a>
+<a href="customizing.html">Customize</a>
+<a href="https://github.com/max-sixty/colloquy">GitHub</a>
+</nav>
+
+<header id="top">
+<p class="eyebrow">examples</p>
+<h1>A page for each kind of write-up</h1>
+<p class="lede" id="lede">Each of these is a complete page — what an agent would hand a
+reviewer for that kind of work — with every project, name and number in it invented. The
+<a href="../examples/gallery.html">gallery</a> puts all eight on one page, a tab
+each.</p>
+<p id="copies">These are copies rather than reviews. A colloquy page is served by the
+session that wrote it, and there is no session behind a static host — so the copies come
+from <code>colloquy version export</code>, which drops the comment layer along with
+every script rather than leave a comment box that swallows what you type. What the
+widgets drew is all here, and a control whose state the browser owns still works: a
+diff's files still fold away, because that fold is a <code>&lt;details&gt;</code>.
+Dragging a card takes a session, which is <a href="#run">one command from a
+checkout</a>.</p>
+</header>
+
+<section id="pages">
+<h2>The pages</h2>
+<dl class="exhibits">
+
+<dt><a href="../examples/design-decision.html">Design decision</a></dt>
+<dd>Where session state should live, argued down to a recommendation. The reviewer picks
+an option or writes in the box beside it, and a suggestion proposes replacement wording
+for a paragraph they can accept as it stands.</dd>
+
+<dt><a href="../examples/incident-report.html">Incident report</a></dt>
+<dd>A 94-minute queue backlog: what it cost across the top, a sequence diagram of the
+retry storm, and a timeline of what happened when.</dd>
+
+<dt><a href="../examples/pr-walkthrough.html">PR walkthrough</a></dt>
+<dd>Three files of a rate-limiting change, read in the order that explains it: the file
+tree, the diff, and the new code with a remark anchored at each line worth stopping
+on.</dd>
+
+<dt><a href="../examples/status-report.html">Status report</a></dt>
+<dd>Week six of a search relaunch — the measurements that matter and the milestones
+behind them, with the open question stated rather than buried.</dd>
+
+<dt><a href="../examples/live-progress.html">Live progress</a></dt>
+<dd>A cutover rehearsal the agent republishes as each check finishes. Served live, the
+counts and statuses move under the reader without a refresh; this copy is the middle
+state.</dd>
+
+<dt><a href="../examples/triage-board.html">Triage board</a></dt>
+<dd>Everything open against a release, as a board the reviewer re-triages by dragging.
+Each move reaches the agent as an action and holds its place on later versions.</dd>
+
+<dt><a href="../examples/release-notes.html">Release notes</a></dt>
+<dd>Three notes the reviewer owns: double-click one and rewrite it, and the exact wording
+is what the agent gets.</dd>
+
+<dt><a href="../examples/parallel-workstreams.html">Parallel workstreams</a></dt>
+<dd>Three projects side by side, a tab each holding its own status, board and decisions.
+Which tab is open is the reader's own view and reaches nobody.</dd>
+
+</dl>
+</section>
+
+<section id="run">
+<h2>Run one for real</h2>
+<p>From a checkout, <code>preview.py</code> builds the page directory the runtime
+expects and serves it, which is the same path an agent session takes:</p>
+<pre><code>scripts/preview.py triage-board</code></pre>
+<p>The page it opens takes comments. Run from an agent session, they reach it and the
+example gets revised like any other page; run from a bare shell, they queue in the log
+until an agent next reads it.</p>
+</section>
+
+<footer id="colophon">
+<p id="links"><a href="index.html">Tour</a> ·
+<a href="examples.html">Examples</a> ·
+<a href="how-it-works.html">How it works</a> ·
+<a href="customizing.html">Customize</a> ·
+<a href="https://github.com/max-sixty/colloquy">GitHub</a> ·
+<a href="https://github.com/max-sixty/colloquy/blob/main/LICENSE">MIT license</a></p>
+</footer>
+
+</main>
+</body>
+</html>

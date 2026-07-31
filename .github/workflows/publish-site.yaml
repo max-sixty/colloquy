@@ -1,0 +1,61 @@
+name: publish-site
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'examples/**'
+      - 'plugins/colloquy/skills/colloquy/assets/**'
+      - 'scripts/site.py'
+      - '.github/workflows/publish-site.yaml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-site:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: 📂 Checkout code
+        uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+
+      # Each example is exported by drawing it, so the runner's own Chrome is
+      # what the site is made with — the same `channel="chrome"` the suite uses.
+      - name: 🖼 Build site
+        run: scripts/site.py
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: .tmp/site/
+          retention-days: 1
+
+  deploy-site:
+    needs: build-site
+    runs-on: ubuntu-24.04
+
+    # Don't attempt to publish if on a fork
+    if: ${{ github.repository_owner == 'max-sixty' }}
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v6
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
