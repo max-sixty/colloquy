@@ -255,13 +255,15 @@ and the comment layer left behind.
 
 Whenever you hand over the URL or finish a round of work, run
 `review state <page> waiting`, start `review wait <page>` as a background task, and end
-your turn. While `review wait` runs, the banner names the current agent as listening; it exits
-— re-invoking you — when the user comments, replies, resolves, approves, or edits an
-interactive widget (a drag on a `cq-board` arrives as an `action` event), printing the
-new events as JSON. `review wait` delivers everything no previous `review wait` has
-delivered, including events posted while you were working, so comments never get lost
-between rounds. Reading the log with `review events` doesn't count as delivery. User
-comments exist only through the browser; `review comment` posts as you, never as them.
+your turn. The reply ending each round carries the page's URL again: the reviewer opens
+the page from the turn in front of them. While `review wait` runs, the banner names the
+current agent as listening; it exits — re-invoking you — when the user comments,
+replies, resolves, approves, or edits an interactive widget (a drag on a `cq-board`
+arrives as an `action` event), printing the new events as JSON. `review wait` delivers
+everything no previous `review wait` has delivered, including events posted while you
+were working, so comments never get lost between rounds. Reading the log with
+`review events` doesn't count as delivery. User comments exist only through the
+browser; `review comment` posts as you, never as them.
 A delivery while the page already says `working` leaves that status untouched;
 `handoff` dates only a pickup from a non-working state.
 
