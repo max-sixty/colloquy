@@ -1184,6 +1184,96 @@ def test_the_runtime_does_not_replace_a_pages_keyframes(browser, serve):
     page.close()
 
 
+STACKED_OPTIONS_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>stacked options</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Clip storage</h1>
+<cq-options id="stacked" choose>
+  <cq-option id="st-sd" effort="low" risk="high">
+    <strong>SD card only</strong>
+    <dl class="facts"><dt>Keeps</dt><dd>nine days</dd><dt>Retrieval</dt><dd>a ladder</dd></dl>
+    <p>Clips stay on the camera's card and overwrite oldest-first.</p>
+  </cq-option>
+  <cq-option id="st-pi" effort="med" risk="low" recommended>
+    <strong>Pi in the shed</strong>
+    <dl class="facts"><dt>Keeps</dt><dd>a season</dd><dt>Retrieval</dt><dd>the couch</dd></dl>
+    <p>A nightly pull over the garden wifi; the link is the weak span.</p>
+  </cq-option>
+</cq-options>
+<cq-options id="terse">
+  <cq-option id="t-paper" effort="low" risk="high"><strong>Paper maps</strong> Nothing
+  to charge.</cq-option>
+  <cq-option id="t-gps" effort="med" risk="low"><strong>GPS</strong> A week of
+  battery.</cq-option>
+</cq-options>
+<cq-compare id="pair">
+  <cq-variant id="cv-cedar"><strong>Cedar</strong>
+    <dl class="facts"><dt>Seal</dt><dd>never</dd></dl>
+    <p>Weathers silver; no sealant, no schedule.</p></cq-variant>
+  <cq-variant id="cv-pine"><strong>Pine</strong>
+    <dl class="facts"><dt>Seal</dt><dd>yearly</dd></dl>
+    <p>Cheaper up front; seal it every autumn.</p></cq-variant>
+</cq-compare>
+</main>
+</body>
+</html>
+"""
+
+
+def test_substantial_options_stack_and_align_their_facts(browser, serve):
+    """Layout follows substance: an option carrying block content turns its group
+    into full-width rows — the grid's ~13rem cards were a shape for labels, and a
+    page whose options held real argument grew a comparison table and an "in
+    detail" section outside the widget it decides in. The rows keep the
+    comparison inside the group: every option's `.facts` list docks right at one
+    fixed width, so scalars align down the page like that table's column, and the
+    chips join the title line (the risk chip measures its offset from the effort
+    chip's edge — anchor positioning — rather than guessing a width). A terse
+    group on the same page keeps the grid."""
+    page, errors = open_page(browser, serve(STACKED_OPTIONS_PAGE))
+    assert errors == []
+
+    sd = page.locator("#st-sd").bounding_box()
+    pi = page.locator("#st-pi").bounding_box()
+    group = page.locator("#stacked").bounding_box()
+    assert sd["y"] + sd["height"] <= pi["y"], "substantial options must stack"
+    assert sd["width"] > group["width"] * 0.95, "a stacked option takes the whole column"
+
+    rails = [page.locator(f"#{i} > dl.facts").bounding_box() for i in ("st-sd", "st-pi")]
+    for rail, card in zip(rails, (sd, pi)):
+        assert rail["x"] > card["x"] + card["width"] / 2, "the facts rail docks right"
+    assert abs(rails[0]["x"] - rails[1]["x"]) < 1, "rails align down the group"
+
+    title = page.locator("#st-sd > strong").bounding_box()
+    effort = page.locator('#st-sd > [data-cq-said="effort"]').bounding_box()
+    risk = page.locator('#st-sd > [data-cq-said="risk"]').bounding_box()
+    for chip in (effort, risk):
+        # Within the title's own band — the corner placement (a 40px header strip
+        # above the title) sits ~26px higher and fails this.
+        assert abs(chip["y"] - title["y"]) < 8, "chips ride the title line"
+    assert risk["x"] + risk["width"] <= effort["x"], "the chip pair must not overlap"
+
+    paper = page.locator("#t-paper").bounding_box()
+    gps = page.locator("#t-gps").bounding_box()
+    assert abs(paper["y"] - gps["y"]) < 1, "terse options keep the grid row"
+    assert paper["x"] + paper["width"] <= gps["x"], "terse options sit side by side"
+
+    # cq-compare is the same shape without the decision, and follows it.
+    cedar = page.locator("#cv-cedar").bounding_box()
+    pine = page.locator("#cv-pine").bounding_box()
+    assert cedar["y"] + cedar["height"] <= pine["y"], "substantial variants stack too"
+    rail = page.locator("#cv-cedar > dl.facts").bounding_box()
+    assert rail["x"] > cedar["x"] + cedar["width"] / 2, "a variant's facts dock right"
+    page.close()
+
+
 def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     """A settled decision reads as one line and the cards behind it stop spending
     the page's height — but they are hidden, not gone, so everything that used to

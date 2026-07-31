@@ -182,20 +182,21 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0;
  * pick, the reference, and the box for words, and without it these rules still
  * draw the whole thing.
  *
- * Which of two forms a group takes is a fact about its options rather than an
+ * Which of three forms a group takes is a fact about its options rather than an
  * attribute saying so: an option that leads with a <strong> title argues its own
- * case, so a group holding one is a grid of cards; a group whose options are bare
- * labels is a question *about* the page rather than a set of them, and reads as a
- * list of rows, each naming the block it is about (`for`). Every rule below that
- * only makes sense for one form says which — a card's chips are pinned to its
- * corners and a row's ride in its line, and neither is an override of the other.
+ * case, so a group holding one is a grid of cards — until any option carries
+ * block content (a paragraph, a list, a facts rail), an argument no 13rem card
+ * was going to hold, which stacks the whole group into full-width rows; and a
+ * group whose options are bare labels is a question *about* the page rather
+ * than a set of them, and reads as a list of compact rows, each naming the
+ * block it is about (`for`). Every rule below that only makes sense for one
+ * form says which — a card's chips are pinned to the corners its band
+ * reserves, an argument row's cluster on its title line, a question row's
+ * ride in its line — and none is an override of another.
  *
  * Chips read the attributes: effort top-left, risk top-right (tinted per value);
  * `recommended` is the accent ring, or a row's outline. */
 cq-options { display: block; margin: 14px 0; }
-cq-options:has(> cq-option > strong) {
-             display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-             gap: var(--sp-3); }
 cq-option { display: block; position: relative; border: 1px solid var(--rule);
             border-radius: var(--r); padding: var(--sp-3); background: var(--card);
             font-size: 14px; }
@@ -207,17 +208,22 @@ cq-option::before, cq-option::after,
 cq-option > [data-cq-said="effort"], cq-option > [data-cq-said="risk"] {
     font-size: var(--t-6); line-height: 1.6; padding: 0 8px; border-radius: 999px;
     background: var(--chip); color: var(--ink-2); }
-cq-options:has(> cq-option > strong) > cq-option[effort],
-cq-options:has(> cq-option > strong) > cq-option[risk] { padding-top: 40px; }
-cq-options:has(> cq-option > strong) > cq-option::before,
-cq-options:has(> cq-option > strong) > cq-option::after,
-cq-options:has(> cq-option > strong) > cq-option > [data-cq-said="effort"],
-cq-options:has(> cq-option > strong) > cq-option > [data-cq-said="risk"] {
-    position: absolute; top: 12px; }
-cq-options:has(> cq-option > strong) > cq-option[effort]::before,
-cq-options:has(> cq-option > strong) > cq-option > [data-cq-said="effort"] { left: 12px; }
-cq-options:has(> cq-option > strong) > cq-option[risk]::after,
-cq-options:has(> cq-option > strong) > cq-option > [data-cq-said="risk"] { right: 12px; }
+/* The card form in full — its grid, its chip corners, and the band that holds
+ * them — scoped to groups whose every option is terse, so the argument form
+ * below states its own placement rather than unsaying this one's. */
+cq-options:has(> cq-option > strong):not(:has(> cq-option > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
+    blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
+    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-timeline,
+    cq-compare, cq-metrics, cq-tabs, cq-draft, cq-shot, cq-specimen))) {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--sp-3);
+  & > cq-option[effort], & > cq-option[risk] { padding-top: 40px; }
+  & > cq-option::before, & > cq-option::after,
+  & > cq-option > [data-cq-said="effort"], & > cq-option > [data-cq-said="risk"] {
+      position: absolute; top: 12px; }
+  & > cq-option[effort]::before, & > cq-option > [data-cq-said="effort"] { left: 12px; }
+  & > cq-option[risk]::after, & > cq-option > [data-cq-said="risk"] { right: 12px; }
+}
 cq-option[effort]::before { content: "effort " attr(effort); }
 cq-option[risk]::after { content: "risk " attr(risk); }
 cq-option > [data-cq-said="effort"]::before { content: "effort "; }
@@ -230,6 +236,48 @@ cq-option[risk="med"]::after, cq-option[risk="med"] > [data-cq-said="risk"]
                               { background: var(--warn-tint); color: var(--warn-ink); }
 cq-option[risk="low"]::after, cq-option[risk="low"] > [data-cq-said="risk"]
                               { background: var(--ok-tint); color: var(--ok-ink); }
+/* The argument form. An option carrying block content turns its group into
+ * full-width rows, read down the page the way a decision record reads — which
+ * is how pages stopped growing a comparison table and an "in detail" section
+ * outside the widget they decide in. No attribute asks for it: writing a
+ * paragraph is the request for room. The block list is the suggestion slots'
+ * one, because it answers the same question asked of a different holder, and
+ * a test pins every copy of it to the registry so a new block widget can't be
+ * silently missing from one. Chips sit at the title line's right end — the
+ * risk chip measures its own offset from the effort chip's edge (anchor
+ * positioning; the fallback is the pair's shared 12px inset, so a lone risk
+ * chip takes the corner), and every option scopes the anchor name, which is
+ * what keeps a row holding only a risk chip from borrowing its neighbor's
+ * effort chip: the scope that shields it is the neighbor's own. A `.facts`
+ * list at the top of an option docks right at one fixed width, so scalars
+ * align down the group like the column of the comparison table this form
+ * folds back in. cq-compare is the same shape without the decision, and
+ * follows it. */
+cq-options:has(> cq-option > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
+    blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
+    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-timeline,
+    cq-compare, cq-metrics, cq-tabs, cq-draft, cq-shot, cq-specimen)),
+cq-compare:has(> cq-variant > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
+    blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
+    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-timeline,
+    cq-compare, cq-metrics, cq-tabs, cq-draft, cq-shot, cq-specimen)) {
+  display: block;
+  & > :is(cq-option, cq-variant) { display: flow-root; margin: 0 0 var(--sp-2); }
+  & > :is(cq-option, cq-variant):last-child { margin-bottom: 0; }
+  & > cq-option { anchor-scope: --cq-effort; }
+  & > cq-option:is([effort], [risk]) > strong { padding-right: 11rem; }
+  & > cq-option[effort]::before, & > cq-option > [data-cq-said="effort"] {
+      position: absolute; right: 12px; top: 14px; anchor-name: --cq-effort; }
+  & > cq-option[risk]::after, & > cq-option > [data-cq-said="risk"] {
+      position: absolute; top: 14px; right: calc(anchor(--cq-effort left, 6px) + 6px); }
+  & > :is(cq-option, cq-variant) > .facts { float: right; clear: right;
+      display: block; width: 10rem; margin: 0 0 var(--sp-2) var(--sp-3);
+      font-size: var(--t-5); }
+  & > :is(cq-option, cq-variant) > .facts dt { color: var(--muted);
+      font-size: var(--t-6); text-transform: uppercase; letter-spacing: .05em;
+      font-weight: 400; margin-top: 6px; padding: 0; }
+  & > :is(cq-option, cq-variant) > .facts dd { margin: 0; }
+}
 /* With `choose`, the group takes the reader's pick by click: hover lifts a card
  * and warms its mark, and the pick wears the ok ring. `chosen` reads after
  * `recommended`, so the reader's pick wins the border. */
@@ -364,9 +412,11 @@ cq-options[open] > .cq-settled::before { content: "▾"; }
     /* Collapsed the group lays out as a block, so hidden cards contribute no grid
      * rows and no gaps; open, the grid is back. */
     cq-options[settled].cq-rendered:not([open]) { display: block; }
-    /* until-found keeps the card's own box in flow, and a card is bordered and
-     * padded — zero it, or the collapse leaves a stack of empty boxes behind. */
-    cq-options[settled] > cq-option[hidden] { padding: 0; border: 0; box-shadow: none; }
+    /* until-found keeps the card's own box in flow, and a card is bordered,
+     * padded, and (stacked) margined — zero it all, or the collapse leaves a
+     * stack of empty boxes behind. */
+    cq-options[settled] > cq-option[hidden] { padding: 0; border: 0; box-shadow: none;
+                                              margin: 0; }
     /* The boolean-hidden fallback (no until-found support) hides here, because the
      * display:block above outranks the UA's [hidden] rule. */
     cq-options[settled] > cq-option[hidden]:not([hidden="until-found"]) { display: none; }
@@ -593,7 +643,7 @@ cq-new { background: var(--add-tint); }
 :is(cq-old, cq-new):has(> :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
     blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
     cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-timeline,
-    cq-compare, cq-metrics, cq-tabs)) {
+    cq-compare, cq-metrics, cq-tabs, cq-draft, cq-shot, cq-specimen)) {
   display: block; padding: 2px 10px; margin: 10px 0; }
 /* Decided: the surviving slot is plain prose, the other one gone. */
 cq-suggestion[data-cq-state] > :is(cq-old, cq-new) {

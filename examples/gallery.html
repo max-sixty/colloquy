@@ -62,33 +62,41 @@ client change is merged, so it reads as one line — open it if you want the alt
 <h2>Options</h2>
 <cq-options id="session-options" choose>
   <cq-option id="opt-jwt" effort="low" risk="high">
-    <strong>Stateless JWT</strong> Sessions become signed tokens; no store at all.
-    Revocation requires a denylist, which quietly reintroduces the store — with the
-    hard parts (replication, expiry) still attached.
+    <strong>Stateless JWT</strong>
+    <dl class="facts">
+      <dt>Revoke</dt><dd>build a denylist</dd>
+      <dt>Outage</dt><dd>unaffected</dd>
+      <dt>New ops</dt><dd>none, at first</dd>
+    </dl>
+    <p>Sessions become signed tokens; no store at all. Revocation requires a
+    denylist, which quietly reintroduces the store — with the hard parts
+    (replication, expiry) still attached, and the account-takeover response
+    waiting on them.</p>
   </cq-option>
   <cq-option id="opt-redis" effort="med" risk="low" recommended>
-    <strong>Redis, cookie fallback</strong> Sessions in the Redis we already run,
-    keyed by an opaque id; a short-lived signed cookie covers Redis outages for reads
-    so a blip doesn't log everyone out. Revocation is a delete.
+    <strong>Redis, cookie fallback</strong>
+    <dl class="facts">
+      <dt>Revoke</dt><dd>delete the key</dd>
+      <dt>Outage</dt><dd>reads ride the cookie</dd>
+      <dt>New ops</dt><dd>what we already do</dd>
+    </dl>
+    <p>Sessions in the Redis we already run, keyed by an opaque id; a
+    short-lived signed cookie covers Redis outages for reads, so a blip doesn't
+    log everyone out. Revocation is a delete — which is the shape support's
+    "log out all devices" needs.</p>
   </cq-option>
   <cq-option id="opt-db" effort="low" risk="med">
-    <strong>Postgres table</strong> One table, no new moving parts. Every request
-    writes a row; at our volume that's the primary's headroom spent on expiry
-    bookkeeping.
+    <strong>Postgres table</strong>
+    <dl class="facts">
+      <dt>Revoke</dt><dd>delete the row</dd>
+      <dt>Outage</dt><dd>shares the database's fate</dd>
+      <dt>New ops</dt><dd>vacuum pressure</dd>
+    </dl>
+    <p>One table, no new moving parts. Every request writes a row (rolling
+    expiry), so at our volume that's the primary's headroom spent on expiry
+    bookkeeping — and a session outage becomes a database outage.</p>
   </cq-option>
 </cq-options>
-</section>
-
-<section id="tradeoffs">
-<h2>The trade in one view</h2>
-<cq-compare id="revocation-compare">
-  <cq-variant id="var-jwt"><strong>JWT</strong> Revoke: build and replicate a
-  denylist. Outage: unaffected. Ops: none until the denylist exists.</cq-variant>
-  <cq-variant id="var-redis"><strong>Redis</strong> Revoke: delete the key. Outage:
-  reads ride the fallback cookie for its 5-minute life. Ops: what we already do.</cq-variant>
-  <cq-variant id="var-db"><strong>Postgres</strong> Revoke: delete the row. Outage:
-  sessions share the database's fate. Ops: vacuum pressure from hot rows.</cq-variant>
-</cq-compare>
 </section>
 
 <section id="flow">
@@ -102,6 +110,14 @@ graph LR
   F --> H
   C -->|no| L[login]
 </cq-diagram>
+<p id="cookie-pair-note">The recommendation rides two cookies with different
+jobs:</p>
+<cq-compare id="cookie-pair">
+  <cq-variant id="var-session-cookie"><strong>Session cookie</strong> An opaque
+  id; the store says everything else.</cq-variant>
+  <cq-variant id="var-fallback-cookie"><strong>Fallback cookie</strong> A signed
+  snapshot; outlives a blip, never a revocation.</cq-variant>
+</cq-compare>
 <p id="fallback-intro">One revision is waiting on you below: accept or reject it with
 the controls in the margin, and the next version carries whichever you chose.</p>
 <cq-suggestion id="sug-fallback-window">
@@ -125,7 +141,7 @@ cover, including "none of these".</p>
 <cq-options id="next-jobs" choose multiple>
   <cq-option id="nx-revoke" for="constraints">A revocation drill at support's volume</cq-option>
   <cq-option id="nx-fallback" for="flow">Key rotation for the fallback cookie</cq-option>
-  <cq-option id="nx-load" for="tradeoffs">A write load test at request rate</cq-option>
+  <cq-option id="nx-load" for="options">A write load test at request rate</cq-option>
 </cq-options>
 </section>
 </cq-tab>

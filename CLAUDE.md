@@ -159,9 +159,11 @@ read the theme — and it buys the grammar whole rather than one bug's worth at 
 
 `cq-options` renders as a grid of cards or as a list of rows, and nothing declares which:
 an option leading with a `<strong>` title argues its own case, so a group holding one is
-cards, and a group whose options are bare labels is a question about the page and reads as
-a list. An attribute saying `layout="rows"` would have been the same fact written twice,
-free to disagree with the markup under it.
+cards — until an option carries block content, an argument no 13rem card can hold, which
+stacks the group into full-width argument rows with a `.facts` rail — and a group whose
+options are bare labels is a question about the page and reads as a list. An attribute
+saying `layout="rows"` would have been the same fact written twice, free to disagree with
+the markup under it.
 
 What that costs is paid in the stylesheet, and paying it the cheap way doesn't work. The
 first draft left every card rule general and added row overrides after them, which is the
