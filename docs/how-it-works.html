@@ -34,7 +34,7 @@ and version picker.</p>
      aria-labelledby="arch-title">
 <title id="arch-title">The agent writes version files and runs colloquy commands,
 both reaching the browser through interact.py's loopback server; a comment ends
-the background wait, which re-invokes the agent.</title>
+the background wait and reaches the agent.</title>
 <defs>
 <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7"
         markerHeight="7" orient="auto-start-reverse">
@@ -76,14 +76,18 @@ the background wait, which re-invokes the agent.</title>
 <path d="M622 116 L622 160 L98 160 L98 122" fill="none" stroke="var(--accent)"
       stroke-width="1.5" marker-end="url(#arr-accent)"></path>
 <text x="360" y="152" text-anchor="middle" font-size="12"
-      fill="var(--accent)">a comment ends the background wait · agent wakes</text>
+      fill="var(--accent)">a comment ends the background wait and reaches the agent</text>
 </svg>
 
-<p id="wait-trick">The agent's turn ends on a background <code>review wait</code> that
-exits the moment an event lands, re-invoking the session. Nothing runs between
-rounds and there is nothing to keep alive: the server exists to hand events
-across, and the page directory (versions plus the event log) is the whole
-state.</p>
+<p id="wait-trick">The agent runs <code>review wait</code> as a background task and
+restarts it as soon as it delivers. On Claude Code a delivered event arrives on the same
+queue as a message typed into the terminal: an idle session takes it as the start of its
+next turn, and a working one folds it into the turn already running, at the boundary
+between one tool call and the next. So "skip that one" doesn't stop the step the agent is
+on. The comment waits that step out — a quick edit, or a long test run — and reaches the
+agent before its next decision.</p>
+<p id="wait-stateless">The server and the wait both go down with the session, and the page
+directory is the whole state.</p>
 </section>
 
 <section id="agent">
@@ -110,10 +114,10 @@ is edited in place: a revision is a new file beside the last one,
 <code>v2.html</code> next to <code>v1.html</code>, and <code>version publish</code>
 publishes it. Until the publication note lands the file is on disk and unreachable,
 and publishing lints it first, so a broken version is never exposed. The next poll
-moves the tab onto the new document, keeping the reader's place — the whole of
-what a round changes on screen. Coming back the other way, <code>review wait</code>
-hands over each event exactly once, so a comment posted while the agent was working
-is still there on the next round.</p>
+moves the tab onto the new version, keeping the reader's place, and holds while the
+reviewer is mid-comment or mid-drag. Coming back the other way, <code>review wait</code>
+picks up where the last one stopped, so a comment posted in the moment between one wait
+and the next still lands.</p>
 </section>
 
 <section id="pages">

@@ -5,7 +5,7 @@
 
 A Claude Code and Codex plugin for collaborating with your agent in HTML. The agent
 presents plans, write-ups, and work in flight as a web page rather than a wall of
-terminal text. Select any line to comment on it like a shared doc; your comment wakes
+terminal text. Select any line to comment on it like a shared doc; your comment reaches
 the session, and the agent ships a revised version. It comments back the same way — in the margin, on the passage
 in question, rather than in the terminal. A page tracking work in progress keeps up with
 it: items go from planned to done as the agent works through them, and the browser follows
@@ -121,10 +121,10 @@ teams of agents and humans coordinate through one shared doc, with anchored comm
 suggestion mode, task claiming, and an event feed. Colloquy is the inverse on each axis:
 local files and a loopback port instead of a hosted service; one session presenting to
 one reviewer instead of a fleet co-editing; an authored HTML page with diagrams instead
-of a markdown doc. The trade shows up in the plumbing: a hosted doc cannot invoke your
-agent, so Workbench ships a daemon layer (watchers, heartbeats, supervisors) to keep
-agents responsive, while colloquy runs inside the agent host, which re-invokes the
-session the moment a comment lands.
+of a markdown doc. The trade shows up in the plumbing: a hosted doc cannot run inside
+your agent's session, so Workbench ships a daemon layer (watchers, heartbeats,
+supervisors) to keep agents responsive, while colloquy runs inside the agent host and
+hands a comment straight to the session.
 
 [html-effectiveness](https://github.com/anthropics/html-effectiveness) is a gallery of
 standalone HTML examples (code review, status reports, diagrams, small editing UIs)

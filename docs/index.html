@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>colloquy · collaborate with your agent in HTML</title>
-<meta name="description" content="colloquy is a Claude Code and Codex plugin: your agent presents plans, findings, and work in progress as a commentable web page, your comments wake the session, and revised versions ship with changelogs.">
+<meta name="description" content="colloquy is a Claude Code and Codex plugin: your agent presents plans, findings, and work in progress as a commentable web page, your comments reach the session, and revised versions ship with changelogs.">
 <link rel="stylesheet" href="../plugins/colloquy/skills/colloquy/assets/theme.css">
 <style>
 /* Landing layer over the stock theme: hero scale and the session screenshot.
@@ -26,7 +26,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule);
 <h1>Collaborate with your agent in HTML.</h1>
 <p class="lede" id="lede">Your agent builds you a page rather than a scroll of terminal
 text: diagrams, boards you drag, a list of work that ticks over as it goes. Select any
-line and comment on it like a shared doc; the comment itself wakes the session, and a revised
+line and comment on it like a shared doc; the comment reaches the session, and a revised
 version arrives with the change.</p>
 <p id="scope">It works for anything that would otherwise land as a wall of terminal
 text: a migration plan, an architecture write-up, an incident diagnosis, a PR
@@ -94,9 +94,9 @@ twice. Diagrams and images take comments by click, and a suggestion mode propose
 replacement text that the agent takes verbatim or answers with why not. The agent opens
 threads the same way — a question about one sentence arrives in the margin beside
 it, not in the terminal.</li>
-<li id="loop-wake"><strong>Your comment wakes the agent.</strong> The session's turn
-ends on a background <code>review wait</code> that exits the moment an event lands,
-re-invoking the agent. Nothing runs between rounds.</li>
+<li id="loop-wake"><strong>Your comment reaches the session.</strong> A background
+<code>review wait</code> hands it over, and on Claude Code it can arrive while the agent is
+still working, so "skip that one" lands in time to change what it does next.</li>
 <li id="loop-revise"><strong>A revision ships.</strong> Versions are immutable,
 each with a one-line changelog. The page follows the newest while keeping your
 place on it, and the Δ toggle marks every passage that changed since the version
