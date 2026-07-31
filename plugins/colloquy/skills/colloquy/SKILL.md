@@ -458,7 +458,10 @@ comment on. When Chrome isn't installed, the gate fails and says so on stderr. I
 the page's whole browser budget; a screenshot after it reads neither the console nor
 the second scheme.
 
-**Then read the page yourself.** Nothing above has an opinion about any of this:
+**Then read the page yourself.** Neither pass above has an opinion about any of what
+follows. A page stands in for what you would otherwise have written in chat, so the
+user's own skills for that hold here too — anything on writing prose, anything on how
+they want to be addressed — and beyond those:
 
 - **Claims backed.** Every assertion the reader would question is traceable to real
   evidence on the page — a command, a diff, a linked source, output behind `<details>` —
