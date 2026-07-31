@@ -1,31 +1,33 @@
 {
   "cq-options": {
-    "description": "A decision's alternatives, rendered as a card grid, for places where the reader picks one. Children are cq-option elements only. With `choose` (which requires an id), the reader picks a card — by click, or by keyboard via the toggle mark each card carries, which is also where its state reads. Clicking the picked card again clears it. The pick reaches the agent as a `choose` action naming the card, or null once cleared, and carries onto every later version by itself — marking the picked card `chosen` in the next version is how the record reads without the log, not what keeps the pick alive. A pick rests on the option picked, so rewriting what that option says needs its `restated` (see $restated in `page catalog`); a pick the reader has cleared rests on the group, and takes the group's. `settled` (also requiring an id) retires a decision that has been made and acted on: the group collapses to one line naming the chosen option, with every card behind a disclosure the reader can open — the record keeps its ids and its anchors, and stops spending the page's height. Mark it once the choice has stopped being live, which is usually a version or two after honoring the pick, not the moment it was made; a settled group still takes a pick if the reader reopens it.",
+    "description": "A question the reader answers, and the alternatives it is about. Children are cq-option elements only, and the form follows what they hold: an option leading with a <strong> title is a card in a grid, as a decision that argues its own case wants; a group whose options are bare labels renders as compact rows, for a question whose alternatives are sections of the page rather than cards (each row's `for` names one). Nothing declares which — write the options and the look follows. With `choose` (which requires an id), the reader picks — by click, or by keyboard via the toggle mark each option carries, which is also where its state reads. Clicking a picked option again clears it. `multiple` (which requires `choose`) makes the pick a set rather than one option, for \"which of these\" rather than \"which one\". A `choose` group also carries a box for words: what the reader types there reaches the agent as an ordinary comment anchored on the group, so an answer the options don't cover — \"none of these\", or a pick's why — needs no separate gesture. The pick reaches the agent as a `choose` action naming every picked option, empty once cleared, and carries onto every later version by itself — marking the picked options `chosen` in the next version is how the record reads without the log, not what keeps the pick alive. A pick rests on the options picked, so rewriting what one of them says needs its `restated` (see $restated in `page catalog`); a pick the reader has cleared rests on the group, and takes the group's. `settled` (also requiring an id) retires a decision that has been made and acted on: the group collapses to one line naming the chosen option, with every option behind a disclosure the reader can open — the record keeps its ids and its anchors, and stops spending the page's height. Mark it once the choice has stopped being live, which is usually a version or two after honoring the pick, not the moment it was made; a settled group still takes a pick if the reader reopens it.",
     "type": "object",
     "properties": {
       "id":       {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
       "choose":   {"type": "boolean"},
+      "multiple": {"type": "boolean"},
       "settled":  {"type": "boolean"},
       "restated": {"type": "boolean"}
     },
-    "dependentRequired": {"choose": ["id"], "settled": ["id"]},
+    "dependentRequired": {"choose": ["id"], "settled": ["id"], "multiple": ["choose"]},
     "additionalProperties": false,
     "x-content": "items",
     "x-upgrade": true,
     "x-state": {
       "choose": {
-        "detail": {"type": "object", "properties": {"option": {"type": ["string", "null"]}}, "required": ["option"], "additionalProperties": false},
+        "detail": {"type": "object", "properties": {"options": {"type": "array", "items": {"type": "string"}}}, "required": ["options"], "additionalProperties": false},
         "unit": "widget",
-        "record": {"kind": "attribute", "attr": "chosen", "value": "option"}
+        "record": {"kind": "attribute", "attr": "chosen", "value": "options"}
       }
     },
-    "x-example": "<cq-options id=\"nav-gear\" choose>\n  <cq-option id=\"paper-maps\" effort=\"low\" risk=\"high\">\n    <strong>Paper maps</strong> Print the route ahead of time; nothing to charge.\n  </cq-option>\n  <cq-option id=\"gps-unit\" effort=\"med\" risk=\"low\" recommended>\n    <strong>Dedicated GPS</strong> Offline maps, week-long battery, reversible choice.\n  </cq-option>\n</cq-options>"
+    "x-example": "<cq-options id=\"nav-gear\" choose>\n  <cq-option id=\"paper-maps\" effort=\"low\" risk=\"high\">\n    <strong>Paper maps</strong> Print the route ahead of time; nothing to charge.\n  </cq-option>\n  <cq-option id=\"gps-unit\" effort=\"med\" risk=\"low\" recommended>\n    <strong>Dedicated GPS</strong> Offline maps, week-long battery, reversible choice.\n  </cq-option>\n</cq-options>\n\n<p>Two of these are worth doing first — pick the ones to start with.</p>\n<cq-options id=\"first-jobs\" choose multiple>\n  <cq-option id=\"job-mounts\" for=\"sec-mounts\">Replace the mounts</cq-option>\n  <cq-option id=\"job-heater\" for=\"sec-heater\">Heat the bird bath</cq-option>\n  <cq-option id=\"job-camera\">Neither — the camera first</cq-option>\n</cq-options>"
   },
   "cq-option": {
-    "description": "One alternative in a decision. Lead with a <strong> title; prose follows. `recommended` draws the accent ring (the author's take); `chosen` the green one (the reader's pick — the choose upgrade sets it live, and the next version carries it so the page reads right without the log). `effort`/`risk` — the cost and the danger of picking this option — render as chips. Rewriting what a picked option says needs `restated` on that option (see $restated in `page catalog`); the other options in the group are free to change.",
+    "description": "One alternative in a decision, in either of the group's two forms: lead with a <strong> title and prose follows, which is a card; or write a short label alone, which is a row. `for` is the id of the block on the page this option is about — the section, diagram or figure that makes its case — and renders as a reference the reader can follow, so the alternatives can be the page itself rather than what the cards can hold. The label stays written here either way; `for` points, it never supplies words. `recommended` draws the accent ring (the author's take); `chosen` the green one (the reader's pick — the choose upgrade sets it live, and the next version carries it so the page reads right without the log). `effort`/`risk` — the cost and the danger of picking this option — render as chips. Rewriting what a picked option says needs `restated` on that option (see $restated in `page catalog`); the other options in the group are free to change.",
     "type": "object",
     "properties": {
       "id":          {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "for":         {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
       "effort":      {"enum": ["low", "med", "high"]},
       "risk":        {"enum": ["low", "med", "high"]},
       "recommended": {"type": "boolean"},
@@ -36,6 +38,7 @@
     "additionalProperties": false,
     "x-parent": "cq-options",
     "x-content": "prose",
+    "x-refers": ["for"],
     "x-says": {"effort": "before", "risk": "after"},
     "x-upgrade": false
   },
@@ -402,7 +405,7 @@
   "$state": {
     "description": "What x-state declares, once per widget with an action channel: each verb's detail schema (the payload half of the log's forever-contract), its fold unit, and the record form its state takes in markup. Every applyAction is absolute, so the reviewer's standing state is a fold — the last surviving action per unit — and one declaration drives the POST and re-vendor contract gates, `version check`'s state gate (a version whose markup actively contradicts the fold without `restated` is refused; writing the folded state is honoring; re-emitting the previous version's state is blessed silence), the record-lag report, the runtime's decided-but-unhonored mark, and the version diff's state half.",
     "unit": "\"widget\" for a verb absolute across the group (choose toggles every sibling), or the detail field naming the element the verb is absolute per (move's \"card\").",
-    "record": "How the state reads in markup: {kind: \"attribute\", attr, value} — the element inside the unit carrying attr, vs the detail field `value`; {kind: \"position\", within, value} — the enclosing `within` element, compared at that granularity (indexes compose across cards, so column is the whole comparison); {kind: \"body\", value} — the unit's own words. A verb with no record (accept/reject) folds for the runtime's pending mark, and retirement stays retirable_ids' business."
+    "record": "How the state reads in markup: {kind: \"attribute\", attr, value} — every element inside the unit carrying attr, sorted, vs the ids the detail field `value` lists, which is why that field is an array however many the widget allows at once; {kind: \"position\", within, value} — the enclosing `within` element, compared at that granularity (indexes compose across cards, so column is the whole comparison); {kind: \"body\", value} — the unit's own words. A verb with no record (accept/reject) folds for the runtime's pending mark, and retirement stays retirable_ids' business."
   },
   "$restated": {
     "description": "A boolean attribute saying this version has rewritten words a reviewer already decided on, so what they decided no longer applies and they are being asked again. It goes on the element the decision rests on — a cq-draft or cq-suggestion, or the cq-card or cq-option inside a board or group — and retracts what rested on that element alone: one rewritten card drops the moves of that card, leaving the rest of the board arranged as the reviewer left it.",

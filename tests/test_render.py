@@ -1462,6 +1462,9 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     # choose path sets `chosen` before it sends, so a pick would show here).
     assert page.locator('#quoted-group .cq-pick[role="button"]').count() == 0
     assert page.locator("#quoted-board .cq-grip").count() == 0
+    # Nor a box for words: an exhibited question takes no answer of either kind, and
+    # a box is the one that would have looked answerable.
+    assert page.locator("#quoted-group .cq-say").count() == 0
     page.locator("#q-shim").click()
     assert page.locator("#quoted-group cq-option[chosen]").count() == 0
 
@@ -1496,6 +1499,190 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     # The exception, once that group is open: the card the document marks does
     # carry a mark, so it keeps the strip a live pick would.
     assert page.locator("#q-lax").evaluate(pad) == page.locator("#l-shim").evaluate(pad)
+    page.close()
+
+
+# The other form of a question, on one page beside the first: options that are bare
+# labels, naming the blocks of the page they are about, and a group taking more than one.
+ASK_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ask</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Three jobs</h1>
+<cq-options id="jobs" choose multiple>
+  <cq-option id="job-mounts" for="sec-mounts">Replace the mounts</cq-option>
+  <cq-option id="job-heater" for="sec-heater">Heat the bird bath</cq-option>
+  <cq-option id="job-camera">Neither — the camera first</cq-option>
+</cq-options>
+<section id="sec-mounts"><h2>The mounts</h2><p id="mounts-p">Plastic, and one came
+down in January.</p></section>
+<section id="sec-heater"><h2>The bird bath</h2><p id="heater-p">Frozen eleven
+mornings last winter.</p></section>
+<cq-options id="bracket" choose>
+  <cq-option id="br-steel"><strong>Steel</strong> Galvanised, drop-in.</cq-option>
+  <cq-option id="br-cedar"><strong>Cedar</strong> Cheap; needs sealing.</cq-option>
+</cq-options>
+</main>
+</body>
+</html>
+"""
+
+
+def sent_events(page_dir):
+    return [
+        json.loads(line) for line in (page_dir / "comments.jsonl").read_text().splitlines()
+    ]
+
+
+def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serve):
+    """Which form a group takes is a fact about its options rather than an attribute
+    saying so, and the whole of that fact is whether an option leads with a title. So
+    one page carries both and neither knows about the other: the labels lay out as rows
+    and the titled pair as a grid.
+
+    Two things the lint cannot see. A row's mark shows its dot and not its word, because
+    "choose" on every line of a list is the affordance said once per row where the dots
+    have already said it together — and what a *picked* mark says has to survive that,
+    since it is the page's only statement of where the pick sits. And a row's name is
+    what the author wrote in it: the mark that lands inside the row once it is picked is
+    the page speaking (`says`) and must stay out of the row's own name (`wrote`), or a
+    question answered reads its answer back as part of what was asked."""
+    page, errors = open_page(browser, serve(ASK_PAGE))
+    assert errors == []
+
+    assert page.locator("#jobs").evaluate("el => getComputedStyle(el).display") == "block"
+    assert page.locator("#bracket").evaluate("el => getComputedStyle(el).display") == "grid"
+
+    # The block a row is about, reachable as a link and written as the id it names —
+    # the same way the comment panel writes an element anchor.
+    ref = page.locator("#job-mounts .cq-ref")
+    expect(ref).to_have_text("§ sec-mounts")
+    assert ref.get_attribute("href") == "#sec-mounts"
+    assert page.locator("#job-camera .cq-ref").count() == 0
+
+    # An open row's word is off the screen; a card's is not, which is the contrast that
+    # says the row form decided this and not the theme forgetting a rule.
+    hidden = "el => getComputedStyle(el).fontSize"
+    assert page.locator("#job-mounts .cq-pick").evaluate(hidden) == "0px"
+    assert page.locator("#br-steel .cq-pick").evaluate(hidden) != "0px"
+
+    page.locator("#job-heater").click()
+    expect(page.locator("#job-heater[chosen]")).to_have_count(1)
+    expect(page.locator("#job-heater .cq-pick")).to_have_text("your pick")
+    assert page.locator("#job-heater .cq-pick").evaluate(hidden) != "0px"
+    # The row's name, as the mark reports it back: what the author wrote, and not the
+    # word the mark itself just added to the line.
+    assert (
+        page.locator("#job-heater .cq-pick").get_attribute("aria-label")
+        == "your pick: Heat the bird bath"
+    )
+    page.close()
+
+
+def test_a_pick_states_the_whole_set(browser, serve):
+    """`multiple` is the difference between "which of these" and "which one", and the
+    action is the same shape either way: every picked option, absolutely, so replay is
+    idempotent and a second tab converges rather than drifting. Without `multiple` the
+    set a click toggles from is empty, which is what makes a pick replace instead of
+    join — one rule, not two code paths."""
+    page, errors = open_page(browser, serve(ASK_PAGE))
+
+    page.locator("#job-mounts").click()
+    expect(page.locator("#jobs > cq-option[chosen]")).to_have_count(1)
+    page.locator("#job-camera").click()
+    expect(page.locator("#jobs > cq-option[chosen]")).to_have_count(2)
+    page.locator("#job-mounts").click()
+    expect(page.locator("#jobs > cq-option[chosen]")).to_have_count(1)
+
+    # The single-pick group beside it replaces rather than joining, and clicking the
+    # pick again empties it.
+    page.locator("#br-steel").click()
+    expect(page.locator("#bracket > cq-option[chosen]")).to_have_count(1)
+    page.locator("#br-cedar").click()
+    expect(page.locator("#br-cedar[chosen]")).to_have_count(1)
+    expect(page.locator("#br-steel[chosen]")).to_have_count(0)
+    page.locator("#br-cedar").click()
+    expect(page.locator("#bracket > cq-option[chosen]")).to_have_count(0)
+
+    picks = [(e["widget"], e["detail"]) for e in sent_events(serve.page_dir)
+             if e.get("action") == "choose"]
+    assert picks == [
+        ("jobs", {"options": ["job-mounts"]}),
+        ("jobs", {"options": ["job-mounts", "job-camera"]}),
+        ("jobs", {"options": ["job-camera"]}),
+        ("bracket", {"options": ["br-steel"]}),
+        ("bracket", {"options": ["br-cedar"]}),
+        ("bracket", {"options": []}),
+    ]
+    assert errors == []
+    page.close()
+
+
+def test_the_box_for_words_reaches_the_log_as_a_comment_on_the_question(browser, serve):
+    """A question can always be answered off its own menu, and without a box that answer
+    costs the reader a hunt for some passage to select. What they type is an ordinary
+    comment anchored on the group — one store, and everything the comment layer already
+    guarantees — so the assertion is where the words land and what the page does after:
+    the box empties, and the group wears the mark that says a comment is on it.
+
+    It rides `wireInput` like every other composer, so the send button states whether
+    there is anything to send — through aria-disabled, since a widget's press is a span
+    and has no `disabled` to set. That one is invisible until it is wrong: the button
+    looked live while the guard behind it refused."""
+    page, errors = open_page(browser, serve(ASK_PAGE))
+
+    box = page.locator("#jobs .cq-say textarea")
+    send = page.locator("#jobs .cq-say [role='button']")
+    assert send.get_attribute("aria-disabled") == "true"
+    box.fill("Neither, really — do the camera and tell me what it costs.")
+    assert send.get_attribute("aria-disabled") == "false"
+    send.click()
+
+    expect(page.locator("#jobs.cq-mark-el")).to_have_count(1)
+    expect(box).to_have_value("")
+    assert send.get_attribute("aria-disabled") == "true"
+
+    said = [e for e in sent_events(serve.page_dir) if e["kind"] == "comment"]
+    assert [(e["anchor"], e["text"]) for e in said] == [
+        ({"section": "jobs"}, "Neither, really — do the camera and tell me what it costs.")
+    ]
+    assert errors == []
+    page.close()
+
+
+SETTLED_ASK_PAGE = ASK_PAGE.replace(
+    '<cq-options id="jobs" choose multiple>', '<cq-options id="jobs" choose multiple settled>'
+)
+
+
+def test_the_box_is_offered_only_where_something_can_answer_it(browser, serve):
+    """A textarea and a Send button with no handler behind them invite the reader to
+    type into a page that cannot send it, which is the worst of the three media to be
+    wrong in — it looks live. So the box is withheld rather than undone: the offer is
+    made once in the live page, and a copy, a printout and a retired question each get
+    the page without it by never being handed it.
+
+    The collapse is the same rule at a different scale. A settled group's box goes
+    behind the disclosure with its options, because the question is retired until the
+    reader opens it again — and `display: flex` on the class would otherwise outrank
+    the hidden attribute and leave a box floating under a collapsed group."""
+    page, errors = open_page(browser, serve(SETTLED_ASK_PAGE))
+    assert errors == []
+
+    box = page.locator("#jobs .cq-say")
+    expect(box).to_be_hidden()
+    page.locator("#jobs .cq-settled").click()
+    expect(box).to_be_visible()
+
+    # The copy medium: the same DOM with the affordance never handed to it.
+    page.evaluate("() => document.documentElement.classList.add('cq-copy')")
+    expect(box).to_be_hidden()
     page.close()
 
 
@@ -1559,7 +1746,7 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
         if actions:
             break
 
-    assert [(e["widget"], e["detail"]) for e in actions] == [("rp-live", {"option": "rp-stage"})]
+    assert [(e["widget"], e["detail"]) for e in actions] == [("rp-live", {"options": ["rp-stage"]})]
     assert page.locator("#rp-quoted cq-option[chosen]").count() == 0
     page.close()
 
@@ -2078,7 +2265,7 @@ def test_render_reports_markup_the_log_replays_over(browser, serve):
     url = serve(REPLAYED_PAGE)
     d = serve.page_dir
     for widget, action, detail in [
-        ("approach", "choose", {"option": "opt-shim"}),
+        ("approach", "choose", {"options": ["opt-shim"]}),
         ("work", "move", {"card": "card-importer", "to": "col-done", "index": 0}),
     ]:
         interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
@@ -2373,7 +2560,7 @@ def test_a_reply_widget_replays_its_action_when_the_page_loads(browser, serve):
                               "version": 1, "text": SPECIMEN_REPLY})
     interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
                               "widget": "rp-live", "action": "choose",
-                              "detail": {"option": "rp-shim"}})
+                              "detail": {"options": ["rp-shim"]}})
     page, errors = open_page(browser, url)
     page.get_by_role("button", name="Comments", exact=False).click()
     expect(page.locator("#rp-shim")).to_have_attribute("chosen", "")

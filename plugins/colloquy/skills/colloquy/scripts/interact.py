@@ -100,6 +100,10 @@ vocabulary for rides in the custom keywords below:
                 The runtime renders them as real text there, because a reviewer
                 can only quote what a text node holds — the theme's matching
                 `content: attr()` is the same words for a page with no script.
+    x-refers    attributes whose values name another element on the page. The
+                reader follows one, so `version check` holds each to an id the
+                version actually carries; a reply's fragment is exempt, having no
+                page to check against.
     x-language  the attribute whose value names a code language. The layer colors
                 what $languages.names holds, so a widget taking one declares which
                 attribute carries it and `version check` validates every such
@@ -298,6 +302,10 @@ EXTENSION_SCHEMA = {
         "x-exhibit": {"type": "boolean"},
         "x-language": {"type": "string", "pattern": f"^{HTML_NAME}$"},
         "x-parent": {"type": "string", "pattern": f"^{WIDGET_NAME}$"},
+        "x-refers": {
+            "type": "array",
+            "items": {"type": "string", "pattern": f"^{HTML_NAME}$"},
+        },
         "x-retired-when": {"type": "string", "pattern": f"^{HTML_NAME}$"},
         "x-says": {
             "type": "object",
@@ -3140,6 +3148,8 @@ def validate_registry(registry: dict, source) -> dict:
         said = set(entry.get("x-says", {}))
         if unknown := sorted(said - set(properties)):
             sys.exit(f"{path}: <{tag}> x-says names undeclared attributes {unknown}")
+        if unknown := sorted(set(entry.get("x-refers", [])) - set(properties)):
+            sys.exit(f"{path}: <{tag}> x-refers names undeclared attributes {unknown}")
         language = entry.get("x-language")
         if language and language not in properties:
             sys.exit(f"{path}: <{tag}> x-language names undeclared attribute `{language}`")
@@ -3196,13 +3206,26 @@ def validate_registry(registry: dict, source) -> dict:
                 )
             if record:
                 value = record["value"]
-                allowed = {"string", "null"} if record["kind"] == "attribute" else {"string"}
-                types = field_types(value)
-                if "string" not in types or not types <= allowed:
-                    suffix = " or null" if "null" in allowed else ""
+                schema = detail_properties[value]
+                # An attribute record names the set of elements wearing it, so its
+                # detail field is a list of ids however many the group allows —
+                # nothing downstream has to ask which kind of group it came from.
+                if record["kind"] == "attribute":
+                    items = schema.get("items") if isinstance(schema, dict) else None
+                    if not (
+                        isinstance(schema, dict)
+                        and schema.get("type") == "array"
+                        and isinstance(items, dict)
+                        and items.get("type") == "string"
+                    ):
+                        sys.exit(
+                            f"{path}: <{tag}> x-state verb `{verb}` record value `{value}` "
+                            "must be an array of strings"
+                        )
+                elif field_types(value) != {"string"}:
                     sys.exit(
                         f"{path}: <{tag}> x-state verb `{verb}` record value `{value}` "
-                        f"must be a string{suffix}"
+                        "must be a string"
                     )
         retired = entry.get("x-retired-when")
         if retired is None:
@@ -3366,6 +3389,22 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
     return errors
 
 
+def reference_errors(cq_elements: list, registry: dict, ids: set) -> list:
+    """An attribute the registry marks as naming another element (x-refers) that names
+    nothing this version holds. The reader follows it, so a typo is a reference to
+    nowhere and the markup around it is perfectly well-formed — visible to them and to
+    nobody else. Asked of the version rather than of a fragment: a reply's markup
+    carries no page to check against, and one of its widgets pointing at the version
+    beside it is exactly right."""
+    return [
+        f"<{rec['tag']}> (line {rec['line']}): {attr}=\"{target}\" names no element "
+        "in this version"
+        for rec in cq_elements
+        for attr in registry.get(rec["tag"], {}).get("x-refers", [])
+        if (target := rec["attrs"].get(attr)) and target not in ids
+    ]
+
+
 def language_errors(blocks: list, cq_elements: list, registry: dict, known: list) -> list:
     """A declared language the runtime won't honor. Nothing here is visible to the
     reviewer either way — a class in the wrong place and a misspelt language both render
@@ -3509,7 +3548,9 @@ def action_rests_on(event: dict, spk: dict) -> list:
     a third keying would fork the JS/Python twin a third way."""
     widget = event["widget"]
     parts = [
-        v for v in event["detail"].values()
+        v
+        for field in event["detail"].values()
+        for v in (field if isinstance(field, list) else [field])
         if isinstance(v, str) and widget in spk.get(v, EMPTY).within
     ]
     return [widget, *parts]
@@ -3556,18 +3597,21 @@ def state_fold(events: list, byid: dict, spk: dict, registry: dict, upto, floors
 
 
 def markup_facet(unit: str, spec: dict, byid: dict, spk: dict):
-    """What one version's markup shows for a unit's declared record form: the
+    """What one version's markup shows for a unit's declared record form: every
     element inside it carrying the attribute, the declared container enclosing
-    it, or its body's words — None where the markup shows nothing (no pick)."""
+    it, or its body's words — the empty list where the markup shows no pick.
+
+    An attribute record is a set, never one element: a group taking several
+    picks marks several options, and one shape for both is what lets the fold
+    compare like with like whatever the group allows."""
     record = spec.get("record")
     if not record:
         return NO_RECORD
     if record["kind"] == "attribute":
-        hits = [
+        return sorted(
             oid for oid, orec in byid.items()
             if record["attr"] in orec["attrs"] and unit in spk.get(oid, EMPTY).within[:-1]
-        ]
-        return hits[0] if hits else None
+        )
     if record["kind"] == "position":
         enclosing = [
             i for i in spk.get(unit, EMPTY).within[:-1]
@@ -3579,13 +3623,16 @@ def markup_facet(unit: str, spec: dict, byid: dict, spk: dict):
 
 def folded_facet(e: dict, spec: dict):
     """The state the folded action left: the detail field the record declares,
-    collapsed the way `spoken` collapses where it compares against words."""
+    collapsed the way `spoken` collapses where it compares against words, and
+    sorted where it compares against a set of marked elements."""
     record = spec.get("record")
     if not record:
         return NO_RECORD
     value = e["detail"].get(record["value"])
     if record["kind"] == "body":
         return " ".join(str(value).split())
+    if record["kind"] == "attribute":
+        return sorted(value)
     return value
 
 
@@ -3873,6 +3920,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     registry = load_registry(page_dir)
     if registry is not None:
         errors.extend(widget_errors(parser.cq_elements, registry))
+        errors.extend(reference_errors(parser.cq_elements, registry, parser.ids))
         errors.extend(
             language_errors(
                 parser.language_blocks,

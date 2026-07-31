@@ -35,6 +35,15 @@ and the prose says what only prose can. Five paragraphs about five items hand th
 the job of rebuilding the list you dissolved; the same five as items, each carrying its
 own state, are read at a glance and commented on one at a time.
 
+**A page that asks leaves somewhere to answer.** Anything you want a decision on ends in
+a `cq-options … choose`, wherever on the page the question falls. Where the alternatives
+are short, they are the cards. Where each one needs a section of its own — a diagram, a
+diff, three paragraphs — write those sections and let the group be bare labels naming
+them (`for="<section id>"`), which renders as a compact list; `multiple` where more than
+one can win. Every such group carries a box for words, so "none of these" and a pick's
+why need no separate gesture. A page presenting five candidates in prose and offering
+nothing to press has handed the reader a document where it meant to ask a question.
+
 **The page keeps up with the work.** A page is not only a thing to review before the
 work starts. Where the work is yours to do and the page tracks it, publish a version each
 time the state moves — an item to `active`, then `done`; a finding added as you find it —
@@ -276,13 +285,14 @@ On wake:
    - **A page-widget action** is the user editing the document through a widget — a
      board drag arrives as `{"kind": "action", "widget": "feeder-board", "action":
      "move", "detail": {"card": "card-baffle", "to": "col-doing", "index": 0}}`, an
-     options pick with `"action": "choose"` and `"detail": {"option": "st-s3"}`,
+     options pick with `"action": "choose"` and `"detail": {"options": ["st-s3"]}`
+     (every option that now holds the pick, so an empty list is one cleared),
      a suggestion decided with `"action": "accept"` or `"reject"` — and they have
      already seen the change on screen. It stays on screen without your help: the
      page replays every recorded action onto every later version, so their edit
      survives a republish whether or not your markup mentions it. Write the next
      version as the document should now read and leave their widget alone. What
-     the markup still owes them is the record — mark the picked option `chosen`
+     the markup still owes them is the record — mark every picked option `chosen`
      (and `settled` once the decision has stopped being live), replace an accepted
      suggestion with its `cq-new` markup and a rejected one with its `cq-old`,
      keeping the old id where the passage survives — so the page reads right to

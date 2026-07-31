@@ -428,6 +428,44 @@ export function sendAction(el, action, detail) {
   return post({ kind: "action", version: VNUM, widget: el.id, action, detail });
 }
 
+// A widget's box for words. A page can ask a question its options don't cover the
+// answer to — "none of these", or a pick's why — and the reader needs somewhere to
+// put that without going hunting for a passage to select. What they type goes back as
+// an ordinary comment anchored on the widget, so it is a thread beside the question:
+// replied to in place, resolved like any other, and in the transcript with everything
+// else they said. One store, one channel; the placement of the *reply* is the open
+// question (TODO.md), and it is a question about where a thread renders, not about
+// where the words live.
+//
+// Built here rather than in each widget, because everything that makes it safe is the
+// comment layer's: the draft written on each keystroke and cleared only by a
+// successful send, one send per click, ⌘⏎. A widget says where the box goes and what
+// it invites; nothing else.
+export function sayBox(el, hint) {
+  const row = offer("div", "cq-say");
+  const ta = offer("textarea");
+  const send = offer("button", "cq-btn primary", "Send");
+  const ctx = "say:" + el.id;
+  ta.value = loadDraft(ctx);
+  ta.setAttribute("aria-label", hint);
+  row.append(ta, send);
+  const sync = wireInput(ta, {
+    hint,
+    sendBtn: send,
+    save: (v) => saveDraft(ctx, v),
+    send: async (text) => {
+      if (!(await post({ kind: "comment", version: VNUM, anchor: { section: el.id }, text })))
+        return;
+      saveDraft(ctx, "");
+      ta.value = "";
+      sync();
+      showToast(`Sent to ${agent}`);
+    },
+  });
+  sync();
+  return row;
+}
+
 // Transient confirmation ("Moved to Doing — sent to Claude"), styled and placed by
 // the comment layer. Announced too: toast routes through the live region.
 export function toast(msg) {
@@ -615,7 +653,10 @@ style.textContent = `
   .cq-btn:hover { background: var(--chip); }
   .cq-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
   .cq-btn.primary:hover { filter: brightness(.92); }
-  .cq-btn:disabled { opacity: .55; cursor: default; }
+  /* Two selectors, two mechanisms, one look: the platform's own on the banner's real
+     buttons, and the attribute wireInput sets, which is the only one a span press can
+     wear. */
+  .cq-btn:disabled, .cq-btn[aria-disabled="true"] { opacity: .55; cursor: default; }
   .cq-btn.on { border-color: var(--accent); color: var(--accent); background: var(--chip); }
   /* The colloquy text box, in one rule. field-sizing does the growing, so no script
      measures a textarea: the JS that did had to reset height to auto to re-measure,
@@ -1028,9 +1069,14 @@ function wireInput(ta, { hint, address, save, send, sendBtn }) {
   ta.addEventListener("blur", paint);
   sendBtn.title = `Send (${SEND_KEYS})`;
   let sending = false;
+  // aria-disabled rather than the property, because a widget's send button is a span
+  // wearing role="button" (see offer) and a span has no `disabled` to set — it would
+  // have looked live while submit() below refused it. The attribute reads on either
+  // element, and the guard in submit() is what actually holds; a focusable button
+  // saying it can't send yet is better than one the reader can't reach to find out.
   const sync = () => {
     paint();
-    sendBtn.disabled = sending || !ta.value.trim();
+    sendBtn.setAttribute("aria-disabled", String(sending || !ta.value.trim()));
   };
   paint();
   const submit = async () => {
@@ -1514,6 +1560,13 @@ export function alignText(before, after) {
 // block that carries a comment, including blocks inside a widget, and `textContent` returns
 // it. A suggestion labelled that way offered to accept “Retry three times. 1 comment”.
 export const says = (el) => quoteFrom(textNodesUnder(el));
+// The other question, and a different answer: what the *author* wrote here, with
+// everything an upgrade generated left out. The version diff asks it because the base
+// version it compares against has no generated nodes at all; a widget asks it to name
+// one of its own parts, where `says` would hand back the widget's own declared labels
+// along with the words — a picked row's mark is the page speaking, so it is in the
+// reading a reviewer points at and out of the row's name.
+export const wrote = (el) => quoteFrom(textNodesUnder(el, authored()));
 
 // A passage as one Range: what paints it, and what measures it for a scroll.
 function rangeOf(segments) {
@@ -2626,17 +2679,16 @@ const diffOpaqueSel = () =>
 let diffBase = null;
 let diffOn = false;
 const diffMarked = [];
-// A block's key is its *authored* text, read the same way a quote is — including the
-// labels anchoring reads as the page's own words, which this reading has to drop: the
-// base version is parsed unupgraded and holds none of them.
-const blockKey = (b) => quoteFrom(textNodesUnder(b, authored()));
+// A block's key is its *authored* text (`wrote`), which is why that reading exists: it
+// drops even the labels anchoring reads as the page's own words, because the base
+// version is parsed unupgraded and holds none of them.
 function diffBlocks(root) {
   const pairs = [];
   const [blocks, opaque] = [diffBlockSel(), diffOpaqueSel()];
   for (const b of root.querySelectorAll(blocks)) {
     if (inChrome(b) || b.closest(opaque)) continue;
     if (b.querySelector(blocks)) continue; // leaf blocks only, or nesting double-marks
-    const key = blockKey(b);
+    const key = wrote(b);
     if (key) pairs.push([b, key]);
   }
   // Opaque widgets key by identity, not body: an upgrade rewrote the live body,
@@ -2878,7 +2930,10 @@ const appliedActions = new Set();
 // not "the page has an element by that id", so a literal detail value can't
 // collide with an unrelated element that happens to be called the same thing.
 function restsOn(e, widget) {
+  // flat(), because a detail field may name several elements at once (a group's
+  // set of picks) and each of them is something the action rests on.
   const parts = Object.values(e.detail)
+    .flat()
     .map((v) => (typeof v === "string" ? document.getElementById(v) : null))
     .filter((el) => el && widget.contains(el))
     .map((el) => el.id);
@@ -3023,18 +3078,23 @@ function stateSpecs() {
 }
 
 // What the page shows for one unit's declared record form, asked of the live
-// DOM or of the diff's parsed base document alike.
+// DOM or of the diff's parsed base document alike. An attribute record is the
+// set of elements wearing it — a group taking several picks marks several — so
+// both readings collapse to the sorted ids, and comparing them stays a !==.
 function domFacet(el, record) {
-  if (record.kind === "attribute") return el.querySelector(`[${record.attr}]`)?.id ?? null;
+  if (record.kind === "attribute")
+    return [...el.querySelectorAll(`[${record.attr}]`)].map((o) => o.id).sort().join(" ");
   if (record.kind === "position") return el.closest(record.within)?.id ?? null;
   return quoteFrom(textNodesUnder(el)); // "body": the words, read the way a quote is
 }
 
 // The state the folded action left, from the detail field the record declares,
-// collapsed the way the DOM reading collapses where it is words.
+// collapsed the way the DOM reading collapses — its words where it is words,
+// its sorted ids where it is a set.
 function foldedFacet(e, record) {
   const value = e.detail[record.value];
   if (record.kind === "body") return [...String(value ?? "").replace(/\s+/g, " ").trim()].join("");
+  if (record.kind === "attribute") return [...value].sort().join(" ");
   return value ?? null;
 }
 

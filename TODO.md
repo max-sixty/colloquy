@@ -26,3 +26,34 @@
 - (2026-07-30) Opt-in tunnel for remote sessions (`cloudflared`/`tailscale` when
   present), for a reviewer with no route to the box at all — a phone, or a machine
   off the VPN.
+
+- (2026-07-30) A reader can't walk a page's open questions from the keyboard, and the
+  design for it is agreed but unbuilt. `x-awaits` on a registry entry says an instance
+  of this tag is a standing request to the reader; unanswered then needs no new
+  bookkeeping, being the fold the runtime already computes — a widget with no surviving
+  action for its unit. One declaration drives a banner count, a key that steps
+  unanswered questions the way `j`/`k` steps threads, and the `?` overlay, with no
+  consumer naming a tag. Three declare it on day one (a group that takes picks, an
+  undecided `cq-suggestion`, and the box for words), and the banner's
+  `✓ Accept all (N)`, which counts suggestions by naming the tag, goes with them.
+  That is the registry-declared address the leader item above wants, reached from the
+  other end, so the two want settling together. Inside a group the affordance is half
+  there already — each option's mark is a press, so Tab reaches it and Enter picks —
+  and what is missing is ↑/↓ between options and 1–9 to pick, the number riding the
+  mark the option already carries so that nothing appears on a page nobody is
+  answering.
+
+- (2026-07-30) A widget can't own a conversation. The box for words a question group
+  carries posts an ordinary comment anchored on the widget, which is the right
+  transport — threading, draft persistence, resolve, and the transcript all come free,
+  and the log gains no second kind — but the panel is then the only place the words
+  appear. The answer to a question the page asked reads as a remark *about* the widget
+  rather than as the thing it asked for, and the box that asked shows nothing of what
+  was said in it. What closing it properly has to answer: that a thread rendered inside
+  a widget is a second *view* of one thread and never a second store, since two stores
+  is the bug this codebase keeps not having; what the panel shows for an owned thread,
+  because a reader scanning comments should still find every word they wrote; how
+  ownership is declared, which has to be a registry key rather than a tag any consumer
+  names, so the twelfth widget can claim a conversation without core hearing of it; and
+  whether ownership is a property of the anchor or of the widget, which decides what
+  happens to the thread when a later version drops the element it was anchored on.

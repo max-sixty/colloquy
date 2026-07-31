@@ -126,6 +126,16 @@ been quiet and wrong in the usual way: an attribute the registry marks `x-says` 
 on the page, and a walk that only sees text nodes would say a picked option's `effort`
 never changed.
 
+Two readings of one element's words are the case that does earn it, because they answer
+different questions. `says` is what is on the screen for a reviewer to point at, so a
+label a widget declared as the page's words is in it; `wrote` is what the author put
+there, so everything an upgrade generated is out. The version diff wants the second (the
+base version it compares against has no generated nodes at all) and so does a widget
+naming one of its own parts — a picked row's mark is the page speaking, which belongs in
+what a reviewer can quote and not in the row's name, or a question answered reads its own
+answer back as part of what was asked. One reading with a flag would have been the same
+two answers with nothing saying which is which.
+
 A version is written in two languages, and each one is read by a parser for that
 language: `_StructParser` for what the markup declares and `page_passages` for what it
 says, `tinycss2` for the CSS a `<style>` block holds. A new question about a version is a
@@ -144,6 +154,28 @@ own; and still told a fixed `900px` from a `calc(100% - 900px)` by asking whethe
 string ended in `px`, which `900px !important` does not. CSS has no parser in the stdlib,
 so the dependency is a real cost — one more wheel behind every `version check`, ~6ms to
 read the theme — and it buys the grammar whole rather than one bug's worth at a time.
+
+### A widget's form follows its content, and each form states its own rules
+
+`cq-options` renders as a grid of cards or as a list of rows, and nothing declares which:
+an option leading with a `<strong>` title argues its own case, so a group holding one is
+cards, and a group whose options are bare labels is a question about the page and reads as
+a list. An attribute saying `layout="rows"` would have been the same fact written twice,
+free to disagree with the markup under it.
+
+What that costs is paid in the stylesheet, and paying it the cheap way doesn't work. The
+first draft left every card rule general and added row overrides after them, which is the
+same shape as a guard reading state another function wrote: `cq-option[recommended]` is an
+attribute selector and `cq-options:not(:has(…)) > cq-option` is not, so the card's accent
+ring outranked the row's own look and a row wore a ring it had no border to hang on.
+Chips pinned to a card's corners reached a row with no corners to pin to. So the rules
+that only make sense for one form say which form — the reset never fires, because there is
+nothing to reset — and a rule stays general only where it is true of both, which is most
+of them.
+
+The module is where this stops. It sees the difference exactly once (`for` renders a
+reference) and never asks which form it is in, because a second reading of "am I rows?"
+in a second language is two predicates to keep in step.
 
 ### The file's reading never claims more than the page's
 

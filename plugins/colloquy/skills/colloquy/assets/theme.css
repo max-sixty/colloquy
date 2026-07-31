@@ -178,24 +178,46 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0;
  * chosen-option mark is a direct child of cq-option and came out as an effort chip
  * pinned to the card's top corner. */
 
-/* cq-options / cq-option: this is the widget's whole definition — no JS.
- * Chips read the attributes: effort top-left, risk top-right (tinted per
- * value); `recommended` is the accent ring. */
-cq-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-             gap: var(--sp-3); margin: 14px 0; }
+/* cq-options / cq-option: the theme is most of the widget — the module adds the
+ * pick, the reference, and the box for words, and without it these rules still
+ * draw the whole thing.
+ *
+ * Which of two forms a group takes is a fact about its options rather than an
+ * attribute saying so: an option that leads with a <strong> title argues its own
+ * case, so a group holding one is a grid of cards; a group whose options are bare
+ * labels is a question *about* the page rather than a set of them, and reads as a
+ * list of rows, each naming the block it is about (`for`). Every rule below that
+ * only makes sense for one form says which — a card's chips are pinned to its
+ * corners and a row's ride in its line, and neither is an override of the other.
+ *
+ * Chips read the attributes: effort top-left, risk top-right (tinted per value);
+ * `recommended` is the accent ring, or a row's outline. */
+cq-options { display: block; margin: 14px 0; }
+cq-options:has(> cq-option > strong) {
+             display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+             gap: var(--sp-3); }
 cq-option { display: block; position: relative; border: 1px solid var(--rule);
             border-radius: var(--r); padding: var(--sp-3); background: var(--card);
             font-size: 14px; }
-cq-option[effort], cq-option[risk] { padding-top: 40px; }
 cq-option > strong { display: block; margin: 0 0 4px; font-size: 15px; }
-cq-option[recommended] { border-color: var(--accent);
-                         box-shadow: 0 0 0 1px var(--accent); }
+/* A chip's look is the same wherever it lands; where it lands is the form's business,
+ * so a card pins its pair to the corners it reserved room for and a row lets them ride
+ * in its line. */
 cq-option::before, cq-option::after,
-cq-option > [data-cq-said="effort"], cq-option > [data-cq-said="risk"] { position: absolute; top: 12px;
+cq-option > [data-cq-said="effort"], cq-option > [data-cq-said="risk"] {
     font-size: var(--t-6); line-height: 1.6; padding: 0 8px; border-radius: 999px;
     background: var(--chip); color: var(--ink-2); }
-cq-option[effort]::before, cq-option > [data-cq-said="effort"] { left: 12px; }
-cq-option[risk]::after, cq-option > [data-cq-said="risk"] { right: 12px; }
+cq-options:has(> cq-option > strong) > cq-option[effort],
+cq-options:has(> cq-option > strong) > cq-option[risk] { padding-top: 40px; }
+cq-options:has(> cq-option > strong) > cq-option::before,
+cq-options:has(> cq-option > strong) > cq-option::after,
+cq-options:has(> cq-option > strong) > cq-option > [data-cq-said="effort"],
+cq-options:has(> cq-option > strong) > cq-option > [data-cq-said="risk"] {
+    position: absolute; top: 12px; }
+cq-options:has(> cq-option > strong) > cq-option[effort]::before,
+cq-options:has(> cq-option > strong) > cq-option > [data-cq-said="effort"] { left: 12px; }
+cq-options:has(> cq-option > strong) > cq-option[risk]::after,
+cq-options:has(> cq-option > strong) > cq-option > [data-cq-said="risk"] { right: 12px; }
 cq-option[effort]::before { content: "effort " attr(effort); }
 cq-option[risk]::after { content: "risk " attr(risk); }
 cq-option > [data-cq-said="effort"]::before { content: "effort "; }
@@ -211,16 +233,22 @@ cq-option[risk="low"]::after, cq-option[risk="low"] > [data-cq-said="risk"]
 /* With `choose`, the group takes the reader's pick by click: hover lifts a card
  * and warms its mark, and the pick wears the ok ring. `chosen` reads after
  * `recommended`, so the reader's pick wins the border. */
+/* The rings: a card states its status as a border it already has, so both live with
+ * the card form. A row has no border to color and says the same two things with a
+ * wash (below). */
+cq-options:has(> cq-option > strong) > cq-option[recommended] { border-color: var(--accent);
+                         box-shadow: 0 0 0 1px var(--accent); }
+cq-options:has(> cq-option > strong) > cq-option[chosen] { border-color: var(--ok);
+                         box-shadow: 0 0 0 1px var(--ok); }
 cq-options[choose] > cq-option { cursor: pointer;
                          transition: box-shadow .12s ease, transform .12s ease; }
 /* Every option lifts on hover, the pick included — clicking it clears it, so it
  * has to keep looking clickable. A ring a card already wears layers under the lift. */
-cq-options[choose] > cq-option:hover { transform: translateY(-1px);
+cq-options[choose]:has(> cq-option > strong) > cq-option:hover { transform: translateY(-1px);
                          box-shadow: 0 3px 10px rgba(0, 0, 0, .14); }
-cq-options[choose] > cq-option[recommended]:hover {
+cq-options[choose]:has(> cq-option > strong) > cq-option[recommended]:hover {
                          box-shadow: 0 0 0 1px var(--accent), 0 3px 10px rgba(0, 0, 0, .14); }
-cq-option[chosen] { border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok); }
-cq-options[choose] > cq-option[chosen]:hover {
+cq-options[choose]:has(> cq-option > strong) > cq-option[chosen]:hover {
                          box-shadow: 0 0 0 1px var(--ok), 0 3px 10px rgba(0, 0, 0, .14); }
 /* The mark the upgrade injects: the keyboard path and the state in one element,
  * a caption on the card's own left edge rather than a control pinned to a corner.
@@ -228,8 +256,10 @@ cq-options[choose] > cq-option[chosen]:hover {
  * the content is the room it needs. On screen every card in a choose group
  * reserves it, because the pick can land on any of them; on paper it can land
  * nowhere, so the room is reserved where the mark shows. */
-cq-option[chosen] { padding-bottom: 32px; }
-@media screen { cq-options[choose] > cq-option { padding-bottom: 32px; } }
+cq-options:has(> cq-option > strong) > cq-option[chosen] { padding-bottom: 32px; }
+@media screen {
+  cq-options[choose]:has(> cq-option > strong) > cq-option { padding-bottom: 32px; }
+}
 cq-option .cq-pick { position: absolute; left: var(--sp-3); bottom: 9px;
                      display: inline-flex; align-items: center; gap: 6px;
                      font: inherit; font-size: var(--t-6); line-height: 1.5;
@@ -246,6 +276,48 @@ cq-option[chosen] .cq-pick::before { content: "✓"; border-color: var(--ok);
                      background: var(--ok); }
 cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px;
                      border-radius: 4px; }
+/* The row form: a list, so it reads like one. Every row opens at the same column with
+ * what the reader is choosing between, and the apparatus — the block it is about, the
+ * mark — runs to the line's end. Leading with the mark cost exactly that alignment: a
+ * picked row's mark is wider than an open one's by the word it says, so the labels came
+ * out ragged and the eye had nothing straight to run down.
+ *
+ * An open mark shows its dot and not its word. "choose" on every row of a list is the
+ * affordance stated once per line where the dots have already said it together, and it
+ * is what a card needs precisely because a card has no dots beside it to say it. What a
+ * *picked* mark says stays, in both forms: it is the page's only statement of where the
+ * pick sits, which is what a reviewer points at — and the two media already agree here,
+ * since paper drops an offer that says nothing and keeps one that does. */
+cq-options:not(:has(> cq-option > strong)) > cq-option {
+                     display: flex; align-items: baseline; gap: var(--sp-2);
+                     padding: 5px 8px; border: 0; border-radius: 6px;
+                     background: none; box-shadow: none; }
+cq-options:not(:has(> cq-option > strong)) > cq-option[recommended] {
+                     background: color-mix(in srgb, var(--accent) 8%, transparent); }
+cq-options:not(:has(> cq-option > strong)) > cq-option[chosen] {
+                     background: var(--ok-tint); }
+cq-options[choose]:not(:has(> cq-option > strong)) > cq-option:hover {
+                     background: var(--chip); }
+cq-options[choose]:not(:has(> cq-option > strong)) > cq-option[chosen]:hover {
+                     background: var(--ok-tint); }
+cq-options:not(:has(> cq-option > strong)) > cq-option .cq-pick { position: static; }
+cq-options:not(:has(> cq-option > strong)) > cq-option .cq-pick:not([data-cq-said]) {
+                     font-size: 0; gap: 0; }
+/* The block a row is about (`for`). It points; it never supplies the row's words, so it
+ * reads as what it is — an id, written the way the comment panel writes an element
+ * anchor — and sits at the line's end, out of the way of what the row says. */
+.cq-ref { font-size: var(--t-6); color: var(--muted); text-decoration: none;
+          white-space: nowrap; margin-left: auto; }
+.cq-ref:hover { color: var(--accent); text-decoration: underline; }
+/* The box for words a choose group carries: an answer the options don't cover goes
+ * here rather than sending the reader hunting for a passage to select. Withheld
+ * rather than undone everywhere it would do nothing — a box with no handler behind
+ * it invites the reader to type into a page that cannot send it — so the offer is
+ * made once, in the live page, and a copy and a printout get the page without it by
+ * never being handed it. Laid out by the live-page block below. */
+.cq-say { display: none; grid-column: 1 / -1; align-items: flex-end;
+          gap: var(--sp-2); margin-top: var(--sp-2); }
+.cq-say textarea { flex: 1; min-width: 0; }
 /* Paper takes no input, so the group prints as one that was never choosable: the
  * marks offering a pick go with the rest of the UI, and the one on the card that
  * carries it stays to say which option the page holds. That needs no rule here —
@@ -285,6 +357,10 @@ cq-options[open] > .cq-settled::before { content: "▾"; }
 @media screen {
   html:not(.cq-copy) {
     cq-options[settled] > .cq-settled { display: flex; }
+    /* :not([hidden]), because a settled group takes the box behind the collapse with
+       its options — the question is retired until the reader opens it again, and the
+       display here would outrank the attribute's own hiding. */
+    .cq-say:not([hidden]) { display: flex; }
     /* Collapsed the group lays out as a block, so hidden cards contribute no grid
      * rows and no gaps; open, the grid is back. */
     cq-options[settled].cq-rendered:not([open]) { display: block; }

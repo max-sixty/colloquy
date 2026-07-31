@@ -2331,7 +2331,7 @@ def test_the_gate_reads_a_pick_the_same_way_it_reads_an_edit(page_dir):
     publish(page_dir)
     interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
                                      "widget": "g1", "action": "choose",
-                                     "detail": {"option": "o-shim"}})
+                                     "detail": {"options": ["o-shim"]}})
     assert check(page_dir).exit_code == 0
 
     # The record the next version owes: the picked card marked, nothing else.
@@ -2364,7 +2364,7 @@ def test_the_gate_reads_a_pick_the_same_way_it_reads_an_edit(page_dir):
 
 
 def test_a_cleared_pick_rests_on_the_group_that_holds_it(page_dir):
-    """Clearing a pick names no option (`{"option": null}`), so there is no part
+    """Clearing a pick names no option (`{"options": []}`), so there is no part
     of the widget for the decision to rest on and it rests on the group. That
     falls out of the subject rule rather than being written for this case — which
     is why the group takes `restated` and a board, whose every move names a card,
@@ -2380,7 +2380,7 @@ def test_a_cleared_pick_rests_on_the_group_that_holds_it(page_dir):
     publish(page_dir)
     interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
                                      "widget": "g1", "action": "choose",
-                                     "detail": {"option": None}})
+                                     "detail": {"options": []}})
     write(2, shim="Fastest to ship, and we own the shim forever.")
     result = check(page_dir, version=2)
     assert result.exit_code == 1
@@ -2409,7 +2409,7 @@ def test_a_version_may_not_quietly_move_the_pick(page_dir):
     publish(page_dir)
     interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
                                      "widget": "g1", "action": "choose",
-                                     "detail": {"option": "o-shim"}})
+                                     "detail": {"options": ["o-shim"]}})
 
     # The author's markup contradicting the recorded pick, words untouched.
     write(2, b=" chosen")
@@ -2454,7 +2454,7 @@ def test_check_reports_record_lag_without_erroring(page_dir):
     publish(page_dir)
     interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
                                      "widget": "g1", "action": "choose",
-                                     "detail": {"option": "o-shim"}})
+                                     "detail": {"options": ["o-shim"]}})
     write(2)
     result = check(page_dir, version=2)
     assert result.exit_code == 0
@@ -2717,13 +2717,13 @@ def test_action_detail_schemas_match_the_post_object_contract(page_dir):
 def test_state_reader_fields_reject_boolean_subschemas(page_dir, subschema):
     registry = json.loads((page_dir / "registry.json").read_text())
     registry["cq-options"]["x-state"]["choose"]["detail"]["properties"][
-        "option"
+        "options"
     ] = subschema
     (page_dir / "registry.json").write_text(json.dumps(registry))
 
     result = check(page_dir)
     assert result.exit_code != 0
-    assert "record value `option` must be a string or null" in result.output
+    assert "record value `options` must be an array of strings" in result.output
 
 
 def test_fold_units_are_required_strings(page_dir):
@@ -2740,7 +2740,7 @@ def test_fold_units_are_required_strings(page_dir):
 @pytest.mark.parametrize(
     ("tag", "verb", "field"),
     [
-        ("cq-options", "choose", "option"),
+        ("cq-options", "choose", "options"),
         ("cq-draft", "edit", "text"),
     ],
 )
@@ -2758,23 +2758,25 @@ def test_per_part_state_records_positions(page_dir, tag, verb, field):
 
 
 @pytest.mark.parametrize(
-    ("tag", "verb", "field"),
+    ("tag", "verb", "field", "wanted"),
     [
-        ("cq-options", "choose", "option"),
-        ("cq-board", "move", "to"),
-        ("cq-draft", "edit", "text"),
+        # An attribute record names the set of elements wearing it, so its detail field
+        # is a list whatever the widget allows at once; the other two name one thing.
+        ("cq-options", "choose", "options", "must be an array of strings"),
+        ("cq-board", "move", "to", "must be a string"),
+        ("cq-draft", "edit", "text", "must be a string"),
     ],
 )
-def test_record_values_have_the_type_the_reader_uses(page_dir, tag, verb, field):
+def test_record_values_have_the_type_the_reader_uses(page_dir, tag, verb, field, wanted):
     registry = json.loads((page_dir / "registry.json").read_text())
     spec = registry[tag]["x-state"][verb]
-    spec["detail"]["properties"][field]["type"] = "integer"
+    spec["detail"]["properties"][field] = {"type": "integer"}
     (page_dir / "registry.json").write_text(json.dumps(registry))
 
     result = check(page_dir)
     assert result.exit_code != 0
     assert f"<{tag}> x-state verb `{verb}` record value `{field}`" in result.output
-    assert "must be a string" in result.output
+    assert wanted in result.output
 
 
 def test_registry_cross_entry_checks_wait_for_every_entry_to_validate(page_dir):
@@ -3301,7 +3303,7 @@ def test_server_resolves_actions_from_claude_thread_widgets(server, page_dir):
         "kind": "action",
         "version": 1,
         "action": "choose",
-        "detail": {"option": "thread-a"},
+        "detail": {"options": ["thread-a"]},
     }
     status, _ = fetch(
         f"{server}/api/event",
