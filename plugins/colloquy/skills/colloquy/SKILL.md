@@ -84,8 +84,9 @@ repository checkout it lives at `plugins/colloquy/bin/colloquy`.
    registry (widget schemas with examples) and the theme's class idioms, which vary per
    project.
 2. Write the page as `<page>/versions/v1.html` (conventions below).
-3. Run `server run <page>` as a background task (`run_in_background`). The port is
-   stable per directory and a live server is reused, so the URL survives restarts.
+3. Run `server run <page>` as a background task (`run_in_background`). Hand over the URL
+   it prints as printed: the key in it is what opens the page. Address, key and port are
+   all stable per directory, so the URL survives a restart.
 4. Run `version publish <page> --version 1 --text "<changelog>"`. Publishing checks
    the version first and refuses a failure, so a half-written or broken file is never
    live in the reviewer's browser. Before the URL first goes out, run the browser gate
@@ -391,14 +392,22 @@ the next version's changelog. It refuses when the incoming layer no longer accep
 logged event kind or action contract (tag, verb, and detail), since that event would
 stop replaying.
 
-## When the browser can't reach the server
+## Where the page is served
 
-The server binds `127.0.0.1`, so the browser must be on the same machine (a local
-terminal, the desktop app, or an IDE that forwards localhost ports — VS Code Remote-SSH
-and devcontainers do this automatically, so the URL opens as-is). In a session with no
-path to localhost there is no hand-over; present in the terminal instead. Colloquy does
-not expose its document, assets, state reads, or event writes through a public tunnel:
-localhost or the host's authenticated port forwarding is the security boundary.
+`server run` serves a page on the address its session arrived on: for an SSH session, the
+one the client reached this machine on; otherwise loopback. The URL therefore opens as
+printed whether the reviewer's browser is here or on the machine they SSH'd from.
+
+Reaching past loopback opens the port to that network, and `POST /api/event` appends to a
+log that outranks the document, so the URL carries a key. The browser keeps it in a cookie
+from the first request, and a reader without it gets 403 on the document, the assets, the
+state reads and the event writes alike. That key is the boundary, and colloquy reaches no
+further than the network the session it serves already crossed: there is no public tunnel.
+
+Address and key are minted once and kept in `<page>/access.json`, because a restart has to
+reproduce the URL an open browser is still polling. Where the reviewer's machine can't
+reach that address (a jump host, NAT), the page never loads and nothing reports it;
+deleting that file derives the address again from the session running now.
 
 ## Before the URL goes out
 

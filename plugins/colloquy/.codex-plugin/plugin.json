@@ -1,6 +1,6 @@
 {
   "name": "colloquy",
-  "description": "Collaborate through a commentable HTML page on localhost: present plans, findings, and work in progress, then carry the reviewer's anchored feedback back into the session.",
+  "description": "Collaborate through a commentable HTML page in the browser: present plans, findings, and work in progress, then carry the reviewer's anchored feedback back into the session.",
   "author": {
     "name": "Maximilian Roos",
     "url": "https://github.com/max-sixty"

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import http.cookiejar
 import io
 import json
 import shutil
@@ -142,11 +143,17 @@ def stop_server() -> None:
 
 
 def wait_for_server() -> str:
+    """The page's URL, once it answers on it. Probed the way the browser about to
+    open it will: the key rides in the query, and a jar carries it through the
+    redirect to the latest version, which drops one."""
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         try:
             info = json.loads((PAGE_DIR / "server.json").read_text())
-            urllib.request.urlopen(info["url"], timeout=1).close()
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+            )
+            opener.open(info["url"], timeout=1).close()
             return info["url"]
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             time.sleep(0.05)

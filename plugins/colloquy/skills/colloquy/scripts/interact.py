@@ -41,6 +41,10 @@ A page directory holds:
     cursor.json          seq of the last event delivered to the agent, written by
                          `review wait` on exit
     server.json          {"port", "pid", "url"} for the running server
+    access.json          {"host", "token"}: the address the page is served on and the
+                         key its URL carries. Minted at the first `server run` and kept,
+                         because a restart has to reproduce the URL an open browser is
+                         already polling
     session.json         {"id", "pid", "agent"} of the agent session last working on the page
 
 status.json is a claim, and a claim never expires on its own: an agent that
@@ -199,9 +203,11 @@ import time
 import zlib
 from datetime import datetime
 from html.parser import HTMLParser
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import NamedTuple
+from urllib.parse import parse_qs, urlsplit
 
 import click
 import tinycss2
@@ -324,12 +330,14 @@ MEDIA_TYPES = {
     ".webp": "image/webp",
     ".svg": "image/svg+xml",
 }
+NO_KEY = "open the link colloquy printed; it carries this page's key"
 PAGE_STATE_FILES = (
     "comments.jsonl",
     "status.json",
     "heartbeat.json",
     "cursor.json",
     "server.json",
+    "access.json",
     "session.json",
 )
 PAGE_OWNED_FILES = (*VENDORED_FILES, *PAGE_STATE_FILES)
@@ -579,6 +587,51 @@ def stop_when_session_ends(httpd: ThreadingHTTPServer, page_dir: Path) -> None:
         time.sleep(0.1)
 
 
+def page_access(page_dir: Path) -> dict:
+    """How a page is reached: the address to serve it on, and the key its URL carries.
+
+    The address is read from SSH_CONNECTION, whose third field is this machine as
+    the client just reached it — a route the session carrying the request has
+    already demonstrated, rather than a guess about what resolves from where. No
+    SSH_CONNECTION is the same answer for a reader on this machine: loopback. That
+    is two exhaustive cases, not a list of hosts to recognize, which is what keeps
+    the next kind of remote session from being one this can silently fail to know.
+
+    Serving anywhere but loopback puts an unauthenticated writer on whatever
+    network reached us, and `POST /api/event` appends to a log that outranks the
+    document and replays onto every version after. So the address earns a key, and
+    the key is minted here rather than at the reader's cost: it rides in the URL
+    Claude hands over, and `authorized` puts it in a cookie on arrival.
+
+    Both are minted once and kept. `revive_server` restarts a dead server by
+    re-running `server run`, and a fresh address or key there would leave the
+    reviewer's open page polling a URL that no longer answers."""
+    access = read_json(page_dir / "access.json")
+    if access:
+        return access
+    ssh = os.environ.get("SSH_CONNECTION", "").split()
+    access = {
+        "host": ssh[2] if len(ssh) == 4 else "127.0.0.1",
+        "token": secrets.token_urlsafe(16),
+    }
+    write_json(page_dir / "access.json", access)
+    return access
+
+
+def access_cookie(page_dir: Path) -> str:
+    """The cookie a page's key lives in. Cookies are scoped by host and ignore the
+    port, so two pages served from one machine share a jar and a shared name would
+    have the second overwrite the first."""
+    return "cq_" + hashlib.sha256(str(page_dir.resolve()).encode()).hexdigest()[:8]
+
+
+def page_url(access: dict, port: int) -> str:
+    """The handover URL. A bare IPv6 address is bracketed, since the authority
+    already separates its port with a colon."""
+    host = f"[{access['host']}]" if ":" in access["host"] else access["host"]
+    return f"http://{host}:{port}/?t={access['token']}"
+
+
 def config_home() -> Path:
     """$XDG_CONFIG_HOME/colloquy (~/.config/colloquy/) — the user's overlay layer."""
     return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "colloquy"
@@ -677,6 +730,11 @@ def full_state(page_dir: Path, events: list, versions: list) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     page_dir = None
+    token = None
+    cookie = None
+    # Set by `authorized` when the key arrived in the query, cleared by the one
+    # writer that spends it.
+    set_cookie = False
     # The render gate previews a version before its `note` publishes it —
     # refusing the note is the gate's whole job. Set to that version's number,
     # the handler exposes on-disk versions up to it, previewed one included as
@@ -693,6 +751,29 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def authorized(self) -> bool:
+        """The page's key, from the handover URL or from the cookie an earlier
+        request set out of it. One arrival is enough: the runtime's own fetches are
+        relative and carry no query, and a reader who reloads or bookmarks the bare
+        address is the same reader. So nothing has to thread the key through the
+        page, and `colloquy.js` never learns there is one."""
+        if secrets.compare_digest(parse_qs(urlsplit(self.path).query).get("t", [""])[0], self.token):
+            self.set_cookie = True
+            return True
+        jar = SimpleCookie(self.headers.get("Cookie", ""))
+        return self.cookie in jar and secrets.compare_digest(jar[self.cookie].value, self.token)
+
+    def end_headers(self):
+        # Every response ends here — answered, redirected, or refused — so the
+        # cookie has one writer rather than one per path that sends a header.
+        if self.set_cookie:
+            self.send_header(
+                "Set-Cookie",
+                f"{self.cookie}={self.token}; Path=/; HttpOnly; SameSite=Strict",
+            )
+            self.set_cookie = False
+        super().end_headers()
+
     def _send(self, status: int, ctype: str, body: bytes) -> None:
         self.send_response(status)
         self.send_header("Content-Type", ctype)
@@ -705,7 +786,10 @@ class Handler(BaseHTTPRequestHandler):
         self._send(status, "application/json", json.dumps(obj, ensure_ascii=False).encode())
 
     def do_GET(self):
-        path = self.path.split("?")[0]
+        if not self.authorized():
+            self._json({"error": NO_KEY}, 403)
+            return
+        path = urlsplit(self.path).path
         if path == "/":
             versions = self.versions_live(read_events(self.page_dir))
             if not versions:
@@ -752,7 +836,10 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"error": "not found"}, 404)
 
     def do_POST(self):
-        if self.path != "/api/event":
+        if not self.authorized():
+            self._json({"error": NO_KEY}, 403)
+            return
+        if urlsplit(self.path).path != "/api/event":
             self._json({"error": "not found"}, 404)
             return
         try:
@@ -847,13 +934,17 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": True, "event": append_event(self.page_dir, event)})
 
 
-def handler_for(page_dir: Path, preview_upto=None, protocol_version="HTTP/1.0"):
-    """A request handler bound to one page and publication view."""
+def handler_for(page_dir: Path, token: str, preview_upto=None, protocol_version="HTTP/1.0"):
+    """A request handler bound to one page, publication view, and key. The key has no
+    default: every server over a page directory is reachable by whatever reached the
+    machine, so there is no construction that should quietly go without one."""
     return type(
         "PageHandler",
         (Handler,),
         {
             "page_dir": page_dir,
+            "token": token,
+            "cookie": access_cookie(page_dir),
             "preview_upto": preview_upto,
             "protocol_version": protocol_version,
         },
@@ -1493,19 +1584,29 @@ def cmd_serve(page_dir: Path) -> None:
     if existing:
         print(existing["url"], flush=True)
         return
+    access = page_access(page_dir)
     base = 41000 + zlib.crc32(str(page_dir.resolve()).encode()) % 4000
     httpd = None
     for port in [*range(base, base + 10), 0]:
         try:
             httpd = ThreadingHTTPServer(
-                ("127.0.0.1", port),
-                handler_for(page_dir, protocol_version="HTTP/1.1"),
+                (access["host"], port),
+                handler_for(page_dir, access["token"], protocol_version="HTTP/1.1"),
             )
             break
         except OSError as e:
-            if e.errno != errno.EADDRINUSE:
-                raise
-    url = f"http://127.0.0.1:{httpd.server_address[1]}/"
+            if e.errno == errno.EADDRINUSE:
+                continue
+            # The address outlived the session that derived it — a page created
+            # over SSH and served again from elsewhere, or from a box that has
+            # since moved. Naming where it was recorded is the whole fix.
+            sys.exit(
+                f"can't serve {page_dir} on {access['host']}: {e}\n"
+                f"that address came from the session that first served this page and is "
+                f"kept in {page_dir / 'access.json'}; delete that file to derive the "
+                "address again from this one."
+            )
+    url = page_url(access, httpd.server_address[1])
     write_json(page_dir / "server.json", {"port": httpd.server_address[1], "pid": os.getpid(), "url": url})
     print(url, flush=True)
     if claimed:
@@ -4214,10 +4315,15 @@ def preview_server(page_dir: Path, version: int):
     may not have (`version check --render` before its note lands, `version export`
     on any published one), and the preview window is what lets them: the server's
     own liveness rule is the reviewer's, and this widens it for exactly one process."""
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler_for(page_dir, preview_upto=version))
+    # Its own key, not the page's: this server is loopback-only and lives for the
+    # length of a `with`, so it neither needs nor should mint the page's access.
+    token = secrets.token_urlsafe(16)
+    httpd = ThreadingHTTPServer(
+        ("127.0.0.1", 0), handler_for(page_dir, token, preview_upto=version)
+    )
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     try:
-        yield f"http://127.0.0.1:{httpd.server_address[1]}/versions/{version_name(version)}"
+        yield f"http://127.0.0.1:{httpd.server_address[1]}/versions/{version_name(version)}?t={token}"
     finally:
         httpd.shutdown()
 

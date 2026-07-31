@@ -89,8 +89,8 @@ anchored) and pins the event log it leaves. `test_product_page.py` holds the pag
 `docs/` to the shipped theme and widget registry. Playwright attaches to the Chrome
 already installed (`channel="chrome"`), so there is no browser download and still no
 build step. Driving a page by hand to check a change works the same way: run `page init`
-for the directory, then serve it from `interact.handler_for(page_dir)` in-process as the
-fixtures do. `server run` instead puts a live review behind the session, and the
+for the directory, then serve it from `interact.handler_for(page_dir, token)` in-process
+as the fixtures do, opening the page with that key in the query (`?t=…`). `server run` instead puts a live review behind the session, and the
 review-loop hooks then hold it to watching that page.
 
 ```

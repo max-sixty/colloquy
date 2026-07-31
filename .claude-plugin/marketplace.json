@@ -10,7 +10,7 @@
     {
       "name": "colloquy",
       "source": "./plugins/colloquy",
-      "description": "Collaborate with Claude in HTML: plans, findings, and work in progress arrive as a commentable page on localhost, you mark it up in the browser, and each revision ships with a changelog as the work moves.",
+      "description": "Collaborate with Claude in HTML: plans, findings, and work in progress arrive as a commentable page in your browser, you mark it up there, and each revision ships with a changelog as the work moves.",
       "license": "MIT",
       "keywords": ["plan-review", "review", "html", "annotation", "collaboration"]
     }

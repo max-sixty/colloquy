@@ -354,6 +354,11 @@ def browser():
         b.close()
 
 
+# A page's key is minted per page; fixed here so a test can build a URL for a
+# server it did not start.
+TOKEN = "test-page-key"
+
+
 @pytest.fixture
 def serve(tmp_path, monkeypatch):
     """Publish HTML as v1 of a fresh page directory and serve it, as the real
@@ -372,11 +377,14 @@ def serve(tmp_path, monkeypatch):
             interact.append_event(d, {"kind": "comment", "author": "user", "version": 1,
                                       "text": "About this bit.",
                                       "anchor": {"section": section, "quote": quote}})
-        httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(d))
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(d, TOKEN))
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         servers.append(httpd)
         go.page_dir = d  # for tests that publish a v2 or read the event log
-        return f"http://127.0.0.1:{httpd.server_address[1]}/versions/v1.html"
+        # The key rides in the URL exactly as it does in a handover, so the first
+        # navigation of each browser context earns the cookie the rest of the
+        # page's own fetches go out under.
+        return f"http://127.0.0.1:{httpd.server_address[1]}/versions/v1.html?t={TOKEN}"
 
     servers = []
     yield go
@@ -4305,7 +4313,7 @@ def test_the_picker_runs_in_number_order_past_v9(browser, serve):
 
     # Pinned to the oldest, the chip naming the newest is the runtime's one place
     # that spells a version out in a sentence.
-    page, errors = open_page(browser, url + "?pin")
+    page, errors = open_page(browser, url + "&pin")
     expect(page.locator(".cq-latest-chip")).to_have_text(
         "New version available → open v10"
     )
@@ -5023,7 +5031,7 @@ def test_action_history_is_bounded_by_the_pinned_version(browser, serve):
             },
         )
 
-    old, old_errors = open_page(browser, url + "?pin=1")
+    old, old_errors = open_page(browser, url + "&pin=1")
     expect(old.locator("#draft-ops .cq-draft-history > summary")).to_have_text(
         "Changes · 1 edit"
     )
@@ -5034,7 +5042,7 @@ def test_action_history_is_bounded_by_the_pinned_version(browser, serve):
     )
     assert old_sequence == [1]
 
-    latest, latest_errors = open_page(browser, url.replace("v1.html", "v2.html") + "?pin=1")
+    latest, latest_errors = open_page(browser, url.replace("v1.html", "v2.html") + "&pin=1")
     expect(latest.locator("#draft-ops .cq-draft-history > summary")).to_have_text(
         "Changes · 2 edits"
     )
@@ -5912,6 +5920,46 @@ def test_a_widget_declaring_it_renders_a_picture_takes_a_click(browser, serve):
         "a click on prose was read as a click on a picture"
     )
     assert errors == []
+    page.close()
+
+
+def test_the_handed_over_url_opens_the_latest_version(browser, serve):
+    """The URL `server run` prints is the page root carrying the key, so every handover
+    arrives through the redirect to the latest version rather than at a version file.
+    Two things have to hold across that hop and only a real browser can say so: the
+    cookie is set on the redirect and sent on the request it redirects to, and it is
+    still sent once the page is polling — the runtime's own fetches are relative, and a
+    `SameSite` cookie the browser withheld from them would leave the page open and
+    frozen with no console error to show for it."""
+    url = serve(INLINE_PAGE)
+    root = url.rsplit("/versions/", 1)[0] + f"/?t={TOKEN}"
+
+    page, errors = open_page(browser, root)
+
+    expect(page).to_have_url(url.rsplit("?", 1)[0])
+    expect(page.locator(".cq-banner")).to_be_visible()
+    # The poll is the page's own fetch, relative and query-less: it answers only if the
+    # cookie rode along.
+    assert page.evaluate("() => fetch('/api/state').then(r => r.status)") == 200
+
+    # The version switcher and the latest chip leave the document by assigning
+    # location.href, which is a fresh top-level navigation carrying no query. A cookie
+    # the browser withheld from it would land the reviewer on a refusal.
+    page.evaluate("() => { location.href = '/' }")
+    page.wait_for_url(url.rsplit("?", 1)[0])
+    expect(page.locator(".cq-banner")).to_be_visible()
+
+    assert errors == []
+    page.close()
+
+
+def test_a_page_refuses_a_browser_that_never_had_the_link(browser, serve):
+    url = serve(INLINE_PAGE)
+
+    page = browser.new_page()
+    page.goto(url.rsplit("?", 1)[0], wait_until="load")
+
+    assert "carries this page's key" in page.locator("body").inner_text()
     page.close()
 
 

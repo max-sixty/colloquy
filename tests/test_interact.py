@@ -7,6 +7,7 @@ Run from the repo root:
     uv run --with pytest --with click --with jsonschema python -m pytest tests
 """
 
+import http.cookiejar
 import importlib.util
 import json
 import os
@@ -16,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -1017,6 +1019,7 @@ def test_customize_continues_when_the_project_root_is_the_page(
         "heartbeat.json",
         "cursor.json",
         "server.json",
+        "access.json",
         "session.json",
     ),
 )
@@ -3071,19 +3074,33 @@ def test_check_reads_widths_where_the_document_states_them(page_dir):
     assert check(page_dir).exit_code == 0
 
 
+# A page's key is minted per page; fixed here so a test can build a URL for a
+# server it did not start.
+TOKEN = "test-page-key"
+
+
 @pytest.fixture
 def server(page_dir):
     """A real HTTP server over the page directory, on an ephemeral port."""
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(page_dir))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(page_dir, TOKEN))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}"
     httpd.shutdown()
 
 
-def fetch(url, data=None):
+def fetch(url, data=None, token=TOKEN):
+    """A request arriving the way a reviewer's does: the key in the query, and a
+    cookie jar to carry it onward — `/` redirects to the latest version, and the
+    followed request is authorized by the cookie the redirect set, not by the query
+    it drops. Pass token=None for the reader who never had the link."""
+    if token:
+        url += ("&" if "?" in url else "?") + urllib.parse.urlencode({"t": token})
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+    )
     try:
-        with urllib.request.urlopen(url, data=data) as res:
+        with opener.open(url, data=data) as res:
             return res.status, res.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
@@ -3376,6 +3393,89 @@ def test_concurrent_posts_never_tear_the_log(server, page_dir):
     assert len({e["id"] for e in events}) == 20  # server-minted, all distinct
 
 
+def test_a_reader_without_the_key_reads_and_writes_nothing(server, page_dir):
+    """The page is served wherever the SSH session reached this machine, so the
+    port is open to whatever else is on that network. Reading is half of it: the
+    log outranks the document and takes appends from anyone who can POST."""
+    CliRunner().invoke(interact.cli, ["version", "publish", str(page_dir), "--version", "1", "--text", "cut"])
+
+    assert fetch(f"{server}/versions/v1.html", token=None)[0] == 403
+    assert fetch(f"{server}/api/state", token=None)[0] == 403
+    assert fetch(f"{server}/", token=None)[0] == 403
+    assert (
+        fetch(
+            f"{server}/api/event",
+            data=json.dumps({"kind": "comment", "version": 1, "text": "not mine"}).encode(),
+            token=None,
+        )[0]
+        == 403
+    )
+    assert fetch(f"{server}/versions/v1.html", token="not-the-key")[0] == 403
+
+    assert [e for e in interact.read_events(page_dir) if e["kind"] == "comment"] == []
+
+
+def test_the_key_arrives_in_the_query_and_stays_in_the_cookie(server, page_dir):
+    """What makes the key invisible: it is in the link once, and the cookie carries
+    it from there. The runtime's own fetches are relative and hold no query, and a
+    reviewer who reloads the bare address is the same reviewer — so nothing has to
+    thread it through the page, and `colloquy.js` never learns there is one."""
+    CliRunner().invoke(interact.cli, ["version", "publish", str(page_dir), "--version", "1", "--text", "cut"])
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+
+    with opener.open(f"{server}/versions/v1.html?t={TOKEN}") as arrival:
+        assert arrival.status == 200
+    assert [c.value for c in jar] == [TOKEN]
+
+    # No query this time: the runtime's own fetches never carry one.
+    with opener.open(f"{server}/api/state") as polled:
+        assert polled.status == 200
+
+
+def test_a_page_is_reached_where_the_ssh_session_reached_this_machine(page_dir, monkeypatch):
+    """SSH_CONNECTION is "client_ip client_port server_ip server_port" — the third
+    field is the address that carried the session, so it is a route the reviewer has
+    already used rather than a hostname guessed from this end."""
+    monkeypatch.setenv("SSH_CONNECTION", "10.1.1.9 51234 10.20.30.40 22")
+    assert interact.page_access(page_dir)["host"] == "10.20.30.40"
+
+
+def test_a_local_session_is_served_on_loopback(page_dir, monkeypatch):
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+    assert interact.page_access(page_dir)["host"] == "127.0.0.1"
+
+
+def test_the_address_and_key_outlive_the_session_that_minted_them(page_dir, monkeypatch):
+    """`revive_server` restarts a dead server by re-running `server run`. The
+    reviewer's browser has been polling one URL since it died, so a fresh address or
+    key there would leave the page it reopens talking to nothing."""
+    monkeypatch.setenv("SSH_CONNECTION", "10.1.1.9 51234 10.20.30.40 22")
+    minted = interact.page_access(page_dir)
+
+    monkeypatch.setenv("SSH_CONNECTION", "10.1.1.9 51235 172.16.0.1 22")
+    assert interact.page_access(page_dir) == minted
+
+
+def test_two_pages_on_one_machine_get_their_own_cookie(page_dir, tmp_path):
+    """Cookies are scoped by host and ignore the port, so two pages share a jar —
+    under one name the second page served would sign the reviewer out of the first."""
+    other = tmp_path / "other-page"
+    other.mkdir()
+    assert interact.access_cookie(page_dir) != interact.access_cookie(other)
+
+
+def test_a_bare_ipv6_address_is_bracketed_in_the_url():
+    """A v6 address is colons all the way down, and the authority separates its port
+    with one too."""
+    assert interact.page_url({"host": "fd00::1", "token": "k"}, 41999) == (
+        "http://[fd00::1]:41999/?t=k"
+    )
+    assert interact.page_url({"host": "10.20.30.40", "token": "k"}, 41999) == (
+        "http://10.20.30.40:41999/?t=k"
+    )
+
+
 def test_wait_delivers_new_user_events_and_flips_status(page_dir, capsys):
     # A live server.json (our own pid) satisfies wait's liveness probe.
     interact.write_json(page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"})
@@ -3437,7 +3537,13 @@ def test_wait_restarts_a_server_that_died_under_it(page_dir, capsys):
     try:
         assert interact.cmd_wait(page_dir) == 0  # no server.json at all when it starts
         info = interact.running_server(page_dir)
-        assert info and urllib.request.urlopen(info["url"] + "api/state").status == 200
+        # The revived server has to answer on the URL it published, key included:
+        # the reviewer's browser has been polling that address since it died.
+        assert info
+        state = urllib.parse.urlsplit(info["url"])
+        assert urllib.request.urlopen(
+            state._replace(path="/api/state").geturl()
+        ).status == 200
         assert "server had died; restarted" in capsys.readouterr().err
     finally:
         interact.cmd_stop(page_dir)

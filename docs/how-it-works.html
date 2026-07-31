@@ -247,12 +247,13 @@ rendered into a box of no size, a sideways scroll — in both color schemes.</p>
 </section>
 
 <section id="local">
-<h2>Local by construction</h2>
-<p>The server binds <code>127.0.0.1</code>, so the browser must be on the same
-machine. Local terminals and the desktop app work directly; VS Code Remote-SSH
-and devcontainers forward localhost ports automatically, so the URL opens
-as-is. A session with no path to localhost, such as a cloud session or bare SSH
-without port forwarding, has no hand-over.</p>
+<h2>Served where you are</h2>
+<p>A page is served on the address its session arrived on: over SSH, the one
+your client just reached the machine on; otherwise <code>127.0.0.1</code>. The
+URL colloquy prints opens as-is either way, with no port to forward and nothing
+to configure. It carries a key, and the browser keeps that key in a cookie from
+the first request, so the open port is still a page only whoever holds the link
+can read or comment on.</p>
 </section>
 
 <footer id="colophon">
