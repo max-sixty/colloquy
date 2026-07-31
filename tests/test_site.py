@@ -26,7 +26,7 @@ site_build = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(site_build)
 
 # The theme's paper, light and dark, as the browser reports a background.
-PAPER = {"light": "rgb(251, 251, 249)", "dark": "rgb(22, 24, 29)"}
+PAPER = {"light": "rgb(250, 249, 245)", "dark": "rgb(25, 24, 21)"}
 PHONE = {"width": 390, "height": 844}
 
 

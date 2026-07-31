@@ -39,11 +39,14 @@ nav.sitenav [aria-current="page"] { color: var(--ink); }
 
 /* ---------- the hero ---------- */
 
-header.hero { margin-bottom: 36px; }
-header.hero h1 { font-size: 36px; letter-spacing: -0.015em; }
-header.hero .lede { font-size: 19px; line-height: 1.45; }
+/* A step above the theme's own h1, which the type change took to 31px — 36 had been
+ * that step over a 27px one. The lede states nothing: the theme sets it at --t-3 with
+ * a line-height to match, and an override here was holding it a rung below the scale
+ * it belongs to. */
+header.hero { margin-bottom: 40px; }
+header.hero h1 { font-size: 40px; letter-spacing: -0.018em; }
 /* One host per block, each a label over its two lines. Stacked rather than side
- * by side: half a 760px column is narrower than `codex plugin marketplace add
+ * by side: half a 720px column is narrower than `codex plugin marketplace add
  * max-sixty/colloquy`, and a command a reader has to scroll to finish reading is
  * a command they will copy half of. */
 .hosts { display: grid; grid-template-columns: minmax(0, 1fr);

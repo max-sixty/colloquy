@@ -210,7 +210,7 @@ and the comment layer left behind.
   such as `<a href="https://host/repo/blob/main/path/to/file.py#L88"><code>path/to/file.py:88</code></a>`.
   Render ticket keys, MR/PR numbers, and URLs as real `<a>` links, not plain text.
   Inside a `<cq-specimen>` a fictional URL is fine.
-- **Keep wide content inside the column** — 760px in the default theme. The comment
+- **Keep wide content inside the column** — 720px in the default theme. The comment
   layer anchors to on-screen text, so a page that scrolls sideways is hard to review.
   Give any element that can overflow (a `<pre>`, a `<table>`, an `<svg>`)
   `max-width: 100%` or `overflow-x: auto`, and size diagrams responsively rather than a
@@ -229,7 +229,7 @@ and the comment layer left behind.
   flips between them in place. Capture both states at the same viewport (the
   `/playwright-cli:playwright-cli` skill drives the browser; render the base commit in
   a second worktree rather than stashing). Say in prose what changed — a downscaled
-  full-page shot shows that something moved and not what, and the column is 760px, so
+  full-page shot shows that something moved and not what, and the column is 720px, so
   crop to the part that moved wherever the change is smaller than the page.
 - **Show real content as evidence; quote invented content in a specimen.** Prefer
   putting the actual file contents, diff, or output behind `<details>` over

@@ -7,76 +7,133 @@
  *
  * Every surface rides a token, so the dark palette is exactly one more token
  * block — nothing else in this file (or the runtime, which styles its UI from
- * the same tokens) knows about color schemes. */
+ * the same tokens) knows about color schemes.
+ *
+ * Three voices, because the page already has three kinds of words and the norms
+ * turn on telling them apart. What the page *says* is set in a text serif: prose
+ * a reviewer reads closely and points at. What the page *labels* — an eyebrow, a
+ * column heading, a chip, a table's header, a metric's caption — is apparatus,
+ * set in the UI sans at small sizes with tracking, so it reads as machinery
+ * around the argument rather than as part of it. What the page *shows* is mono:
+ * code, diffs, trees, timestamps. The runtime's own chrome takes the same sans
+ * (.cq-ui reads --sans), which is what finally makes "this is not the document"
+ * a difference you can see rather than a claim resting on size and color. It
+ * was invisible while document and chrome were the one system face.
+ *
+ * The serif is stacked, not shipped. theme.css is inlined whole into every
+ * `version export` and parsed by `version check` on every version, so a webfont
+ * would have to arrive as a base64 blob in both — and referenced by URL instead
+ * it silently falls back in exactly the medium (a copy, mailed on) that has no
+ * server to ask. Charter and Iowan Old Style ship on macOS, Georgia everywhere
+ * else; each is a screen serif with a large x-height, which is the property that
+ * matters at 17px. */
 
 :root {
-  --paper: #fbfbf9;  --ink: #1f2328;  --muted: #626b78;  --rule: #e4e7eb;
-  --accent: #2563eb; --ok: #16a34a;   --warn: #d97706;   --danger: #dc2626;
-  --r: 8px;
+  /* Warm neutrals: the paper is ivory rather than white and every grey above it
+     carries the same warmth, so nothing on the page reads as a cool grey pasted
+     onto a warm ground. */
+  --paper: #faf9f5;  --ink: #1c1b18;  --muted: #6f6a60;  --rule: #e7e3d9;
+  /* The accent marks where the machinery points — a link, a recommendation, the
+     active milestone, a focus ring — and so has to stay hue-distinct from the
+     three semantic colors it appears beside. That rules out the warm end: a clay
+     accent sits a few degrees from --warn, and an accent ring beside a warning dot
+     would be a distinction the reader has to measure. Ink blue keeps the link and
+     focus conventions and reads as ink on ivory rather than as UI. */
+  --accent: #2f5480; --ok: #3f7d4e;   --warn: #b4741a;   --danger: #b4402f;
+  --r: 6px;
   --sp-1: 4px; --sp-2: 8px; --sp-3: 16px; --sp-4: 24px;
   --rail: 168px;     /* the review margin: the widest control row, plus its gap */
-  --t-6: 11px; --t-5: 13.5px; --t-4: 16px; --t-3: 19px;
+  /* The ladder, body at --t-4. Measured on Charter at 17px: 7.9px a character, so
+     the column below holds about 74 of them. */
+  --t-6: 11.5px; --t-5: 14px; --t-4: 17px; --t-3: 20px; --t-2: 24px; --t-1: 31px;
+  --serif: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, ui-serif, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --card: #ffffff;   /* raised surfaces: cards, panels, controls */
-  --field: #f6f5f0;  /* tinted fields: details, callouts, notes */
-  --code-bg: #eef0f2; --pre-bg: #f4f5f6;
-  --chip: #f3f4f6;   /* neutral chip */
-  --ink-2: #374151;  --muted-2: #9ca3af; --border-2: #d1d5db;
-  --veil: #ffffffee; /* the banner's translucent backdrop */
-  --mark: #fde68a80; --mark-strong: #fde68a; --quote-bar: #f59e0b;
-  --ok-tint: #dcfce7;     --ok-ink: #166534;
-  --warn-tint: #fef3c7;   --warn-ink: #92400e;
-  --danger-tint: #fee2e2; --danger-ink: #b91c1c;
-  --add-tint: #e6ffec; --del-tint: #ffebe9; --hi-tint: #fef9c3;
+  --card: #fffefb;   /* raised surfaces: cards, panels, controls */
+  --field: #f4f1e8;  /* tinted fields: details, callouts, notes */
+  --code-bg: #eeeade; --pre-bg: #f5f2e9;
+  --chip: #eeeade;   /* neutral chip */
+  --ink-2: #3c3934;  --muted-2: #9d968a; --border-2: #d5cfc2;
+  --veil: #faf9f5ee; /* the banner's translucent backdrop */
+  --mark: #f2d38c66; --mark-strong: #f2d38c; --quote-bar: #c1743f;
+  --ok-tint: #dfeddf;     --ok-ink: #2f6b40;
+  --warn-tint: #f7ecd2;   --warn-ink: #8a5a12;
+  --danger-tint: #f7e0da; --danger-ink: #9c3526;
+  --add-tint: #e4efe0; --del-tint: #f7e2dc; --hi-tint: #f7eecd;
   /* Syntax roles. Six, because a page is read for its argument and code on it is
      evidence — enough color to find the string and the comment, not a paint box.
      Every scope the tokenizer knows collapses into these in colloquy.js, and what
      it doesn't map keeps --ink, so an unmapped scope reads plain, never wrong. */
-  --syn-comment: #6e7781; --syn-keyword: #cf222e; --syn-string: #0a3069;
-  --syn-number: #0550ae;  --syn-name: #7b49d1;    --syn-type: #953800;
+  --syn-comment: #8b8577; --syn-keyword: #a3372c; --syn-string: #1d4f6b;
+  --syn-number: #2f5480;  --syn-name: #6b4a9e;    --syn-type: #8a5a12;
 }
 
+/* The dark palette is the same page at night, not its inverse: the ground keeps
+   the warmth (a brown-black, not a blue-black) and every grey above it is mixed
+   from the same axis, so a page that themes warm does not go cold when the OS does. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #16181d;  --ink: #e6e8eb;  --muted: #9aa3ad;  --rule: #2c313a;
-    --accent: #60a5fa; --ok: #4ade80;   --warn: #fbbf24;   --danger: #f87171;
+    --paper: #191815;  --ink: #e8e4db;  --muted: #a09889;  --rule: #34312b;
+    --accent: #8fb0d8; --ok: #7fb98c;   --warn: #d8a95c;   --danger: #d98b7a;
 
-    --card: #1d2026; --field: #21242b;
-    --code-bg: #262a32; --pre-bg: #1c1f25;
-    --chip: #2a2f38;
-    --ink-2: #c3c9d1; --muted-2: #6c7683; --border-2: #3a414d;
-    --veil: #16181dee;
-    --mark: #a1852a59; --mark-strong: #a1852a99; --quote-bar: #d3a53c;
-    --ok-tint: #14321f;     --ok-ink: #7fdda0;
-    --warn-tint: #362a10;   --warn-ink: #f0c674;
-    --danger-tint: #3a1c1c; --danger-ink: #f1948a;
-    --add-tint: #12301d; --del-tint: #38191b; --hi-tint: #38320f;
-    --syn-comment: #9198a1; --syn-keyword: #ff7b72; --syn-string: #a5d6ff;
-    --syn-number: #79c0ff;  --syn-name: #d2a8ff;    --syn-type: #ffa657;
+    --card: #201e1a; --field: #232019;
+    --code-bg: #29251e; --pre-bg: #1e1c18;
+    --chip: #2d2922;
+    --ink-2: #c9c3b6; --muted-2: #756e62; --border-2: #453f36;
+    --veil: #191815ee;
+    --mark: #a1852a59; --mark-strong: #a1852a99; --quote-bar: #b8763f;
+    --ok-tint: #1d2b1f;     --ok-ink: #97cca3;
+    --warn-tint: #322715;   --warn-ink: #e2bb75;
+    --danger-tint: #35211b; --danger-ink: #e0a091;
+    --add-tint: #1b2a1c; --del-tint: #33201b; --hi-tint: #342d14;
+    --syn-comment: #948c7d; --syn-keyword: #e59a8c; --syn-string: #9dc4dd;
+    --syn-number: #a8c4e2;  --syn-name: #c3a8de;    --syn-type: #dcb27e;
   }
 }
 
 /* ---------- elements ---------- */
 
 body { margin: 0; background: var(--paper); color: var(--ink);
-       font: var(--t-4)/1.55 system-ui, -apple-system, sans-serif; }
+       font: var(--t-4)/1.6 var(--serif); }
 /* Positioned so it is the containing block for anything a widget hangs in the
  * page margin (cq-suggestion's controls): `left: 100%` then means the column's
- * right edge, and `anchor()` reaches the anchor names declared inside it. */
-main { max-width: 760px; margin: 0 auto; padding: 64px 24px 96px; position: relative; }
-h1 { font-size: 27px; line-height: 1.2; letter-spacing: -0.01em; margin: 0 0 10px; }
-h2 { font-size: var(--t-3); margin: 44px 0 10px; }
-h3 { font-size: var(--t-4); margin: 28px 0 8px; }
-p { margin: 10px 0; }
-ul, ol { margin: 8px 0; padding-left: 22px; }
-li { margin: 5px 0; }
-a { color: var(--accent); }
-hr { border: none; border-top: 1px solid var(--rule); margin: 32px 0; }
+ * right edge, and `anchor()` reaches the anchor names declared inside it.
+ *
+ * 720px is stated as a number and not as a token, because `version check` reads
+ * this very declaration to find the column it measures every pinned width
+ * against (_column_width). A var() there is a value the parser can't resolve, so
+ * the gate would quietly fall back to its 780px default and start passing pages
+ * that overflow by 60px. The column is one number, and this is where it is said.
+ *
+ * It narrowed from 760 with the type: 17px Charter runs about 7.9px a character,
+ * so the 672px of text inside this padding is ~74 characters — a measure. The
+ * old column set 16px system-ui across 93 of them, which is a line the eye loses
+ * its place returning from, and the single biggest thing wrong with how the
+ * page read. Widgets that want width already scroll (cq-board, cq-diff, pre). */
+main { max-width: 720px; margin: 0 auto; padding: 72px 24px 96px; position: relative; }
+/* The headings are the body serif at weight, size and spacing — one voice, four
+ * volumes — rather than a display face over a text face. A page whose subject is
+ * a decision and whose furniture is diffs and boards has enough going on; the
+ * hierarchy it needs is the one that survives being skimmed, which is size and
+ * air, not contrast of family. */
+h1 { font-size: var(--t-1); line-height: 1.16; letter-spacing: -0.014em;
+     margin: 0 0 12px; text-wrap: balance; }
+h2 { font-size: var(--t-2); line-height: 1.25; letter-spacing: -0.008em;
+     margin: 48px 0 12px; text-wrap: balance; }
+h3 { font-size: var(--t-3); line-height: 1.3; margin: 32px 0 8px;
+     text-wrap: balance; }
+p { margin: 13px 0; }
+ul, ol { margin: 10px 0; padding-left: 24px; }
+li { margin: 6px 0; }
+a { color: var(--accent); text-underline-offset: 2px;
+    text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+a:hover { text-decoration-color: currentColor; }
+hr { border: none; border-top: 1px solid var(--rule); margin: 40px 0; }
 code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px;
-       font-size: 87%; font-family: var(--mono); }
+       font-size: 84%; font-family: var(--mono); }
 pre { background: var(--pre-bg); border: 1px solid var(--rule); border-radius: var(--r);
-      padding: 12px 14px; overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+      padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.55;
       font-family: var(--mono); }
 pre code { background: none; padding: 0; font-size: 100%; }
 /* Syntax roles. The runtime writes these into any code block that names a language —
@@ -97,36 +154,66 @@ pre code { background: none; padding: 0; font-size: 100%; }
    half-width band. */
 [data-cq-syn="ins"] { color: var(--ok-ink); }
 [data-cq-syn="del"] { color: var(--danger-ink); }
-blockquote { margin: 14px 0; padding: 2px 14px; border-left: 2px solid var(--rule);
-             color: var(--muted); }
-figure { margin: 18px 0; }
-figcaption { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+blockquote { margin: 18px 0; padding: 2px 18px; border-left: 2px solid var(--rule);
+             color: var(--muted); font-style: italic; }
+figure { margin: 22px 0; }
+figcaption { font-size: var(--t-6); color: var(--muted); margin-top: 8px; }
 img, svg, video { max-width: 100%; height: auto; }
-table { width: 100%; border-collapse: collapse; font-size: var(--t-5); margin: 14px 0; }
-th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule);
+table { width: 100%; border-collapse: collapse; font-size: var(--t-5); margin: 18px 0;
+        font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule);
          vertical-align: top; }
-th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
+th { font-size: var(--t-6); text-transform: uppercase; letter-spacing: .06em;
      color: var(--muted); font-weight: 600; }
 details { background: var(--field); border: 1px solid var(--rule);
-          border-radius: var(--r); padding: 8px 14px; margin: 14px 0; }
-summary { cursor: pointer; font-weight: 600; font-size: 14.5px; }
+          border-radius: var(--r); padding: 8px 14px; margin: 18px 0; }
+summary { cursor: pointer; font-weight: 600; font-size: var(--t-5); }
 details pre { margin: 10px 0 6px; }
-dl { margin: 8px 0; }
+dl { margin: 10px 0; }
 dt { font-weight: 600; }
 dd { margin: 0 0 8px 0; }
 
+/* The apparatus voice, said once. Every label, caption, chip, badge and column
+ * heading on the page is the page pointing at its own content rather than saying
+ * something — so it takes the UI sans at a small size, usually tracked, and the
+ * serif is left to carry what there is to read. Listing them in one rule is the
+ * point: what counts as apparatus is a judgement, and a judgement made in twenty
+ * places is twenty chances to answer it differently. A widget's own words go here
+ * when a new one is written, beside the rule that sizes them.
+ *
+ * This is a look, not a permission — the anchoring norm's distinction exactly. A
+ * chip a widget says (data-cq-said) is still the page's words and still something
+ * a reviewer can select and quote; it is set in the sans because it reads as
+ * machinery, not because it is the runtime's.
+ *
+ * Nothing a widget builds through `offer` belongs here, and the first draft had
+ * four of them (a row's `for` reference, the settled row's count and Δ, a tab's
+ * Δ). Those wear cq-ui, which already answers in the same face — so the rule was
+ * inert, and it said the wrong thing where anyone read it: that the runtime's own
+ * chrome is the page pointing at its content. This list is the page's words. */
+.eyebrow, .tag, figcaption, th, .facts dt, .cq-chips span, .cq-tree-badge,
+.cq-diff-stat, .cq-shotcap, .cq-error, cq-metric, cq-specimen::before,
+cq-specimen > [data-cq-said="label"], cq-column::before,
+cq-column > [data-cq-said="label"], cq-tab::before,
+cq-option::before, cq-option::after,
+cq-option > [data-cq-said="effort"], cq-option > [data-cq-said="risk"] {
+  font-family: var(--sans); }
+
 /* ---------- class idioms ---------- */
 
-.eyebrow { font-size: var(--t-6); letter-spacing: .08em; text-transform: uppercase;
-           color: var(--muted); margin: 0 0 6px; }
-.lede { color: var(--ink-2); font-size: 16.5px; margin: 0 0 8px; }
+.eyebrow { font-size: var(--t-6); letter-spacing: .1em; text-transform: uppercase;
+           color: var(--muted); font-weight: 500; margin: 0 0 10px; }
+/* The one paragraph a reader is guaranteed to read, so it is set as one: larger
+   than the body, looser, and in the ink the body isn't. */
+.lede { color: var(--ink-2); font-size: var(--t-3); line-height: 1.5;
+        margin: 0 0 10px; }
 .tag { display: inline-block; font-size: var(--t-6); padding: 2px 8px;
        border-radius: 999px; background: var(--chip); color: var(--ink-2);
        vertical-align: middle; }
 /* A tinted field with a hairline border — never a left-accent bar. */
 .callout { background: var(--field); border: 1px solid var(--rule);
-           border-radius: var(--r); padding: 10px 14px; margin: 14px 0;
-           font-size: 15px; }
+           border-radius: var(--r); padding: 12px 16px; margin: 18px 0;
+           font-size: 16px; }
 .facts { display: grid; grid-template-columns: max-content 1fr;
          gap: var(--sp-1) var(--sp-3); margin: 14px 0; }
 .facts dt { color: var(--muted); font-weight: 400; font-size: var(--t-5);
@@ -199,8 +286,8 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0;
 cq-options { display: block; margin: 14px 0; }
 cq-option { display: block; position: relative; border: 1px solid var(--rule);
             border-radius: var(--r); padding: var(--sp-3); background: var(--card);
-            font-size: 14px; }
-cq-option > strong { display: block; margin: 0 0 4px; font-size: 15px; }
+            font-size: 15px; }
+cq-option > strong { display: block; margin: 0 0 4px; font-size: 16px; }
 /* A chip's look is the same wherever it lands; where it lands is the form's business,
  * so a card pins its pair to the corners it reserved room for and a row lets them ride
  * in its line. */
@@ -394,7 +481,7 @@ cq-options:not(:has(> cq-option > strong)) > cq-option .cq-pick:not([data-cq-sai
 cq-options[settled] > .cq-settled {
               grid-column: 1 / -1; display: none; width: 100%; align-items: baseline;
               gap: var(--sp-2); margin: 0 0 var(--sp-2); padding: 7px 12px;
-              font: inherit; font-size: 14.5px; font-weight: 600; text-align: left;
+              font: inherit; font-size: var(--t-5); font-weight: 600; text-align: left;
               background: var(--field); color: var(--ink); cursor: pointer;
               border: 1px solid var(--rule); border-radius: var(--r); }
 cq-options[settled]:not([open]) > .cq-settled { margin-bottom: 0; }
@@ -480,8 +567,8 @@ cq-event > strong { margin-right: 6px; }
 cq-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
              gap: var(--sp-3); margin: 14px 0; }
 cq-variant { display: block; border: 1px solid var(--rule); border-radius: var(--r);
-             padding: var(--sp-3); background: var(--card); font-size: 14px; }
-cq-variant > strong { display: block; margin: 0 0 4px; font-size: 15px; }
+             padding: var(--sp-3); background: var(--card); font-size: 15px; }
+cq-variant > strong { display: block; margin: 0 0 4px; font-size: 16px; }
 
 /* cq-metrics / cq-metric: a KPI row. The value leads, said from the attribute;
  * the delta trails and colors by sign × direction — honest coloring, no JS. */
@@ -491,7 +578,7 @@ cq-metric { display: block; border: 1px solid var(--rule); border-radius: var(--
             padding: 10px 14px; background: var(--card); font-size: var(--t-6);
             text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 cq-metric::before,
-cq-metric > [data-cq-said="value"] { display: block; font-size: 24px;
+cq-metric > [data-cq-said="value"] { display: block; font-size: var(--t-2);
                     font-weight: 600; line-height: 1.3; letter-spacing: -0.01em;
                     text-transform: none; color: var(--ink); }
 cq-metric::before { content: attr(value); }
@@ -536,7 +623,7 @@ cq-column::before { content: attr(label); }
 cq-column:has(> [data-cq-said="label"])::before { content: none; }
 cq-card { display: block; position: relative; background: var(--card);
           border: 1px solid var(--rule); border-radius: var(--r);
-          padding: 8px 34px 8px 10px; margin: 0 0 var(--sp-2); font-size: 14px; }
+          padding: 8px 34px 8px 10px; margin: 0 0 var(--sp-2); font-size: 15px; }
 cq-card:last-child { margin-bottom: 0; }
 cq-card > strong { display: block; margin: 0 0 2px; }
 /* The grip is a press, so the keyboard reaches it: Enter grabs, arrows move. */
@@ -750,7 +837,7 @@ cq-specimen cq-options[choose] > cq-option[chosen]:hover {
 
 /* Upgraded widgets: pre-upgrade presentation, so a page degrades readably. */
 cq-diagram, cq-diff, cq-tree, cq-code { display: block; margin: 14px 0;
-             white-space: pre; font-family: var(--mono); font-size: 12.5px;
+             white-space: pre; font-family: var(--mono); font-size: 13px;
              color: var(--muted); overflow-x: auto; }
 cq-diagram.cq-rendered, cq-diff.cq-rendered, cq-tree.cq-rendered,
 cq-code.cq-rendered {
@@ -760,7 +847,7 @@ cq-diagram svg { display: block; margin: 0 auto; }
 /* cq-diff rendered form: one details per file, lines colored by kind. */
 cq-diff.cq-rendered details { margin: 8px 0; padding: 0; overflow: hidden;
                               background: var(--card); }
-cq-diff.cq-rendered summary { padding: 6px 12px; font-size: 12.5px; }
+cq-diff.cq-rendered summary { padding: 6px 12px; font-size: 13px; }
 cq-diff .cq-diff-stat { color: var(--muted); font-weight: 400; margin-left: 8px;
                         font-size: var(--t-6); }
 cq-diff.cq-rendered pre { margin: 0; border: none; border-top: 1px solid var(--rule);
@@ -775,7 +862,7 @@ cq-diff pre .hunk { color: var(--accent); background: var(--pre-bg); }
 cq-diff pre .note { color: var(--muted); } /* git's remark on the line above, not a line */
 
 /* cq-tree rendered form: nested lists with hairline guides and change badges. */
-cq-tree.cq-rendered { font-family: var(--mono); font-size: 12.5px; }
+cq-tree.cq-rendered { font-family: var(--mono); font-size: 13px; }
 cq-tree ul { list-style: none; margin: 0; padding-left: 0; }
 cq-tree ul ul { padding-left: 18px; border-left: 1px solid var(--rule); margin-left: 5px; }
 cq-tree li { margin: 3px 0; }
@@ -792,9 +879,13 @@ cq-code .cq-code-line::before { counter-increment: cq-code-line;
              content: counter(cq-code-line); display: inline-block; width: 34px;
              padding-right: 12px; text-align: right; color: var(--muted-2); }
 cq-code .cq-code-line.hi { background: var(--hi-tint); }
+/* A note is the author's sentence about a line, so it leaves the mono the block
+   is set in and comes back to the document's own voice — it is prose, and a
+   reviewer quotes it like any other. Stated here rather than in the apparatus
+   rule for that reason, and because it has a `pre`'s mono to escape either way. */
 cq-code .cq-code-note { margin: 4px 8px 6px 46px; padding: 6px 10px;
              background: var(--field); border: 1px solid var(--rule);
-             border-radius: var(--r); font-family: system-ui, sans-serif;
+             border-radius: var(--r); font-family: var(--serif);
              font-size: var(--t-5); white-space: normal; }
 cq-code cq-note { display: block; }
 
@@ -877,8 +968,7 @@ cq-draft:hover .cq-draft-pencil, cq-draft:focus-within .cq-draft-pencil { opacit
 /* Where a widget upgrade fails, it fails soft into this box. */
 .cq-error { border: 1px solid var(--danger); background: var(--danger-tint);
             color: var(--danger-ink); border-radius: var(--r); padding: 8px 12px;
-            font-size: var(--t-5); white-space: normal;
-            font-family: system-ui, sans-serif; }
+            font-size: var(--t-5); white-space: normal; }
 .cq-error pre { margin: 8px 0 0; white-space: pre; }
 
 /* Reduced motion: one global guard covers every animation and transition in the

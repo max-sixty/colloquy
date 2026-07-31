@@ -5,15 +5,15 @@
      theme.css states for paper, ink, accent and the mark, spelled out because a
      favicon cannot link a stylesheet. -->
 <style>
-  .page { fill: #fbfbf9; stroke: #626b78; }
-  .line { stroke: #626b78; }
-  .mark { stroke: #fde68a; }
-  .note { fill: #2563eb; }
+  .page { fill: #faf9f5; stroke: #6f6a60; }
+  .line { stroke: #6f6a60; }
+  .mark { stroke: #f2d38c; }
+  .note { fill: #2f5480; }
   @media (prefers-color-scheme: dark) {
-    .page { fill: #16181d; stroke: #9aa3ad; }
-    .line { stroke: #9aa3ad; }
+    .page { fill: #191815; stroke: #a09889; }
+    .line { stroke: #a09889; }
     .mark { stroke: #a1852a; }
-    .note { fill: #60a5fa; }
+    .note { fill: #8fb0d8; }
   }
 </style>
 <rect class="page" x="3.5" y="3.5" width="18" height="25" rx="2.5"

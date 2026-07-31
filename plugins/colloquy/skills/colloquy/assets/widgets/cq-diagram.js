@@ -4,6 +4,22 @@
  * The vendored mermaid bundle loads lazily, once, and only on pages that use it. */
 import { once, failSoft, settle } from "/colloquy.js";
 
+/* A diagram paints its own boxes, which makes it the one widget that can hold a
+ * palette of its own — and it did: mermaid's stock "neutral" is a cool grey, so
+ * every diagram sat on the page as a slab of a different theme. The tokens are the
+ * page's answer to what a surface, a rule and a label look like, so the diagram
+ * takes them too, read off the document rather than restated here. `base` is the
+ * theme that accepts them; the named themes derive their own and ignore most of
+ * what you pass. `darkMode` is the one thing the tokens can't say, because it tells
+ * mermaid which way to derive the variables it wasn't given.
+ *
+ * Read once, at load. A page whose OS flips scheme mid-read keeps the palette it
+ * started in until reload — the same as the vendored highlight table, and unlike
+ * the rest of the theme, which is tokens and follows live. Re-rendering every
+ * diagram on a media-query change would be the alternative, and it buys a case
+ * (the OS theme changing while a reviewer reads) that costs a reload to fix. */
+const token = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
+
 let mermaidReady;
 const loadMermaid = () =>
   (mermaidReady ??= new Promise((resolve, reject) => {
@@ -12,8 +28,26 @@ const loadMermaid = () =>
     s.onload = () => {
       globalThis.mermaid.initialize({
         startOnLoad: false,
-        theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "neutral",
-        fontFamily: "system-ui, sans-serif",
+        theme: "base",
+        // A diagram's node labels are apparatus, so they take the apparatus face.
+        fontFamily: token("--sans"),
+        themeVariables: {
+          darkMode: matchMedia("(prefers-color-scheme: dark)").matches,
+          background: token("--paper"),
+          mainBkg: token("--card"),
+          primaryColor: token("--card"),
+          primaryTextColor: token("--ink"),
+          primaryBorderColor: token("--border-2"),
+          secondaryColor: token("--field"),
+          tertiaryColor: token("--chip"),
+          lineColor: token("--muted"),
+          textColor: token("--ink"),
+          nodeBorder: token("--border-2"),
+          clusterBkg: token("--field"),
+          clusterBorder: token("--rule"),
+          titleColor: token("--ink"),
+          edgeLabelBackground: token("--paper"),
+        },
       });
       resolve(globalThis.mermaid);
     };

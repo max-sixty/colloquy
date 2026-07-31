@@ -297,6 +297,42 @@ construction; that mistake is now made where the label is written, in front of w
 wrote the word, rather than in a print rule three files away that nobody thought to
 write.
 
+## Three voices, because the page has three kinds of words
+
+What the page *says* is prose a reviewer reads closely and points at. What it *labels* —
+an eyebrow, a column heading, a chip, a table header, a metric's caption — is apparatus,
+the page pointing at its own content. What it *shows* is evidence: code, diffs, trees,
+timestamps. The norms here already turn on that distinction; until the theme had more
+than one face, nothing on screen carried it. Document and chrome were the same system
+sans, so "this is not the document" rested on size and colour alone — and those are the
+two things that go first, colour being what a project theme overrides and size what a
+dense page compresses.
+
+So the page's own prose is a text serif, apparatus is the UI sans small and tracked, and
+evidence is mono. `.cq-ui` reads `--sans` rather than naming a stack, which makes the
+chrome's face a consequence of that one decision instead of a second one to keep in step;
+a diagram reads the same token, because mermaid paints its own labels and would otherwise
+carry a palette and a face from nowhere. Which voice a widget's words take is decided in
+one rule in `theme.css` listing the apparatus, and that is the point of it: what counts
+as a label is a judgement, and a judgement made in twenty rules is twenty chances to
+answer it differently. It is a look and not a permission — the line the norm directly
+above draws. A chip a widget says is set in the sans because it reads as machinery, and is
+still the page's words, still something to select and quote. Nothing built through
+`offer` belongs in that rule: those wear `.cq-ui`, which already answers in the same
+face, so listing one is inert and reads as a claim that the runtime's chrome is the page.
+
+The serif is stacked, not shipped, and the reason is the copy. `theme.css` is inlined
+whole into every `version export` and parsed by `version check` on every version, so a
+webfont has to arrive as a base64 blob in both — and referenced by URL instead it falls
+back silently in exactly the medium that has no server to ask. Charter and Iowan Old
+Style ship on macOS, Georgia everywhere else; each is a screen serif with a large
+x-height, which is what matters at 17px.
+
+Changing any of this moves every width someone reserved by measuring, and the press sweep
+above is what says so — it named the sign-off button the day `--t-5` went from 13.5px to
+14px and 110px stopped covering "✓ Looks good". Re-measure and restate the number; don't
+derive it.
+
 ## A widget's form follows its content, and each form states its own rules
 
 `cq-options` renders as a grid of cards or as a list of rows, and nothing declares which:
@@ -400,3 +436,17 @@ hide, they don't discard. Cancel is the only discard.
 
 `node --check` proves syntax, not bindings: a deleted `const` with six live callers
 passes it. Run the suite.
+
+It does not reliably prove syntax either, and the runtime's stylesheet is where that
+bites. Those rules live in a template literal, so a backtick written inside one of
+their comments — quoting a token name the way prose does everywhere else in this
+repo — closes the literal, and the CSS after it is parsed as code. A pair of them
+leaves the file's backticks balanced, which is enough for `node --check` to pass a
+file Chrome refuses outright: the module never loads, and every page is a bare
+document with no chrome on it. `version check --render` is what says so, in one line.
+
+Its cost is worth knowing before you spend it. A runtime that doesn't load doesn't
+fail the suite quickly — it makes every browser test wait out its own timeout, at no
+CPU, so the run stops looking broken and starts looking slow. Ninety minutes of that
+reads exactly like a loaded machine. If the suite is somehow still going, render one
+example before assuming it is contention.

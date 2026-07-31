@@ -74,11 +74,18 @@ can tune one element or widget.</p>
 <pre><code>:root {
   --accent: #7c3aed;
   --r: 3px;
+  --serif: "Iowan Old Style", Georgia, serif;
 }
 
 cq-options {
   gap: var(--sp-2);
 }</code></pre>
+<p>Type is three tokens. <code>--serif</code> sets what the page says,
+<code>--sans</code> what it labels — and what the comment panel, banner, and every
+injected control are set in, so the chrome follows the page. <code>--mono</code>
+sets code, diffs, and timestamps. Name families the reader's machine already has:
+the stylesheet is inlined into each <code>version export</code>, and a font fetched
+by URL is one a standalone copy opens without.</p>
 <p>The default stylesheet remains intact, so changing one token needs no copied
 theme. Its opening
 <a href="../plugins/colloquy/skills/colloquy/assets/theme.css">token block</a>

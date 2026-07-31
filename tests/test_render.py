@@ -5288,8 +5288,24 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
     outside_before = page.screenshot(clip=band)
     inside_before = page.screenshot(clip=inside)
 
-    box = page.locator("#draft-ops .cq-draft-body").bounding_box()
-    page.mouse.dblclick(box["x"] + 60, box["y"] + 8)
+    # Aimed at where the browser actually drew the word, not at an offset from the
+    # box's edge. A pixel count is a fact about one font: 60px into this line was
+    # "migration" while the theme set drafts in 16px system-ui, and lands in "the"
+    # now that it sets them in 17px Charter — so the test read as "the editor opens
+    # on the wrong word" when nothing about the gesture had changed.
+    spot = page.evaluate(
+        """(word) => {
+            const body = document.querySelector('#draft-ops .cq-draft-body');
+            const node = document.createTreeWalker(body, NodeFilter.SHOW_TEXT).nextNode();
+            const at = node.data.indexOf(word);
+            const r = document.createRange();
+            r.setStart(node, at); r.setEnd(node, at + word.length);
+            const b = r.getBoundingClientRect();
+            return [b.x + b.width / 2, b.y + b.height / 2];
+        }""",
+        "migration",
+    )
+    page.mouse.dblclick(*spot)
     editor = page.locator("#draft-ops textarea")
     expect(editor).to_be_focused()
     assert page.screenshot(clip=band) == outside_before, (

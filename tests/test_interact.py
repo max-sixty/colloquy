@@ -2930,13 +2930,13 @@ def test_check_requires_the_vendored_layer(tmp_path):
 
 
 def test_check_takes_column_width_from_vendored_theme(page_dir):
-    # theme.css sets a 760px main column; a wider fixed-width element must fail.
+    # theme.css sets a 720px main column; a wider fixed-width element must fail.
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><svg width="900" height="10"></svg>')
     )
     result = check(page_dir)
     assert result.exit_code == 1
-    assert "exceeds column (760px)" in result.output
+    assert "exceeds column (720px)" in result.output
 
 
 def test_media_names_a_file_by_its_bytes_and_serves_it(page_dir, tmp_path, server):
@@ -3083,7 +3083,7 @@ def test_check_counts_only_a_width_fixed_in_pixels(page_dir):
 
 def test_check_measures_against_the_column_the_page_sets_for_itself(page_dir):
     """A page-local <style> is the page's own answer to how wide it reads, so it wins
-    over the vendored theme's 760px and an element wider than the theme allows passes."""
+    over the vendored theme's 720px and an element wider than the theme allows passes."""
     (page_dir / "versions" / "v1.html").write_text(
         styled("main { max-width: 1000px }", '<svg width="900" height="10"></svg>')
     )
@@ -3099,7 +3099,7 @@ def test_check_reads_widths_where_the_document_states_them(page_dir):
     )
     result = check(page_dir)
     assert result.exit_code == 1
-    assert "inline style width: 900px (column is 760px)" in result.output
+    assert "inline style width: 900px (column is 720px)" in result.output
 
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2><p>Write it as <code>.wide { width: 900px }</code>.</p>")

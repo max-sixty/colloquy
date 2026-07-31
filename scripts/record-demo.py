@@ -3,7 +3,16 @@
 # requires-python = ">=3.10"
 # dependencies = ["pillow>=11", "playwright>=1.52"]
 # ///
-"""Record docs/demo.gif by driving the shipped runtime through one review round."""
+"""Record docs/demo.gif, and the landing page's two session stills, by driving the
+shipped runtime through one review round.
+
+The stills used to be shot by hand, which meant nothing regenerated them and nothing
+noticed when they stopped being true: a theme change left the landing page arguing for
+a product whose picture showed the previous one. They come off the same staged scene as
+the GIF because that scene is already the one the page's alt text describes — a comment
+anchored to a marked passage, Claude's reply in the thread, v2 latest in the picker —
+so shooting them here costs two more browser contexts and gives them something to
+re-run."""
 
 from __future__ import annotations
 
@@ -25,6 +34,8 @@ COLLOQUY = ROOT / "plugins" / "colloquy" / "bin" / "colloquy"
 PAGE_DIR = ROOT / ".tmp" / "demo-recording"
 DEFAULT_OUTPUT = ROOT / "docs" / "demo.gif"
 GIF_SIZE = (1120, 700)
+# The size docs/index.html states on the <img>, so a reshoot needs no edit there.
+STILL_SIZE = (1280, 953)
 
 
 def demo_page(version: int) -> str:
@@ -313,6 +324,84 @@ def record(
     return frames, durations
 
 
+def shoot_stills(
+    browser, url: str, waiters: list[subprocess.Popen[bytes]], into: Path
+) -> None:
+    """The landing page's two session stills, off the scene `record` has just left,
+    written beside the GIF rather than to a path of their own.
+
+    `--output` redirects the whole recording, and the stills have to go with it: the
+    suite records into a tmp directory to prove the journey still drives, and stills
+    that ignored the flag rewrote docs/session-{light,dark}.png on every run of the
+    tests. A test that leaves the working tree dirty is one whose next reader has to
+    work out whether the diff is theirs.
+
+    By this point the log holds the whole round — a comment on a marked passage, the
+    reply, v2 published, the state back to waiting — so a fresh context loading the
+    page arrives at exactly the picture docs/index.html describes in its alt text.
+    Fresh is the point: the panel's open state lives in localStorage, so a reused
+    context would restore whatever the last gesture left rather than the shot's own
+    setup.
+
+    One shot per color scheme, because the page states both and the landing page
+    serves whichever the reader's OS asks for. A scheme is a context-level setting,
+    not something to toggle on a live page: the vendored diagram palette is read once
+    at load, so a flipped page would carry the other scheme's diagrams.
+
+    Getting the banner to say "Claude is listening" takes stating both halves of it,
+    and neither survives `record` on its own. The heartbeat half is a live `review
+    wait`: one started over a log with undelivered activity delivers and returns
+    instead, taking its heartbeat with it, and `record` always leaves activity behind
+    — the board drag is the last thing it does. The status half is that the delivery
+    marks the review `working — picking up N updates`, the handoff Claude's own
+    `review state` clears on waking, and working outranks listening until something
+    does. Drain, then say what the scene is, then start the waiter: setting the state
+    only on the branch where the drain had something to deliver left it saying
+    "picking up 1 update" on the branch where the waiter `record` left had already
+    delivered it."""
+    drain = start_waiter()
+    waiters.append(drain)
+    try:
+        drain.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass  # already idling; the state below and the waiter after it still apply
+    run_colloquy("review", "state", str(PAGE_DIR), "waiting")
+    waiters.append(start_waiter())
+    # The reviewer's board move has to have landed in each shot, or it shows a page
+    # mid-replay — the same wait `version export` takes for the same reason. Counted
+    # once: neither shot posts anything, so the log is the same for both.
+    actions = sum(
+        json.loads(line)["kind"] == "action"
+        for line in (PAGE_DIR / "comments.jsonl").read_text().splitlines()
+        if line.strip()
+    )
+
+    for scheme in ("light", "dark"):
+        context = browser.new_context(
+            viewport={"width": STILL_SIZE[0], "height": STILL_SIZE[1]},
+            color_scheme=scheme,
+            reduced_motion="reduce",
+        )
+        page = context.new_page()
+        page.goto(url)
+        page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+        page.wait_for_function(
+            f"() => Number(document.body.dataset.cqApplied ?? -1) >= {actions}"
+        )
+        page.wait_for_function(
+            "() => document.querySelector('.cq-status-text')"
+            ".textContent.includes('is listening')"
+        )
+        page.locator(".cq-banner button[aria-expanded]").click()
+        page.wait_for_selector(".cq-thread .cq-msg.claude")
+        page.locator("#top").scroll_into_view_if_needed()
+        page.wait_for_timeout(400)  # the panel's margin transition
+        page.screenshot(
+            path=into / f"session-{scheme}.png", animations="disabled", caret="hide"
+        )
+        context.close()
+
+
 def write_gif(
     frames: list[Image.Image], durations: list[int], output: Path
 ) -> None:
@@ -383,8 +472,12 @@ def main() -> None:
             page = context.new_page()
             page.goto(url)
             frames, durations = record(page, waiters)
+            # The GIF is written before the stills are shot, so a still that can't
+            # be staged costs only itself. The other order lost a good recording to
+            # a timeout in the shot after it.
+            write_gif(frames, durations, output)
+            shoot_stills(browser, url, waiters, output.parent)
             browser.close()
-        write_gif(frames, durations, output)
     finally:
         for waiter in waiters:
             if waiter.poll() is None:

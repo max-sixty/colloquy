@@ -668,7 +668,7 @@ style.textContent = `
      runtime marks the page's own elements (cq-mark-el, cq-ins-block). Adding one
      widens the vocabulary; a rule that styles the runtime's own layer goes in the
      @scope block below instead. */
-  .cq-ui { font-family: system-ui, -apple-system, sans-serif; font-size: var(--t-5); line-height: 1.45; color: var(--ink); box-sizing: border-box; }
+  .cq-ui { font-family: var(--sans); font-size: var(--t-5); line-height: 1.45; color: var(--ink); box-sizing: border-box; }
   .cq-ui *, .cq-ui *::before, .cq-ui *::after { box-sizing: inherit; }
   /* A press a widget injects is a span wearing role="button" (see offer), so the two
      things a <button> came with are stated here. The box, because an inline span drops
@@ -772,14 +772,20 @@ style.textContent = `
        The numbers are measured rather than derived, so they are only as good as the font
        they were measured in. That is what the two sweeps are for: a press, and the poll,
        which between them work every one of these. Either fails the day a reservation
-       stops covering, rather than the day someone notices the row twitching. */
+       stops covering, rather than the day someone notices the row twitching. Three have
+       done that already, and their numbers below are the re-measurement: --t-5 moved
+       from 13.5px to 14px with the theme's type, taking "✓ Looks good" to 112.7px,
+       "Comments (999)" to 132.4px and "✓ Accept all (999)" to 141.8px — past all three
+       reservations at once. Each was read back out of a browser, because scaling the old
+       number by the ratio of the sizes is deriving it, which is the thing this comment
+       says not to do. */
     .cq-banner select { font: inherit; padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; flex: none; width: 190px; text-overflow: ellipsis; }
-    .cq-signoff { min-width: 110px; }
+    .cq-signoff { min-width: 116px; }
     /* The two that count reserve the widest they reach anywhere below a thousand, so no
        arithmetic on the count can move them and none of it has to be thought about again.
        A page with a thousand open threads on it is not one anyone hands a reviewer. */
-    .cq-comments { min-width: 129px; }
-    .cq-accept-all { min-width: 138px; }
+    .cq-comments { min-width: 136px; }
+    .cq-accept-all { min-width: 145px; }
     /* The one control on the right of the row that may give, because it is the leftmost
        of them and giving there moves nothing; the status text, off at the other end, is
        the other. The rest are .cq-btn, floored at their own words by nowrap — the chooser
