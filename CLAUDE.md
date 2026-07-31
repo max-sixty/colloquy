@@ -301,6 +301,30 @@ of them; the version chooser states a width rather than taking one from the long
 Claude has yet published. Each spends something on a case that may not arrive, and that is
 the trade — the alternative is paid at the moment the reviewer had something to say.
 
+The rule has an edge, and it is the pressed control's own line. Below that line the page
+is content and may move, since a tab showing another panel is what the press was for. On
+it nothing may move, because it is where the next gesture is already aimed. That edge is
+what makes the rule checkable rather than a thing to remember: the press sweep walks every
+control on every shipped example, holds the ones beside it still, and reads the single
+property a widget hasn't got a say in — that a thing can be pressed. It found two more the
+day it was written. The sign-off button's "✓ Approved" is 12px narrower than "✓ Looks
+good", so signing off slid the version chooser and the Comments button right; a row-form
+pick mark took the room for the word it says at the moment it was pressed, dragging that
+row's § reference 54px out from under the pointer.
+
+The sweep is also what makes a reserved width safe to state as a number. Room reserved
+before it is needed gets measured in a browser, so it is a fact about one font, free to
+stop covering when the words change or where the system font sets them wider. Reserving
+and checking are one mechanism rather than two: the number alone is a guess that stops
+being true silently, which is the failure this whole norm is made of.
+
+A stylesheet lint was the first attempt at that check, and the shape is wrong. It reads
+the selector, and the state a control shows is not reliably in one: a class the module
+adds, a label the runtime rewrites, a count that gains a digit. It caught one of the four
+real cases, missed the ring that prompted all this, and objected to every deliberate hover
+lift. What a control does to its neighbours is a fact about a rendered page, so the page is
+where to ask.
+
 A shift before the first paint is not jerk, since nothing was on screen to move, and every
 widget upgrade measured on the shipped examples lands there, ahead of its own page's first
 paint — so hiding them behind `:not(:defined)` would buy nothing and cost every rendering
@@ -616,6 +640,24 @@ hide, they don't discard. Cancel is the only discard.
   with `expect(...)`, never a bare `is_hidden()` or `count()`: every gesture that sends
   is a round trip, and a plain read taken right after one passes on a fast run and fails
   on a slow one, which is worse than failing outright.
+- **A round trip is not over when its response lands.** What the page does about a send
+  mostly arrives on the next `/api/state` poll, so anything waiting on a send waits out
+  `POLL_MS` and not a frame or two. The press sweep learned this the expensive way: two
+  matching frames read the page from before the press had an effect, and it caught its
+  own regression on about half of the runs written to prove it caught it. Where the wait
+  costs real wall clock, take it only for the presses that actually sent — the runtime
+  posts everything through `fetch`, so one wrapper counts them and no widget declares
+  anything.
+- **A sweep that walks controls by index must prove it pressed them.** A list read before
+  the runtime injects its banner is a short list, and a short list skips silently rather
+  than failing — which is the vacuous pass, wearing the same green as the real one. Pin
+  the count across reloads, and check a new gate by putting each bug back and watching it
+  fail; a gate that has only ever passed has been tested for nothing.
+- **Reloading is not resetting.** The panel's open state is in `localStorage` and the
+  reading position and drafts are in `sessionStorage`, all deliberately, so a fresh
+  `goto` restores the state the last gesture left. Clear both where a test means the page
+  as published — an open panel crowds the banner enough to absorb a shrinking button, and
+  that alone decided whether a real regression reproduced.
 - **`node --check` proves syntax, not bindings.** A deleted `const` with six live callers
   passes it. Run the suite.
 - **Measure before optimising and before assuming.** The cost claims in this codebase came

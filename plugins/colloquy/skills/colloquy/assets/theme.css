@@ -348,7 +348,16 @@ cq-options[choose]:not(:has(> cq-option > strong)) > cq-option:hover {
                      background: var(--chip); }
 cq-options[choose]:not(:has(> cq-option > strong)) > cq-option[chosen]:hover {
                      background: var(--ok-tint); }
-cq-options:not(:has(> cq-option > strong)) > cq-option .cq-pick { position: static; }
+/* In flow at the line's end, so the room the word will need is reserved before it needs
+ * it: an open mark is a dot, a picked one is a dot and up to "your pick" beside it, and
+ * a mark that took that room at the moment it was pressed dragged the § reference beside
+ * it 54px to the left, mid-gesture. Reversed, so the dot is the item pinned to
+ * the line's end and the word grows leftward into room already held — an open row looks
+ * exactly as it did, and nothing on it moves when the pick lands. The width is measured
+ * ("your pick" at --t-6) rather than derived, and the press test is what says so the day
+ * it stops covering. */
+cq-options:not(:has(> cq-option > strong)) > cq-option .cq-pick {
+                     position: static; flex-direction: row-reverse; min-width: 66px; }
 cq-options:not(:has(> cq-option > strong)) > cq-option .cq-pick:not([data-cq-said]) {
                      font-size: 0; gap: 0; }
 /* The block a row is about (`for`). It points; it never supplies the row's words, so it

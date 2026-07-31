@@ -82,8 +82,9 @@ lint, vendoring, publishing, catalog, export, thread-markup validation, and the 
 `review comment` writes by reading a version file. `test_render.py`
 loads the shipped examples in a real browser (both color schemes) and asserts what a
 static lint can't reach: every widget upgrades into a box with usable size, the document
-and the comment panel scroll in separate regions, and the comment box grows without any
-script sizing it. One journey test drives the whole review loop through the real UI
+and the comment panel scroll in separate regions, the comment box grows without any
+script sizing it, and pressing any control leaves the controls beside it exactly where
+they were. One journey test drives the whole review loop through the real UI
 (select a passage, comment, drag a card, follow the next version, find the comment still
 anchored) and pins the event log it leaves. `test_product_page.py` holds the pages under
 `docs/` to the shipped theme and widget registry. Playwright attaches to the Chrome

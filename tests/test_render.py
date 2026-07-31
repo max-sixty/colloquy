@@ -516,6 +516,192 @@ def test_example_renders(browser, serve, example):
     assert interact.render_version(browser, serve(example.read_text())) == []
 
 
+# Two sets, because pointing at a control and pressing it are different questions.
+#
+# What must hold still is everything a reviewer aims at, however the widget that built
+# one made it: the runtime's real buttons and selects, the spans `offer` builds, a tab, a
+# pick mark, a reference. Naming the ways a control is constructed rather than the widgets
+# that construct them is what lets a twelfth widget's join this sweep without editing it.
+NEIGHBOUR = ("[data-cq-offer], [role=tab], [role=button], .cq-btn, .cq-pick, "
+             "button, select, summary, a[href]")
+# What this sweep presses is narrower, and both exclusions are about the press landing
+# rather than about the control. A <select> opens a native popup the page cannot see and
+# the next click closes instead of pressing — which is how this sweep first passed while
+# pressing nothing at all, the shape of vacuous pass CLAUDE.md is about. A link is a
+# reviewer's control and its press is a scroll, so it belongs to the set above and has
+# nothing here to disturb.
+PRESS = "[data-cq-offer], [role=tab], [role=button], .cq-btn, .cq-pick, button, summary"
+
+# The controls a press is aimed *past*: the ones sharing its parent, standing on the same
+# line, and on screen at both ends of the gesture. Held in a JS array rather than looked
+# up again afterwards, because identity has to survive a press that adds or removes a
+# sibling; measured with offset*, which is the layout box before any transform, so a card
+# still lifted under the pointer reads as the nothing it is.
+#
+# On screen is the load-bearing half. A control inside a fold the press opens was nowhere
+# the reviewer could aim, and one the press puts away — a suggestion's ✗ Reject, once ✓
+# Accept has settled the pair — is not a control that moved. Both are the press doing what
+# it was pressed for. `[hidden]` is asked separately because hidden="until-found", which is
+# what a folded region wears, measures zero and still reports itself visible.
+ON_SCREEN = "(n) => n.checkVisibility() && !n.closest('[hidden]') && n.offsetWidth > 0"
+NEIGHBOURHOOD = f"""(el, sel) => {{
+  const band = el.getBoundingClientRect();
+  const sameLine = (n) => {{
+    const r = n.getBoundingClientRect();
+    return Math.min(r.bottom, band.bottom) - Math.max(r.top, band.top) > 1;
+  }};
+  window.__cqOnScreen = {ON_SCREEN};
+  window.__cqNeighbours = [...el.parentElement.children]
+      .filter((n) => n !== el && !n.contains(el))
+      .flatMap((n) => (n.matches(sel) ? [n] : [...n.querySelectorAll(sel)]))
+      .filter((n) => window.__cqOnScreen(n) && sameLine(n));
+  return {{
+    names: window.__cqNeighbours.map((n) => n.tagName.toLowerCase()
+        + (typeof n.className === 'string' && n.className.trim()
+           ? '.' + n.className.trim().split(/\\s+/).join('.') : '')
+        + ' ' + JSON.stringify((n.textContent || '').trim().slice(0, 24))),
+    boxes: window.__cqBoxes(),
+  }};
+}}"""
+# One reading, named once, so the settle loop and the assertion cannot measure differently.
+DEFINE_BOXES = """() => { window.__cqBoxes = () => window.__cqNeighbours.map(
+    (n) => window.__cqOnScreen(n)
+      ? [n.offsetLeft, n.offsetTop, n.offsetWidth, n.offsetHeight] : null); }"""
+# Settled means "has not moved for longer than it can take to learn the press landed".
+# Two matching frames is not that where the press sent something: what the banner does
+# about a send arrives on the next /api/state poll rather than on the send's own
+# response, so a reading taken a frame later is a reading of the page from before the
+# press had an effect — and it passes or fails by where the poll happened to be. That is
+# the flake CLAUDE.md calls worse than an outright failure, and it hid the sign-off
+# regression on about half the runs meant to prove this test catches it.
+#
+# Which is also why the window is the send's and not every press's: a tab switch and a
+# fold are done in the frame they were asked in, and paying a poll interval for each of
+# those is most of this sweep's wall clock for nothing.
+SENT_SETTLE_MS = 2000 + 400  # colloquy.js POLL_MS, and room for the round trip after it
+QUIET_SETTLE_MS = 50  # a few frames: enough for a transition, no round trip to wait on
+SETTLED = """(hold) => {
+  const now = JSON.stringify(window.__cqBoxes());
+  if (now !== window.__cqSettle) {
+    window.__cqSettle = now;
+    window.__cqSince = performance.now();
+    return false;
+  }
+  return performance.now() - window.__cqSince > hold;
+}"""
+# Whether the press sent, counted where the sending happens. The runtime posts every
+# action and comment through fetch, so one wrapper sees them all and no widget has to
+# say anything. Init scripts run on every navigation, so the reloads below keep it.
+COUNT_SENDS = """
+  window.__cqSends = 0;
+  const inner = window.fetch;
+  window.fetch = function (...args) {
+    if (String(args[0] ?? "").includes("/api/event")) window.__cqSends++;
+    return inner.apply(this, args);
+  };
+"""
+
+
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
+def test_a_press_leaves_its_neighbours_where_they_were(browser, serve, example):
+    """A press may change the page; it may not move the controls next to the one pressed.
+
+    A reviewer works by pointing, and the line a control stands on is where their next
+    gesture is already aimed. What a press changes below it is content — a tab shows a
+    different panel, a fold opens, a suggestion resolves, and the page under it moves
+    because the reviewer asked it to. What must not move is the row itself, because
+    nothing was asked of it and it is the one thing the reviewer is still using.
+
+    Three shipped controls broke this rule, each by changing a metric to say something:
+    a selected tab set in 600 weight, since a bolder label is a wider one, so the strip
+    reshuffled under the pointer that had just pressed it; the sign-off button, whose
+    "✓ Approved" is 12px narrower than "✓ Looks good", sliding the version chooser and
+    the Comments button right; and a row-form pick mark, which took the room for the
+    word it says on being pressed and dragged that row's § reference 54px left. None of
+    them shows in a screenshot of either state, because every strip and every row lays
+    out perfectly well on its own; it is the two states together that say anything.
+
+    Two of the three are fixed by a reserved width measured in a browser rather than
+    derived, which is a number free to stop covering — when the words change, or on a
+    platform whose system font sets them wider. This is what says so when it does.
+
+    Driven over the corpus rather than per widget: a control this sweep has never heard
+    of joins it by being pressable, which is the only property it reads.
+
+    One press per page, because a press is a gesture made on the page as published and
+    the state an earlier one leaves changes what a later one proves. Pressing straight
+    down the document hid the sign-off button's 12px for exactly that reason: Comments
+    comes first in the banner, and with the panel open the row is crowded enough that
+    the status text takes up the slack instead of the buttons — a real regression,
+    silently masked by the sweep's own previous gesture."""
+    url = serve(example.read_text())
+    page, errors = open_page(browser, url, init_script=COUNT_SENDS)
+    total = page.locator(PRESS).count()
+    pressed, dirty = 0, False
+    for i in range(total):
+        if dirty:  # only a press dirties the page, and most of these indices skip
+            # Reloading is not on its own a reset: the panel remembers whether it was
+            # open (localStorage) and the reading position and drafts ride in
+            # sessionStorage, all of them deliberately. Left standing they decide what
+            # the next press proves — an open panel crowds the banner enough that the
+            # status text takes up a shrinking button's slack instead of the buttons, so
+            # the sign-off regression this test was written for passed or failed
+            # according to how many times the sweep had toggled Comments.
+            page.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
+            page.goto(url, wait_until="networkidle")
+            # Both stamps, and the banner first: half these controls are the runtime's
+            # own, so a list read before it has injected them is a short list — and a
+            # short list skips by index rather than failing, which is how this sweep
+            # quietly stopped pressing the sign-off button between one run and the next.
+            page.wait_for_function("() => document.querySelector('.cq-banner') !== null")
+            page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+            dirty = False
+            assert page.locator(PRESS).count() == total, (
+                f"{example.name} has a different set of controls after a reload, so the "
+                "indices this sweep walks name different things on either side of one"
+            )
+        page.evaluate(DEFINE_BOXES)
+        control = page.locator(PRESS).nth(i)
+        # A control the reviewer can't press has no gesture to disturb anything. Both
+        # spellings, because a span press can only ever wear the attribute.
+        if not control.is_visible() or not control.is_enabled():
+            continue
+        if control.get_attribute("aria-disabled") == "true":
+            continue
+        label = control.evaluate(
+            "(el) => el.tagName.toLowerCase() + ' '"
+            "        + JSON.stringify((el.textContent || '').trim().slice(0, 24))"
+        )
+        before = control.evaluate(NEIGHBOURHOOD, NEIGHBOUR)
+        if not before["names"]:
+            continue
+        sends = page.evaluate("() => window.__cqSends")
+        control.click()
+        pressed, dirty = pressed + 1, True
+        # The press's own effect is synchronous; what follows it is the send's round trip
+        # and whatever the poll after it repaints, which is as much part of pressing as
+        # the frame before it. Idle covers the first, and the hold below the second — for
+        # a press that sent, which is the only one with a poll to wait on.
+        page.wait_for_load_state("networkidle")
+        sent = page.evaluate("() => window.__cqSends") > sends
+        page.evaluate("() => { window.__cqSettle = null; window.__cqSince = null; }")
+        page.wait_for_function(SETTLED, arg=SENT_SETTLE_MS if sent else QUIET_SETTLE_MS)
+        moved = [
+            f"{name} moved by "
+            f"{[round(a - b, 1) for a, b in zip(now, was)]} (left, top, width, height)"
+            for name, was, now in zip(before["names"], before["boxes"], page.evaluate(
+                "() => window.__cqBoxes()"))
+            if now is not None and was != now
+        ]
+        assert not moved, (
+            f"pressing {label} in {example.name} moved the controls beside it:\n  "
+            + "\n  ".join(moved)
+        )
+    assert pressed, f"{example.name} pressed nothing, so it asserts nothing"
+    assert errors == []
+    page.close()
+
+
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
 @pytest.mark.parametrize("color_scheme", ["light", "dark"])
 def test_examples_have_no_serious_wcag_a_or_aa_violations(
@@ -3500,30 +3686,6 @@ CONTROL_LABEL_PAGE = """<!doctype html>
 </body>
 </html>
 """
-
-
-def test_selecting_a_tab_leaves_the_strip_where_it_was(browser, serve):
-    """A control says which state it is in with paint, never with metrics.
-
-    The selected tab used to be set in 600 weight, and a bolder label is a wider one:
-    every tab after it slid a couple of pixels the instant one was pressed, so the strip
-    reshuffled under the pointer that had just pressed it and the next tab along was no
-    longer where the reviewer had been aiming. Nothing about that is visible in a
-    screenshot of either state — both strips lay out perfectly well — which is why it is
-    the two together that get asserted.
-
-    Which panel is showing is content, and content is allowed to change the widget's
-    height; the strip is the control, and controls hold still."""
-    page, errors = open_page(browser, serve(CONTROL_LABEL_PAGE))
-    strip = "() => [...document.querySelectorAll('cq-tabs [role=tab]')].map(e => { \
-             const r = e.getBoundingClientRect(); return [e.textContent, r.x, r.width]; })"
-    before = page.evaluate(strip)
-    assert len(before) == 2, "the strip didn't render, so this asserts nothing"
-
-    page.get_by_role("tab", name="Heated bird bath").click()
-    expect(page.locator("#p-bath")).to_be_visible()
-    assert page.evaluate(strip) == before, "selecting a tab moved the strip it sits in"
-    assert errors == []
 
 
 def test_a_widgets_label_takes_a_comment_inside_the_control_it_labels(browser, serve):

@@ -58,6 +58,19 @@
   whether ownership is a property of the anchor or of the widget, which decides what
   happens to the thread when a later version drops the element it was anchored on.
 
+- (2026-07-30) The banner's right-hand group moves when nothing was pressed, and the
+  press sweep cannot see it because no gesture causes it. Three of those controls come
+  and go on what the poll finds — the latest-version chip, `✓ Accept all (N)`, the diff
+  Δ — and the Comments button's count widens by about 14px when it crosses a digit. The
+  row is packed to the right against a `flex: 1` spacer, so each of those shoves every
+  control to its left, in the middle of whatever the reviewer was doing. Reserving for
+  the digit alone is the small end and would read as a fix; a chip that appears is worth
+  far more than 14px, and holding room for three sometimes-absent buttons leaves a gappy
+  banner on the pages that never show them. So this is a question about what the banner
+  owes a reviewer who is not looking at it — announce in place, or somewhere that costs
+  the row nothing — rather than a width to state. Whatever it becomes needs a check that
+  drives the poll rather than a press, since that is the half the sweep structurally
+  can't reach.
 - (2026-07-30) A diagram lands after the page does. `cq-diagram` loads the vendored
   mermaid bundle lazily and renders asynchronously, so the SVG replaces the source
   block around 100ms after the first paint (146ms against 46ms on

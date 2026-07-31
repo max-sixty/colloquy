@@ -767,6 +767,14 @@ style.textContent = `
        each change slides every button left of it. What the note doesn't fit, its
        menu still holds. */
     .cq-banner select { font: inherit; padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; width: 190px; min-width: 0; text-overflow: ellipsis; }
+    /* The same rule the select above states, for the one other control on this row whose
+       label changes: "✓ Approved" is 12px narrower than "✓ Looks good", and the spacer
+       absorbing that slid the select and the Comments button 12px right at the moment a
+       reviewer had just pressed something. The number is measured rather than derived, so
+       it is only as good as the font it was measured in — which is what
+       test_a_press_leaves_its_neighbours_where_they_were is for: it fails the day the
+       reservation stops covering, rather than the day someone notices the row twitching. */
+    .cq-signoff { min-width: 110px; }
     .cq-latest-chip { background: var(--warn-tint); border: 1px solid var(--warn); color: var(--warn-ink); border-radius: 6px; padding: 3px 8px; }
     .cq-panel { position: fixed; top: 42px; right: 0; bottom: 0; width: min(${PANEL_W}px, 100vw); z-index: 8900;
       background: var(--card); border-left: 1px solid var(--rule); display: none; flex-direction: column; }
@@ -886,7 +894,7 @@ if (VNUM !== null)
 const toggleBtn = el("button", "cq-btn", "Comments");
 toggleBtn.title = "Show or hide the comment panel (c toggles, Esc closes, ? lists all keys)";
 toggleBtn.setAttribute("aria-expanded", "false");
-const approveBtn = el("button", "cq-btn primary", "✓ Looks good");
+const approveBtn = el("button", "cq-btn primary cq-signoff", "✓ Looks good");
 approveBtn.title = "Sign off — the agent stops watching this page";
 banner.append(
   dot,
