@@ -141,21 +141,8 @@ writes the resulting animation to `docs/demo.gif`.
 
 ## Related
 
-[Workbench](https://workbench.md/) meets the same moment (reviewing an agent's work in a
-browser) from the opposite direction: a hosted, multiplayer markdown workspace where
-teams of agents and humans coordinate through one shared doc, with anchored comments,
-suggestion mode, task claiming, and an event feed. Colloquy is the inverse on each axis:
-local files and a loopback port instead of a hosted service; one session presenting to
-one reviewer instead of a fleet co-editing; an authored HTML page with diagrams instead
-of a markdown doc. The trade shows up in the plumbing: a hosted doc cannot run inside
-your agent's session, so Workbench ships a daemon layer (watchers, heartbeats,
-supervisors) to keep agents responsive, while colloquy runs inside the agent host and
-hands a comment straight to the session.
-
-[html-effectiveness](https://github.com/anthropics/html-effectiveness) is a gallery of
-standalone HTML examples (code review, status reports, diagrams, small editing UIs)
-demonstrating HTML as a flexible, dependency-free output format, the same idea behind
-colloquy's handover page.
+[`notes/comparisons.md`](notes/comparisons.md) reads the nearby projects against
+colloquy, and covers where colloquy is the wrong choice.
 
 ## License
 

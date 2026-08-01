@@ -29,7 +29,8 @@
 <header id="top">
 <p class="eyebrow">how it works</p>
 <h1>How colloquy works</h1>
-<p class="lede" id="lede">No daemon, no database, no build step. One
+<p class="lede" id="lede">No daemon, no database, no build step: the server starts with
+the session and stops with it. One
 <code>uv</code> script serves the page and mediates an append-only event log; an
 ES-module runtime renders the widgets and injects the comments, threads, banner,
 and version picker.</p>
@@ -99,7 +100,7 @@ directory is the whole state.</p>
 </section>
 
 <section id="agent">
-<h2>A command never edits the page</h2>
+<h2>A command never edits the document</h2>
 <p id="agent-split">The agent has two ways in, and only one of them is HTML. A
 version is a file: the agent writes the whole document into the page directory, an
 ordinary file write with nothing mediating it. Everything it has to
@@ -109,7 +110,7 @@ publishes a version — and each of those appends one event to the log. The log
 takes a command rather than a file write because it isn't the agent's alone: the
 browser appends to it too, and one writer is what gives every event an id to
 reply to and a place in the order.</p>
-<p id="agent-render">So the agent's words reach the page without the page changing.
+<p id="agent-render">So the agent's words reach the screen without the document changing.
 What the reviewer looks at is the version composed with the log, recomposed on a
 two-second poll: the reply appears in a thread in the injected panel, the
 passage it answers is lit by the browser's highlight registry — which paints a
@@ -132,9 +133,9 @@ and the next still lands.</p>
 <h2>What a page is made of</h2>
 <p id="scaffold">A version is one complete HTML document, and the required
 scaffold is two lines: the theme stylesheet and the runtime module. Everything
-between them is the agent's, drawn from these sources in ascending order of
-specialization; each earns its place only where the one before it lacks the
-shape.</p>
+between them is the agent's, drawn from the four sources below in ascending order of
+specialization; each earns its place only where the one before it has no way to
+carry what the page needs.</p>
 <ol class="steps" id="sources">
 <li id="src-html"><strong>Plain semantic HTML.</strong> The theme styles bare
 elements, so headings, prose, tables, code, and <code>details</code> carry the
