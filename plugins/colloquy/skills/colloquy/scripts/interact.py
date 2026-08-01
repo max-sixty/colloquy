@@ -218,11 +218,13 @@ import contextlib
 import ctypes
 import errno
 import hashlib
+import ipaddress
 import json
 import os
 import re
 import secrets
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -643,11 +645,12 @@ def page_access(page_dir: Path, host: str | None = None) -> dict:
     shares: a jump host or NAT between them and this machine leaves it
     unroutable from where they sit, and no derivation from this end can know the
     name they do route to. `--host` states it. A stated name goes in the URL and
-    the bind widens to every interface, because the name need not resolve to an
-    address this machine could bind (a NAT'd public IP), and an overlay network
-    the machine has joined (a tailnet) is just one more interface. That widens
-    exposure to the machine's other networks and no further — colloquy never
-    creates a route that didn't exist.
+    the bind widens to every interface of both families (`::`, V6ONLY off),
+    because the name need not resolve to an address this machine could bind (a
+    NAT'd public IP), let alone say which family the reviewer reaches it by. An
+    overlay network the machine has joined (a tailnet) is just one more
+    interface. That widens exposure to the machine's other networks and no
+    further — colloquy never creates a route that didn't exist.
 
     Serving anywhere but loopback puts an unauthenticated writer on whatever
     network reached us, and `POST /api/event` appends to a log that outranks the
@@ -665,7 +668,18 @@ def page_access(page_dir: Path, host: str | None = None) -> dict:
         return access
     token = access["token"] if access else secrets.token_urlsafe(16)
     if host:
-        access = {"host": host, "bind": "0.0.0.0", "token": token}
+        # The record's one door checks what it keeps: a scheme, a port, or a
+        # path pasted into --host would mint a URL no browser resolves, handed
+        # to the one reader who can't report it.
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            if not re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?", host):
+                sys.exit(
+                    f"--host {host}: not a hostname or IP address "
+                    "(no scheme, no port — colloquy picks the port)"
+                )
+        access = {"host": host, "bind": "::", "token": token}
     else:
         ssh = os.environ.get("SSH_CONNECTION", "").split()
         addr = ssh[2] if len(ssh) == 4 else "127.0.0.1"
@@ -1650,6 +1664,19 @@ def cmd_media(page_dir: Path, files: list) -> list:
     return out
 
 
+class DualStackHTTPServer(ThreadingHTTPServer):
+    """For a bind with ":" in it. The stated-host wildcard is "::" with V6ONLY
+    off, which answers IPv4 too (as ::ffff:...), so the URL is reachable
+    whichever family the stated name resolves to; a derived IPv6 address just
+    needs the family at all."""
+
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
+
+
 def cmd_serve(page_dir: Path, host: str | None = None) -> None:
     claimed = claim_page(page_dir)
     existing = running_server(page_dir)
@@ -1665,10 +1692,11 @@ def cmd_serve(page_dir: Path, host: str | None = None) -> None:
         return
     access = page_access(page_dir, host)
     base = 41000 + zlib.crc32(str(page_dir.resolve()).encode()) % 4000
+    server_cls = DualStackHTTPServer if ":" in access["bind"] else ThreadingHTTPServer
     httpd = None
     for port in [*range(base, base + 10), 0]:
         try:
-            httpd = ThreadingHTTPServer(
+            httpd = server_cls(
                 (access["bind"], port),
                 handler_for(page_dir, access["token"], protocol_version="HTTP/1.1"),
             )
@@ -1811,9 +1839,9 @@ def cmd_wait(page_dir: Path) -> int:
                     "waiting and no request carrying its key has ever reached its "
                     "server. Say so in your reply, with the recourse: if the URL "
                     "doesn't load for the reviewer, re-serve on a hostname they reach "
-                    "this machine by (`colloquy server stop`, then `colloquy server "
-                    "run --host NAME`), or hand over a file via `colloquy version "
-                    "export`. Then restart `review wait`.",
+                    "this machine by (`colloquy server stop <page>`, then `colloquy "
+                    "server run <page> --host NAME`), or hand over a file via "
+                    "`colloquy version export`. Then restart `review wait`.",
                     file=sys.stderr,
                 )
                 return 2

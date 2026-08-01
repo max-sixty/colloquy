@@ -3503,17 +3503,46 @@ def test_a_local_session_is_served_on_loopback(page_dir, monkeypatch):
 
 def test_a_stated_host_binds_every_interface_and_keeps_the_key(page_dir, monkeypatch):
     """The name a reviewer routes to need not resolve to an address this machine
-    could bind — a jump host or NAT is the case `--host` exists for — so a stated
-    name binds every interface and goes in the URL as given. Re-stating keeps the
-    key, and the URL a browser already holds stays keyed; a bare re-serve
-    (`revive_server`) reads the stated record back unchanged."""
+    could bind — a jump host or NAT is the case `--host` exists for — nor say
+    which family they reach it by, so a stated name binds the wildcard of both
+    families and goes in the URL as given. Re-stating keeps the key, and the URL
+    a browser already holds stays keyed; a bare re-serve (`revive_server`) reads
+    the stated record back unchanged."""
     monkeypatch.setenv("SSH_CONNECTION", "10.1.1.9 51234 10.20.30.40 22")
     derived = interact.page_access(page_dir)
 
     stated = interact.page_access(page_dir, host="devbox.corp.example")
-    assert (stated["host"], stated["bind"]) == ("devbox.corp.example", "0.0.0.0")
+    assert (stated["host"], stated["bind"]) == ("devbox.corp.example", "::")
     assert stated["token"] == derived["token"]
     assert interact.page_access(page_dir) == stated
+
+
+def test_a_stated_host_is_a_hostname_or_ip_and_nothing_else(page_dir):
+    """A scheme, a port, or a path pasted into --host would mint a URL no browser
+    resolves, recorded permanently and handed to the one reader who can't report
+    it — so the record's one door refuses what was never a hostname. An IPv6
+    literal is a name a reviewer can route to, and it must not be mistaken for a
+    host:port."""
+    for junk in ("devbox:8443", "http://devbox", "devbox/page", "devbox one"):
+        with pytest.raises(SystemExit):
+            interact.page_access(page_dir, host=junk)
+    assert not (page_dir / "access.json").exists()
+
+    assert interact.page_access(page_dir, host="fd7a:115c:a1e0::1")["bind"] == "::"
+
+
+def test_the_stated_host_wildcard_serves_both_families(page_dir):
+    """The URL promises whatever the stated name resolves to, so the socket must
+    answer both: "::" with V6ONLY off reaches IPv4 as ::ffff:... — an AF_INET
+    0.0.0.0 would leave an IPv6-only reviewer a URL nothing listens on."""
+    httpd = interact.DualStackHTTPServer(("::", 0), interact.handler_for(page_dir, TOKEN))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    port = httpd.server_address[1]
+    try:
+        for loopback in ("127.0.0.1", "[::1]"):
+            assert fetch(f"http://{loopback}:{port}/api/state")[0] == 200, loopback
+    finally:
+        httpd.shutdown()
 
 
 def test_the_address_and_key_outlive_the_session_that_minted_them(page_dir, monkeypatch):

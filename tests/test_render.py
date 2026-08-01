@@ -2035,7 +2035,7 @@ def test_a_pick_states_the_whole_set(browser, serve):
     idempotent and a second tab converges rather than drifting. Without `multiple` the
     set a click toggles from is empty, which is what makes a pick replace instead of
     join — one rule, not two code paths."""
-    page, errors = open_page(browser, serve(ASK_PAGE))
+    page, errors = open_page(browser, serve(ASK_PAGE), init_script=WATCH_TRAFFIC)
 
     page.locator("#job-mounts").click()
     expect(page.locator("#jobs > cq-option[chosen]")).to_have_count(1)
@@ -2054,6 +2054,9 @@ def test_a_pick_states_the_whole_set(browser, serve):
     page.locator("#br-cedar").click()
     expect(page.locator("#bracket > cq-option[chosen]")).to_have_count(0)
 
+    # A pick paints its own click before the post answers, so the DOM leads the log;
+    # the trip counter says when everything sent has been read back.
+    page.wait_for_function(ROUND_TRIP)
     picks = [(e["widget"], e["detail"]) for e in sent_events(serve.page_dir)
              if e.get("action") == "choose"]
     assert picks == [
