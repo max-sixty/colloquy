@@ -422,21 +422,22 @@ def panel_settled(page, open=True):
     still under the panel, its column still the width it had — so an assertion fed by
     one is about a layout that exists for a sixth of a second and then doesn't.
 
-    Two consecutive frames at the same margin is the transition finishing, said in the
-    transition's own terms: it interpolates on every frame while it runs and holds
-    still after. Waiting a duration instead would encode a number the stylesheet is
-    free to change, and would still be a guess on a loaded machine."""
+    Ask the transition itself, via getAnimations(): the call flushes pending style, so
+    the transition the margin write just armed is visible to the very first read, a
+    finished one has left the list, and a change that runs untransitioned — the
+    covering sheet, a pre-stamp load, reduced motion — reports empty and returns at
+    once. Waiting a duration instead would encode a number the stylesheet is free to
+    change, and still be a guess on a loaded machine.
+
+    "Two consecutive frames at the same computed margin" read as the same fact and is
+    not: a transition's first ticked frame still computes its start value, so a sample
+    at injection and one on the next frame could agree at "0px" before the slide had
+    begun, and the whole-suite run occasionally read the page's geometry mid-flight."""
     page.wait_for_function(
         "(open) => document.querySelector('.cq-panel').classList.contains('open') === open",
         arg=open,
     )
-    page.evaluate("() => { window.__cqMargin = null; }")
-    page.wait_for_function(
-        """() => { const m = getComputedStyle(document.body).marginRight;
-                   const settled = window.__cqMargin === m;
-                   window.__cqMargin = m;
-                   return settled; }"""
-    )
+    page.wait_for_function("() => document.body.getAnimations().length === 0")
 
 
 CUSTOM_WIDGET_PAGE = """<!doctype html>
