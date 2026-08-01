@@ -1017,6 +1017,7 @@ def test_customize_continues_when_the_project_root_is_the_page(
         "comments.jsonl",
         "status.json",
         "heartbeat.json",
+        "contact.json",
         "cursor.json",
         "server.json",
         "access.json",
@@ -3467,17 +3468,52 @@ def test_the_key_arrives_in_the_query_and_stays_in_the_cookie(server, page_dir):
         assert polled.status == 200
 
 
+def test_only_a_keyed_reader_stamps_contact(server, page_dir):
+    """contact.json is `review wait`'s evidence that somebody holding the link has
+    reached the page, so what writes it must mean exactly that: the render gate's
+    preview fetches are the machine's own Chrome, and a stranger probing the port
+    proves routing rather than the reviewer. Neither counts."""
+    with interact.preview_server(page_dir, 1) as preview_url:
+        status, _ = fetch(preview_url, token=None)  # the preview key is in its URL
+        assert status == 200
+    assert not (page_dir / "contact.json").exists()
+
+    assert fetch(f"{server}/api/state", token=None)[0] == 403
+    assert not (page_dir / "contact.json").exists()
+
+    assert fetch(f"{server}/api/state")[0] == 200
+    assert (page_dir / "contact.json").exists()
+
+
 def test_a_page_is_reached_where_the_ssh_session_reached_this_machine(page_dir, monkeypatch):
     """SSH_CONNECTION is "client_ip client_port server_ip server_port" — the third
     field is the address that carried the session, so it is a route the reviewer has
-    already used rather than a hostname guessed from this end."""
+    already used rather than a hostname guessed from this end. The server binds that
+    address alone: the open port faces only the network the session crossed."""
     monkeypatch.setenv("SSH_CONNECTION", "10.1.1.9 51234 10.20.30.40 22")
-    assert interact.page_access(page_dir)["host"] == "10.20.30.40"
+    access = interact.page_access(page_dir)
+    assert (access["host"], access["bind"]) == ("10.20.30.40", "10.20.30.40")
 
 
 def test_a_local_session_is_served_on_loopback(page_dir, monkeypatch):
     monkeypatch.delenv("SSH_CONNECTION", raising=False)
-    assert interact.page_access(page_dir)["host"] == "127.0.0.1"
+    access = interact.page_access(page_dir)
+    assert (access["host"], access["bind"]) == ("127.0.0.1", "127.0.0.1")
+
+
+def test_a_stated_host_binds_every_interface_and_keeps_the_key(page_dir, monkeypatch):
+    """The name a reviewer routes to need not resolve to an address this machine
+    could bind — a jump host or NAT is the case `--host` exists for — so a stated
+    name binds every interface and goes in the URL as given. Re-stating keeps the
+    key, and the URL a browser already holds stays keyed; a bare re-serve
+    (`revive_server`) reads the stated record back unchanged."""
+    monkeypatch.setenv("SSH_CONNECTION", "10.1.1.9 51234 10.20.30.40 22")
+    derived = interact.page_access(page_dir)
+
+    stated = interact.page_access(page_dir, host="devbox.corp.example")
+    assert (stated["host"], stated["bind"]) == ("devbox.corp.example", "0.0.0.0")
+    assert stated["token"] == derived["token"]
+    assert interact.page_access(page_dir) == stated
 
 
 def test_the_address_and_key_outlive_the_session_that_minted_them(page_dir, monkeypatch):
@@ -3589,6 +3625,43 @@ def test_wait_leaves_a_closed_review_down(page_dir):
     interact.cmd_status(page_dir, "idle", "the session that opened this page has ended")
     assert interact.cmd_wait(page_dir) == 2
     assert interact.running_server(page_dir) is None
+
+
+def test_wait_reports_a_page_nobody_has_opened(page_dir, monkeypatch, capsys):
+    """A handover that never landed is silent in both directions — the reviewer
+    can't report a page they never got — so `review wait` says it in the terminal,
+    the one route the session has demonstrated, naming the recourse (`--host`).
+    The clock runs only while the page is waiting on the reviewer: a wait spans
+    working stretches, whose minutes are the agent's rather than the reviewer's.
+    And any keyed request ever stands the report down: from there an unread page
+    is a reviewer who hasn't looked, which is not the terminal's news to break."""
+    interact.write_json(page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"})
+    interact.cmd_status(page_dir, "waiting", "")
+    monkeypatch.setattr(interact, "UNOPENED_REPORT_SECS", 0)
+
+    assert interact.cmd_wait(page_dir) == 2
+    assert "--host" in capsys.readouterr().err
+
+    interact.cmd_status(page_dir, "working", "writing v2")
+    threading.Timer(
+        0.2,
+        lambda: interact.append_event(
+            page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hi"}
+        ),
+    ).start()
+    assert interact.cmd_wait(page_dir) == 0
+    assert "nobody has opened" not in capsys.readouterr().err
+
+    interact.cmd_status(page_dir, "waiting", "")
+    interact.write_json(page_dir / "contact.json", {"t": 0})
+    threading.Timer(
+        0.2,
+        lambda: interact.append_event(
+            page_dir, {"kind": "comment", "id": "c2", "author": "user", "text": "again"}
+        ),
+    ).start()
+    assert interact.cmd_wait(page_dir) == 0
+    assert "nobody has opened" not in capsys.readouterr().err
 
 
 @pytest.fixture

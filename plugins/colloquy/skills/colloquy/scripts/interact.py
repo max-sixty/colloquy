@@ -43,13 +43,17 @@ A page directory holds:
                          it working with "handoff": true until the agent's own
                          `review state` lands
     heartbeat.json       watcher liveness, bumped by `review wait` while it runs
+    contact.json         proof a keyed request has ever arrived, stamped by the page's
+                         server on each one (a preview server never stamps). Its
+                         absence is what lets `review wait` say nobody has ever
+                         opened the page
     cursor.json          seq of the last event delivered to the agent, written by
                          `review wait` on exit
     server.json          {"port", "pid", "url"} for the running server
-    access.json          {"host", "token"}: the address the page is served on and the
-                         key its URL carries. Minted at the first `server run` and kept,
-                         because a restart has to reproduce the URL an open browser is
-                         already polling
+    access.json          {"host", "bind", "token"}: the name the page's URL carries,
+                         the interface its server binds, and the key the URL carries.
+                         Minted at the first `server run` and kept, because a restart
+                         has to reproduce the URL an open browser is already polling
     session.json         {"id", "pid", "agent"} of the agent session last working on the page
 
 status.json is a claim, and a claim never expires on its own: an agent that
@@ -242,6 +246,10 @@ HEARTBEAT_FRESH_SECS = 8
 # claim the page before it closes. The claim itself is the ownership record:
 # manual servers have none and therefore remain up until `server stop`.
 ORPHAN_GRACE_SECS = 1
+# How long `review wait` waits over a page no keyed request has ever reached
+# before telling Claude so. Long enough that "the reviewer is opening it now"
+# has passed, short enough to land within the round it describes.
+UNOPENED_REPORT_SECS = 600
 # The browser's event kinds, and per kind the fields something downstream reads.
 # POST /api/event is the one door they come through, so this is where the shape is
 # checked; every reader indexes the fields rather than asking whether they arrived.
@@ -367,6 +375,7 @@ PAGE_STATE_FILES = (
     "comments.jsonl",
     "status.json",
     "heartbeat.json",
+    "contact.json",
     "cursor.json",
     "server.json",
     "access.json",
@@ -619,15 +628,26 @@ def stop_when_session_ends(httpd: ThreadingHTTPServer, page_dir: Path) -> None:
         time.sleep(0.1)
 
 
-def page_access(page_dir: Path) -> dict:
-    """How a page is reached: the address to serve it on, and the key its URL carries.
+def page_access(page_dir: Path, host: str | None = None) -> dict:
+    """How a page is reached: the name its URL carries, the interface its server
+    binds, and the key the URL carries.
 
-    The address is read from SSH_CONNECTION, whose third field is this machine as
-    the client just reached it — a route the session carrying the request has
-    already demonstrated, rather than a guess about what resolves from where. No
-    SSH_CONNECTION is the same answer for a reader on this machine: loopback. That
-    is two exhaustive cases, not a list of hosts to recognize, which is what keeps
-    the next kind of remote session from being one this can silently fail to know.
+    Derived — no `host` — the address is read from SSH_CONNECTION, whose third
+    field is this machine as the client just reached it: a route the session
+    carrying the request has already demonstrated, rather than a guess about what
+    resolves from where. No SSH_CONNECTION is the same answer for a reader on
+    this machine: loopback. The server binds that address alone, so the open port
+    faces only the network the session crossed.
+
+    But a route the session demonstrated is not one the reviewer's browser
+    shares: a jump host or NAT between them and this machine leaves it
+    unroutable from where they sit, and no derivation from this end can know the
+    name they do route to. `--host` states it. A stated name goes in the URL and
+    the bind widens to every interface, because the name need not resolve to an
+    address this machine could bind (a NAT'd public IP), and an overlay network
+    the machine has joined (a tailnet) is just one more interface. That widens
+    exposure to the machine's other networks and no further — colloquy never
+    creates a route that didn't exist.
 
     Serving anywhere but loopback puts an unauthenticated writer on whatever
     network reached us, and `POST /api/event` appends to a log that outranks the
@@ -635,17 +655,21 @@ def page_access(page_dir: Path) -> dict:
     the key is minted here rather than at the reader's cost: it rides in the URL
     Claude hands over, and `authorized` puts it in a cookie on arrival.
 
-    Both are minted once and kept. `revive_server` restarts a dead server by
-    re-running `server run`, and a fresh address or key there would leave the
-    reviewer's open page polling a URL that no longer answers."""
+    Minted once and kept. `revive_server` restarts a dead server by re-running
+    `server run` bare, and a fresh address or key there would leave the
+    reviewer's open page polling a URL that no longer answers — which is why a
+    stated host is recorded here rather than passed per run, and why re-stating
+    one keeps the key."""
     access = read_json(page_dir / "access.json")
-    if access:
+    if access and host is None:
         return access
-    ssh = os.environ.get("SSH_CONNECTION", "").split()
-    access = {
-        "host": ssh[2] if len(ssh) == 4 else "127.0.0.1",
-        "token": secrets.token_urlsafe(16),
-    }
+    token = access["token"] if access else secrets.token_urlsafe(16)
+    if host:
+        access = {"host": host, "bind": "0.0.0.0", "token": token}
+    else:
+        ssh = os.environ.get("SSH_CONNECTION", "").split()
+        addr = ssh[2] if len(ssh) == 4 else "127.0.0.1"
+        access = {"host": addr, "bind": addr, "token": token}
     write_json(page_dir / "access.json", access)
     return access
 
@@ -792,12 +816,24 @@ class Handler(BaseHTTPRequestHandler):
         request set out of it. One arrival is enough: the runtime's own fetches are
         relative and carry no query, and a reader who reloads or bookmarks the bare
         address is the same reader. So nothing has to thread the key through the
-        page, and `colloquy.js` never learns there is one."""
+        page, and `colloquy.js` never learns there is one.
+
+        A keyed request is also the one proof that somebody the URL was handed to
+        can reach this server, so it stamps contact.json — which is how
+        `review wait` can say nobody ever opened the page. Only somebody: a
+        stranger probing the port proves routing, not the reviewer, and a preview
+        server's fetches are the machine's own Chrome, so neither stamps."""
         if secrets.compare_digest(parse_qs(urlsplit(self.path).query).get("t", [""])[0], self.token):
             self.set_cookie = True
-            return True
-        jar = SimpleCookie(self.headers.get("Cookie", ""))
-        return self.cookie in jar and secrets.compare_digest(jar[self.cookie].value, self.token)
+        else:
+            jar = SimpleCookie(self.headers.get("Cookie", ""))
+            if self.cookie not in jar or not secrets.compare_digest(
+                jar[self.cookie].value, self.token
+            ):
+                return False
+        if self.preview_upto is None:
+            write_json(self.page_dir / "contact.json", {"t": time.time()})
+        return True
 
     def end_headers(self):
         # Every response ends here — answered, redirected, or refused — so the
@@ -1614,19 +1650,26 @@ def cmd_media(page_dir: Path, files: list) -> list:
     return out
 
 
-def cmd_serve(page_dir: Path) -> None:
+def cmd_serve(page_dir: Path, host: str | None = None) -> None:
     claimed = claim_page(page_dir)
     existing = running_server(page_dir)
     if existing:
+        # A stated host silently ignored would print a URL that contradicts the
+        # flag, so compare against that URL — what the reviewer would be handed.
+        if host and urlsplit(existing["url"]).hostname != host.lower():
+            sys.exit(
+                f"already serving at {existing['url']}; `colloquy server stop` "
+                "first, then re-run with --host"
+            )
         print(existing["url"], flush=True)
         return
-    access = page_access(page_dir)
+    access = page_access(page_dir, host)
     base = 41000 + zlib.crc32(str(page_dir.resolve()).encode()) % 4000
     httpd = None
     for port in [*range(base, base + 10), 0]:
         try:
             httpd = ThreadingHTTPServer(
-                (access["host"], port),
+                (access["bind"], port),
                 handler_for(page_dir, access["token"], protocol_version="HTTP/1.1"),
             )
             break
@@ -1637,10 +1680,11 @@ def cmd_serve(page_dir: Path) -> None:
             # over SSH and served again from elsewhere, or from a box that has
             # since moved. Naming where it was recorded is the whole fix.
             sys.exit(
-                f"can't serve {page_dir} on {access['host']}: {e}\n"
+                f"can't serve {page_dir} on {access['bind']}: {e}\n"
                 f"that address came from the session that first served this page and is "
                 f"kept in {page_dir / 'access.json'}; delete that file to derive the "
-                "address again from this one."
+                "address again from this one, or re-run with --host NAME to bind every "
+                "interface and put NAME in the URL."
             )
     url = page_url(access, httpd.server_address[1])
     write_json(page_dir / "server.json", {"port": httpd.server_address[1], "pid": os.getpid(), "url": url})
@@ -1692,6 +1736,7 @@ def revive_server(page_dir: Path) -> bool:
 def cmd_wait(page_dir: Path) -> int:
     claim_page(page_dir)
     cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
+    waiting_since = None
     server_check_at = 0.0
     revived = False
     try:
@@ -1743,6 +1788,35 @@ def cmd_wait(page_dir: Path) -> int:
                         file=sys.stderr,
                         flush=True,
                     )
+            # A handover that never landed: the reviewer can't report a page they
+            # never got, so the one route the session has demonstrated — this
+            # terminal — carries the fact. The clock runs only while the observed
+            # status is "waiting", because one wait spans working stretches too
+            # and the reviewer's ten minutes start at the handover, not at the
+            # watch. contact.json's absence means no keyed request ever, this
+            # serve or any before it. Exiting is what reaches Claude (a
+            # background task speaks on exit), and each fresh wait re-arms the
+            # clock, so an unanswered report repeats rather than floods.
+            if (read_json(page_dir / "status.json") or {"state": "idle"})["state"] != "waiting":
+                waiting_since = None
+            elif waiting_since is None:
+                waiting_since = time.monotonic()
+            if (
+                waiting_since is not None
+                and time.monotonic() - waiting_since >= UNOPENED_REPORT_SECS
+                and not (page_dir / "contact.json").exists()
+            ):
+                print(
+                    f"nobody has opened the page: {UNOPENED_REPORT_SECS // 60} minutes "
+                    "waiting and no request carrying its key has ever reached its "
+                    "server. Say so in your reply, with the recourse: if the URL "
+                    "doesn't load for the reviewer, re-serve on a hostname they reach "
+                    "this machine by (`colloquy server stop`, then `colloquy server "
+                    "run --host NAME`), or hand over a file via `colloquy version "
+                    "export`. Then restart `review wait`.",
+                    file=sys.stderr,
+                )
+                return 2
             time.sleep(1)
     finally:
         (page_dir / "heartbeat.json").unlink(missing_ok=True)
@@ -4745,13 +4819,19 @@ def server() -> None:
 
 @server.command(short_help="Serve a page and print its URL.")
 @click.argument("dir", metavar="PAGE")
-def run(dir: str) -> None:
+@click.option(
+    "--host",
+    metavar="NAME",
+    help="bind every interface and put NAME in the URL, for a reviewer the "
+    "derived address can't reach; recorded in access.json",
+)
+def run(dir: str, host: str | None) -> None:
     """Serve a page and print its URL.
 
     Runs until stopped. If the page already has a live server, prints its URL
     and exits.
     """
-    cmd_serve(resolve_dir(dir))
+    cmd_serve(resolve_dir(dir), host)
 
 
 @server.command(short_help="Stop a page's server.")

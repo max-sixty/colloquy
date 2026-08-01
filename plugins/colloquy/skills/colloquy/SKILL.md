@@ -77,7 +77,7 @@ colloquy page media <page> <file>…           # add images; print each page pat
 colloquy version check <page> --render       # browser gate, once per page
 colloquy version publish <page> --version 1 --text "<changelog>"
 colloquy version export <page> -o <file>     # standalone HTML copy
-colloquy server run <page>                   # background task; prints the URL
+colloquy server run <page> [--host NAME]     # background task; prints the URL
 colloquy review state <page> working "<detail>"  # or: waiting, idle
 colloquy review wait <page>                  # background task; exits on reviewer events
 colloquy review comment <page> --quote "<passage>" --text "…"
@@ -259,7 +259,8 @@ your turn. The reply ending each round carries the page's URL again: the reviewe
 the page from the turn in front of them. While `review wait` runs, the banner names the
 current agent as listening; it exits — re-invoking you — when the user comments,
 replies, resolves, approves, or edits an interactive widget (a drag on a `cq-board`
-arrives as an `action` event), printing the new events as JSON. `review wait` delivers
+arrives as an `action` event), printing the new events as JSON. It also exits to
+report a waiting page nobody has ever opened (see "Where the page is served"). `review wait` delivers
 everything no previous `review wait` has delivered, including events posted while you
 were working, so comments never get lost between rounds. Reading the log with
 `review events` doesn't count as delivery. User comments exist only through the
@@ -413,16 +414,29 @@ stop replaying.
 one the client reached this machine on; otherwise loopback. The URL therefore opens as
 printed whether the reviewer's browser is here or on the machine they SSH'd from.
 
+That address is a route the session demonstrated, which the reviewer's browser may not
+share: a jump host or NAT between them and this machine leaves it unroutable from where
+they sit, and they can't report a page they never got. The server stamps every keyed
+request, so `review wait` notices the page nobody has ever opened and exits after ten
+minutes saying so; relay that in your reply, and if the URL doesn't load for the
+reviewer, `colloquy server stop` and re-run with `--host NAME`, where NAME is a hostname
+they reach this machine by — it goes in the URL as given, and the server binds every
+interface so the name need not resolve to a local address. A machine on an overlay
+network (a tailnet) has that network as an interface, so its name there reaches a
+reviewer with no route otherwise; failing everything, `version export` hands over the
+page as a file.
+
 Reaching past loopback opens the port to that network, and `POST /api/event` appends to a
 log that outranks the document, so the URL carries a key. The browser keeps it in a cookie
 from the first request, and a reader without it gets 403 on the document, the assets, the
-state reads and the event writes alike. That key is the boundary, and colloquy reaches no
-further than the network the session it serves already crossed: there is no public tunnel.
+state reads and the event writes alike. That key is the boundary, and colloquy serves only
+networks this machine is already on: there is no public tunnel — a tunnel would put the
+log's one door on the open internet, and a fresh tunnel hostname each restart would strand
+the URL an open page is polling.
 
-Address and key are minted once and kept in `<page>/access.json`, because a restart has to
-reproduce the URL an open browser is still polling. Where the reviewer's machine can't
-reach that address (a jump host, NAT), the page never loads and nothing reports it;
-deleting that file derives the address again from the session running now.
+Address, bind, and key are minted once and kept in `<page>/access.json` — `--host` is
+recorded there too — because a restart has to reproduce the URL an open browser is still
+polling. Deleting that file derives the address again from the session running now.
 
 ## Before the URL goes out
 

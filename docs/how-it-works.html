@@ -277,6 +277,12 @@ URL colloquy prints opens as-is either way, with no port to forward and nothing
 to configure. It carries a key, and the browser keeps that key in a cookie from
 the first request, so the open port is still a page only whoever holds the link
 can read or comment on.</p>
+<p>When a jump host or NAT leaves that address unroutable from your browser, the
+agent finds out rather than waiting forever: a page nobody has opened surfaces
+in its terminal within minutes, and <code>server run --host NAME</code>
+re-serves it on a hostname you do reach (a tailnet name works). The key still
+gates every request, and colloquy serves only networks the machine is already
+on: there is no public tunnel.</p>
 </section>
 
 <footer id="colophon">
