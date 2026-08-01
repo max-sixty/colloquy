@@ -427,12 +427,8 @@ def panel_settled(page, open=True):
     finished one has left the list, and a change that runs untransitioned — the
     covering sheet, a pre-stamp load, reduced motion — reports empty and returns at
     once. Waiting a duration instead would encode a number the stylesheet is free to
-    change, and still be a guess on a loaded machine.
-
-    "Two consecutive frames at the same computed margin" read as the same fact and is
-    not: a transition's first ticked frame still computes its start value, so a sample
-    at injection and one on the next frame could agree at "0px" before the slide had
-    begun, and the whole-suite run occasionally read the page's geometry mid-flight."""
+    change, and still be a guess on a loaded machine; the frame-sampling this replaced
+    is the failure CLAUDE.md's wait norm is named for."""
     page.wait_for_function(
         "(open) => document.querySelector('.cq-panel').classList.contains('open') === open",
         arg=open,

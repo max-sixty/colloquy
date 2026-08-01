@@ -32,6 +32,26 @@ press two seconds for a trip that takes ten milliseconds.
 `wait_for_load_state("networkidle")` is not the wait either: with no navigation to answer
 for, it returns at once.
 
+## A wait consumes a fact the system states
+
+A page that has not started moving is as still as one that finished, so a wait that
+infers completion from stillness — two frames agreeing, a stretch with no change —
+returns early exactly when the machine is loaded enough to fit its first samples in
+ahead of the effect. `panel_settled` settled that way on a transition that had not
+begun: a transition's first ticked frame still computes its start value, so the sample
+at injection and the one on the next frame both read the margin the page already had.
+The press sweep drew the same wrong inference from two matching frames before it
+learned to watch the trip (above).
+
+So a wait asks for what the system declares — an element existing,
+`document.body.getAnimations()` emptying, the wrapped fetch resolving. Where stillness
+is itself the assertion, an observed edge precedes it: the press sweep measures
+"nothing moved" only after `ROUND_TRIP` has watched the response land, so the quiet it
+reads is after the effect. And a timing flake reproduces by emulating the poller's own
+schedule in the page — `wait_for_function` runs its predicate once at injection, then
+once per animation frame — which makes the failure a rate to measure rather than a
+rerun to hope for.
+
 ## A sweep that walks controls by index must prove it pressed them
 
 A list read before the runtime injects its banner is a short list, and a short list skips
