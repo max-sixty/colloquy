@@ -4,8 +4,7 @@ round-trip that the review loop rides on.
 
 Run from the repo root:
 
-    uv run --with pytest --with click --with jsonschema --with markdown-it-py \
-      --with tinycss2 python -m pytest tests
+    uv run pytest tests
 """
 
 import http.cookiejar
@@ -2139,7 +2138,7 @@ def test_reply_refuses_a_suggestion(page_dir):
     interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
     result = CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text",
+        ["review", "reply", str(page_dir), "--to", "c1", "--text", "Fixed:", "--markup",
          '<cq-suggestion id="sug-x"><cq-new><p>fixed</p></cq-new></cq-suggestion>'],
     )
     assert result.exit_code != 0
@@ -3313,6 +3312,8 @@ def test_server_resolves_actions_from_claude_thread_widgets(server, page_dir):
             "--to",
             "c1",
             "--text",
+            "Pick one:",
+            "--markup",
             '<cq-options id="thread-pick" choose>'
             '<cq-option id="thread-a"><strong>A</strong></cq-option>'
             "</cq-options>",
@@ -4042,34 +4043,28 @@ def test_catalog_prints_widgets_and_idioms(page_dir):
 
 def test_reply_validates_widget_markup(page_dir):
     interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
-    bad = CliRunner().invoke(
+    reply = lambda markup: CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text", '<cq-diagram id="f"><b>x</b></cq-diagram>'],
+        ["review", "reply", str(page_dir), "--to", "c1", "--text", "See:", "--markup", markup],
     )
+    bad = reply('<cq-diagram id="f"><b>x</b></cq-diagram>')
     assert bad.exit_code != 0
     assert "its body is data" in bad.output
-    duplicate = CliRunner().invoke(
-        interact.cli,
-        [
-            "review",
-            "reply",
-            str(page_dir),
-            "--to",
-            "c1",
-            "--text",
-            '<cq-diagram id="browser-id" id="file-id">graph LR\nA --> B</cq-diagram>',
-        ],
-    )
+    duplicate = reply('<cq-diagram id="browser-id" id="file-id">graph LR\nA --> B</cq-diagram>')
     assert duplicate.exit_code != 0
     assert "duplicate attribute" in duplicate.output
-    good = CliRunner().invoke(
-        interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text", 'See:\n<cq-diagram id="f">\ngraph LR\n  A --> B\n</cq-diagram>'],
-    )
+    # Prose belongs in --text, where it renders as Markdown; a markup field
+    # holding none is a wrong turn, not an empty widget list.
+    prose = reply("just words")
+    assert prose.exit_code != 0
+    assert "carries no widget" in prose.output
+    good = reply('<cq-diagram id="f">\ngraph LR\n  A --> B\n</cq-diagram>')
     assert good.exit_code == 0, good.output
-    events = interact.read_events(page_dir)
-    assert events[-1]["kind"] == "reply"
-    assert events[-1]["author"] == "claude"
+    event = interact.read_events(page_dir)[-1]
+    assert event["kind"] == "reply"
+    assert event["author"] == "claude"
+    assert event["text"] == "See:"
+    assert event["markup"].startswith("<cq-diagram")
 
 
 def test_widget_ids_are_one_universe_across_page_and_replies(page_dir):
@@ -4077,7 +4072,8 @@ def test_widget_ids_are_one_universe_across_page_and_replies(page_dir):
     reuse a page id — and a later version must not take a reply's."""
     interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
     reply = lambda markup: CliRunner().invoke(
-        interact.cli, ["review", "reply", str(page_dir), "--to", "c1", "--text", markup]
+        interact.cli,
+        ["review", "reply", str(page_dir), "--to", "c1", "--text", "Pick:", "--markup", markup],
     )
     # `flow` is the page's cq-diagram id (PAGE fixture) — refused.
     clash = reply('<cq-options id="flow" choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>')
@@ -4089,9 +4085,9 @@ def test_widget_ids_are_one_universe_across_page_and_replies(page_dir):
     assert again.exit_code != 0 and "q1" in again.output
     selfdup = reply('<cq-options id="q2" choose><cq-option id="q2"><strong>B</strong></cq-option></cq-options>')
     assert selfdup.exit_code != 0 and "within itself" in selfdup.output
-    # A USER reply quoting markup renders as plain text and claims no ids — it must
-    # not poison the universe (the log is append-only; a false claim would deadlock
-    # every future version).
+    # Text claims no ids however it quotes a tag — only the `markup` field does, and
+    # a reviewer's message never carries one (the log is append-only; a false claim
+    # would deadlock every future version).
     interact.append_event(
         page_dir,
         {"kind": "reply", "author": "user", "parent": "c1", "text": 'why not <cq-diagram id="quoted"> here?'},
@@ -4122,134 +4118,53 @@ def test_the_runtimes_cq_id_namespace_is_off_limits(page_dir):
     interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
     reply = CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text",
+        ["review", "reply", str(page_dir), "--to", "c1", "--text", "Pick:", "--markup",
          '<cq-options id="cq-pick" choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>'],
     )
     assert reply.exit_code != 0
     assert "cq- namespace" in reply.output and "cq-pick" in reply.output
 
 
-# ---------- messages: one rendering of what a message says ----------
+# ---------- messages: text is Markdown for the browser, markup is the gate's ----------
 
 
-def message_reply(page_dir, text):
-    return CliRunner().invoke(
-        interact.cli, ["review", "reply", str(page_dir), "--to", "c1", "--text", text]
-    )
-
-
-def test_a_message_arrives_rendered_and_the_log_keeps_its_source(page_dir):
-    """A message body is Markdown, rendered on the way to the panel. Both directions
-    matter: the browser is handed HTML it never parses, and the log still holds the
-    words `review wait` prints and the transcript reprints."""
+def test_the_wire_ships_a_message_as_logged(page_dir):
+    """The wire adds nothing to the log: text is Markdown the page's vendored runtime
+    renders (test_render holds that side), markup is the fragment the CLI gate
+    validated, and the only vocabulary a page's frozen layer has to keep speaking is
+    the log's own, which $events stamps."""
     interact.append_event(
         page_dir,
         {"kind": "comment", "id": "c1", "author": "user", "text": "two things:\n\n- one\n- **two**"},
     )
-    reply = message_reply(page_dir, "Fixed in `poll()`.\nSecond line.")
-    assert reply.exit_code == 0, reply.output
+    result = CliRunner().invoke(
+        interact.cli,
+        ["review", "reply", str(page_dir), "--to", "c1", "--text", "Fixed in `poll()`.",
+         "--markup", '<cq-diagram id="fix">\ngraph LR\n  A --> B\n</cq-diagram>'],
+    )
+    assert result.exit_code == 0, result.output
     wire = {e["kind"]: e for e in page_state(page_dir)["events"]}
-    assert "<li>one</li>" in wire["comment"]["html"]
-    assert "<strong>two</strong>" in wire["comment"]["html"]
     assert wire["comment"]["text"] == "two things:\n\n- one\n- **two**"
-    assert "<code>poll()</code>" in wire["reply"]["html"]
-    # A typed newline is a line break: nobody ends a line with two spaces to mean one.
-    assert "<br>" in wire["reply"]["html"]
+    assert "html" not in wire["comment"] and "html" not in wire["reply"]
+    assert wire["reply"]["markup"].startswith("<cq-diagram")
 
 
-def test_a_reviewers_markup_is_words_about_a_widget(page_dir):
-    """Raw HTML is Claude's alone, and the escaping is the whole of that boundary — no
-    reader downstream restates it as an author rule of its own. So the id in a quoted
-    tag is claimed by nobody, and a later reply may still use it."""
-    interact.append_event(
-        page_dir,
-        {
-            "kind": "comment",
-            "id": "c1",
-            "author": "user",
-            "text": 'why not <cq-diagram id="quoted">? and *emphasis*',
-        },
+def test_markup_enters_only_through_the_cli_gate(server, page_dir):
+    """The browser door refuses the field rather than silently dropping it: everything
+    the log holds under `markup` has been through `check_markup`, which is what lets
+    thread_widget_ids and the panel index it unasked."""
+    publish(page_dir, version=1)
+    before = interact.read_events(page_dir)
+    status, body = fetch(
+        f"{server}/api/event",
+        data=json.dumps(
+            {"kind": "comment", "version": 1, "text": "hi",
+             "markup": '<cq-diagram id="m">graph LR\n  A --> B</cq-diagram>'}
+        ).encode(),
     )
-    wire = page_state(page_dir)["events"][-1]
-    assert "&lt;cq-diagram" in wire["html"] and "<cq-diagram" not in wire["html"]
-    assert "<em>emphasis</em>" in wire["html"]
-    assert interact.thread_widget_ids(interact.read_events(page_dir)) == set()
-
-
-def test_widget_markup_in_a_message_survives_a_blank_line(page_dir):
-    """CommonMark ends a raw-HTML block at the first blank line and parses the rest as
-    prose. A message's widget markup is the markup a version carries — written with air
-    between its panels like any other — so it ends where its closing tag does."""
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "?"})
-    result = message_reply(
-        page_dir,
-        "Like so:\n\n"
-        '<cq-tabs id="t1">\n'
-        '<cq-tab id="t1-a" label="Before">\n\ntext with a gap\n\n</cq-tab>\n'
-        '<cq-tab id="t1-b" label="After">tight</cq-tab>\n'
-        "</cq-tabs>",
-    )
-    assert result.exit_code == 0, result.output
-    html = interact.message_html(interact.read_events(page_dir)[-1])
-    assert "<p>text with a gap</p>" not in html
-    assert html.count("<cq-tab ") == 2 and "</cq-tabs>" in html
-    assert interact.thread_widget_ids(interact.read_events(page_dir)) == {"t1", "t1-a", "t1-b"}
-
-
-def test_only_the_vocabulary_reaches_a_message_as_markup(page_dir):
-    """A message is prose, and prose says `Vec<T>`. Raw HTML whole would open an element
-    there — as `if a<b and c>d` opens one with two attributes — and swallow the words in
-    front of the reviewer, with nothing on either side to say it happened. So what
-    reaches the panel as markup is what the gate has a schema for."""
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "?"})
-    result = message_reply(page_dir, "the type is Vec<T>, and <div>this</div> is not a widget")
-    assert result.exit_code == 0, result.output
-    html = interact.message_html(interact.read_events(page_dir)[-1])
-    assert "Vec&lt;T&gt;" in html
-    assert "&lt;div&gt;this&lt;/div&gt;" in html
-
-
-def test_a_fence_shows_markup_without_claiming_it(page_dir):
-    """A reply explaining how to write a widget quotes the tag, and the fence is what
-    says it is a picture of one. Read from the source this was a widget: it would have
-    been refused for taking `flow`, the page's own diagram id."""
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "?"})
-    result = message_reply(
-        page_dir,
-        'Write it like this:\n\n```html\n<cq-diagram id="flow">\ngraph LR\n  A --> B\n'
-        "</cq-diagram>\n```",
-    )
-    assert result.exit_code == 0, result.output
-    assert interact.thread_widget_ids(interact.read_events(page_dir)) == set()
-
-
-def test_a_reply_is_held_to_the_languages_the_page_can_color(page_dir):
-    """The panel colors a fenced block from the list a version's <pre><code> is held to,
-    so a word the vendored tokenizer doesn't know is refused where it is written — the
-    alternative is a block that quietly never colors and nobody to tell."""
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "?"})
-    bad = message_reply(page_dir, "```klingon\ntlhIngan Hol\n```")
-    assert bad.exit_code != 0
-    assert "not a language this page's layer speaks" in bad.output
-    good = message_reply(page_dir, "```python\ndef f():\n    return 1\n```")
-    assert good.exit_code == 0, good.output
-
-
-def test_a_suggestion_shows_the_characters_it_proposes(page_dir):
-    """A suggestion's words are bound for the page verbatim, so the panel shows them as
-    typed. Rendering them would promise the reviewer an italic where the next version
-    carries the asterisks they wrote."""
-    interact.append_event(
-        page_dir,
-        {
-            "kind": "comment",
-            "id": "s1",
-            "author": "user",
-            "suggestion": True,
-            "text": "Retry up to *five* times.",
-        },
-    )
-    assert page_state(page_dir)["events"][-1]["html"] == "<p>Retry up to *five* times.</p>"
+    assert status == 400
+    assert "markup" in json.loads(body)["error"]
+    assert interact.read_events(page_dir) == before
 
 
 def test_export_prints_threads_and_versions(page_dir):
@@ -4269,6 +4184,7 @@ def test_export_prints_threads_and_versions(page_dir):
             "agent": "Claude",
             "parent": "c1",
             "text": "reversibility",
+            "markup": '<cq-diagram id="why">graph LR\n  A --> B</cq-diagram>',
         },
     )
     interact.append_event(page_dir, {"kind": "resolve", "id": "x1", "author": "user", "parent": "r1"})
@@ -4296,22 +4212,29 @@ def test_export_prints_threads_and_versions(page_dir):
     assert "- `b`: move card=card-x to=col-done index=0 (on v1)" in result.output
     assert "> “flip reads”  — resolved" in result.output
     assert "- **User**: why?" in result.output
-    assert "- **Claude**: reversibility" in result.output
+    # The widget rides its message into the transcript, indented under the words.
+    assert "- **Claude**: reversibility\n  <cq-diagram" in result.output
     assert "> § flow" in result.output  # element-anchored comments keep their target
 
 
-def test_a_reply_requires_the_registry_its_runtime_reads(page_dir):
-    """Every reply is validated, not only one carrying a widget: a fenced block is
-    colored from the vendored list too, so the registry is what a reply is checked
-    against whatever it holds."""
+def test_markup_needs_the_registry_and_text_does_not(page_dir):
+    """Text renders with every raw tag escaped, so a plain reply has nothing to
+    validate and posts without the registry; markup is checked against it, so without
+    one the gate refuses rather than guessing."""
     (page_dir / "registry.json").unlink()
     interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
-    result = CliRunner().invoke(
+    plain = CliRunner().invoke(
         interact.cli,
         ["review", "reply", str(page_dir), "--to", "c1", "--text", "plain answer, x < y"],
     )
-    assert result.exit_code != 0
-    assert "no registry.json" in result.output
+    assert plain.exit_code == 0, plain.output
+    with_markup = CliRunner().invoke(
+        interact.cli,
+        ["review", "reply", str(page_dir), "--to", "c1", "--text", "See:",
+         "--markup", '<cq-diagram id="f">graph LR\n  A --> B</cq-diagram>'],
+    )
+    assert with_markup.exit_code != 0
+    assert "no registry.json" in with_markup.output
 
 
 def test_comment_requires_the_registry_its_runtime_reads(page_dir):
@@ -4725,16 +4648,17 @@ def test_claudes_own_comment_is_not_delivered_back_to_it(page_dir):
 
 
 def test_a_comments_widget_markup_shares_one_id_universe_with_replies(page_dir):
-    """A Claude comment renders as HTML in the panel exactly as a reply does, so it
+    """A Claude comment's markup lands in the panel exactly as a reply's does, so it
     validates the same way and claims ids from the same pool."""
     published(page_dir)
     assert comment(
-        page_dir, "--quote", "Ship dark", "--text",
+        page_dir, "--quote", "Ship dark", "--text", "Pick:", "--markup",
         '<cq-options id="q1" choose><cq-option id="q1-a"><strong>A</strong></cq-option></cq-options>',
     ).exit_code == 0
     interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
     clash = CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text", '<cq-diagram id="q1">\ngraph LR\n  A --> B\n</cq-diagram>'],
+        ["review", "reply", str(page_dir), "--to", "c1", "--text", "See:",
+         "--markup", '<cq-diagram id="q1">\ngraph LR\n  A --> B\n</cq-diagram>'],
     )
     assert clash.exit_code != 0 and "q1" in clash.output

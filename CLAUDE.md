@@ -45,7 +45,7 @@ the product, and nothing sits between them. Five are the skill's, under
 `plugins/colloquy/skills/colloquy/`:
 
 - `scripts/interact.py` — a `uv` script: the server, the event log, the lint
-  (`version check`), what a message renders to, vendoring, export. No daemon, no
+  (`version check`), vendoring, export. No daemon, no
   database. Reached as `colloquy`, through the payload's `bin/` shim: Claude Code puts
   it on PATH and Codex resolves it from the active skill directory.
 - `assets/colloquy.js` — the runtime the page loads. One ES module owning the widget
@@ -78,7 +78,7 @@ opening that code is how you meet them:
 
 - the page in the browser — the runtime, the widget modules, the theme:
   `plugins/colloquy/skills/colloquy/assets/CLAUDE.md`
-- the server, the log, the lint, and what a message renders to: `interact.py`, in its
+- the server, the log, and the lint: `interact.py`, in its
   module docstring and beside the code each one binds
 - the tests: `tests/CLAUDE.md`
 

@@ -90,10 +90,15 @@
  * crosses into typing context, backing out one layer per press without ever eating
  * text.
  *
- * A message body arrives rendered — Markdown from either side, and the raw widget
- * markup only Claude's may carry, which `review reply` validated against the vendored
- * registry at post time. This file parses none of it: one rendering, made where the
- * gate reads it, injected here. */
+ * A message arrives as logged and renders here, in the same vendored layer that owns
+ * the panel's styles — the two version together, and no wire vocabulary exists beyond
+ * the log's own. Its text is Markdown, rendered with every raw tag escaped to the
+ * characters it was written in, so prose that says `Vec<T>` keeps its own words and
+ * text cannot inject markup. A widget rides the event's `markup` field instead, whose
+ * one door is the CLI gate (`review comment`/`review reply` validate it against the
+ * vendored registry; the browser door refuses the field), so what lands here is
+ * injected as validated. A suggestion's text renders verbatim: its characters are
+ * bound for the page as typed. */
 
 // ---------- widget layer ----------
 
@@ -850,8 +855,8 @@ style.textContent = `
     .cq-suggest-row { display: none; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
     .cq-suggest-row input { margin: 0; accent-color: var(--accent); }
     .cq-suggest-label { font-size: var(--t-6); letter-spacing: .05em; text-transform: uppercase; color: var(--ok-ink); margin: 4px 0 2px; }
-    /* A suggestion arrives unrendered — its characters are what the next version
-       carries (see message_html) — so this is where they keep their own line breaks. */
+    /* A suggestion renders verbatim — its characters are what the next version
+       carries (see msgNode) — so this is where they keep their own line breaks. */
     .cq-msg-body.cq-suggest-body { background: var(--add-tint); padding: 4px 8px;
       border-radius: 6px; white-space: pre-wrap; }
     .cq-composer textarea { width: 100%; min-height: 56px; }
@@ -1251,6 +1256,25 @@ function buildThreads() {
   return [...threads.values()];
 }
 
+const escapeHtml = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// Lazily, like the tokenizer: a page is usually handed over before anyone has said
+// anything, and one with no messages never pays the parse. poll() awaits this before
+// the panel builds a body, which is what keeps msgNode synchronous.
+//
+// Raw HTML — block and inline both route through the one `html` renderer — escapes to
+// the characters it was written in: prose says `Vec<T>`, and a message injects widgets
+// only through its gate-validated `markup` field, never through text. breaks: a single
+// newline is a line break, because a message is typed prose and nobody types two
+// spaces to mean the line they just ended.
+let renderMarkdown;
+let markedReady;
+const loadMarked = () =>
+  (markedReady ??= import("/vendor/marked.esm.js").then((m) => {
+    const md = new m.Marked({ breaks: true, renderer: { html: (t) => escapeHtml(t.text) } });
+    renderMarkdown = (text) => md.parse(text);
+  }));
+
 // Bodies are cached per event id and re-adopted across thread rebuilds: the log is
 // append-only so a body's text never changes, and reusing the node keeps a widget
 // in a reply (a rendered diagram) from re-upgrading on every poll.
@@ -1265,19 +1289,24 @@ function msgNode(m) {
   let body = msgBodies.get(m.id);
   if (!body) {
     body = el("div", "cq-msg-body");
-    // A message body arrives rendered: Markdown for both sides, and raw HTML only where
-    // the server let it through, which is Claude's messages with their widget markup
-    // already validated against this page's registry. Nothing here re-decides that.
-    // Already-defined widgets upgrade on insertion; these two passes don't come along
-    // with them — the said pass writes a widget's declared words, and a fenced block is
-    // a <pre><code class="language-…"> like any the page holds.
-    body.innerHTML = m.html;
-    renderSaid(body);
-    // Not settle()d: that queue holds the page's geometry still for the first anchor
-    // pass, and a message colors in the panel, where no anchor is captured and nothing
-    // waits. Each block already fails soft to its own plain source.
-    highlightBlocks(body);
-    if (m.suggestion) body.classList.add("cq-suggest-body");
+    if (m.suggestion) {
+      // Verbatim: a suggestion's characters are bound for the page as typed, and a
+      // rendering would show an italic where the next version carries the asterisks.
+      body.classList.add("cq-suggest-body");
+      body.textContent = m.text;
+    } else {
+      body.innerHTML = renderMarkdown(m.text);
+      // The widget markup beside the text, injected as the CLI gate validated it.
+      // Already-defined widgets upgrade on insertion; these two passes don't come
+      // along with them — the said pass writes a widget's declared words, and a
+      // fenced block is a <pre><code class="language-…"> like any the page holds.
+      if (m.markup) body.insertAdjacentHTML("beforeend", m.markup);
+      renderSaid(body);
+      // Not settle()d: that queue holds the page's geometry still for the first anchor
+      // pass, and a message colors in the panel, where no anchor is captured and nothing
+      // waits. Each block already fails soft to its own plain source.
+      highlightBlocks(body);
+    }
     msgBodies.set(m.id, body); // the id is server-minted, on every event
   }
   div.append(head);
@@ -3285,6 +3314,9 @@ async function poll() {
   // behind one already rendered is unambiguously stale; accepting it would move
   // every event-derived view backwards until the next poll.
   if (eventSeq < lastEventSeq) return;
+  // Messages render from Markdown; have the renderer in hand before the panel
+  // builds a body, so msgNode stays synchronous.
+  if (nextEvents.some((e) => e.kind === "comment" || e.kind === "reply")) await loadMarked();
   events = nextEvents;
   agent = state.agent || "Claude";
   renderStatus(state);

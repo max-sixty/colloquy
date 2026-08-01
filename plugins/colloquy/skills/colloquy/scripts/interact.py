@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["click>=8", "jsonschema>=4", "markdown-it-py>=3", "tinycss2>=1.4"]
+# dependencies = ["click>=8", "jsonschema>=4", "tinycss2>=1.4"]
 # ///
 """Serve and mediate an interactive colloquy page.
 
@@ -139,11 +139,14 @@ changelog, carrying `restated`: the element ids whose decisions the publishing
 version took back). The server stamps every browser-posted event author=user;
 Agent-side `review comment`, `review reply`, and `version publish` stamp the wire
 role author=claude, and comments/replies also carry the originating host's display
-name. A message body is Markdown, rendered on its way to the panel and nowhere else
-(see message_html). Claude's may also carry widget markup, which `review comment` and
-`review reply` validate against the vendored registry, the discussion-side analog of
-`version check`; a reviewer's renders with raw HTML off, so their markup is words about
-a widget rather than one.
+name. A message body is Markdown, stored as typed and
+rendered by the page's own vendored runtime — the browser is where the page's other
+rendering already lives, and vendoring the renderer beside the panel's styles is what
+keeps the two versioning together. Raw HTML in a body renders as its characters there,
+so text cannot inject markup; a widget rides the event's `markup` field instead, whose
+one door is `review comment`/`review reply`, where it is validated against the vendored
+registry — the discussion-side analog of `version check`. The browser door refuses the
+field, so everything in the log under that name has been through the gate.
 
 Either side can open a thread, and `author` is the whole difference between them. The
 reviewer selects a passage and the browser writes the anchor from the
@@ -200,7 +203,7 @@ instead (`--section`), which is the anchor a click on a diagram makes.
 
 A version is written in more than one language, and each is read by a parser for
 that language: _StructParser for what the markup declares, page_passages for what
-it says, tinycss2 for the CSS a <style> block holds, markdown-it for a message. A
+it says, tinycss2 for the CSS a <style> block holds. A
 new question about a version is a field on one of those readings rather than a
 pattern over the file's text, because a pattern answers something adjacent to the
 question asked — the readable-column check below carries what that cost.
@@ -222,7 +225,6 @@ import threading
 import time
 import zlib
 from datetime import datetime
-from html import escape
 from html.parser import HTMLParser
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -234,7 +236,6 @@ import click
 import tinycss2
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
-from markdown_it import MarkdownIt
 
 HEARTBEAT_FRESH_SECS = 8
 # A session-managed server gives a replacement session one short poll window to
@@ -255,13 +256,18 @@ BROWSER_EVENT_FIELDS = {
 # id/ts/author/kind and read_events' seq. A registry may grow this vocabulary,
 # but it cannot omit a word the producers beside it already speak.
 EVENT_VOCABULARY = {
-    "comment": {"version", "text", "anchor", "suggestion", "agent"},
-    "reply": {"parent", "version", "text", "agent"},
+    "comment": {"version", "text", "anchor", "suggestion", "agent", "markup"},
+    "reply": {"parent", "version", "text", "agent", "markup"},
     "resolve": {"parent"},
     "done": {"version", "text"},
     "action": {"widget", "action", "detail", "version"},
     "note": {"version", "text", "restated"},
 }
+# Fields whose one door is the CLI. The browser door refuses them rather than
+# silently dropping: `markup` enters only through the gate `review comment` and
+# `review reply` run, which is what lets every reader trust what the log holds
+# under that name.
+AGENT_ONLY_FIELDS = {"markup"}
 EVENT_BASE_FIELDS = {"id", "ts", "author", "kind", "seq"}
 HTML_NAME = r"[a-z][a-z0-9-]*"
 WIDGET_NAME = r"cq-[a-z0-9]+(?:-[a-z0-9]+)*"
@@ -731,137 +737,6 @@ def undelivered(events: list, cursor: int) -> list:
     return [e for e in events if e["seq"] > cursor and e["author"] == "user"]
 
 
-# ---------- messages: one rendering of what a message says ----------
-# A message body is Markdown. Claude writes prose that way without being asked, and the
-# reviewer's box has always looked like it took it — a line starting with `-` was a
-# bullet to everyone but the panel.
-#
-# It renders here rather than in the browser, which is the opposite of where the page's
-# own code blocks are colored, and for the same reason: a rendering belongs wherever
-# there can be only one of it. Coloring in Python would put spans in the file Claude
-# writes the next version from; parsing Markdown in the browser would stand a second
-# reading of a message beside this one, and the two would have to keep agreeing about
-# which `<cq-tabs>` is a widget and which is a picture of one inside a fence. The panel
-# injects exactly the string the post-time gate validated, so they cannot come apart,
-# and the log still holds the source — the render is derived on every read and stored
-# nowhere, which is affordable at the poll's rate: 50 rich messages take ~3ms.
-#
-# Raw HTML is Claude's alone, and only the vocabulary. A reply may carry widget markup,
-# checked against the vendored registry the way `version check` checks a version — and
-# every other tag is escaped, because a message is prose and prose says `Vec<T>`. HTML
-# whole would have swallowed that silently, in front of the reviewer, with nothing on
-# either side to say it happened: `<T>` opens an element the browser is happy to build,
-# and `if a<b and c>d` opens one with two attributes. So the markup that reaches the
-# panel is the markup the gate has a schema for, plus whatever a widget's own body
-# holds: inside the element, markup is the widget's business, as it is in a version.
-# A reviewer's
-# `<cq-tabs>` is four words about a widget, so their Markdown renders with HTML off and
-# that escaping is the whole of the boundary — no reader downstream restates it.
-CQ_OPEN_LINE = re.compile(rf"<({WIDGET_NAME})[\s/>]")
-CQ_TAG = re.compile(rf"</?{WIDGET_NAME}(?=[\s/>]|$)")
-
-
-def _block_line(state, lineno: int) -> str:
-    return state.src[state.bMarks[lineno] + state.tShift[lineno] : state.eMarks[lineno]]
-
-
-def _cq_raw_block(state, start_line: int, end_line: int, silent: bool) -> bool:
-    """Widget markup passes through a message whole.
-
-    CommonMark ends a raw-HTML block at the first blank line and hands the remainder to
-    the Markdown parser: a <cq-tabs> cut at the gap between two panels, mermaid source
-    arriving as paragraphs with its arrows escaped. A message's widget markup is the
-    markup a version carries, so it ends where its own closing tag does and nowhere
-    else. Only cq-* tags — everything else keeps CommonMark's rule.
-    """
-    match = CQ_OPEN_LINE.match(_block_line(state, start_line))
-    if not match:
-        return False
-    tag = match[1]
-    opened = re.compile(rf"<{tag}(?=[\s/>])")
-    closed = re.compile(rf"</{tag}\s*>")
-    depth, last = 0, None
-    for lineno in range(start_line, end_line):
-        text = _block_line(state, lineno)
-        depth += len(opened.findall(text)) - len(closed.findall(text))
-        if depth <= 0:
-            last = lineno
-            break
-    # Nothing closes it: leave the lines to CommonMark rather than swallowing the rest
-    # of the message, and let the gate report the unclosed tag it already reports.
-    if last is None:
-        return False
-    if silent:
-        return True
-    token = state.push("html_block", "", 0)
-    token.map = [start_line, last + 1]
-    token.content = state.getLines(start_line, last + 1, state.blkIndent, True)
-    state.line = last + 1
-    return True
-
-
-def _cq_only(self, tokens, idx, options, env) -> str:
-    """A raw tag reaches the page as markup when it is one of ours, and as the
-    characters it is written in otherwise. One rule for the block a widget opens and
-    the inline one a sentence holds, since the question is the same.
-
-    What a message may inject is the vocabulary, not HTML. Prose says `Vec<T>`, and raw
-    HTML reads that as an element to open — `if a<b and c>d` as one with two attributes
-    — so a message rendered whole would lose its own words in front of the reviewer with
-    nothing on either side to say so. Escaping every tag the registry can't name leaves
-    the markup that reaches the panel exactly the markup the gate has a schema for."""
-    raw = tokens[idx].content
-    return raw if CQ_TAG.match(raw.lstrip()) else escape(raw)
-
-
-def _message_md(html: bool) -> MarkdownIt:
-    # breaks: a single newline is a line break, because a message is typed prose and
-    # nobody types two spaces to mean the line they just ended.
-    md = MarkdownIt("default", {"breaks": True, "html": html})
-    # Both live only on the renderer that reads raw HTML at all. The reviewer's is left
-    # with no rule about cq- tags to keep in step with the option that already stops it
-    # seeing one.
-    if html:
-        md.block.ruler.before(
-            "html_block",
-            "cq_block",
-            _cq_raw_block,
-            {"alt": ["paragraph", "reference", "blockquote"]},
-        )
-        for rule in ("html_block", "html_inline"):
-            md.add_render_rule(rule, _cq_only)
-    return md
-
-
-# Keyed by the author on the event, which the one door each side comes through has
-# already stamped: POST /api/event writes "user", `review comment`/`review reply` "claude".
-MESSAGE_MD = {"claude": _message_md(True), "user": _message_md(False)}
-
-
-def message_html(event: dict) -> str:
-    """A message body as the panel shows it.
-
-    Markdown has no parser in the stdlib either, so markdown-it-py reads it whole; where
-    that runs is what had a choice. The page's own code blocks are colored in the
-    browser, because coloring them here would put spans in the file Claude writes the
-    next version from. A message has no file, and reading it in the browser would stand a
-    second answer beside the one the post-time gate uses — the two then having to keep
-    agreeing about which <cq-tabs> is a widget and which is a fenced picture of one. So
-    it renders once, here, and the panel injects the string that was validated. What a
-    message says is still the log's: this render is derived on every read and stored
-    nowhere, which is what leaves `review wait` and the transcript printing the words
-    that were typed.
-
-    Prose renders as Markdown. A suggestion doesn't: its words are bound for the page
-    verbatim, so a rendering would show the reviewer an italic where the next version
-    carries the asterisks they typed. Characters are the point in exactly one message,
-    and it is the one that says so — the same distinction the registry draws with
-    x-verbatim. The tint the panel already puts on a suggestion is what says which."""
-    if event.get("suggestion"):
-        return f"<p>{escape(event['text'])}</p>"
-    return MESSAGE_MD[event["author"]].render(event["text"])
-
-
 def full_state(page_dir: Path, events: list, versions: list) -> dict:
     # A file that isn't there stands in as its whole record, so every read below
     # indexes rather than asking twice whether the field arrived.
@@ -881,13 +756,11 @@ def full_state(page_dir: Path, events: list, versions: list) -> dict:
         "agent": session.get("agent", "Claude") if session else "Claude",
         # None when nothing claimed the page — interact.py run outside an agent host.
         "session_alive": pid_alive(session["pid"]) if session else None,
-        # A message arrives rendered (see message_html). The log keeps the Markdown,
-        # which is what `review wait` hands Claude and what the transcript prints; the
-        # panel is the one place the rendering is wanted, so it is made on the way there.
-        "events": [
-            {**e, "html": message_html(e)} if e["kind"] in ("comment", "reply") else e
-            for e in events
-        ],
+        # As logged: a message's text is Markdown the page's vendored runtime renders,
+        # and its markup is the fragment the CLI gate validated. The wire adds nothing,
+        # so the only vocabulary a page's frozen layer has to keep speaking is the
+        # log's own, which $events already stamps.
+        "events": events,
     }
 
 
@@ -1022,7 +895,7 @@ class Handler(BaseHTTPRequestHandler):
         # the append-only record.
         for field in ("id", "author", "agent", "ts"):
             event.pop(field, None)
-        unexpected = set(event) - {"kind"} - EVENT_VOCABULARY[kind]
+        unexpected = set(event) - {"kind"} - (EVENT_VOCABULARY[kind] - AGENT_ONLY_FIELDS)
         if unexpected:
             self._json(
                 {"error": f"{event['kind']} events have unexpected fields {sorted(unexpected)}"},
@@ -1888,18 +1761,13 @@ def thread_widget_ids(events: list) -> set:
     the runtime resolves actions document-wide by id, and a collision would silently
     redirect a thread widget's replay to the page.
 
-    Read from the rendering, not the source: whether a message injects a widget or shows
-    a picture of one is the renderer's answer, and asking it is how this stays one
-    answer. A reviewer's markup escapes, so their message claims nothing without a rule
-    here saying so."""
+    The `markup` field is the whole question: text renders with every tag escaped, so a
+    cq- tag there is words about a widget, and the field's one door is the CLI gate."""
     ids = set()
     for e in events:
-        if e["kind"] not in ("comment", "reply"):
-            continue
-        html = message_html(e)
-        if "<cq-" in html:
+        if markup := e.get("markup"):
             p = _StructParser()
-            p.feed(html)
+            p.feed(markup)
             ids |= p.ids
     return ids
 
@@ -1909,13 +1777,12 @@ def action_widget_tags(page_dir: Path, version: int, events: list) -> dict:
 
     Page widgets come from the action's own published version, not whichever
     version is newest now. Thread widgets are the other live document the runtime
-    renders, so each message joins this map as the panel shows it — a reviewer's
-    markup escaped to text there, and so absent here. Both readings use
-    _StructParser, the same structure reading `version check` and message
-    validation already trust.
+    renders, so each message's `markup` joins this map — text never carries a
+    widget, in the panel or here. Both readings use _StructParser, the same
+    structure reading `version check` and markup validation already trust.
     """
     sources = [version_path(page_dir, version).read_text(encoding="utf-8")]
-    sources.extend(message_html(e) for e in events if e["kind"] in ("comment", "reply"))
+    sources.extend(e["markup"] for e in events if e.get("markup"))
     widgets = {}
     for source in sources:
         parser = _StructParser()
@@ -1976,20 +1843,23 @@ def reserved_ids_error(ids: list) -> str:
     )
 
 
-def check_message(page_dir: Path, kind: str, body: str, events: list, registry: dict) -> None:
-    """What a comment or reply renders to, validated against the vendored registry at
-    post time — the discussion-side `version check`. It reads the rendering rather than
-    the Markdown, so a <cq-tabs> shown inside a fence is a picture of markup and claims
-    nothing, and a fenced language the tokenizer doesn't know is refused here the way a
-    version's is: the panel colors a message's code blocks from the same list, and an
-    unhonored one would otherwise land as a silence. Exits with what's wrong."""
-    html = message_html({"author": "claude", "text": body})
+def check_markup(page_dir: Path, kind: str, markup: str, events: list) -> None:
+    """A message's widget markup, validated against the vendored registry at post
+    time — the discussion-side `version check`, and the field's one gate: the browser
+    door refuses `markup` outright, so nothing reaches the log under that name
+    unvalidated. Text needs no gate at all — the runtime renders it with every tag
+    escaped, so it cannot claim a widget. Exits with what's wrong."""
+    registry = load_registry(page_dir)
+    if registry is None:
+        sys.exit(f"no registry.json in {page_dir}; run `colloquy page init` first")
     frag = _StructParser()
-    frag.feed(html)
+    frag.feed(markup)
     frag.close()
     errs = fragment_errors(frag, registry, registry["$languages"]["names"])
     if errs:
-        sys.exit(f"{kind} doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs))
+        sys.exit(f"{kind} markup doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs))
+    if not frag.cq_elements:
+        sys.exit("--markup carries no widget; put prose in --text")
     if frag.suggestions:
         sys.exit(
             f"a {kind} can't carry <cq-suggestion>: thread markup is frozen in the "
@@ -2011,7 +1881,7 @@ def message_agent(page_dir: Path) -> str:
     return (read_json(page_dir / "session.json") or {}).get("agent", "Agent")
 
 
-def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
+def cmd_comment(page_dir: Path, quote: str, section: str, text, markup: str) -> None:
     """Open a thread on a passage, as the reviewer's own selection does. The anchor is
     captured against the version they are looking at — the newest published one, since a
     version no `note` has released is a passage nobody can be pointed at — and read as
@@ -2036,42 +1906,39 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text) -> None:
     except ValueError as err:
         sys.exit(f"can't anchor in v{version}: {err}")
     body = read_text_arg(text)
-    check_message(page_dir, "comment", body, events, registry)
-    event = append_event(
-        page_dir,
-        {
-            "kind": "comment",
-            "author": "claude",
-            "agent": message_agent(page_dir),
-            "version": version,
-            "anchor": anchor,
-            "text": body,
-        },
-    )
-    print(json.dumps(event, ensure_ascii=False))
+    if markup:
+        check_markup(page_dir, "comment", markup, events)
+    event = {
+        "kind": "comment",
+        "author": "claude",
+        "agent": message_agent(page_dir),
+        "version": version,
+        "anchor": anchor,
+        "text": body,
+    }
+    if markup:
+        event["markup"] = markup
+    print(json.dumps(append_event(page_dir, event), ensure_ascii=False))
 
 
-def cmd_reply(page_dir: Path, to: str, text) -> None:
+def cmd_reply(page_dir: Path, to: str, text, markup: str) -> None:
     events = read_events(page_dir)
     known = {e["id"] for e in events if e["kind"] in {"comment", "reply"}}
     if to not in known:
         sys.exit(f"unknown comment id {to!r}; known: {sorted(known)}")
     body = read_text_arg(text)
-    registry = load_registry(page_dir)
-    if registry is None:
-        sys.exit(f"no registry.json in {page_dir}; run `colloquy page init` first")
-    check_message(page_dir, "reply", body, events, registry)
-    event = append_event(
-        page_dir,
-        {
-            "kind": "reply",
-            "author": "claude",
-            "agent": message_agent(page_dir),
-            "parent": to,
-            "text": body,
-        },
-    )
-    print(json.dumps(event, ensure_ascii=False))
+    if markup:
+        check_markup(page_dir, "reply", markup, events)
+    event = {
+        "kind": "reply",
+        "author": "claude",
+        "agent": message_agent(page_dir),
+        "parent": to,
+        "text": body,
+    }
+    if markup:
+        event["markup"] = markup
+    print(json.dumps(append_event(page_dir, event), ensure_ascii=False))
 
 
 def cmd_publish(page_dir: Path, version: int, text) -> None:
@@ -2158,8 +2025,8 @@ def cmd_transcript(page_dir: Path) -> None:
         print(head + ("  — resolved" if t["resolved"] else ""))
         for m in t["msgs"]:
             who = m.get("agent", "Agent") if m["author"] == "claude" else "User"
-            body = m["text"].replace("\n", "\n  ")
-            print(f"- **{who}**: {body}")
+            body = m["text"] + (f"\n{m['markup']}" if m.get("markup") else "")
+            print(f"- **{who}**: " + body.replace("\n", "\n  "))
         print()
     for e in events:
         if e["kind"] == "done":
@@ -4940,22 +4807,24 @@ def wait(dir: str) -> None:
 @click.option("--quote", help="passage text from the published version")
 @click.option("--section", metavar="ID", help="element ID to anchor or scope --quote")
 @click.option("--text", help="comment text (default: stdin)")
-def comment(dir: str, quote: str, section: str, text: str) -> None:
+@click.option("--markup", help="widget markup to render after the text, validated here")
+def comment(dir: str, quote: str, section: str, text: str, markup: str) -> None:
     """Open a thread on a passage as the agent (--text or stdin).
 
     The reviewer answers it in the browser and resolves it there. Refuses a quote the
     published version does not hold, or holds more than once.
     """
-    cmd_comment(resolve_dir(dir), quote, section, text)
+    cmd_comment(resolve_dir(dir), quote, section, text, markup)
 
 
 @review.command(short_help="Reply to a thread as the agent.")
 @click.argument("dir", metavar="PAGE")
 @click.option("--to", required=True, metavar="ID", help="comment or reply ID to answer")
 @click.option("--text", help="reply text (default: stdin)")
-def reply(dir: str, to: str, text: str) -> None:
+@click.option("--markup", help="widget markup to render after the text, validated here")
+def reply(dir: str, to: str, text: str, markup: str) -> None:
     """Post a threaded reply as the agent (--text or stdin)."""
-    cmd_reply(resolve_dir(dir), to, text)
+    cmd_reply(resolve_dir(dir), to, text, markup)
 
 
 @review.command(short_help="Print the event log as JSON lines.")

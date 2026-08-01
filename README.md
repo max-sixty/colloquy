@@ -130,6 +130,10 @@ doesn't ship in a form a page can import — so it is bundled here.
 registry's `$languages.names` so the bundle can't offer a language the lint rejects. Add a
 language there, then rerun the script.
 
+Thread messages render their Markdown in the browser too, from
+`vendor/marked.esm.js` — upstream ships that one as a single dependency-free ESM
+file, so `scripts/vendor-marked.sh` is a copy at a pinned version, not a build.
+
 ## Recording the demo
 
 `scripts/record-demo.sh` drives a review through the shipped server and Chrome, then

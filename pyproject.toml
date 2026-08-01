@@ -29,7 +29,6 @@ dev = [
   # Mirrors interact.py's PEP 723 header, per the note above.
   "click>=8",
   "jsonschema>=4",
-  "markdown-it-py>=3",
   "tinycss2>=1.4",
 ]
 

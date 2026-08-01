@@ -303,13 +303,16 @@ REPLY_HOST_PAGE = """<!doctype html>
 """
 
 # Claude answering with a question to put and, beside it, the framing that question
-# replaced — quoted, so the reply asks one thing rather than two.
-SPECIMEN_REPLY = """Two shapes for the same question; this is the one I'd ship:
-<cq-options id="rp-live" choose>
+# replaced — quoted, so the reply asks one thing rather than two. The words ride
+# `text` and the widgets ride `markup`, as `review reply` writes them.
+SPECIMEN_TEXT = (
+    "Two shapes for the same question — first the one I'd ship, then, for the "
+    "record, the framing it replaces:"
+)
+SPECIMEN_MARKUP = """<cq-options id="rp-live" choose>
   <cq-option id="rp-shim"><strong>Shim the old schema</strong> Fastest to ship.</cq-option>
   <cq-option id="rp-stage" recommended><strong>Migrate in stages</strong> Table by table.</cq-option>
 </cq-options>
-And the framing it replaces, for the record:
 <cq-specimen id="rp-spec" label="the April thread">
   <cq-options id="rp-quoted" choose>
     <cq-option id="rp-memory"><strong>App memory</strong> Nothing to build.</cq-option>
@@ -2156,7 +2159,7 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
     interact.append_event(d, {"kind": "comment", "id": "c-ask", "author": "user",
                               "version": 1, "text": "What would the alternative look like?"})
     interact.append_event(d, {"kind": "reply", "author": "claude", "parent": "c-ask",
-                              "version": 1, "text": SPECIMEN_REPLY})
+                              "version": 1, "text": SPECIMEN_TEXT, "markup": SPECIMEN_MARKUP})
     page, errors = open_page(browser, url)
     page.get_by_role("button", name="Comments", exact=False).click()
     page.wait_for_selector('#rp-live .cq-pick[role="button"]')  # the reply's widgets upgraded
@@ -2986,10 +2989,10 @@ def test_a_decision_that_empties_its_widget_detaches_the_element_anchor(browser,
     page.close()
 
 
-MARKDOWN_REPLY = """Two things, then the fix:
+MARKDOWN_REPLY = """Two things, then the fix — details in https://example.com/notes:
 
 - the poll drops a response **behind** the one already rendered
-- `lastEventSeq` is what it compares
+- `lastEventSeq` is what it compares, a Vec<T> of them
 
 ```python
 def resolve(a, b):
@@ -3001,12 +3004,13 @@ def resolve(a, b):
 
 
 def test_a_reply_renders_the_markdown_it_was_written_in(browser, serve):
-    """A message body is Markdown, and the panel injects the rendering the server made
-    (see message_html) — nothing in the browser parses any, which is why nothing here
-    can come to disagree with the gate that read the same string at post time. What the
+    """A message's text is Markdown, rendered here by the page's own vendored layer —
+    the wire carries the log's words and nothing else. Every raw tag renders as the
+    characters it was written in: prose says Vec<T>, and swallowing it into an element
+    would lose the words in front of the reviewer with nothing saying so. What the
     panel adds is the page's own dress: the theme's element rules are at document level
-    and reach in, and a fenced block colors from the tokenizer a version's <pre><code>
-    uses, which no message could reach before there were fences in one."""
+    and reach in, a fenced block colors from the tokenizer a version's <pre><code>
+    uses, and a bare URL arrives as the link the reviewer will want to follow."""
     url = serve(REPLY_HOST_PAGE)
     d = serve.page_dir
     interact.append_event(d, {"kind": "comment", "id": "c-ask", "author": "user",
@@ -3020,9 +3024,30 @@ def test_a_reply_renders_the_markdown_it_was_written_in(browser, serve):
     expect(body.locator("strong")).to_have_text("behind")
     expect(body.locator("blockquote")).to_have_text("which one wins?")
     expect(body.locator('pre code [data-cq-syn="kw"]').first).to_have_text("def")
-    # The paragraph's asterisks are gone from the words, not merely hidden: what the
-    # reviewer can select is what the message says.
-    assert "**" not in body.inner_text()
+    expect(body.locator('a[href="https://example.com/notes"]')).to_have_count(1)
+    # The paragraph's asterisks are gone from the words, not merely hidden, and the
+    # raw tag's characters are still among them: what the reviewer can select is what
+    # the message says.
+    text = body.inner_text()
+    assert "**" not in text and "Vec<T>" in text
+    assert errors == []
+    page.close()
+
+
+def test_a_suggestion_shows_the_characters_it_proposes(browser, serve):
+    """A suggestion's words are bound for the page verbatim, so the panel shows them
+    as typed. Rendering them would promise the reviewer an italic where the next
+    version carries the asterisks they wrote."""
+    url = serve(REPLY_HOST_PAGE)
+    interact.append_event(serve.page_dir, {
+        "kind": "comment", "id": "s1", "author": "user", "version": 1,
+        "suggestion": True, "text": "Retry up to *five* times.",
+    })
+    page, errors = open_page(browser, url)
+    page.get_by_role("button", name="Comments", exact=False).click()
+    body = page.locator(".cq-msg-body.cq-suggest-body")
+    expect(body).to_have_text("Retry up to *five* times.")
+    expect(body.locator("em")).to_have_count(0)
     assert errors == []
     page.close()
 
@@ -3038,7 +3063,7 @@ def test_a_reply_widget_replays_its_action_when_the_page_loads(browser, serve):
     interact.append_event(d, {"kind": "comment", "id": "c-ask", "author": "user",
                               "version": 1, "text": "Which of these?"})
     interact.append_event(d, {"kind": "reply", "author": "claude", "parent": "c-ask",
-                              "version": 1, "text": SPECIMEN_REPLY})
+                              "version": 1, "text": SPECIMEN_TEXT, "markup": SPECIMEN_MARKUP})
     interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
                               "widget": "rp-live", "action": "choose",
                               "detail": {"options": ["rp-shim"]}})
