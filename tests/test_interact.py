@@ -4064,13 +4064,11 @@ def codex_claimed_page(tmp_path, request):
     launcher = PLUGIN_ROOT / "bin" / "colloquy"
     env = os.environ | {"CODEX_THREAD_ID": "codex-thread"}
 
-    subprocess.run(
-        [launcher, "page", "init", page],
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    # Uncaptured, so `check=True` reports something: a CalledProcessError over
+    # captured streams names the command and the exit status and takes colloquy's
+    # own message down with it, and nothing here reads either stream. Left to
+    # pytest, the message is in the failure it belongs to.
+    subprocess.run([launcher, "page", "init", page], env=env, check=True)
     server = subprocess.Popen(
         [launcher, "server", "run", page],
         env=env,
@@ -4080,13 +4078,7 @@ def codex_claimed_page(tmp_path, request):
     )
 
     def stop():
-        subprocess.run(
-            [launcher, "server", "stop", page],
-            env=env,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        subprocess.run([launcher, "server", "stop", page], env=env, check=True)
         server.wait(timeout=5)
 
     request.addfinalizer(stop)

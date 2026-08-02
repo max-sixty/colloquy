@@ -76,12 +76,20 @@ def test_tour_walks_the_interactive_and_live_workflows():
 
 def test_demo_recording_drives_the_browser_journey(tmp_path):
     output = tmp_path / "demo.gif"
+    # Not check=True: with the streams captured, the CalledProcessError it raises
+    # names the command and the exit status and takes both of them down with it,
+    # so a browser step that timed out and a server that never bound report the
+    # same nothing. This is `open_page`'s complaint about "Failed to load
+    # resource" one file over — carry what failed into the failure.
     recorded = subprocess.run(
         [ROOT / "scripts" / "record-demo.sh", "--output", output],
-        check=True,
         capture_output=True,
         text=True,
     )
 
+    assert recorded.returncode == 0, (
+        f"record-demo.sh exited {recorded.returncode}\n"
+        f"{recorded.stdout}{recorded.stderr}".rstrip()
+    )
     assert recorded.stdout.strip() == f"Recorded {output}"
     assert output.read_bytes().startswith(b"GIF89a")

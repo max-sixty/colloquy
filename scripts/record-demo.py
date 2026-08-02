@@ -22,6 +22,7 @@ import io
 import json
 import shutil
 import subprocess
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -31,7 +32,14 @@ from playwright.sync_api import Page, sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 COLLOQUY = ROOT / "plugins" / "colloquy" / "bin" / "colloquy"
-PAGE_DIR = ROOT / ".tmp" / "demo-recording"
+# A staging directory of this recording's own. A fixed one under the repo was
+# shared by every concurrent run, and two recordings sharing a page directory
+# drive one page: `server run` finds the other's server.json and serves that
+# page rather than starting, both read one event log, and whichever finishes
+# first deletes the directory out from under the other. That last one is how it
+# surfaced — `page init` vendoring a widget into a path that stopped existing
+# between the write and the rename.
+PAGE_DIR = Path(tempfile.mkdtemp(prefix="colloquy-demo-"))
 DEFAULT_OUTPUT = ROOT / "docs" / "demo.gif"
 GIF_SIZE = (1120, 700)
 # The size docs/index.html states on the <img>, so a reshoot needs no edit there.
@@ -133,17 +141,25 @@ new version as the checks finish.</p>
 """
 
 
-def run_colloquy(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [str(COLLOQUY), *args],
-        check=True,
-        text=True,
-        capture_output=True,
-    )
+def run_colloquy(*args: str) -> None:
+    """A colloquy command, or a failure carrying what it said.
+
+    Not `check=True`: the CalledProcessError it raises names the command and the
+    exit status, and the streams it captured — the only thing that says what went
+    wrong — die with it, because nothing prints them. Every step of staging the
+    recording is one of these, so that is what the suite gets to report."""
+    done = subprocess.run([str(COLLOQUY), *args], text=True, capture_output=True)
+    if done.returncode:
+        raise RuntimeError(
+            f"colloquy {' '.join(args)} exited {done.returncode}\n"
+            f"{done.stdout}{done.stderr}".rstrip()
+        )
 
 
 def stop_server() -> None:
-    """Best-effort cleanup for a prior or partially started recording."""
+    """Bring this recording's server down. Silent and best-effort because it runs
+    in the teardown: a cleanup that failed loudly there would be reporting over
+    the failure it is cleaning up after."""
     subprocess.run(
         [str(COLLOQUY), "server", "stop", str(PAGE_DIR)],
         check=False,
@@ -153,10 +169,15 @@ def stop_server() -> None:
     )
 
 
-def wait_for_server() -> str:
+def wait_for_server(server: subprocess.Popen[str]) -> str:
     """The page's URL, once it answers on it. Probed the way the browser about to
     open it will: the key rides in the query, and a jar carries it through the
-    redirect to the latest version, which drops one."""
+    redirect to the latest version, which drops one.
+
+    A server that never answers is diagnosed from its own streams, not from the
+    silence: `server run` refuses an address it can't bind by printing why and
+    exiting, so waiting the deadline out and reporting "did not start" describes
+    the symptom over an explanation already written."""
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         try:
@@ -167,8 +188,14 @@ def wait_for_server() -> str:
             opener.open(info["url"], timeout=1).close()
             return info["url"]
         except (FileNotFoundError, json.JSONDecodeError, OSError):
+            if server.poll() is not None:
+                out, err = server.communicate()
+                raise RuntimeError(
+                    f"colloquy server run exited {server.returncode}\n"
+                    f"{out}{err}".rstrip()
+                ) from None
             time.sleep(0.05)
-    raise RuntimeError("demo server did not start")
+    raise RuntimeError(f"the demo server never answered for {PAGE_DIR}")
 
 
 def wait_for_comment() -> str:
@@ -216,17 +243,25 @@ def start_waiter() -> subprocess.Popen[str]:
     return subprocess.Popen(
         [str(COLLOQUY), "review", "wait", str(PAGE_DIR)],
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         text=True,
     )
 
 
 def receive(waiter: subprocess.Popen[str]) -> list[dict]:
-    """Read one complete wait result and acknowledge exactly what entered this driver."""
-    stdout, _ = waiter.communicate(timeout=10)
+    """Read one complete wait result and acknowledge exactly what entered this driver.
+
+    Every way a wait ends without reviewer events is one it has already explained
+    on stderr — a review closed under it, a server it can't reach and won't
+    restart twice — so the empty result is the symptom and that line is the
+    reason."""
+    stdout, stderr = waiter.communicate(timeout=10)
     events = [json.loads(line) for line in stdout.splitlines() if line.strip()]
     if not events:
-        raise RuntimeError("the demo waiter returned without reviewer events")
+        raise RuntimeError(
+            f"the demo waiter exited {waiter.returncode} with no reviewer events\n"
+            f"{stderr}".rstrip()
+        )
     run_colloquy("review", "ack", str(PAGE_DIR), str(events[-1]["seq"]))
     return events
 
@@ -432,58 +467,66 @@ def main() -> None:
     args = parser.parse_args()
     output = args.output.resolve()
 
-    PAGE_DIR.parent.mkdir(parents=True, exist_ok=True)
-    if PAGE_DIR.exists():
-        stop_server()
-        shutil.rmtree(PAGE_DIR)
-    run_colloquy("page", "init", str(PAGE_DIR))
-    (PAGE_DIR / "versions" / "v1.html").write_text(demo_page(1), encoding="utf-8")
-    run_colloquy(
-        "version",
-        "publish",
-        str(PAGE_DIR),
-        "--version",
-        "1",
-        "--text",
-        "Migration rehearsal started; 2 of 4 checks complete",
-    )
-    run_colloquy("review", "state", str(PAGE_DIR), "waiting")
-    server = subprocess.Popen(
-        [str(COLLOQUY), "server", "run", str(PAGE_DIR)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    waiters: list[subprocess.Popen[str]] = []
+    # Two scopes because there are two things to give back and they start at
+    # different moments: the staging directory exists from here on, the processes
+    # only once the server is up. Staging inside the outer one is what makes a
+    # `page init` that fails cost nothing on disk — there is no next run to sweep
+    # up after it now that each recording stages somewhere of its own.
     try:
-        url = wait_for_server()
-        waiters.append(start_waiter())
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(channel="chrome")
-            context = browser.new_context(
-                viewport={"width": GIF_SIZE[0], "height": GIF_SIZE[1]},
-                color_scheme="light",
-                reduced_motion="reduce",
-            )
-            page = context.new_page()
-            page.goto(url)
-            frames, durations = record(page, waiters)
-            # The GIF is written before the stills are shot, so a still that can't
-            # be staged costs only itself. The other order lost a good recording to
-            # a timeout in the shot after it.
-            write_gif(frames, durations, output)
-            shoot_stills(browser, url, waiters, output.parent)
-            browser.close()
-    finally:
-        for waiter in waiters:
-            if waiter.poll() is None:
-                waiter.terminate()
-                waiter.wait(timeout=5)
-        stop_server()
+        run_colloquy("page", "init", str(PAGE_DIR))
+        (PAGE_DIR / "versions" / "v1.html").write_text(demo_page(1), encoding="utf-8")
+        run_colloquy(
+            "version",
+            "publish",
+            str(PAGE_DIR),
+            "--version",
+            "1",
+            "--text",
+            "Migration rehearsal started; 2 of 4 checks complete",
+        )
+        run_colloquy("review", "state", str(PAGE_DIR), "waiting")
+        # Piped rather than discarded, so `wait_for_server` has the server's own
+        # account of a start that didn't take. Nothing drains these while it
+        # serves, which is safe only because the handler logs nothing: the URL is
+        # the one line it writes.
+        server = subprocess.Popen(
+            [str(COLLOQUY), "server", "run", str(PAGE_DIR)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        waiters: list[subprocess.Popen[str]] = []
         try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.terminate()
-            server.wait(timeout=5)
+            url = wait_for_server(server)
+            waiters.append(start_waiter())
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(channel="chrome")
+                context = browser.new_context(
+                    viewport={"width": GIF_SIZE[0], "height": GIF_SIZE[1]},
+                    color_scheme="light",
+                    reduced_motion="reduce",
+                )
+                page = context.new_page()
+                page.goto(url)
+                frames, durations = record(page, waiters)
+                # The GIF is written before the stills are shot, so a still that
+                # can't be staged costs only itself. The other order lost a good
+                # recording to a timeout in the shot after it.
+                write_gif(frames, durations, output)
+                shoot_stills(browser, url, waiters, output.parent)
+                browser.close()
+        finally:
+            for waiter in waiters:
+                if waiter.poll() is None:
+                    waiter.terminate()
+                    waiter.wait(timeout=5)
+            stop_server()
+            try:
+                server.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.terminate()
+                server.wait(timeout=5)
+    finally:
         shutil.rmtree(PAGE_DIR)
     try:
         shown = output.relative_to(ROOT)

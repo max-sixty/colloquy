@@ -12,8 +12,16 @@ from playwright.sync_api import sync_playwright
 # home, so every `bin/colloquy` subprocess would otherwise resolve its
 # dependencies from scratch — a second per call. Pinning the cache leaves the
 # isolation to the thing it is for, which is the colloquy overlay.
+#
+# `--color never` because uv colours this path even into a pipe, and a cache
+# directory wearing an escape sequence is a relative path starting with one: the
+# pinning silently stopped happening, and every run built a second cache inside
+# the checkout under a directory named for the escape itself.
 UV_CACHE = subprocess.run(
-    ["uv", "cache", "dir"], capture_output=True, text=True, check=True
+    ["uv", "--color", "never", "cache", "dir"],
+    capture_output=True,
+    text=True,
+    check=True,
 ).stdout.strip()
 
 _spec = importlib.util.spec_from_file_location(

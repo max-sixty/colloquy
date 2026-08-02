@@ -76,6 +76,21 @@ silently rather than failing — which is the vacuous pass, wearing the same gre
 real one. Pin the count across reloads, and check a new gate by putting each bug back and
 watching it fail; a gate that has only ever passed has been tested for nothing.
 
+## A captured stream nothing reads is a failure that names nothing
+
+`check=True` over `capture_output=True` raises a `CalledProcessError` naming the command
+and the exit status, and the streams it captured — the only account of what went wrong —
+die with it, because nothing prints them. The demo recording failed that way three times
+in one stress run and the cause stayed unconfirmable until the streams came back: two runs
+sharing a page directory, with the traceback that said so sitting in `e.stderr` the whole
+time.
+
+Pytest already captures a child's output and prints it under the failure, so capture it in
+the test only where something reads it, and where something does, assert the status
+yourself with both streams in the message. A script the test drives owes the same of every
+process it starts, or the test reports a silence the script was told the reason for. The
+browser end of this is `open_page`, whose console says only "Failed to load resource".
+
 ## Reloading is not resetting
 
 The panel's open state is in `localStorage` and the reading position and drafts are in
