@@ -350,14 +350,18 @@ twelve-character metric value ran 287px out of a 138px card. `overflow-wrap: bre
 a thing each new widget has to remember.
 
 What it costs is that the browser will also break a run that was never meant to come apart,
-so those say `white-space: nowrap`. Two kinds have needed it. A chip is one shape, and
-`cq-tree` writes its name and badges with no whitespace between them at all — a line is one
-word to the breaker, which split a two-character badge down the middle and drew half the
-pill on each line. And a visually-hidden box is a box one pixel wide, which every word
-overflows: the line announcing a passage's comments laid itself out a character to the row,
-down the document and through the paragraphs under it. Nothing showed, because the clip
-holds. `render_version` reads where words are rather than whether they showed, and that is
-what found it.
+so those say `white-space: nowrap`. `cq-tree` writes its name and badges with no whitespace
+between them at all — a line is one word to the breaker, which split a two-character badge
+down the middle and drew half the pill on each line.
+
+A box clipped to nothing takes no part in this. One pixel wide, it overflows on every
+word — the line announcing a passage's comments lays itself out a character to the row,
+down the document and through the paragraphs under it — and nothing comes of that. The
+clip holds, so nothing shows, and a reader is handed the words from the document rather
+than from the lines they fell into, which is what the aria snapshot in
+`test_a_commented_block_says_so_to_a_screen_reader` reads back. What those characters did
+reach was a reading of the page that took them for the page's own words, and that is
+answered where the question is asked — whose words are these, in `COVERED_WORDS`.
 
 ## A widget's form follows its content, and each form states its own rules
 

@@ -1219,16 +1219,35 @@ def test_the_gate_passes_a_page_that_carries_a_comment(browser, serve):
     line saying how many comments are on a passage wears the same marker and sits wherever
     the passage does — inside the widget, when that is where the comment was made. Unless
     the gate knows the difference, one comment on an option is a page nobody can hand over,
-    and every page the sweep above renders is a page with no comments on it."""
+    and every page the sweep above renders is a page with no comments on it.
+
+    The pass hunting words drawn on other words has to know the same difference, and knows
+    it the same way — by whose words these are. That line is clipped to nothing and
+    checkVisibility answers for display, visibility and opacity, so it reads as drawn, and
+    its characters fall down the document through the paragraphs under the passage. Holding
+    it out is the only thing keeping this page clean, so the reading is taken twice: once
+    as the gate runs it, and once with the line no longer held out, where it has to
+    report."""
     url = serve(INLINE_PAGE, anchored=[("opt-a", "Keep the store")])
     page, errors = open_page(browser, url)
     # Vacuous otherwise: the gate has to be looking at a page that has the line on it.
     page.wait_for_function(
         "() => document.querySelectorAll('.cq-mark-note').length === 1"
     )
+    # The same reading with the line no longer held out, taken while the page is up.
+    # Named out of the selector rather than cut from it, so the reading stays this
+    # reading however the classes it holds out are ordered or added to.
+    unheld = interact.COVERED_WORDS.replace(".cq-mark-note", ".cq-holds-nothing")
+    reported = page.evaluate(unheld)
     assert errors == []
     page.close()
     assert interact.render_version(browser, url) == []
+    assert unheld != interact.COVERED_WORDS, (
+        "the pass no longer holds the line out by name"
+    )
+    assert any("1 comment" in found for found in reported), (
+        "the line falls on nobody, so a gate that never looked would pass this too"
+    )
 
 
 def test_check_render_refuses_what_only_a_browser_can_see(serve):

@@ -817,13 +817,8 @@ style.textContent = `
      level. It becomes a skip-link-style control on focus: a reader who hears the count
      can enter its first thread, then j/k through the rest. user-select keeps it out of
      a selection, so the runtime's own words never enter a captured quote. */
-  /* nowrap completes the hiding: a box one pixel wide is a box every word overflows, and
-     the page says a run with nothing else to break on may break anywhere it likes — so
-     the line laid itself out a character to the row, down the document and through the
-     paragraphs under it. Nothing showed, since the clip holds; the render gate reads
-     where words are rather than whether they showed, and said so. */
   .cq-mark-note { position: absolute; width: 1px; height: 1px; padding: 0; border: 0;
-    overflow: hidden; clip-path: inset(50%); user-select: none; white-space: nowrap; }
+    overflow: hidden; clip-path: inset(50%); user-select: none; }
   .cq-mark-note:focus-visible { position: fixed; z-index: 9050; top: 48px; left: 8px;
     width: auto; height: auto; padding: 6px 10px; overflow: visible; clip-path: none;
     border: 1px solid var(--accent); border-radius: var(--r); background: var(--card);
@@ -925,7 +920,7 @@ style.textContent = `
     .cq-quote.detached { border-left-style: dashed; border-left-color: var(--border-2); color: var(--muted-2); cursor: default; }
     /* Out of the picture, still in the accessibility tree — see the composer's quote in
        paintAnchors for the one thing that wears this and why. */
-    .cq-unseen { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .cq-unseen { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); }
     .cq-msg { margin: 8px 0; }
     .cq-msg-head { display: flex; gap: 6px; align-items: baseline; }
     .cq-msg-head b { font-size: 12.5px; }
@@ -984,7 +979,7 @@ style.textContent = `
       border-radius: var(--r); opacity: 0; transition: opacity .25s, right .18s ease; pointer-events: none; }
     .cq-toast.show { opacity: .95; }
     .cq-toast.clickable { pointer-events: auto; cursor: pointer; }
-    .cq-live { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .cq-live { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     .cq-help { position: fixed; z-index: 9300; top: 50%; left: 50%; transform: translate(-50%, -50%);
       width: min(420px, calc(100vw - 32px)); max-height: 80vh; overflow-y: auto; display: none;
       background: var(--card); border: 1px solid var(--border-2); border-radius: var(--r);

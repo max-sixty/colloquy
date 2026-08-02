@@ -4598,13 +4598,14 @@ UNREACHABLE_WORDS = """() => {
     // control. `label` is among those because a radio and a checkbox have nowhere else
     // to put their words: a button holds its own, an input cannot, and HTML's answer is
     // an element beside it. cq-shot's flip is radios, so that it keeps working in a page
-    // whose script is gone.
+    // whose script is gone. The line counting a passage's comments is one of these too —
+    // the runtime builds it through `offer`, as a widget builds its own.
     const CONTROL = `${FORM}, label, [data-cq-offer]`;
     const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
         const el = n.parentElement;
         if (!n.data.trim() || !el.closest('.cq-ui') || !widget(el)) continue;
-        if (speaks(el) || el.closest(`${CONTROL}, .cq-mark-note`)) continue;
+        if (speaks(el) || el.closest(CONTROL)) continue;
         found.push(`${at(widget(el))} puts ${JSON.stringify(n.data.trim().slice(0, 40))} `
                    + `under .cq-ui, where no comment can reach it`);
     }
