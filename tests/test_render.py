@@ -1531,7 +1531,7 @@ def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
     # inside its own container, which is exactly why a scoped rule could not reach it.
     assert {c for c in surface["global"] if c.startswith("cq-")} == {
         "cq-ui", "cq-btn", "cq-over-mark", "cq-mark-el", "cq-pending", "cq-ins-block",
-        "cq-mark-note",
+        "cq-mark-note", "cq-aiming",
     }, "the document-level class surface changed: widen the shared vocabulary on purpose"
     page.close()
 

@@ -4380,6 +4380,17 @@ PAPER_WORDS = """() => {
 # adjacent blocks can round into each other by a hair. The runtime's layer is skipped
 # too: it floats over the document on purpose, and where that costs the reviewer a press
 # it is the hit test that says so.
+#
+# The layer is in two places, so the skip names both. The line counting a passage's
+# comments lives inside the page's own elements by design — it is what a screen reader
+# hears where a painted mark says nothing — and it is clipped to nothing on screen.
+# checkVisibility answers for display, visibility and opacity and knows nothing of
+# clip-path, so that line read as drawn, and its text lays out past the 1px box holding
+# it: an anchor on a container put "1 comment" across the paragraph below the widget and
+# failed the gate on a page with nothing wrong with it. Asking for `.cq-chrome` alone was
+# the class standing in for the question, the same substitution the anchor pass made with
+# `.cq-ui`. The question is whose words these are, and the runtime marks its own in both
+# of the places it writes them.
 COVERED_WORDS = """() => {
     const runs = [];
     const at = el => { const named = el.closest('[id]');
@@ -4388,7 +4399,7 @@ COVERED_WORDS = """() => {
     const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
         const el = n.parentElement;
-        if (!n.data.trim() || el.closest('.cq-chrome')) continue;
+        if (!n.data.trim() || el.closest('.cq-chrome, .cq-mark-note')) continue;
         if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
         const range = document.createRange();
         range.selectNodeContents(n);

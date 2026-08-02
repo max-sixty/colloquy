@@ -724,7 +724,29 @@ style.textContent = `
   ::highlight(cq-pending) { background-color: color-mix(in srgb, var(--accent) 20%, transparent);
     text-decoration: underline 2px solid var(--accent); text-underline-offset: 3px; }
   body.cq-over-mark { cursor: pointer; }
-  .cq-mark-el { outline: 2px solid var(--quote-bar); outline-offset: 3px; border-radius: 2px; cursor: pointer; }
+  /* PROTOTYPE (element comments) #2. Holding ⌥ changes what a click means, and nothing on
+     the page said so — the route's whole cost is that it is invisible. Two things say it
+     now, and the division matters: the item under the pointer outlines, which answers
+     *which*, and the cursor only has to stop saying "text". crosshair was tried and read
+     as a cross — an icon for closing something, not for aiming at it — and every other
+     stock cursor names an action this isn't (copy, alias, a menu). So the plain arrow: it
+     is the one thing that says "not a text selection" without claiming to be anything
+     else, and the outline is already carrying the meaning.
+     One declaration on the body, inherited, rather than a rule reaching down the page:
+     naming .cq-chrome here to hold the chrome out would put that class into the
+     document-level surface, and the class the chrome is rooted at is not vocabulary a
+     widget wears. The chrome holds itself out instead, from inside its own scope. */
+  body.cq-aiming { cursor: default; }
+  /* Inside the element's own box, never outside it. An outline drawn outside is at the
+     mercy of whatever encloses it: a board scrolls (overflow-x: auto), its columns sit
+     flush against its padding box on three sides, and the mark on a column was clipped
+     down to the single vertical line that fell in the gutter — for the posted amber as
+     much as for the draft accent, so a comment on a container was a comment with no
+     visible mark at all. Containers are exactly what element anchoring is for, so this
+     is not a corner. Drawn inside, the mark cannot be clipped by an ancestor and cannot
+     stand on a neighbour, and it takes the element's own corner radius rather than
+     restating one, which is what the radius here used to override. */
+  .cq-mark-el { outline: 2px solid var(--quote-bar); outline-offset: -2px; cursor: pointer; }
   .cq-mark-el.cq-pending { outline-color: var(--accent); cursor: auto; }
   /* The one runtime word living inside the page's own elements, so its hiding cannot
      come from the chrome's scoped .cq-unseen — the same recipe, restated at document
@@ -765,6 +787,11 @@ style.textContent = `
        itself, which is why this can't be written at document level without widening
        the shared vocabulary by a class only the runtime ever wears. */
     @media print { :scope { display: none; } }
+    /* cursor inherits, and the page's own body may be armed for ⌥ aiming — which is a
+       statement about the document, not about this layer. Stated here so the document
+       side needs no mention of this container's class, which would widen the shared
+       vocabulary by a name no widget ever wears. */
+    :scope { cursor: auto; }
     .cq-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 9000; height: 42px;
       display: flex; align-items: center; gap: 10px; padding: 0 14px;
       background: var(--veil); backdrop-filter: blur(6px); border-bottom: 1px solid var(--rule); }
@@ -858,6 +885,11 @@ style.textContent = `
     .cq-details { margin-top: 6px; color: var(--muted); background: none; border: none; padding: 0; }
     .cq-system { color: var(--ok); margin: 8px 0; }
     .cq-fab { position: fixed; z-index: 9100; display: none; }
+    /* PROTOTYPE (element comments) #1. Its own fixed row beside the button, so the button
+       keeps its box. The chips are quieter than it because the words are still the ordinary
+       case — an item is what the reviewer reaches for when the words are not the point. */
+    .cq-fab-chain { position: fixed; z-index: 9100; display: none; gap: 4px; }
+    .cq-fab-item { background: var(--card); color: var(--ink-2); }
     .cq-composer { position: fixed; z-index: 9100; display: none; width: 320px; background: var(--card);
       border: 1px solid var(--border-2); border-radius: var(--r); box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 10px; }
     /* A stranded quote is the whole passage, and the box is 320px wide. Only while showing:
@@ -974,6 +1006,12 @@ generalRow.append(generalInput, generalSend);
 panel.append(panelHead, threadsBox, generalRow);
 
 const fab = el("button", "cq-ui cq-btn primary cq-fab", "💬 Comment");
+// PROTOTYPE (element comments) #1: a chip per element enclosing the selection, in its own
+// row beside the button rather than inside it. The 💬 keeps its words, its width and its
+// place, because the reviewer's aim is on it before the chips are drawn — a control that
+// changes size under a pointer already reaching for it is what the press sweep exists to
+// catch. See "pointing at an item" below.
+const fabChain = el("div", "cq-ui cq-fab-chain");
 const composer = el("div", "cq-ui cq-composer");
 // Only ever shown detached — paintAnchors, its one writer, keeps it out of sight while
 // the page is marking the passage. cq-ui on the element itself, not just on the composer
@@ -1011,7 +1049,9 @@ helpEl.tabIndex = -1; // focused on open, so the dialog isn't silent to a screen
 // this container. A div, not a cq-* element — the render gate reads a cq-* ancestor
 // as "inside a widget", and the runtime's layer is inside none.
 const chromeRoot = el("div", "cq-chrome");
-chromeRoot.append(banner, panel, fab, composer, toastEl, liveEl, helpEl);
+chromeRoot.append(
+  banner, panel, fab, fabChain, composer, toastEl, liveEl, helpEl,
+);
 document.body.append(chromeRoot);
 const basePaddingTop = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
 document.body.style.paddingTop = basePaddingTop + 42 + "px";
@@ -1338,8 +1378,21 @@ function msgNode(m) {
 // anchor points at an element (a diagram or image commented on by click rather than by
 // selection) and names its section instead of quoting it. One function, so the two places
 // can't come to say it differently.
-const anchorLabel = (anchor) =>
-  anchor?.quote ? `“${anchor.quote}”` : anchor?.section ? `§ ${anchor.section}` : "";
+//
+// PROTOTYPE (element comments) #4: an id is the page's name for an item and not the
+// reviewer's. `card-migration` says nothing they wrote, and once pointing at an item is an
+// ordinary gesture rather than the diagram's special case, most anchors in the panel read
+// that way. So an element anchor is labelled with the item's own opening words, and falls
+// back to the id where this version has no such element. The kind goes before the words
+// because the two together are a name, where the words alone read as a quote the thread
+// does not hold.
+function anchorLabel(anchor) {
+  if (anchor?.quote) return `“${anchor.quote}”`;
+  if (!anchor?.section) return "";
+  const item = document.getElementById(anchor.section);
+  const says = itemSays(item);
+  return `§ ${says ? `${itemWord(item)} · ${says}` : anchor.section}`;
+}
 
 function threadNode(t, syncs, num) {
   const div = el("div", "cq-thread");
@@ -2009,6 +2062,73 @@ function restoreView(view) {
 // of the line saying a passage carries a comment are all this question.
 const sectionOf = (anchor) =>
   anchor.section ? document.getElementById(anchor.section) : null;
+
+// ---------- PROTOTYPE: pointing at an item ----------
+// Still the playground's rather than the product's: two gestures reach an item, and which
+// of them survives is not settled. A third — a rule in the margin raised by hovering —
+// was tried and cut: too strong for what it offered, and placed at the item's own left
+// edge, which is the page's margin only for an item the page happens to have left-aligned.
+//
+// What they all write is the anchor colloquy already has. A comment on an element is
+// {section: <id>} with no quote — the shape a click on a diagram has made since the
+// beginning — so none of this is a new representation, a new event field, or a second
+// thing for a version to carry. What is missing is only the gesture, and how the panel
+// says which item a thread is on.
+//
+// An item is an element the author gave an id, outside the runtime's own layer and
+// outside the panel (a reply's frozen widget markup carries ids of its own). `version
+// check` holds every id across versions, which is exactly why an anchor naming one
+// survives a rewrite that takes a quote down with it.
+const ITEM = "[id]:not(.cq-ui)";
+// Innermost first: a card, then its column, then the board, then the section holding it.
+// The chain is the answer to "which of these did you mean" — the reviewer is shown it
+// rather than the runtime guessing a level for them.
+function itemChain(node) {
+  const chain = [];
+  let at = node?.nodeType === 1 ? node : node?.parentElement;
+  for (; at; at = at.parentElement)
+    if (at.matches(ITEM) && !inChrome(at) && !inUi(at)) chain.push(at);
+  return chain;
+}
+// What to call an item, in a word the reviewer is about to press. A widget names itself:
+// its tag minus the prefix is already the word the vocabulary chose ("card", "option",
+// "column"), so the twelfth widget gets a name here without core hearing about it.
+//
+// The page's own elements have no such word. A tag is markup rather than English, and the
+// chips read "⬚ p" and "⬚ section" over ordinary prose — which names the thing to a
+// browser and to nobody else. So HTML's tags get the nouns a reader would use, and an
+// unlisted one falls back to its tag, which is worse than a word and better than nothing.
+const HTML_WORDS = {
+  p: "paragraph", li: "item", tr: "row", td: "cell", th: "cell", figure: "figure",
+  blockquote: "quote", pre: "block", section: "section", article: "section",
+  aside: "aside", ul: "list", ol: "list", dl: "list", table: "table", details: "note",
+  h1: "heading", h2: "heading", h3: "heading", h4: "heading", h5: "heading", h6: "heading",
+};
+function itemWord(item) {
+  if (!item) return "";
+  const tag = item.tagName.toLowerCase();
+  if (tag.startsWith("cq-")) return tag.slice(3);
+  // A <pre> is a block of something and the something is in the markup: the documented
+  // shape for source is <pre><code class="language-*">, and a <pre> without the <code> is
+  // the shape for what isn't source — a transcript, a stack trace, command output. So the
+  // word is read rather than assumed, and a reviewer who calls it a code block is offered
+  // one.
+  if (tag === "pre") return item.querySelector(":scope > code") ? "code" : "block";
+  return HTML_WORDS[tag] ?? tag;
+}
+// The item's own opening words, read the way anchoring reads everything else — so a label
+// a widget declared as the page speaking is in it and the runtime's own chrome (the hidden
+// "2 comments" line) is not. Cut back to a word boundary and marked as cut, because a label
+// ending mid-word reads as a quote that lost its tail rather than as a name for the thing.
+const ITEM_SAYS_CAP = 52;
+function itemSays(item) {
+  if (!item || inChrome(item)) return "";
+  const whole = quoteFrom(textNodesUnder(item));
+  if ([...whole].length <= ITEM_SAYS_CAP) return whole;
+  const short = cut(whole, 0, ITEM_SAYS_CAP);
+  const at = short.lastIndexOf(" ");
+  return (at > ITEM_SAYS_CAP / 2 ? short.slice(0, at) : short).trimEnd() + "…";
+}
 function resolveAnchor(anchor, text) {
   // An element anchor asks a different question — whether the section is still on the
   // reviewer's page — and the whole page is not an answer to it. Existence alone isn't
@@ -2041,6 +2161,15 @@ const NOTE = "cq-mark-note";
 const marked = new Map(); // thread id -> (Range | Element)[]: the pass's record of what it drew
 let pendingMarks = []; // the same record for the open composer's own passage
 let pendingOutline = null; // the element the open composer outlines, owned by nobody else
+// PROTOTYPE (element comments): the item a control under the pointer would comment on,
+// shown in the same outline before anything is committed. paintAnchors is the one thing
+// that marks the page, so this is state it reads rather than a second painter.
+let previewItem = null;
+function previewOn(item) {
+  if (previewItem === item) return;
+  previewItem = item;
+  paintAnchors();
+}
 const pointer = { x: -1, y: -1 }; // last seen, so a repaint can re-answer the hover
 let hovering = null;
 let hoverQueued = false;
@@ -2128,7 +2257,19 @@ function paintAnchors() {
   // The composer's own passage, in the accent rather than the marker amber, so a draft
   // never reads as a posted comment. An element a thread already outlines keeps the posted
   // colour: there is one outline to give, and the thread's is the clickable one.
-  const draft = composerOpen && pendingAnchor && resolveAnchor(pendingAnchor, text);
+  //
+  // PROTOTYPE (element comments): before the composer exists, the same outline answers
+  // "which of these am I about to comment on". A blind user offered `card`, `column` and
+  // `board` had no way to tell them apart, because the outline only arrived after the
+  // click — so the chain the chips exist to offer could not actually be chosen between.
+  // What a control would take is the same fact as what the composer holds, one step
+  // earlier, so it is the same paint rather than a second one.
+  const draft =
+    composerOpen && pendingAnchor
+      ? resolveAnchor(pendingAnchor, text)
+      : previewItem && !settledAway(previewItem)
+        ? { element: previewItem }
+        : null;
   // Where the draft's passage is, recorded the way the threads' is, because placeComposer
   // has to keep the box off it. An element a thread already outlines belongs in the record
   // too — it is marked, just in the posted colour rather than the accent.
@@ -2284,10 +2425,31 @@ function placeComposer(left, top) {
   const onScreen = (r) => r.bottom > 48 && r.top < innerHeight;
   const behindBox = (r) =>
     r.left >= box.left && r.right <= box.right && r.top >= box.top && r.bottom <= box.bottom;
-  if (!rects.length || rects.some((r) => onScreen(r) && !behindBox(r))) return;
+  // PROTOTYPE (element comments): a passage and a thing want different rules here, because
+  // they are read differently. Covering the tail of a quote is fine — the reviewer has read
+  // it, and the mark still names where it starts. A card, a column, a metric is judged as
+  // one object, so a box standing anywhere on it is a box between them and the thing they
+  // are writing about. ⌥-click made that plain by opening the composer under the pointer,
+  // which is by definition inside what was clicked.
+  const whole = pendingMarks.some((where) => where instanceof Element);
+  const touching = (r) =>
+    r.left < box.right && box.left < r.right && r.top < box.bottom && box.top < r.bottom;
+  const clear = whole
+    ? !rects.some((r) => onScreen(r) && touching(r))
+    : rects.some((r) => onScreen(r) && !behindBox(r));
+  if (!rects.length || clear) return;
   const below = Math.max(...rects.map((r) => r.bottom)) + 8;
   const above = Math.min(...rects.map((r) => r.top)) - box.height - 8;
-  place(composer, left, below + box.height <= innerHeight - 8 ? below : above);
+  if (below + box.height <= innerHeight - 8) return place(composer, left, below);
+  if (above >= 48) return place(composer, left, above);
+  // Neither end has room, which a tall thing reaches easily: a board column is most of the
+  // viewport before the box's own height is counted, and place()'s clamp would haul the box
+  // back over it — the very thing this is here to stop. So go beside instead. The document
+  // is one column with margin either side, and that margin is the room a box this size
+  // wants; the side is chosen rather than clamped, for the reason the fab's chips are.
+  const rightOf = Math.max(...rects.map((r) => r.right)) + 8;
+  const leftOf = Math.min(...rects.map((r) => r.left)) - box.width - 8;
+  place(composer, rightOf + box.width <= rightEdge() ? rightOf : leftOf, top);
 }
 // The anchor a selection makes: the enclosing section, and the passage as the document
 // holds it. Not the selection's own toString(), which is what the reader sees rendered —
@@ -2382,12 +2544,63 @@ function placeFab(left, top) {
   if (y !== box.top) place(fab, left, y);
 }
 let fabAnchor = null;
-function showFab(anchor, left, top) {
+// PROTOTYPE #1: the chips state everything else this gesture could be about — each item
+// enclosing the passage, innermost first. Whatever the button itself already carries is
+// dropped from them, so no level is offered twice. Capped, because a card inside a column
+// inside a board inside a section is already four and the reviewer is choosing rather than
+// browsing. Placed off the button's own box after it has been placed, so the chips follow
+// wherever placeFab moved it to clear the page's controls.
+const CHAIN_CAP = 3;
+function showFab(anchor, left, top, items = []) {
   fabAnchor = anchor;
   fab.style.display = anchor ? "block" : "none";
-  if (anchor) {
-    placeFab(left, top);
+  fabChain.textContent = "";
+  fabChain.style.display = "none";
+  if (!anchor) return;
+  placeFab(left, top);
+  const carried = anchor.quote ? null : anchor.section;
+  const chips = items.filter((item) => item.id !== carried).slice(0, CHAIN_CAP);
+  if (!chips.length) return;
+  for (const item of chips) {
+    const chip = el("button", "cq-btn cq-fab-item", `⬚ ${itemWord(item)}`);
+    chip.title = `Comment on this ${itemWord(item)} — ${itemSays(item) || item.id}`;
+    chip.onclick = () => openOnItem(item, fabChain.getBoundingClientRect());
+    // Which of the chain this chip means, shown before it is pressed rather than after.
+    chip.onmouseenter = () => previewOn(item);
+    chip.onmouseleave = () => previewOn(null);
+    chip.onfocus = () => previewOn(item);
+    chip.onblur = () => previewOn(null);
+    fabChain.append(chip);
   }
+  fabChain.style.display = "flex";
+  placeChain();
+}
+// Where the chips go, which is anywhere except on top of the button they are beside.
+// `place`'s clamp is the wrong tool here: it keeps a box on screen by sliding it left,
+// and a row of chips slid left lands on the 💬 and eats the press aimed at it. So the
+// side is chosen rather than clamped — right of the button, else left of it, else under
+// it — and only the vertical is clamped, where sliding covers nothing.
+function placeChain() {
+  const box = fab.getBoundingClientRect();
+  const width = fabChain.offsetWidth;
+  const right = box.right + 6;
+  const left = box.left - width - 6;
+  const [x, y] =
+    right + width <= rightEdge()
+      ? [right, box.top]
+      : left >= 8
+        ? [left, box.top]
+        : [Math.max(8, Math.min(box.left, rightEdge() - width)), box.bottom + 6];
+  fabChain.style.left = x + "px";
+  fabChain.style.top =
+    Math.max(48, Math.min(y, innerHeight - fabChain.offsetHeight - 8)) + "px";
+}
+// One way in to the composer for all three routes, so they cannot come to write different
+// anchors for the same press.
+function openOnItem(item, from) {
+  showFab(null);
+  previewOn(null); // the composer's own mark takes over from here
+  openComposer({ section: item.id }, "", from.left, from.top);
 }
 // The button follows the selection. What counts as one is measured on the quote it would
 // store, not on the selection's own toString(): those are different strings, and gating on
@@ -2416,8 +2629,18 @@ function updateFab(visual) {
   const sel = pageSelection();
   const anchor = sel ? selectionAnchor(sel) : null;
   if (anchor?.quote.length >= MIN_QUOTE)
-    showFab(anchor, ...beside(sel.getRangeAt(0).getBoundingClientRect()));
-  else if (visual) showFab({ section: visual.id }, visual.x + 6, visual.y - 40);
+    showFab(
+      anchor,
+      ...beside(sel.getRangeAt(0).getBoundingClientRect()),
+      itemChain(sel.getRangeAt(0).commonAncestorContainer),
+    );
+  else if (visual)
+    showFab(
+      { section: visual.id },
+      visual.x + 6,
+      visual.y - 40,
+      itemChain(document.getElementById(visual.id)),
+    );
   else if (fabAnchor?.quote) showFab(null);
   return true;
 }
@@ -2439,7 +2662,7 @@ document.addEventListener("keyup", (ev) => {
   setTimeout(updateFab);
 });
 document.addEventListener("mousedown", (ev) => {
-  if (!ev.target.closest?.(".cq-fab, .cq-composer")) {
+  if (!ev.target.closest?.(".cq-fab, .cq-fab-chain, .cq-composer")) {
     showFab(null);
     // Keep a composer that holds unsent text open so a stray click can't drop it;
     // Cancel discards explicitly, and the draft is persisted regardless. Asked only of a
@@ -2464,8 +2687,44 @@ document.addEventListener("mousedown", (ev) => {
 // What a click anchors on whole, because there is no text in it to select: the page's
 // own pictures, and every widget that declares it renders as one.
 const visualSel = () => [...tagsDeclaring((e) => e["x-visual"]), "svg", "img", "figure"].join(",");
+// PROTOTYPE #2: while ⌥ is held the page shows what a click would take — the item under
+// the pointer wears the same outline a chip's hover paints, so the chord answers "which"
+// the way every other route does rather than asking the reviewer to click and find out.
+// `aiming` is the state and the class is a rendering of it; nothing reads the class back.
+//
+// It comes off on blur as well as on keyup, because the chord that switches windows takes
+// the keyup with it, and a page left armed under nobody's hand is a claim the reviewer
+// cannot dismiss.
+let aiming = false;
+// What the pointer is over, asked of the page rather than of an event, so pressing the key
+// without moving the mouse answers too — the reviewer holds ⌥ to find out what they would
+// get, and the answer cannot wait for them to jiggle the mouse first.
+function aimedItem() {
+  if (composerOpen || pointer.x < 0) return null;
+  const at = document.elementFromPoint(pointer.x, pointer.y);
+  return at && !inChrome(at) ? (itemChain(at)[0] ?? null) : null;
+}
+function setAiming(on) {
+  aiming = on;
+  document.body.classList.toggle("cq-aiming", on);
+  previewOn(on ? aimedItem() : null);
+}
+addEventListener("keydown", (ev) => ev.key === "Alt" && setAiming(true));
+addEventListener("keyup", (ev) => ev.key === "Alt" && setAiming(false));
+addEventListener("blur", () => setAiming(false));
+document.addEventListener("mousemove", () => aiming && previewOn(aimedItem()));
 document.addEventListener("click", (ev) => {
   if (inUi(ev.target)) return;
+  // PROTOTYPE #2: ⌥-click means the item under the pointer, whatever it holds. It costs
+  // the page no chrome and the reviewer no selection, and it reaches an item whose words
+  // are all inside a control. What it costs is discoverability, which the cursor answers
+  // as far as a modifier can: while the key is down the pointer says a click will aim.
+  if (ev.altKey) {
+    const item = itemChain(ev.target)[0];
+    if (!item) return;
+    ev.preventDefault();
+    return openOnItem(item, { left: ev.clientX + 6, top: ev.clientY - 40 });
+  }
   const threadId = markAt(ev.clientX, ev.clientY);
   if (threadId) {
     setPanel(true);
@@ -2639,6 +2898,9 @@ function replyTo(n) {
 
 const KEYS = [
   { key: "c", label: "c", does: "Comment on the selection — or toggle the panel", run: commentKey },
+  // PROTOTYPE (element comments) #2: no key of its own. Holding the key shows what it
+  // would take, so what the reference is still the only place for is that the key exists.
+  { label: "⌥ click", does: "Comment on the item under the pointer, whole" },
   { key: "d", label: "d / u", does: "Half a page down / up", run: () => stepPage(0.5) },
   { key: "u", run: () => stepPage(-0.5) },
   { key: "j", label: "j / k", does: "Next / previous open thread", run: () => stepThread(1) },
