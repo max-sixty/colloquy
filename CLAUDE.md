@@ -22,14 +22,16 @@ the work itself.
 ## Stage
 
 Early, and nothing owes the past anything. Nobody uses it, so there is no deployment,
-no database, no page or log older than the directory in front of you that has to keep
-working, and no command, flag, or name anyone has learned. Backward compatibility
-carries zero weight: rename and reshape whenever the better form is clear, and treat a
-name being the current one as no argument for keeping it. So the trade between
-simplicity and robustness is already settled — take the simpler code. A guard earns
-its place only where the state it defends against is reachable and there is something
-to do about it; the rest is complexity paid for a case that never arrives, and it
-reads as if the impossible were expected.
+no database, no command, flag, or name anyone has learned, and no page or log on disk
+with a claim on new code, whichever version of the layer minted it. Stale state is
+deleted and made again, which is the whole of the migration, so no code reads the old
+shape and a page a change breaks is neither a caveat to raise nor a follow-up to file.
+Backward compatibility carries zero weight: rename and reshape whenever the better
+form is clear, and treat a name being the current one as no argument for keeping it.
+So the trade between simplicity and robustness is already settled — take the simpler
+code. A guard earns its place only where the state it defends against is reachable and
+there is something to do about it; the rest is complexity paid for a case that never
+arrives, and it reads as if the impossible were expected.
 
 Where data enters, check it once and completely: browser events at `POST /api/event`,
 authored markup at `version check`, a replayed action's detail in the widget's own
