@@ -176,9 +176,7 @@ def wait_for_comment() -> str:
     log = PAGE_DIR / "comments.jsonl"
     while time.monotonic() < deadline:
         events = [
-            json.loads(line)
-            for line in log.read_text().splitlines()
-            if line.strip()
+            json.loads(line) for line in log.read_text().splitlines() if line.strip()
         ]
         comments = [event for event in events if event["kind"] == "comment"]
         if comments:
@@ -402,12 +400,9 @@ def shoot_stills(
         context.close()
 
 
-def write_gif(
-    frames: list[Image.Image], durations: list[int], output: Path
-) -> None:
+def write_gif(frames: list[Image.Image], durations: list[int], output: Path) -> None:
     palette_frames = [
-        frame.quantize(colors=192, method=Image.Quantize.MEDIANCUT)
-        for frame in frames
+        frame.quantize(colors=192, method=Image.Quantize.MEDIANCUT) for frame in frames
     ]
     output.parent.mkdir(parents=True, exist_ok=True)
     palette_frames[0].save(

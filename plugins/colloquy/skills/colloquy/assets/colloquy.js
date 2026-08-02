@@ -170,6 +170,8 @@ export function settle(promise) {
 // Every key is a scope one of the bundled grammars actually emits; operator, punctuation,
 // emphasis and strong are left out on purpose, because a block reads calmer with its
 // syntax uncoloured and its prose unstyled.
+// A line per role rather than per scope, so the collapse is what the table shows.
+// prettier-ignore
 const SYNTAX_ROLE = {
   comment: "cm", quote: "cm", doctag: "cm",
   keyword: "kw", literal: "kw", built_in: "kw", type: "kw", bullet: "kw",
@@ -186,7 +188,8 @@ const SYNTAX_ROLE = {
 let hljsReady;
 // Lazily, once, and only on a page that has code to color: the bundle is 75 KB and most
 // pages have none.
-const loadHljs = () => (hljsReady ??= import("/vendor/highlight.esm.js").then((m) => m.default));
+const loadHljs = () =>
+  (hljsReady ??= import("/vendor/highlight.esm.js").then((m) => m.default));
 
 // Code as [{text, role}] — a flat run in source order, roles from the table above and
 // null where the block's own ink is the answer. A list rather than markup because the two
@@ -198,9 +201,14 @@ const loadHljs = () => (hljsReady ??= import("/vendor/highlight.esm.js").then((m
 export async function syntax(source, lang) {
   const hljs = await loadHljs();
   if (!hljs.getLanguage(lang))
-    throw new Error(`no ${lang} in /vendor/highlight.esm.js — rebuild it from registry.json's $languages.names`);
+    throw new Error(
+      `no ${lang} in /vendor/highlight.esm.js — rebuild it from registry.json's $languages.names`,
+    );
   const holder = document.createElement("template");
-  holder.innerHTML = hljs.highlight(source, { language: lang, ignoreIllegals: true }).value;
+  holder.innerHTML = hljs.highlight(source, {
+    language: lang,
+    ignoreIllegals: true,
+  }).value;
   const tokens = [];
   const walk = (node, role) => {
     for (const child of node.childNodes) {
@@ -218,7 +226,7 @@ export async function syntax(source, lang) {
   // the file holds — and a dropped character slides all three with nothing on screen
   // saying so. Failing here fails the block soft to its plain source, and the console
   // error fails the render gate, which is what puts it in front of whoever can drop the
-// language declaration.
+  // language declaration.
   if (tokens.map((t) => t.text).join("") !== source)
     throw new Error(`the ${lang} tokenizer did not return the source unchanged`);
   return tokens;
@@ -227,7 +235,8 @@ export async function syntax(source, lang) {
 // hljs writes `class="hljs-title function_"`: the scope prefixed, then its sub-scopes bare.
 // Only the prefixed one is a scope name, and `char.escape` arrives as `hljs-char escape_`.
 const roleOf = (el) => {
-  for (const cls of el.classList) if (cls.startsWith("hljs-")) return SYNTAX_ROLE[cls.slice(5)];
+  for (const cls of el.classList)
+    if (cls.startsWith("hljs-")) return SYNTAX_ROLE[cls.slice(5)];
   return undefined;
 };
 
@@ -271,7 +280,9 @@ export function tokenLines(tokens) {
 // is the registry's ($languages), beside the enum it has to agree with, rather than a
 // second list here.
 export const langForPath = (path) =>
-  registry.$languages.paths[path.split("/").pop().split(".").slice(1).pop()?.toLowerCase()];
+  registry.$languages.paths[
+    path.split("/").pop().split(".").slice(1).pop()?.toLowerCase()
+  ];
 
 // The page's own code blocks: <pre><code class="language-python">. The class is the
 // universal one — what every Markdown renderer emits, and what `version check` validates — so a
@@ -293,7 +304,10 @@ async function highlightBlocks(root) {
     try {
       code.replaceChildren(...synNodes(await syntax(code.textContent, lang)));
     } catch (err) {
-      console.error(`colloquy: <pre><code class="language-${lang}"> failed to highlight`, err);
+      console.error(
+        `colloquy: <pre><code class="language-${lang}"> failed to highlight`,
+        err,
+      );
     }
   }
 }
@@ -416,7 +430,9 @@ document.addEventListener(
 // — the loud direction, in front of whoever wrote the label.
 export function relabel(node, label, { says } = {}) {
   if (typeof says !== "boolean")
-    throw new TypeError(`relabel(${label}): say whether this label is the page speaking`);
+    throw new TypeError(
+      `relabel(${label}): say whether this label is the page speaking`,
+    );
   node.textContent = label;
   node.dataset.cqGen = "1";
   node.toggleAttribute("data-cq-said", says);
@@ -465,7 +481,14 @@ export function sayBox(el, hint) {
     sendBtn: send,
     save: (v) => saveDraft(ctx, v),
     send: async (text) => {
-      if (!(await post({ kind: "comment", version: VNUM, anchor: { section: el.id }, text })))
+      if (
+        !(await post({
+          kind: "comment",
+          version: VNUM,
+          anchor: { section: el.id },
+          text,
+        }))
+      )
         return;
       saveDraft(ctx, "");
       ta.value = "";
@@ -543,7 +566,9 @@ const tagsDeclaring = (holds) =>
     .map(([tag]) => tag);
 
 function rememberPassageParts() {
-  for (const tag of tagsDeclaring((entry) => entry["x-upgrade"] && !entry["x-verbatim"]))
+  for (const tag of tagsDeclaring(
+    (entry) => entry["x-upgrade"] && !entry["x-verbatim"],
+  ))
     for (const root of document.querySelectorAll(tag)) {
       opaquePassageRoots.add(root);
       for (const child of root.children) opaquePassageParts.add(child);
@@ -552,10 +577,15 @@ function rememberPassageParts() {
 
 async function upgradeWidgets() {
   const response = await fetch("/registry.json");
-  if (!response.ok) throw new Error(`colloquy: registry failed to load (${response.status})`);
+  if (!response.ok)
+    throw new Error(`colloquy: registry failed to load (${response.status})`);
   registry = await response.json();
-  if (!registry.$events?.kinds || !registry.$languages?.names ||
-      !registry.$languages?.paths || !registry.$tones?.names)
+  if (
+    !registry.$events?.kinds ||
+    !registry.$languages?.names ||
+    !registry.$languages?.paths ||
+    !registry.$tones?.names
+  )
     throw new Error("colloquy: registry lacks $events, $languages or $tones");
   rememberPassageParts();
   await Promise.all(
@@ -613,7 +643,8 @@ function renderSaid(root) {
     for (const el of root.querySelectorAll(tag))
       for (const [attr, edge] of Object.entries(entry["x-says"])) {
         const text = el.getAttribute(attr);
-        if (text === null || el.querySelector(`:scope > [data-cq-said="${attr}"]`)) continue;
+        if (text === null || el.querySelector(`:scope > [data-cq-said="${attr}"]`))
+          continue;
         const span = document.createElement("span");
         span.dataset.cqSaid = attr;
         span.dataset.cqGen = "1";
@@ -624,8 +655,13 @@ function renderSaid(root) {
         // other words: an option's risk chip landed past the pick mark that ends a compact
         // row — outside the apparatus the row runs to its line's end, and on the far side
         // of it from where the file's reading of that same version has it.
-        const own = [...el.childNodes].filter((n) => !(n.nodeType === 1 && n.dataset.cqGen));
-        el.insertBefore(span, (edge === "before" ? own[0] : own.at(-1)?.nextSibling) ?? null);
+        const own = [...el.childNodes].filter(
+          (n) => !(n.nodeType === 1 && n.dataset.cqGen),
+        );
+        el.insertBefore(
+          span,
+          (edge === "before" ? own[0] : own.at(-1)?.nextSibling) ?? null,
+        );
       }
   }
 }
@@ -639,12 +675,16 @@ function renderSaid(root) {
 // the content first, because a box holding a control of its own is already reachable
 // (cq-board, through its grips) and a tab stop over the whole board would stand between
 // the reviewer and the card they were tabbing to.
-const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+  'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
 function reachScrollers(root) {
   for (const el of root.querySelectorAll("*")) {
     if (el.tabIndex >= 0) continue;
     const style = getComputedStyle(el);
-    if (!/^(auto|scroll)$/.test(style.overflowX) && !/^(auto|scroll)$/.test(style.overflowY))
+    if (
+      !/^(auto|scroll)$/.test(style.overflowX) &&
+      !/^(auto|scroll)$/.test(style.overflowY)
+    )
       continue;
     if (!el.querySelector(FOCUSABLE)) el.tabIndex = 0;
   }
@@ -1004,10 +1044,15 @@ versionSelect.setAttribute("aria-label", "Version");
 // A blank control beside a rendered page is a page still loading, which this one
 // isn't; the width is the theme's either way, so the list arriving moves nothing.
 if (VNUM !== null)
-  versionSelect.append(Object.assign(document.createElement("option"),
-                                     { value: VNUM, textContent: `v${VNUM}` }));
+  versionSelect.append(
+    Object.assign(document.createElement("option"), {
+      value: VNUM,
+      textContent: `v${VNUM}`,
+    }),
+  );
 const toggleBtn = el("button", "cq-btn cq-comments", "Comments");
-toggleBtn.title = "Show or hide the comment panel (c toggles, Esc closes, ? lists all keys)";
+toggleBtn.title =
+  "Show or hide the comment panel (c toggles, Esc closes, ? lists all keys)";
 toggleBtn.setAttribute("aria-expanded", "false");
 const approveBtn = el("button", "cq-btn primary cq-signoff", "✓ Looks good");
 approveBtn.title = "Approve this work; the page stays open for follow-up";
@@ -1084,9 +1129,7 @@ helpEl.tabIndex = -1; // focused on open, so the dialog isn't silent to a screen
 // this container. A div, not a cq-* element — the render gate reads a cq-* ancestor
 // as "inside a widget", and the runtime's layer is inside none.
 const chromeRoot = el("div", "cq-chrome");
-chromeRoot.append(
-  banner, panel, fab, fabChain, composer, toastEl, liveEl, helpEl,
-);
+chromeRoot.append(banner, panel, fab, fabChain, composer, toastEl, liveEl, helpEl);
 document.body.append(chromeRoot);
 const basePaddingTop = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
 document.body.style.paddingTop = basePaddingTop + 42 + "px";
@@ -1349,7 +1392,8 @@ function buildThreads() {
   return [...threads.values()];
 }
 
-const escapeHtml = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const escapeHtml = (s) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 // Lazily, like the tokenizer: a page is usually handed over before anyone has said
 // anything, and one with no messages never pays the parse. poll() awaits this before
@@ -1364,7 +1408,10 @@ let renderMarkdown;
 let markedReady;
 const loadMarked = () =>
   (markedReady ??= import("/vendor/marked.esm.js").then((m) => {
-    const md = new m.Marked({ breaks: true, renderer: { html: (t) => escapeHtml(t.text) } });
+    const md = new m.Marked({
+      breaks: true,
+      renderer: { html: (t) => escapeHtml(t.text) },
+    });
     renderMarkdown = (text) => md.parse(text);
   }));
 
@@ -1623,7 +1670,9 @@ const SAID = "[data-cq-said]";
 // the answer once, and it is a look — which is how a reviewer ended up reading a heading
 // they could not point at, twice.
 const inUi = (node) => {
-  const near = (node?.nodeType === 1 ? node : node?.parentElement)?.closest(`.cq-ui, ${SAID}`);
+  const near = (node?.nodeType === 1 ? node : node?.parentElement)?.closest(
+    `.cq-ui, ${SAID}`,
+  );
   return Boolean(near) && !near.matches(SAID);
 };
 // A different question the class also used to answer, and not a question about looks at
@@ -1633,7 +1682,8 @@ const inUi = (node) => {
 // in the panel over it. `.cq-ui` reached those elements and a widget's own controls out
 // on the page besides, which is the look standing in for the place.
 const inChrome = (node) => Boolean(node?.closest(".cq-chrome"));
-const TEXT_BLOCK = "p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dd,dt,figcaption,summary";
+const TEXT_BLOCK =
+  "p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dd,dt,figcaption,summary";
 // The two readings, each one predicate over a text node and named for the question it
 // answers. Anchoring reads what the reviewer can point at: not the runtime's own words —
 // `inUi`, which a declared label answers for itself — and nothing behind a wall no label
@@ -1652,7 +1702,8 @@ const authored = () => (n) => !n.parentElement?.closest(GENERATED);
 // ownerDocument, not document: the diff walks a base version parsed into its own document.
 function textNodesUnder(rootEl, accepts = quotable()) {
   const walker = rootEl.ownerDocument.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (accepts(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
+    acceptNode: (n) =>
+      accepts(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
   });
   const segments = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode())
@@ -1861,7 +1912,8 @@ function spanOf(origin, lo, hi) {
     const at = origin[i];
     if (!at) continue;
     const last = out.at(-1);
-    if (last && last.node === at.node && last.end === at.offset) last.end = at.offset + 1;
+    if (last && last.node === at.node && last.end === at.offset)
+      last.end = at.offset + 1;
     else out.push({ node: at.node, start: at.offset, end: at.offset + 1 });
   }
   return out;
@@ -1907,8 +1959,8 @@ const holds = ({ origin, fences }, at, want, before) => {
 // context.
 function neighbourhood(origin, fences, at, want, before) {
   const edge = before
-    ? fences.filter((f) => f <= at).at(-1) ?? 0
-    : fences.find((f) => f >= at) ?? origin.length;
+    ? (fences.filter((f) => f <= at).at(-1) ?? 0)
+    : (fences.find((f) => f >= at) ?? origin.length);
   for (let raw = want * 2; ; raw *= 2) {
     const lo = before ? Math.max(edge, at - raw) : at;
     const hi = before ? at : Math.min(edge, at + raw);
@@ -1978,9 +2030,7 @@ function findQuote(text, quote, anchor, within) {
   const words = quote.trim().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const pattern = new RegExp(
-    words
-      .map((w) => [...w].map(escape).join(`${EDGE}*`))
-      .join(`[\\s${EDGE}]+`),
+    words.map((w) => [...w].map(escape).join(`${EDGE}*`)).join(`[\\s${EDGE}]+`),
     "g",
   );
   // A unique exact-context occurrence wins. If no context survives, a sole quote
@@ -1995,7 +2045,9 @@ function findQuote(text, quote, anchor, within) {
     const stop = at.index + at[0].length;
     if (
       within &&
-      !(within.contains(origin[at.index].node) && within.contains(origin[stop - 1].node))
+      !(
+        within.contains(origin[at.index].node) && within.contains(origin[stop - 1].node)
+      )
     )
       continue;
     candidates.push(at);
@@ -2003,9 +2055,11 @@ function findQuote(text, quote, anchor, within) {
       exact.push(at);
   }
   const found =
-    exact.length === 1 ? exact[0] : exact.length === 0 && candidates.length === 1
-      ? candidates[0]
-      : null;
+    exact.length === 1
+      ? exact[0]
+      : exact.length === 0 && candidates.length === 1
+        ? candidates[0]
+        : null;
   // The characters the match covers, cut out of the index the same way a neighbourhood is —
   // walking the segments a second time to rebuild the span would be a second answer to
   // "which text is this", and the two disagree wherever an edge falls inside the match.
@@ -2067,7 +2121,8 @@ function captureView() {
 // A restore jumps rather than glides: a page is free to set scroll-behavior: smooth, and
 // animating from the top of a fresh document is worse than the jump it replaces. Moving to
 // a mark the reader asked for is the other case, and says so.
-const jumpBy = (dy, behavior = "instant") => pageScroller.scrollBy({ top: dy, behavior });
+const jumpBy = (dy, behavior = "instant") =>
+  pageScroller.scrollBy({ top: dy, behavior });
 function restoreView(view) {
   const text = pageText();
   const found = view.quote && resolveAnchor(view, text);
@@ -2135,10 +2190,28 @@ function itemChain(node) {
 // browser and to nobody else. So HTML's tags get the nouns a reader would use, and an
 // unlisted one falls back to its tag, which is worse than a word and better than nothing.
 const HTML_WORDS = {
-  p: "paragraph", li: "item", tr: "row", td: "cell", th: "cell", figure: "figure",
-  blockquote: "quote", pre: "block", section: "section", article: "section",
-  aside: "aside", ul: "list", ol: "list", dl: "list", table: "table", details: "note",
-  h1: "heading", h2: "heading", h3: "heading", h4: "heading", h5: "heading", h6: "heading",
+  p: "paragraph",
+  li: "item",
+  tr: "row",
+  td: "cell",
+  th: "cell",
+  figure: "figure",
+  blockquote: "quote",
+  pre: "block",
+  section: "section",
+  article: "section",
+  aside: "aside",
+  ul: "list",
+  ol: "list",
+  dl: "list",
+  table: "table",
+  details: "note",
+  h1: "heading",
+  h2: "heading",
+  h3: "heading",
+  h4: "heading",
+  h5: "heading",
+  h6: "heading",
 };
 function itemWord(item) {
   if (!item) return "";
@@ -2239,8 +2312,8 @@ function noteMarks(noted) {
       const id = note.cqThreads.find((threadId) =>
         threadsBox.querySelector(`:scope > .cq-thread[data-id="${threadId}"]`),
       );
-      const thread = id &&
-        threadsBox.querySelector(`:scope > .cq-thread[data-id="${id}"]`);
+      const thread =
+        id && threadsBox.querySelector(`:scope > .cq-thread[data-id="${id}"]`);
       if (!thread) return;
       thread.focus({ preventScroll: true });
       thread.scrollIntoView({ behavior: SCROLL, block: "nearest" });
@@ -2344,7 +2417,10 @@ function paintAnchors() {
   // A draft outranks a posted mark where they overlap; the hover outranks both, so the
   // passage under the pointer answers the pointer.
   CSS.highlights.set(MARK, new Highlight(...posted));
-  CSS.highlights.set(PENDING, Object.assign(new Highlight(...pending), { priority: 2 }));
+  CSS.highlights.set(
+    PENDING,
+    Object.assign(new Highlight(...pending), { priority: 2 }),
+  );
   noteMarks(noted); // and the same fact for a reader who can't see any of it
   refreshHover(); // the ranges moved; whether one is under the pointer may have too
 
@@ -2373,8 +2449,8 @@ function markAt(x, y) {
       const hit =
         where instanceof Range
           ? [...where.getClientRects()].some(
-            (r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom,
-          )
+              (r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom,
+            )
           : where.contains(over);
       if (hit) return id;
     }
@@ -2439,7 +2515,8 @@ pageScroller.addEventListener("scroll", refreshHover, { passive: true });
 const rightEdge = () => innerWidth - (panelOpen ? panel.offsetWidth : 0) - 8;
 function place(node, left, top) {
   node.style.left = Math.max(8, Math.min(left, rightEdge() - node.offsetWidth)) + "px";
-  node.style.top = Math.max(48, Math.min(top, innerHeight - node.offsetHeight - 8)) + "px";
+  node.style.top =
+    Math.max(48, Math.min(top, innerHeight - node.offsetHeight - 8)) + "px";
 }
 // The composer, which has one more thing to stay clear of: its own mark. That mark is the
 // only thing naming the passage the box is about, so a box standing on all of it is a box
@@ -2452,7 +2529,9 @@ function place(node, left, top) {
 function placeComposer(left, top) {
   place(composer, left, top);
   const rects = pendingMarks.flatMap((where) =>
-    where instanceof Range ? [...where.getClientRects()] : [where.getBoundingClientRect()],
+    where instanceof Range
+      ? [...where.getClientRects()]
+      : [where.getBoundingClientRect()],
   );
   const box = composer.getBoundingClientRect();
   // Vertically only: the document never scrolls sideways and body's margin keeps it clear
@@ -2460,7 +2539,10 @@ function placeComposer(left, top) {
   // this box is standing on.
   const onScreen = (r) => r.bottom > 48 && r.top < innerHeight;
   const behindBox = (r) =>
-    r.left >= box.left && r.right <= box.right && r.top >= box.top && r.bottom <= box.bottom;
+    r.left >= box.left &&
+    r.right <= box.right &&
+    r.top >= box.top &&
+    r.bottom <= box.bottom;
   // PROTOTYPE (element comments): a passage and a thing want different rules here, because
   // they are read differently. Covering the tail of a quote is fine — the reviewer has read
   // it, and the mark still names where it starts. A card, a column, a metric is judged as
@@ -2469,7 +2551,10 @@ function placeComposer(left, top) {
   // which is by definition inside what was clicked.
   const whole = pendingMarks.some((where) => where instanceof Element);
   const touching = (r) =>
-    r.left < box.right && box.left < r.right && r.top < box.bottom && box.top < r.bottom;
+    r.left < box.right &&
+    box.left < r.right &&
+    r.top < box.bottom &&
+    box.top < r.bottom;
   const clear = whole
     ? !rects.some((r) => onScreen(r) && touching(r))
     : rects.some((r) => onScreen(r) && !behindBox(r));
@@ -2536,7 +2621,9 @@ function selectionAnchor(sel) {
   // just before a space stored a suffix beginning with one — a character no occurrence can
   // produce, so every one failed at the first comparison.
   const tail =
-    quote === whole ? suffix : cut(cut(whole, QUOTE_CAP, Infinity).trimStart(), 0, CONTEXT);
+    quote === whole
+      ? suffix
+      : cut(cut(whole, QUOTE_CAP, Infinity).trimStart(), 0, CONTEXT);
   return {
     section,
     quote,
@@ -2722,7 +2809,8 @@ document.addEventListener("mousedown", (ev) => {
 // the two are one function.
 // What a click anchors on whole, because there is no text in it to select: the page's
 // own pictures, and every widget that declares it renders as one.
-const visualSel = () => [...tagsDeclaring((e) => e["x-visual"]), "svg", "img", "figure"].join(",");
+const visualSel = () =>
+  [...tagsDeclaring((e) => e["x-visual"]), "svg", "img", "figure"].join(",");
 // PROTOTYPE #2: while ⌥ is held the page shows what a click would take — the item under
 // the pointer wears the same outline a chip's hover paints, so the chord answers "which"
 // the way every other route does rather than asking the reviewer to click and find out.
@@ -2900,8 +2988,7 @@ const syncGeneral = wireInput(generalInput, {
   },
 });
 
-approveBtn.onclick = () =>
-  post({ kind: "done", version: VNUM, text: "Looks good" });
+approveBtn.onclick = () => post({ kind: "done", version: VNUM, text: "Looks good" });
 endReviewBtn.onclick = () => post({ kind: "close", version: VNUM });
 
 // ---------- keyboard ----------
@@ -2933,22 +3020,49 @@ function replyTo(n) {
 }
 
 const KEYS = [
-  { key: "c", label: "c", does: "Comment on the selection — or toggle the panel", run: commentKey },
+  {
+    key: "c",
+    label: "c",
+    does: "Comment on the selection — or toggle the panel",
+    run: commentKey,
+  },
   // PROTOTYPE (element comments) #2: no key of its own. Holding the key shows what it
   // would take, so what the reference is still the only place for is that the key exists.
   { label: "⌥ click", does: "Comment on the item under the pointer, whole" },
   { key: "d", label: "d / u", does: "Half a page down / up", run: () => stepPage(0.5) },
   { key: "u", run: () => stepPage(-0.5) },
-  { key: "j", label: "j / k", does: "Next / previous open thread", run: () => stepThread(1) },
+  {
+    key: "j",
+    label: "j / k",
+    does: "Next / previous open thread",
+    run: () => stepThread(1),
+  },
   { key: "k", run: () => stepThread(-1) },
   { label: "Enter", does: "On a focused thread: write a reply" },
-  { key: "g", label: "g 1–9", does: "Reply to the nth open thread", run: () => setLeader(true) },
-  { key: "v", label: "v", does: "Highlight changes since the previous version",
-    run: () => diffBase && diffBtn.onclick() },
-  { key: "[", label: "[ / ]", does: "Older / newer version", run: () => stepVersion(-1) },
+  {
+    key: "g",
+    label: "g 1–9",
+    does: "Reply to the nth open thread",
+    run: () => setLeader(true),
+  },
+  {
+    key: "v",
+    label: "v",
+    does: "Highlight changes since the previous version",
+    run: () => diffBase && diffBtn.onclick(),
+  },
+  {
+    key: "[",
+    label: "[ / ]",
+    does: "Older / newer version",
+    run: () => stepVersion(-1),
+  },
   { key: "]", run: () => stepVersion(1) },
   { key: "?", label: "?", does: "This key reference", run: toggleHelp },
-  { label: "Esc", does: "Back out one layer: an armed g, help, composer, reply, panel" },
+  {
+    label: "Esc",
+    does: "Back out one layer: an armed g, help, composer, reply, panel",
+  },
   { label: SEND_KEYS, does: "Send, in the focused composer" },
 ];
 
@@ -3168,8 +3282,12 @@ const diffBlockSel = () =>
 // versions of one passage and is already its own mark. Plus svg, drawn by either.
 const diffOpaqueSel = () =>
   [
-    ...tagsDeclaring((e) => e["x-upgrade"] && !e["x-verbatim"] && e["x-content"] === "data"),
-    ...new Set(tagsDeclaring((e) => e["x-retired-when"]).map((tag) => registry[tag]["x-parent"])),
+    ...tagsDeclaring(
+      (e) => e["x-upgrade"] && !e["x-verbatim"] && e["x-content"] === "data",
+    ),
+    ...new Set(
+      tagsDeclaring((e) => e["x-retired-when"]).map((tag) => registry[tag]["x-parent"]),
+    ),
     "svg",
   ].join(",");
 let diffBase = null;
@@ -3240,7 +3358,8 @@ async function applyDiff(baseVersion) {
         // The element the change reads on: the option now picked, or the moved
         // card itself.
         const target =
-          (spec.record.kind === "attribute" && now && document.getElementById(now)) || el;
+          (spec.record.kind === "attribute" && now && document.getElementById(now)) ||
+          el;
         if (!target.classList.contains("cq-ins-block")) {
           target.classList.add("cq-ins-block");
           diffMarked.push(target);
@@ -3270,7 +3389,11 @@ diffBtn.onclick = async () => {
     const n = await applyDiff(diffBase);
     setDiff(true);
     const baseLabel = `v${diffBase}`;
-    showToast(n ? `${n} changed passage${n === 1 ? "" : "s"} since ${baseLabel}` : `No text changes since ${baseLabel}`);
+    showToast(
+      n
+        ? `${n} changed passage${n === 1 ? "" : "s"} since ${baseLabel}`
+        : `No text changes since ${baseLabel}`,
+    );
   } catch {
     showToast("Couldn't load the previous version");
   }
@@ -3301,7 +3424,8 @@ function renderStatus(state) {
   // `review state` after acknowledgement — that mark outliving minutes is a dropped
   // pickup, not a long turn.
   const grace = status.handoff ? HANDOFF_GRACE_MS : WORKING_GRACE_MS;
-  const quiet = Boolean(status.ts) && Date.now() - new Date(status.ts).getTime() > grace;
+  const quiet =
+    Boolean(status.ts) && Date.now() - new Date(status.ts).getTime() > grace;
   let cls = "away",
     text = "",
     showAge = false;
@@ -3325,7 +3449,10 @@ function renderStatus(state) {
           "Start one in the terminal to pick it up.",
         ]
       : quiet
-        ? [`${agentName()} last checked in ${ago(status.ts)}.`, "Nudge it in the terminal."]
+        ? [
+            `${agentName()} last checked in ${ago(status.ts)}.`,
+            "Nudge it in the terminal.",
+          ]
         : [`${agentName()} isn't watching right now.`, "It picks them up next turn."];
     // Reviewer updates land in the append-only log either way; what changes is when
     // they're read.
@@ -3384,8 +3511,7 @@ function renderVersions(state) {
     return;
   }
   showNews(latestChip, behind);
-  if (behind)
-    latestChip.textContent = `New version available → open v${latestVersion}`;
+  if (behind) latestChip.textContent = `New version available → open v${latestVersion}`;
   const idx = current === null ? -1 : state.versions.indexOf(current);
   diffBase = idx > 0 ? state.versions[idx - 1] : null;
   showNews(diffBtn, Boolean(diffBase));
@@ -3469,9 +3595,14 @@ export function shallowSigs(root) {
     if (!el.id) continue;
     const attrs = [...el.attributes]
       .filter((a) => !PAGE_PAINT_ATTRIBUTES.has(a.name))
-      .map((a) => `${a.name}=${a.value}`).sort().join(" ");
+      .map((a) => `${a.name}=${a.value}`)
+      .sort()
+      .join(" ");
     const kin = [...(el.parentElement?.children ?? [])].filter((c) => c.id);
-    sigs.set(el.id, `${el.tagName} [${attrs}] in=${el.parentElement?.id ?? ""}#${kin.indexOf(el)}`);
+    sigs.set(
+      el.id,
+      `${el.tagName} [${attrs}] in=${el.parentElement?.id ?? ""}#${kin.indexOf(el)}`,
+    );
   }
   return sigs;
 }
@@ -3490,7 +3621,11 @@ function applyActions() {
   let applied = false;
   const deferredWidgets = new Set();
   for (const e of events) {
-    if (e.kind !== "action" || appliedActions.has(e.seq) || deferredWidgets.has(e.widget))
+    if (
+      e.kind !== "action" ||
+      appliedActions.has(e.seq) ||
+      deferredWidgets.has(e.widget)
+    )
       continue;
     const el = document.getElementById(e.widget);
     // Every terminal action is decided here and never looked at again. This pass runs
@@ -3537,9 +3672,7 @@ function applyActions() {
     // markup already held the state; only a page widget can contradict its
     // version, so a reply's widget (.cq-chrome, no version) goes unrecorded.
     const wrote = [...new Set([...before.keys(), ...now.keys()])].filter(
-      (id) =>
-        before.get(id) !== now.get(id) &&
-        !inChrome(document.getElementById(id)),
+      (id) => before.get(id) !== now.get(id) && !inChrome(document.getElementById(id)),
     );
     if (wrote.length) {
       const prior =
@@ -3585,7 +3718,10 @@ function stateSpecs() {
 // both readings collapse to the sorted ids, and comparing them stays a !==.
 function domFacet(el, record) {
   if (record.kind === "attribute")
-    return [...el.querySelectorAll(`[${record.attr}]`)].map((o) => o.id).sort().join(" ");
+    return [...el.querySelectorAll(`[${record.attr}]`)]
+      .map((o) => o.id)
+      .sort()
+      .join(" ");
   if (record.kind === "position") return el.closest(record.within)?.id ?? null;
   return quoteFrom(textNodesUnder(el)); // "body": the words, read the way a quote is
 }
@@ -3595,7 +3731,12 @@ function domFacet(el, record) {
 // its sorted ids where it is a set.
 function foldedFacet(e, record) {
   const value = e.detail[record.value];
-  if (record.kind === "body") return [...String(value ?? "").replace(/\s+/g, " ").trim()].join("");
+  if (record.kind === "body")
+    return [
+      ...String(value ?? "")
+        .replace(/\s+/g, " ")
+        .trim(),
+    ].join("");
   if (record.kind === "attribute") return [...value].sort().join(" ");
   return value ?? null;
 }
@@ -3673,7 +3814,8 @@ async function poll() {
   if (eventSeq < lastEventSeq) return;
   // Messages render from Markdown; have the renderer in hand before the panel
   // builds a body, so msgNode stays synchronous.
-  if (nextEvents.some((e) => e.kind === "comment" || e.kind === "reply")) await loadMarked();
+  if (nextEvents.some((e) => e.kind === "comment" || e.kind === "reply"))
+    await loadMarked();
   events = nextEvents;
   agent = state.agent || "Claude";
   renderStatus(state);
@@ -3700,9 +3842,8 @@ async function poll() {
       (e) => e.author === "claude" && e.kind === "reply",
     );
     if (agentMsgCount >= 0 && agentReplies.length > agentMsgCount && !panelOpen)
-      showToast(
-        `${agentReplies.at(-1).agent || "Agent"} replied — open Comments`,
-        () => setPanel(true),
+      showToast(`${agentReplies.at(-1).agent || "Agent"} replied — open Comments`, () =>
+        setPanel(true),
       );
     agentMsgCount = agentReplies.length;
   }
@@ -3765,7 +3906,8 @@ upgradeWidgets().then(() => {
   if (savedComposer)
     try {
       const { text, anchor, suggest } = JSON.parse(savedComposer);
-      if (text) openComposer(anchor, text, (innerWidth - 320) / 2, 64, Boolean(suggest));
+      if (text)
+        openComposer(anchor, text, (innerWidth - 320) / 2, 64, Boolean(suggest));
     } catch {}
   poll();
   setInterval(poll, POLL_MS);

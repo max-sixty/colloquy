@@ -1,0 +1,2 @@
+# Ruff's default width, so the repo's Python and JS wrap at the same place.
+printWidth: 88

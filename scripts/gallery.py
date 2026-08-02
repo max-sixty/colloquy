@@ -87,11 +87,15 @@ def build() -> str:
         scan.feed(text)
         for i in ["gal-" + stem] + scan.ids:
             if i in owner:
-                sys.exit(f"id '{i}' is in both {owner[i]} and {source.name}; rename one")
+                sys.exit(
+                    f"id '{i}' is in both {owner[i]} and {source.name}; rename one"
+                )
             owner[i] = source.name
         if text.count("<main>") != 1 or text.count("</main>") != 1:
             sys.exit(f"{source.name}: expected exactly one <main>…</main>")
-        body = text[text.index("<main>") + len("<main>") : text.rindex("</main>")].strip()
+        body = text[
+            text.index("<main>") + len("<main>") : text.rindex("</main>")
+        ].strip()
         # The tab's label is the example's own eyebrow, title-cased, so embedding both
         # makes the panel say its name twice. On screen the strip carries it; wherever
         # there is no strip — unupgraded, in print, in a copy — the theme paints the

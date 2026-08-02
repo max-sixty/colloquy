@@ -26,7 +26,9 @@ customElements.define(
       row.className = "cq-chips";
       row.dataset.cqGen = "1"; // generated, not authored — the version diff skips it
       for (const label of labels)
-        row.append(Object.assign(document.createElement("span"), { textContent: label }));
+        row.append(
+          Object.assign(document.createElement("span"), { textContent: label }),
+        );
       const title = this.querySelector(":scope > strong");
       if (title) title.after(row);
       else this.prepend(row);

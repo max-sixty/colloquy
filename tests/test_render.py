@@ -29,6 +29,7 @@ installed browser: no download, no build step, `uv` still the one prerequisite.
 
 import base64
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -70,7 +71,11 @@ LONG_PAGE = """<!doctype html>
 </main>
 </body>
 </html>
-""".format(paras="\n".join(f"<p id='p{i}'>Paragraph {i}. " + "Filler. " * 20 + "</p>" for i in range(60)))
+""".format(
+    paras="\n".join(
+        f"<p id='p{i}'>Paragraph {i}. " + "Filler. " * 20 + "</p>" for i in range(60)
+    )
+)
 
 # A passage is quotable only in the form the page itself holds. The shapes the shipped
 # examples already carry are swept by test_every_passage_in_a_real_page_can_be_quoted;
@@ -112,7 +117,9 @@ stroke="currentColor"></rect></svg><figcaption>A specimen, for element anchors.<
 </body>
 </html>
 """.format(
-    filler="\n".join(f"<p id='f{i}'>Filler {i}. " + "Words. " * 20 + "</p>" for i in range(6)),
+    filler="\n".join(
+        f"<p id='f{i}'>Filler {i}. " + "Words. " * 20 + "</p>" for i in range(6)
+    ),
     # Exactly 399 characters before the emoji, so the 400-character cap falls between its
     # two UTF-16 halves — the boundary a naive slice cuts a character in two at.
     long=("Capped. " * 50)[:399],
@@ -324,8 +331,10 @@ SPECIMEN_MARKUP = """<cq-options id="rp-live" choose>
 
 # Two decisions for a reviewer to take and a later version to honor, carry, or
 # contradict: a pick and a move.
-IMPORTER_CARD = '<cq-card id="card-importer"><strong>Wire the importer</strong></cq-card>'
-REPLAYED_PAGE = """<!doctype html>
+IMPORTER_CARD = (
+    '<cq-card id="card-importer"><strong>Wire the importer</strong></cq-card>'
+)
+REPLAYED_PAGE = f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -341,13 +350,13 @@ REPLAYED_PAGE = """<!doctype html>
   <cq-option id="opt-stage"><strong>Migrate in stages</strong> Table by table.</cq-option>
 </cq-options>
 <cq-board id="work">
-  <cq-column id="col-doing" label="Doing">{card}</cq-column>
+  <cq-column id="col-doing" label="Doing">{IMPORTER_CARD}</cq-column>
   <cq-column id="col-done" label="Done"><cq-card id="card-notes"><strong>Draft the notes</strong></cq-card></cq-column>
 </cq-board>
 </main>
 </body>
 </html>
-""".format(card=IMPORTER_CARD)
+"""
 
 
 # A page's key is minted per page; fixed here so a test can build a URL for a
@@ -365,14 +374,30 @@ def serve(tmp_path, monkeypatch):
         d = tmp_path / "page"
         assert CliRunner().invoke(interact.cli, ["page", "init", str(d)]).exit_code == 0
         (d / "versions" / "v1.html").write_text(html)
-        interact.append_event(d, {"kind": "note", "author": "claude", "version": 1, "text": "t"})
+        interact.append_event(
+            d, {"kind": "note", "author": "claude", "version": 1, "text": "t"}
+        )
         for i in range(comments):
-            interact.append_event(d, {"kind": "comment", "author": "user", "version": 1,
-                                      "text": f"Comment {i}. " + "Long enough to wrap. " * 4})
+            interact.append_event(
+                d,
+                {
+                    "kind": "comment",
+                    "author": "user",
+                    "version": 1,
+                    "text": f"Comment {i}. " + "Long enough to wrap. " * 4,
+                },
+            )
         for section, quote in anchored:
-            interact.append_event(d, {"kind": "comment", "author": "user", "version": 1,
-                                      "text": "About this bit.",
-                                      "anchor": {"section": section, "quote": quote}})
+            interact.append_event(
+                d,
+                {
+                    "kind": "comment",
+                    "author": "user",
+                    "version": 1,
+                    "text": "About this bit.",
+                    "anchor": {"section": section, "quote": quote},
+                },
+            )
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(d, TOKEN))
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         servers.append(httpd)
@@ -388,7 +413,9 @@ def serve(tmp_path, monkeypatch):
         httpd.shutdown()
 
 
-def open_page(browser, url, *, pin=False, init_script=None, wait_until="networkidle", context=None):
+def open_page(
+    browser, url, *, pin=False, init_script=None, wait_until="networkidle", context=None
+):
     """A page with its console errors collected, settled enough for mermaid.
 
     `pin` asks for the version the URL names rather than the newest, and is a keyword
@@ -397,14 +424,19 @@ def open_page(browser, url, *, pin=False, init_script=None, wait_until="networki
     page = (
         context.new_page()
         if context
-        else browser.new_page(viewport={"width": 1200, "height": 900}, color_scheme="light")
+        else browser.new_page(
+            viewport={"width": 1200, "height": 900}, color_scheme="light"
+        )
     )
     errors = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
     # The console's own word for a bad response is "Failed to load resource", which
     # names nothing; carry the status and URL so a failure says what went missing.
-    page.on("response", lambda r: errors.append(f"{r.status} {r.url}") if r.status >= 400 else None)
+    page.on(
+        "response",
+        lambda r: errors.append(f"{r.status} {r.url}") if r.status >= 400 else None,
+    )
     if init_script:
         page.add_init_script(init_script)
     if pin:
@@ -618,7 +650,8 @@ def test_the_render_gate_reports_content_set_past_the_column(browser, serve):
     failures = interact.render_version(browser, serve(SPILLING_PAGE))
 
     assert [
-        f for f in failures
+        f
+        for f in failures
         if "<div id=too-wide> is set" in f and "px past the column" in f
     ]
     assert not [f for f in failures if "scrolls sideways" in f], (
@@ -632,8 +665,10 @@ def test_the_render_gate_reports_content_set_past_the_column(browser, serve):
 # one made it: the runtime's real buttons and selects, the spans `offer` builds, a tab, a
 # pick mark, a reference. Naming the ways a control is constructed rather than the widgets
 # that construct them is what lets a twelfth widget's join this sweep without editing it.
-NEIGHBOUR = ("[data-cq-offer], [role=tab], [role=button], .cq-btn, .cq-pick, "
-             "button, select, summary, a[href]")
+NEIGHBOUR = (
+    "[data-cq-offer], [role=tab], [role=button], .cq-btn, .cq-pick, "
+    "button, select, summary, a[href]"
+)
 # What this sweep presses is narrower, and both exclusions are about the press landing
 # rather than about the control. A <select> opens a native popup the page cannot see and
 # the next click closes instead of pressing — which is how this sweep first passed while
@@ -876,7 +911,9 @@ def test_a_press_leaves_its_neighbours_where_they_were(browser, serve, example):
             # own, so a list read before it has injected them is a short list — and a
             # short list skips by index rather than failing, which is how this sweep
             # quietly stopped pressing the sign-off button between one run and the next.
-            page.wait_for_function("() => document.querySelector('.cq-banner') !== null")
+            page.wait_for_function(
+                "() => document.querySelector('.cq-banner') !== null"
+            )
             page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
             dirty = False
             assert page.locator(PRESS).count() == total, (
@@ -943,47 +980,75 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
     # offers the chip rather than following it.
     html = SUGGESTION_PAGE.replace(
         "<title>suggestions</title>",
-        '<title>suggestions</title>\n<meta name="cq-review" content="sign-off">')
+        '<title>suggestions</title>\n<meta name="cq-review" content="sign-off">',
+    )
     url = serve(html, comments=9)
     d = serve.page_dir
     page, errors = open_page(browser, url, pin=True)
     page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
     comments = ".cq-banner button[aria-expanded]"
     accept_all = '.cq-banner [title^="Accept every"]'
-    page.wait_for_function(f"() => document.querySelector('{comments}')"
-                           ".textContent === 'Comments (9)'")
+    page.wait_for_function(
+        f"() => document.querySelector('{comments}').textContent === 'Comments (9)'"
+    )
 
     def publish_v2():
         (d / "versions" / "v2.html").write_text(html)
-        interact.append_event(d, {"kind": "note", "author": "claude",
-                                  "version": 2, "text": "two"})
+        interact.append_event(
+            d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
+        )
 
     # The same events a second tab's presses would have posted, which is the only way one
     # reviewer's browser hears about another's decisions.
     def decide(*widgets):
         for widget in widgets:
-            interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
-                                      "widget": widget, "action": "accept", "detail": {}})
+            interact.append_event(
+                d,
+                {
+                    "kind": "action",
+                    "author": "user",
+                    "version": 1,
+                    "widget": widget,
+                    "action": "accept",
+                    "detail": {},
+                },
+            )
 
     for what, drive, arrived in [
-        ("a tenth comment arrives",
-         lambda: interact.append_event(d, {"kind": "comment", "author": "user",
-                                           "version": 1, "text": "A tenth."}),
-         f"() => document.querySelector('{comments}').textContent === 'Comments (10)'"),
-        ("a new version is published",
-         publish_v2,
-         "() => document.querySelector('.cq-latest-chip')"
-         ".checkVisibility({visibilityProperty: true})"),
-        ("another tab decides two of the three pending suggestions",
-         lambda: decide("sug-refill", "sug-thistle"),
-         f"() => document.querySelector('{accept_all}')"
-         ".textContent === '\\u2713 Accept all (1)'"),
-        ("another tab decides the last one",
-         lambda: decide("sug-in-card"),
-         # Gone, asked the way it is now gone: a control that has stood on this row keeps
-         # its room, so its box is exactly what must not have changed here.
-         f"() => !document.querySelector('{accept_all}')"
-         ".checkVisibility({visibilityProperty: true})"),
+        (
+            "a tenth comment arrives",
+            lambda: interact.append_event(
+                d,
+                {"kind": "comment", "author": "user", "version": 1, "text": "A tenth."},
+            ),
+            f"() => document.querySelector('{comments}').textContent === 'Comments (10)'",
+        ),
+        (
+            "a new version is published",
+            publish_v2,
+            (
+                "() => document.querySelector('.cq-latest-chip')"
+                ".checkVisibility({visibilityProperty: true})"
+            ),
+        ),
+        (
+            "another tab decides two of the three pending suggestions",
+            lambda: decide("sug-refill", "sug-thistle"),
+            (
+                f"() => document.querySelector('{accept_all}')"
+                ".textContent === '\\u2713 Accept all (1)'"
+            ),
+        ),
+        (
+            "another tab decides the last one",
+            lambda: decide("sug-in-card"),
+            # Gone, asked the way it is now gone: a control that has stood on this row keeps
+            # its room, so its box is exactly what must not have changed here.
+            (
+                f"() => !document.querySelector('{accept_all}')"
+                ".checkVisibility({visibilityProperty: true})"
+            ),
+        ),
     ]:
         page.evaluate(DEFINE_BOXES)
         before = page.evaluate(BANNER_WATCH, NEIGHBOUR)
@@ -1005,8 +1070,10 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
     # every arrival above back in play on any window narrow enough. What gives now is the
     # status text and the chip, which is where the spacer's slack was: both are left of
     # everything else on the row, so what they give up moves nothing.
-    states_a_width = ("() => ['select', '.cq-comments', '.cq-signoff', '.cq-accept-all']"
-                      ".map((s) => document.querySelector('.cq-banner ' + s).offsetWidth)")
+    states_a_width = (
+        "() => ['select', '.cq-comments', '.cq-signoff', '.cq-accept-all']"
+        ".map((s) => document.querySelector('.cq-banner ' + s).offsetWidth)"
+    )
     wide = page.evaluate(states_a_width)
     resized(page, 900, 900)
     # Out of room, and something has visibly given: no spacer left, and the chip showing
@@ -1014,7 +1081,8 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
     page.wait_for_function(
         "() => { const chip = document.querySelector('.cq-latest-chip');"
         "        return document.querySelector('.cq-spacer').offsetWidth === 0"
-        "               && chip.offsetWidth < chip.scrollWidth; }")
+        "               && chip.offsetWidth < chip.scrollWidth; }"
+    )
     assert page.evaluate(states_a_width) == wide, (
         "a banner with no room left took it out of the controls that state a width, "
         "which is what leaves them free to move on the next thing that arrives"
@@ -1078,8 +1146,12 @@ def test_a_run_with_nothing_to_break_on_stays_inside_the_box_holding_it(browser,
                   return range.getBoundingClientRect().right -
                          (el.getBoundingClientRect().right - parseFloat(style.paddingRight));
                 }"""
-    assert page.evaluate(inside, "m-token") <= 0, "a metric's value paints outside its card"
-    assert page.evaluate(inside, "p-token") <= 0, "a path in prose paints outside the column"
+    assert page.evaluate(inside, "m-token") <= 0, (
+        "a metric's value paints outside its card"
+    )
+    assert page.evaluate(inside, "p-token") <= 0, (
+        "a path in prose paints outside the column"
+    )
     torn = """() => [...document.querySelectorAll('.cq-tree-badge')]
                       .map((b) => b.getClientRects().length)"""
     assert page.evaluate(torn) == [1, 1], "a badge is one pill, and it was drawn as two"
@@ -1151,7 +1223,9 @@ def test_the_gate_passes_a_page_that_carries_a_comment(browser, serve):
     url = serve(INLINE_PAGE, anchored=[("opt-a", "Keep the store")])
     page, errors = open_page(browser, url)
     # Vacuous otherwise: the gate has to be looking at a page that has the line on it.
-    page.wait_for_function("() => document.querySelectorAll('.cq-mark-note').length === 1")
+    page.wait_for_function(
+        "() => document.querySelectorAll('.cq-mark-note').length === 1"
+    )
     assert errors == []
     page.close()
     assert interact.render_version(browser, url) == []
@@ -1270,11 +1344,15 @@ def test_render_reports_a_word_the_printed_page_loses(browser, serve):
 
     lost = interact.render_version(browser, serve(PRINT_LOSS_PAGE))
     assert [f for f in lost if f.startswith("[print]")] == [
-        '[print] <p id=lede> drops "Where the decision stands, for the recor", '
-        "which it says on screen",
+        (
+            '[print] <p id=lede> drops "Where the decision stands, for the recor", '
+            "which it says on screen"
+        ),
         '[print] <cq-option id=c-bearer> drops "Bearer header", which it says on screen',
-        '[print] <cq-option id=c-bearer> drops "Suits the mobile client;\\n  '
-        'puts the id w", which it says on screen',
+        (
+            '[print] <cq-option id=c-bearer> drops "Suits the mobile client;\\n  '
+            'puts the id w", which it says on screen'
+        ),
     ], lost
 
 
@@ -1295,13 +1373,18 @@ def solid_png(width: int, height: int, rgb: tuple) -> bytes:
     )
 
 
-SHOTS = {"before": solid_png(600, 300, (210, 220, 235)), "after": solid_png(600, 300, (235, 215, 205))}
-SHOT_SRC = {k: f"/media/{hashlib.sha256(v).hexdigest()[:16]}.png" for k, v in SHOTS.items()}
+SHOTS = {
+    "before": solid_png(600, 300, (210, 220, 235)),
+    "after": solid_png(600, 300, (235, 215, 205)),
+}
+SHOT_SRC = {
+    k: f"/media/{hashlib.sha256(v).hexdigest()[:16]}.png" for k, v in SHOTS.items()
+}
 SHOT_PAGE = LONG_PAGE.replace(
     "</main>",
     f"""<p id="lede">What moved, in words, because the picture cannot say it.</p>
 <cq-shot id="shot-nav" alt="the navigation rail"
-         before="{SHOT_SRC['before']}" after="{SHOT_SRC['after']}"></cq-shot>
+         before="{SHOT_SRC["before"]}" after="{SHOT_SRC["after"]}"></cq-shot>
 </main>""",
 )
 
@@ -1382,11 +1465,15 @@ def test_a_shot_refuses_a_pair_shot_at_two_widths(browser, serve):
     url = serve(page_html)
     (serve.page_dir / "media").mkdir(exist_ok=True)
     (serve.page_dir / SHOT_SRC["before"].lstrip("/")).write_bytes(SHOTS["before"])
-    (serve.page_dir / "media" / f"{hashlib.sha256(narrow).hexdigest()[:16]}.png").write_bytes(narrow)
+    (
+        serve.page_dir / "media" / f"{hashlib.sha256(narrow).hexdigest()[:16]}.png"
+    ).write_bytes(narrow)
 
-    assert [f for f in interact.render_version(browser, url) if "600px" in f and "400px" in f], (
-        "the gate has to hear about a mismatch, since nobody else will"
-    )
+    assert [
+        f
+        for f in interact.render_version(browser, url)
+        if "600px" in f and "400px" in f
+    ], "the gate has to hear about a mismatch, since nobody else will"
 
 
 # Two ways a widget leaves words on screen that no comment can land on, written into the
@@ -1396,7 +1483,7 @@ def test_a_shot_refuses_a_pair_shot_at_two_widths(browser, serve):
 # nothing said about whose words it is. Second: the words declared the page's, and put
 # inside a form control, where no pointer can select them however they are marked.
 OUT_OF_REACH_PAGE = CARRIED_PAGE.replace(
-    "<cq-option id=\"c-lax\" chosen>",
+    '<cq-option id="c-lax" chosen>',
     '<cq-option id="c-lax" chosen><div class="cq-ui"><strong>Session cookies</strong>'
     "</div><button data-cq-said>Lax, host-only</button>",
 )
@@ -1419,14 +1506,18 @@ def test_render_reports_words_a_widget_puts_out_of_reach(browser, serve):
     )
     found = interact.render_version(browser, serve(OUT_OF_REACH_PAGE))
     assert sorted({f.split("] ", 1)[1] for f in found}) == [
-        '<cq-option id=c-lax> puts "Session cookies" under .cq-ui, where no comment '
-        "can reach it",
-        '<cq-option id=c-lax> says "Lax, host-only" inside a form control, where no '
-        "selection can reach it",
+        (
+            '<cq-option id=c-lax> puts "Session cookies" under .cq-ui, where no comment '
+            "can reach it"
+        ),
+        (
+            '<cq-option id=c-lax> says "Lax, host-only" inside a form control, where no '
+            "selection can reach it"
+        ),
     ], found
 
 
-UNPARSEABLE_DIAGRAM = LONG_PAGE.replace(
+UNPARSABLE_DIAGRAM = LONG_PAGE.replace(
     "</main>",
     "<cq-diagram id='d-broken'>\nflowchart LR\n  A[Start --&gt; B{{{ ]]] broken\n</cq-diagram>\n</main>",
 )
@@ -1442,17 +1533,11 @@ def test_the_shim_runs_the_gate_from_anywhere(serve, tmp_path):
     static lint cannot reach, since it validates the element and never the
     notation inside it. The widget fails soft and the browser half is what sees
     the error box, which is why the gate is worth its couple of seconds."""
-    serve(UNPARSEABLE_DIAGRAM)
+    serve(UNPARSABLE_DIAGRAM)
     d = serve.page_dir
     assert CliRunner().invoke(interact.cli, ["version", "check", str(d)]).exit_code == 0
 
-    shim = (
-        Path(__file__).parent.parent
-        / "plugins"
-        / "colloquy"
-        / "bin"
-        / "colloquy"
-    )
+    shim = Path(__file__).parent.parent / "plugins" / "colloquy" / "bin" / "colloquy"
     run = subprocess.run(
         [str(shim), "version", "check", str(d), "--render"],
         cwd=tmp_path,
@@ -1487,7 +1572,9 @@ def test_page_and_panel_scroll_in_separate_regions(browser, serve):
         "the viewport is scrolling the document, so its scrollbar is drawn at the "
         "window's right edge — on top of the panel"
     )
-    assert geom["bodyScrolls"] and geom["threadsScroll"], "both regions must overflow for this test to mean anything"
+    assert geom["bodyScrolls"] and geom["threadsScroll"], (
+        "both regions must overflow for this test to mean anything"
+    )
     assert geom["bodyRight"] <= geom["threadsLeft"], (
         f"scroll regions overlap: the page ends at {geom['bodyRight']}px, "
         f"the thread list starts at {geom['threadsLeft']}px"
@@ -1546,7 +1633,9 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
     )
     at_mark = page.evaluate("() => document.body.scrollTop")
     assert at_mark != before
-    mark_top = page.evaluate("() => document.getElementById('p40').getBoundingClientRect().top")
+    mark_top = page.evaluate(
+        "() => document.getElementById('p40').getBoundingClientRect().top"
+    )
 
     # Closing hands scrolling back, right where navigation left the page — measured on
     # the passage, not the number: unlocking returns the scrollbar, whose width reflows
@@ -1617,9 +1706,10 @@ def test_covering_panel_keeps_toasts_on_screen_and_clear_of_the_footer(browser, 
         }""")
 
     narrow = geometry()
-    assert narrow["toast"]["left"] >= 17 and narrow["toast"]["right"] <= narrow["width"] - 17, (
-        f"the toast left the covering viewport: {narrow}"
-    )
+    assert (
+        narrow["toast"]["left"] >= 17
+        and narrow["toast"]["right"] <= narrow["width"] - 17
+    ), f"the toast left the covering viewport: {narrow}"
     assert narrow["toast"]["bottom"] <= narrow["footer"]["top"] - 17, (
         f"the toast covered the panel's persistent composer: {narrow}"
     )
@@ -1682,12 +1772,15 @@ def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
     element in the page wearing every scoped class at once must render exactly as
     its unclassed twin, and the classes styled at document level must be exactly
     the shared vocabulary a widget wears on purpose."""
-    page, _ = open_page(browser, serve(
-        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>t</title>'
-        '<link rel="stylesheet" href="/theme.css">'
-        '<script type="module" src="/colloquy.js"></script></head>'
-        "<body><main><h1>t</h1><section id=s><p>words</p></section></main></body></html>"
-    ))
+    page, _ = open_page(
+        browser,
+        serve(
+            '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>t</title>'
+            '<link rel="stylesheet" href="/theme.css">'
+            '<script type="module" src="/colloquy.js"></script></head>'
+            "<body><main><h1>t</h1><section id=s><p>words</p></section></main></body></html>"
+        ),
+    )
     surface = page.evaluate("""() => {
         const sheet = [...document.styleSheets].find(
             s => { try { return [...s.cssRules].some(r => r instanceof CSSScopeRule); }
@@ -1718,9 +1811,17 @@ def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
     # Every one of these is worn by something the runtime puts inside the page rather than
     # inside its own container, which is exactly why a scoped rule could not reach it.
     assert {c for c in surface["global"] if c.startswith("cq-")} == {
-        "cq-ui", "cq-btn", "cq-over-mark", "cq-mark-el", "cq-pending", "cq-ins-block",
-        "cq-mark-note", "cq-aiming",
-    }, "the document-level class surface changed: widen the shared vocabulary on purpose"
+        "cq-ui",
+        "cq-btn",
+        "cq-over-mark",
+        "cq-mark-el",
+        "cq-pending",
+        "cq-ins-block",
+        "cq-mark-note",
+        "cq-aiming",
+    }, (
+        "the document-level class surface changed: widen the shared vocabulary on purpose"
+    )
     page.close()
 
 
@@ -1729,15 +1830,18 @@ def test_the_runtime_does_not_replace_a_pages_keyframes(browser, serve):
     globally unique enough to leave a page's own animation alone. The page coins the
     old generic name on purpose; sampling its midpoint makes a collision deterministic
     rather than asking where a running animation happened to be when the test looked."""
-    page, errors = open_page(browser, serve(
-        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>t</title>'
-        '<link rel="stylesheet" href="/theme.css"><style>'
-        '@keyframes cq-pulse { from { transform: translateX(0px); } '
-        'to { transform: translateX(40px); } }'
-        '#page-pulse { animation: cq-pulse 10s linear infinite; }'
-        '</style><script type="module" src="/colloquy.js"></script></head>'
-        '<body><main><h1>t</h1><p id="page-pulse">Page-owned motion.</p></main></body></html>'
-    ))
+    page, errors = open_page(
+        browser,
+        serve(
+            '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>t</title>'
+            '<link rel="stylesheet" href="/theme.css"><style>'
+            "@keyframes cq-pulse { from { transform: translateX(0px); } "
+            "to { transform: translateX(40px); } }"
+            "#page-pulse { animation: cq-pulse 10s linear infinite; }"
+            '</style><script type="module" src="/colloquy.js"></script></head>'
+            '<body><main><h1>t</h1><p id="page-pulse">Page-owned motion.</p></main></body></html>'
+        ),
+    )
     sampled = page.evaluate("""() => {
         const pageAnimation = document.getElementById("page-pulse").getAnimations()[0];
         pageAnimation.pause();
@@ -1826,9 +1930,13 @@ def test_substantial_options_stack_and_align_their_facts(browser, serve):
     pi = page.locator("#st-pi").bounding_box()
     group = page.locator("#stacked").bounding_box()
     assert sd["y"] + sd["height"] <= pi["y"], "substantial options must stack"
-    assert sd["width"] > group["width"] * 0.95, "a stacked option takes the whole column"
+    assert sd["width"] > group["width"] * 0.95, (
+        "a stacked option takes the whole column"
+    )
 
-    rails = [page.locator(f"#{i} > dl.facts").bounding_box() for i in ("st-sd", "st-pi")]
+    rails = [
+        page.locator(f"#{i} > dl.facts").bounding_box() for i in ("st-sd", "st-pi")
+    ]
     for rail, card in zip(rails, (sd, pi)):
         assert rail["x"] > card["x"] + card["width"] / 2, "the facts rail docks right"
     assert abs(rails[0]["x"] - rails[1]["x"]) < 1, "rails align down the group"
@@ -1858,9 +1966,13 @@ def test_substantial_options_stack_and_align_their_facts(browser, serve):
     )
     band = [chips.nth(i).bounding_box() for i in range(2)]
     for chip in band:
-        assert chip["y"] + chip["height"] <= title["y"] + 1, "the chips read before the title"
+        assert chip["y"] + chip["height"] <= title["y"] + 1, (
+            "the chips read before the title"
+        )
     assert abs(band[0]["x"] - title["x"]) < 1, "and start where the title does"
-    assert band[0]["x"] + band[0]["width"] <= band[1]["x"], "in the author's order, not overlapping"
+    assert band[0]["x"] + band[0]["width"] <= band[1]["x"], (
+        "in the author's order, not overlapping"
+    )
 
     paper = page.locator("#t-paper").bounding_box()
     gps = page.locator("#t-gps").bounding_box()
@@ -1873,7 +1985,9 @@ def test_substantial_options_stack_and_align_their_facts(browser, serve):
     long_chips = page.locator("#t-gps > cq-chip")
     expect(long_chips).to_have_count(3)
     wrapped = [long_chips.nth(i).bounding_box() for i in range(3)]
-    assert wrapped[-1]["y"] > wrapped[0]["y"], "a band too wide for its card takes a second line"
+    assert wrapped[-1]["y"] > wrapped[0]["y"], (
+        "a band too wide for its card takes a second line"
+    )
     for chip in wrapped:
         assert chip["x"] + chip["width"] <= gps["x"] + gps["width"], (
             "no chip the author wrote may cross the card's edge"
@@ -1895,12 +2009,16 @@ def test_a_row_too_narrow_to_dock_a_rail_stacks_it_instead(browser, serve):
     text jammed down its left. So the row is asked, and not the window — how much width a
     row has is a fact about the row, and a page gives 168px up to the review margin the
     moment it carries a change to decide, which no viewport query knows about."""
-    page = browser.new_page(viewport={"width": 460, "height": 900}, color_scheme="light")
+    page = browser.new_page(
+        viewport={"width": 460, "height": 900}, color_scheme="light"
+    )
     page.goto(serve(STACKED_OPTIONS_PAGE), wait_until="networkidle")
     rail = page.locator("#st-sd > dl.facts").bounding_box()
     prose = page.locator("#st-sd > p").bounding_box()
     card = page.locator("#st-sd").bounding_box()
-    assert rail["width"] > card["width"] * 0.8, "the rail still docks in a row this narrow"
+    assert rail["width"] > card["width"] * 0.8, (
+        "the rail still docks in a row this narrow"
+    )
     assert rail["y"] + rail["height"] <= prose["y"], "the case has to clear the rail"
     page.close()
 
@@ -1951,7 +2069,10 @@ def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     page.mouse.down()
     page.mouse.move(box["x"] + box["width"] - 2, y, steps=8)
     page.mouse.up()
-    assert page.evaluate("() => getSelection().toString()").strip() == "Settled: Lax cookie"
+    assert (
+        page.evaluate("() => getSelection().toString()").strip()
+        == "Settled: Lax cookie"
+    )
     expect(page.locator("#opt-strict")).to_be_hidden()
     page.locator(".cq-fab").click()
     expect(page.locator(".cq-composer")).to_be_visible()
@@ -1967,7 +2088,9 @@ def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     # inside a live selection is that selection's, so the row would not open under it.
     page.locator("#lede").click()
     row.click()
-    expect(page.locator("#opt-lax")).to_be_visible()  # until-found keeps a box either way
+    expect(
+        page.locator("#opt-lax")
+    ).to_be_visible()  # until-found keeps a box either way
     lede = page.locator("#opt-lax > strong")
     box = lede.bounding_box()
     y = box["y"] + box["height"] / 2
@@ -1983,10 +2106,12 @@ def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     # wait that was over before the gesture started.
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) >= 2")
     # Both marks on the page: the one this fixture arrived carrying, and the new one.
-    assert sorted(page.evaluate(
-        "() => [...CSS.highlights.get('cq-mark')].map(r => "
-        "r.startContainer.parentElement.closest('[id]').id)"
-    )) == ["opt-lax", "opt-strict"], (
+    assert sorted(
+        page.evaluate(
+            "() => [...CSS.highlights.get('cq-mark')].map(r => "
+            "r.startContainer.parentElement.closest('[id]').id)"
+        )
+    ) == ["opt-lax", "opt-strict"], (
         "the comment landed on the summary line rather than the card it was made on"
     )
     row.click()  # closed again, so the reveal below has something to open
@@ -2024,8 +2149,12 @@ def test_a_printed_page_says_which_option_carries_the_pick(browser, serve):
                      parseFloat(getComputedStyle(el).paddingLeft)"""
     pick = page.locator("#opt-lax .cq-pick")
     page.emulate_media(media="print")
-    expect(page.locator(".cq-banner")).to_be_hidden()  # the whole layer, by its own root
-    expect(row).to_be_hidden()  # the disclosure is a screen affordance; paper has the cards
+    expect(
+        page.locator(".cq-banner")
+    ).to_be_hidden()  # the whole layer, by its own root
+    expect(
+        row
+    ).to_be_hidden()  # the disclosure is a screen affordance; paper has the cards
     expect(pick).to_be_visible()
     expect(pick).to_have_text("chosen")
     expect(page.locator("#opt-strict .cq-pick")).to_be_hidden()
@@ -2078,7 +2207,9 @@ def test_a_pick_the_page_only_reports_can_still_be_pointed_at(browser, serve):
     )
 
     page.locator(".cq-fab").click()
-    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+    page.wait_for_function(
+        "() => document.querySelector('.cq-composer').style.display === 'block'"
+    )
     assert composer_quote(page)["text"].strip("“”") == "chosen"
     page.locator(".cq-composer textarea").fill("say which version chose it")
     page.get_by_role("button", name="Comment", exact=True).click()
@@ -2093,13 +2224,17 @@ def test_a_pick_the_page_only_reports_can_still_be_pointed_at(browser, serve):
     (d / "versions" / "v2.html").write_text(
         CARRIED_PAGE.replace("Suits the mobile client", "Suits the mobile client best")
     )
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
+    )
     page.wait_for_url("**/v2.html", timeout=10_000)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(0)
 
     page.locator(".cq-banner button", has_text="Δ").click()
-    page.wait_for_function("() => document.querySelectorAll('.cq-ins-block').length > 0")
+    page.wait_for_function(
+        "() => document.querySelectorAll('.cq-ins-block').length > 0"
+    )
     assert page.evaluate(
         "() => [...document.querySelectorAll('.cq-ins-block')].map(e => e.id)"
     ) == ["c-bearer"], "the diff read the mark as text the base version lacked"
@@ -2118,7 +2253,9 @@ def test_a_pick_offered_can_be_pointed_at_too(browser, serve):
     mouseup lands on the very control it crossed — and the mark has to stay pressable,
     or the fix has traded a word nobody can quote for a decision nobody can make."""
     page, errors = open_page(browser, serve(SETTLED_PAGE))
-    page.locator("#transport .cq-settled").click()  # open the group; the cards are hidden
+    page.locator(
+        "#transport .cq-settled"
+    ).click()  # open the group; the cards are hidden
     mark = page.locator("#opt-lax .cq-pick")
     expect(mark).to_have_text("chosen")
 
@@ -2139,7 +2276,9 @@ def test_a_pick_offered_can_be_pointed_at_too(browser, serve):
 
     box = mark.bounding_box()
     y = box["y"] + box["height"] / 2
-    page.mouse.move(box["x"] + box["width"] - 2, y)  # right to left: the ✓ ring is not text
+    page.mouse.move(
+        box["x"] + box["width"] - 2, y
+    )  # right to left: the ✓ ring is not text
     page.mouse.down()
     page.mouse.move(box["x"] + 2, y, steps=8)
     page.mouse.up()
@@ -2172,11 +2311,17 @@ def test_a_pick_offered_can_be_pointed_at_too(browser, serve):
     (d / "versions" / "v2.html").write_text(
         SETTLED_PAGE.replace("arrives logged out", "arrives logged out every time")
     )
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
+    )
     page.wait_for_url("**/v2.html", timeout=10_000)
-    expect(page.locator("#opt-bearer[chosen]")).to_have_count(1)  # replay carried the pick
+    expect(page.locator("#opt-bearer[chosen]")).to_have_count(
+        1
+    )  # replay carried the pick
     page.locator(".cq-banner button", has_text="Δ").click()
-    page.wait_for_function("() => document.querySelectorAll('.cq-ins-block').length > 0")
+    page.wait_for_function(
+        "() => document.querySelectorAll('.cq-ins-block').length > 0"
+    )
     assert page.evaluate(
         "() => [...document.querySelectorAll('.cq-ins-block')].map(e => e.id)"
     ) == ["opt-strict"], "the diff read a pick mark as text the base version lacked"
@@ -2203,11 +2348,17 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     # "specimen · " in front of it is the theme's, and only that is still pseudo-content.
     label = page.locator('#spec > [data-cq-said="label"]')
     assert label.text_content() == "a decision"
-    assert label.evaluate("el => getComputedStyle(el, '::before').content") == '"specimen · "'
+    assert (
+        label.evaluate("el => getComputedStyle(el, '::before').content")
+        == '"specimen · "'
+    )
     assert page.locator("#quoted-group cq-option").count() == 2
-    assert page.locator("#quoted-group cq-option").first.evaluate(
-        "el => Math.round(el.getBoundingClientRect().height)"
-    ) > 20
+    assert (
+        page.locator("#quoted-group cq-option").first.evaluate(
+            "el => Math.round(el.getBoundingClientRect().height)"
+        )
+        > 20
+    )
 
     # …but takes nothing back. Nothing pressable: no grips, and no mark wearing
     # the button role — an unpicked quoted card carries no mark at all, exactly as
@@ -2242,7 +2393,9 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     # the mark strip would leave every exhibit trailing 32px of space that,
     # quoted, nothing can ever fill.
     pad = "el => getComputedStyle(el).paddingBottom"
-    assert page.locator("#q-shim").evaluate(pad) != page.locator("#l-shim").evaluate(pad)
+    assert page.locator("#q-shim").evaluate(pad) != page.locator("#l-shim").evaluate(
+        pad
+    )
 
     # View state still runs inside a specimen: the settled group collapsed.
     assert page.locator("#quoted-settled cq-option:visible").count() == 0
@@ -2291,7 +2444,8 @@ mornings last winter.</p></section>
 
 def sent_events(page_dir):
     return [
-        json.loads(line) for line in (page_dir / "comments.jsonl").read_text().splitlines()
+        json.loads(line)
+        for line in (page_dir / "comments.jsonl").read_text().splitlines()
     ]
 
 
@@ -2311,8 +2465,13 @@ def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serv
     page, errors = open_page(browser, serve(ASK_PAGE))
     assert errors == []
 
-    assert page.locator("#jobs").evaluate("el => getComputedStyle(el).display") == "block"
-    assert page.locator("#bracket").evaluate("el => getComputedStyle(el).display") == "grid"
+    assert (
+        page.locator("#jobs").evaluate("el => getComputedStyle(el).display") == "block"
+    )
+    assert (
+        page.locator("#bracket").evaluate("el => getComputedStyle(el).display")
+        == "grid"
+    )
 
     # The block a row is about, reachable as a link and written as the id it names —
     # the same way the comment panel writes an element anchor.
@@ -2398,7 +2557,9 @@ def test_a_row_label_keeps_the_spacing_it_was_written_with(browser, serve):
               }"""
     space, gap = page.evaluate(room)
     assert space > 1, "the space the label was written with is not on the screen"
-    assert abs(gap - space) < 0.5, f"{gap}px of room where the label asked for {space}px"
+    assert abs(gap - space) < 0.5, (
+        f"{gap}px of room where the label asked for {space}px"
+    )
     assert errors == []
     page.close()
 
@@ -2438,7 +2599,9 @@ def test_a_chip_an_option_says_stands_with_the_rest_of_its_words(browser, serve)
     expect(chip).to_have_text("reversible")
     expect(page.locator("#job-heater > .cq-pick:last-child")).to_have_count(1)
     ref = page.locator("#job-heater .cq-ref").bounding_box()
-    assert chip.bounding_box()["x"] < ref["x"], "the chip stands before the row's apparatus"
+    assert chip.bounding_box()["x"] < ref["x"], (
+        "the chip stands before the row's apparatus"
+    )
     assert errors == []
     page.close()
 
@@ -2471,8 +2634,11 @@ def test_a_pick_states_the_whole_set(browser, serve):
     # A pick paints its own click before the post answers, so the DOM leads the log;
     # the trip counter says when everything sent has been read back.
     page.wait_for_function(ROUND_TRIP)
-    picks = [(e["widget"], e["detail"]) for e in sent_events(serve.page_dir)
-             if e.get("action") == "choose"]
+    picks = [
+        (e["widget"], e["detail"])
+        for e in sent_events(serve.page_dir)
+        if e.get("action") == "choose"
+    ]
     assert picks == [
         ("jobs", {"options": ["job-mounts"]}),
         ("jobs", {"options": ["job-mounts", "job-camera"]}),
@@ -2511,14 +2677,18 @@ def test_the_box_for_words_reaches_the_log_as_a_comment_on_the_question(browser,
 
     said = [e for e in sent_events(serve.page_dir) if e["kind"] == "comment"]
     assert [(e["anchor"], e["text"]) for e in said] == [
-        ({"section": "jobs"}, "Neither, really — do the camera and tell me what it costs.")
+        (
+            {"section": "jobs"},
+            "Neither, really — do the camera and tell me what it costs.",
+        )
     ]
     assert errors == []
     page.close()
 
 
 SETTLED_ASK_PAGE = ASK_PAGE.replace(
-    '<cq-options id="jobs" choose multiple>', '<cq-options id="jobs" choose multiple settled>'
+    '<cq-options id="jobs" choose multiple>',
+    '<cq-options id="jobs" choose multiple settled>',
 )
 
 
@@ -2545,10 +2715,14 @@ def test_the_box_is_offered_only_where_something_can_answer_it(browser, serve):
     box = page.locator("#jobs .cq-say")
     rows = page.locator("#jobs > cq-option")
     expect(box).to_be_hidden()
-    assert rows.evaluate_all("els => els.map(e => e.getBoundingClientRect().height)") == [0, 0, 0]
+    assert rows.evaluate_all(
+        "els => els.map(e => e.getBoundingClientRect().height)"
+    ) == [0, 0, 0]
     page.locator("#jobs .cq-settled").click()
     expect(box).to_be_visible()
-    assert all(rows.evaluate_all("els => els.map(e => e.getBoundingClientRect().height > 0)"))
+    assert all(
+        rows.evaluate_all("els => els.map(e => e.getBoundingClientRect().height > 0)")
+    )
 
     # The copy medium: the same DOM with the affordance never handed to it.
     page.evaluate("() => document.documentElement.classList.add('cq-copy')")
@@ -2568,7 +2742,9 @@ def test_the_specimen_gutter_is_painted_in_both_schemes(browser, serve):
     for scheme in ("light", "dark"):
         page = browser.new_page(color_scheme=scheme)
         page.goto(url, wait_until="networkidle")
-        gutter = page.locator("#spec").evaluate("el => getComputedStyle(el).borderLeftColor")
+        gutter = page.locator("#spec").evaluate(
+            "el => getComputedStyle(el).borderLeftColor"
+        )
         assert gutter not in ("rgba(0, 0, 0, 0)", "transparent"), f"[{scheme}] {gutter}"
         page.close()
 
@@ -2583,13 +2759,32 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
     nothing else in the suite renders a specimen there."""
     url = serve(REPLY_HOST_PAGE)
     d = serve.page_dir
-    interact.append_event(d, {"kind": "comment", "id": "c-ask", "author": "user",
-                              "version": 1, "text": "What would the alternative look like?"})
-    interact.append_event(d, {"kind": "reply", "author": "claude", "parent": "c-ask",
-                              "version": 1, "text": SPECIMEN_TEXT, "markup": SPECIMEN_MARKUP})
+    interact.append_event(
+        d,
+        {
+            "kind": "comment",
+            "id": "c-ask",
+            "author": "user",
+            "version": 1,
+            "text": "What would the alternative look like?",
+        },
+    )
+    interact.append_event(
+        d,
+        {
+            "kind": "reply",
+            "author": "claude",
+            "parent": "c-ask",
+            "version": 1,
+            "text": SPECIMEN_TEXT,
+            "markup": SPECIMEN_MARKUP,
+        },
+    )
     page, errors = open_page(browser, url)
     page.get_by_role("button", name="Comments", exact=False).click()
-    page.wait_for_selector('#rp-live .cq-pick[role="button"]')  # the reply's widgets upgraded
+    page.wait_for_selector(
+        '#rp-live .cq-pick[role="button"]'
+    )  # the reply's widgets upgraded
     assert errors == []
 
     # The gutter renders in the panel: the specimen rules aren't scoped to the
@@ -2598,11 +2793,17 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
     # upgrade would have carried it.
     label = page.locator('#rp-spec > [data-cq-said="label"]')
     assert label.text_content() == "the April thread"
-    assert label.evaluate("el => getComputedStyle(el, '::before').content") == '"specimen · "'
-    assert page.locator("#rp-spec").evaluate(
-        "el => getComputedStyle(el).borderLeftWidth"
-    ) == "2px"
-    assert page.locator("#rp-quoted cq-option").count() == 2  # and the exhibit is all there
+    assert (
+        label.evaluate("el => getComputedStyle(el, '::before').content")
+        == '"specimen · "'
+    )
+    assert (
+        page.locator("#rp-spec").evaluate("el => getComputedStyle(el).borderLeftWidth")
+        == "2px"
+    )
+    assert (
+        page.locator("#rp-quoted cq-option").count() == 2
+    )  # and the exhibit is all there
 
     # The exhibit takes the click first, so anything it sends would reach the log
     # ahead of the live group's pick — then the live group takes its own.
@@ -2616,7 +2817,9 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
         if actions:
             break
 
-    assert [(e["widget"], e["detail"]) for e in actions] == [("rp-live", {"options": ["rp-stage"]})]
+    assert [(e["widget"], e["detail"]) for e in actions] == [
+        ("rp-live", {"options": ["rp-stage"]})
+    ]
     assert page.locator("#rp-quoted cq-option[chosen]").count() == 0
     page.close()
 
@@ -2641,10 +2844,26 @@ def test_a_table_in_a_reply_keeps_its_figures_whole(browser, serve):
     same in a cell and is the actual regression to fear."""
     url = serve(REPLY_HOST_PAGE)
     d = serve.page_dir
-    interact.append_event(d, {"kind": "comment", "id": "c-ask", "author": "user",
-                              "version": 1, "text": "What are the ceilings?"})
-    interact.append_event(d, {"kind": "reply", "author": "claude", "parent": "c-ask",
-                              "version": 1, "text": TABLE_REPLY})
+    interact.append_event(
+        d,
+        {
+            "kind": "comment",
+            "id": "c-ask",
+            "author": "user",
+            "version": 1,
+            "text": "What are the ceilings?",
+        },
+    )
+    interact.append_event(
+        d,
+        {
+            "kind": "reply",
+            "author": "claude",
+            "parent": "c-ask",
+            "version": 1,
+            "text": TABLE_REPLY,
+        },
+    )
     page, errors = open_page(browser, url)
     page.get_by_role("button", name="Comments", exact=False).click()
     page.wait_for_selector(".cq-msg-body table")
@@ -2656,12 +2875,18 @@ def test_a_table_in_a_reply_keeps_its_figures_whole(browser, serve):
     assert page.get_by_role("cell", name="12,000").evaluate(lines) == 1
     assert page.locator(".cq-msg.claude .cq-msg-body a").evaluate(lines) > 1
     # And the room the cells stopped giving up went where the theme puts it.
-    assert page.locator(".cq-msg.claude .cq-msg-body table").evaluate(
-        "(t) => t.scrollWidth - t.clientWidth"
-    ) > 0
-    assert page.locator(".cq-msg.claude .cq-msg-body").evaluate(
-        "(b) => b.scrollWidth - b.clientWidth"
-    ) == 0
+    assert (
+        page.locator(".cq-msg.claude .cq-msg-body table").evaluate(
+            "(t) => t.scrollWidth - t.clientWidth"
+        )
+        > 0
+    )
+    assert (
+        page.locator(".cq-msg.claude .cq-msg-body").evaluate(
+            "(b) => b.scrollWidth - b.clientWidth"
+        )
+        == 0
+    )
     assert errors == []
     page.close()
 
@@ -2752,7 +2977,9 @@ def test_composer_grows_with_its_text_without_script(browser, serve):
     assert grown["h"] > empty["h"], "the box must grow with its content"
     assert not grown["scrollable"], "a box that fits its text must not be scrollable"
     assert capped["h"] == 200, f"the box must stop at its ceiling, got {capped['h']}px"
-    assert capped["scrollable"], "past the ceiling the scrollbar is real and belongs there"
+    assert capped["scrollable"], (
+        "past the ceiling the scrollbar is real and belongs there"
+    )
     assert shrunk["h"] == empty["h"], "and it must shrink back"
     assert page.evaluate("window.__styled") == 0, "nothing may size the box from script"
     page.close()
@@ -2818,7 +3045,9 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     room = page.evaluate("() => document.body.getBoundingClientRect().right")
     box = "el => el.getBoundingClientRect()"
 
-    margin_rows = page.locator("[data-cq-for='sug-refill'], [data-cq-for='sug-thistle']")
+    margin_rows = page.locator(
+        "[data-cq-for='sug-refill'], [data-cq-for='sug-thistle']"
+    )
     assert margin_rows.count() == 2
     for i in range(2):
         assert margin_rows.nth(i).evaluate(box)["left"] > column, (
@@ -2835,9 +3064,10 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     assert in_card["left"] > column and in_card["right"] <= room, (
         "a change inside a widget is still a change the reviewer decides in the margin"
     )
-    assert abs(in_card["top"] - page.locator("#sug-in-card cq-old").evaluate(box)["top"]) <= 4, (
-        "the row must hang on the change's own line, not on the block it follows"
-    )
+    assert (
+        abs(in_card["top"] - page.locator("#sug-in-card cq-old").evaluate(box)["top"])
+        <= 4
+    ), "the row must hang on the change's own line, not on the block it follows"
 
     # The panel takes the right of the window, and the rail survives it: the rows
     # keep their line, clear of the column on one side and of the panel on the
@@ -2884,10 +3114,17 @@ def test_a_moved_change_takes_its_controls_with_it(browser, serve):
     only way to decide a change that is still plainly pending on the page. Replayed
     rather than dragged, because that is the same move with no gesture in the way."""
     url = serve(SUGGESTION_PAGE)
-    interact.append_event(serve.page_dir, {
-        "kind": "action", "author": "user", "version": 1, "widget": "feeders",
-        "action": "move", "detail": {"card": "card-heater", "to": "col-done", "index": 0},
-    })
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "feeders",
+            "action": "move",
+            "detail": {"card": "card-heater", "to": "col-done", "index": 0},
+        },
+    )
     page, errors = open_page(browser, url)
     expect(page.locator("#col-done #card-heater")).to_be_visible()
     box = "el => el.getBoundingClientRect()"
@@ -2953,9 +3190,9 @@ def test_a_row_waits_for_the_change_it_decides_to_be_on_screen(browser, serve):
     assert row["left"] > page.locator("main").evaluate(box)["right"], (
         "the row must arrive in the margin, not over the prose that just opened"
     )
-    assert abs(row["top"] - page.locator("#sug-boxes cq-new").evaluate(box)["top"]) <= 4, (
-        "and on the line of the change it decides"
-    )
+    assert (
+        abs(row["top"] - page.locator("#sug-boxes cq-new").evaluate(box)["top"]) <= 4
+    ), "and on the line of the change it decides"
     assert errors == []
     page.close()
 
@@ -2986,9 +3223,10 @@ def test_the_rail_survives_every_script_being_removed(browser, serve, tmp_path):
     for widget in ("sug-refill", "sug-in-card"):
         row = loose.locator(f"[data-cq-for='{widget}']").evaluate(box)
         assert row["left"] > column, f"{widget}'s row lost the rail without its script"
-        assert abs(row["top"] - loose.locator(f"#{widget} cq-old").evaluate(box)["top"]) <= 4, (
-            f"{widget}'s row lost its change's line without its script"
-        )
+        assert (
+            abs(row["top"] - loose.locator(f"#{widget} cq-old").evaluate(box)["top"])
+            <= 4
+        ), f"{widget}'s row lost its change's line without its script"
     loose.close()
 
 
@@ -2998,7 +3236,7 @@ def test_accepting_a_suggestion_settles_it_and_reaches_claude(browser, serve):
     plus the reviewer's actions, and the honoring version only has to catch up.
     The outcome has to reach the log too: what the reviewer sees settle and what
     Claude is told must be the same event."""
-    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    page, _errors = open_page(browser, serve(SUGGESTION_PAGE))
     accept = page.locator("[data-cq-for='sug-refill'] .cq-sug-accept")
     assert accept.get_attribute("aria-label").startswith(
         "Accept the suggested change: Refill a feeder when"
@@ -3051,8 +3289,12 @@ SHORT_SUGGESTION = """<!doctype html>
 """
 
 
-@pytest.mark.parametrize("outcome,verb", [("accept", "Accepted"), ("reject", "Rejected")])
-def test_a_widget_naming_its_own_words_does_not_read_the_runtimes(browser, serve, outcome, verb):
+@pytest.mark.parametrize(
+    "outcome,verb", [("accept", "Accepted"), ("reject", "Rejected")]
+)
+def test_a_widget_naming_its_own_words_does_not_read_the_runtimes(
+    browser, serve, outcome, verb
+):
     """The line saying a block carries a comment goes in the block, and a block inside a
     widget is still a block — so `textContent` on a widget's own slot now returns the
     author's words with the runtime's appended. A suggestion labels itself from that slot,
@@ -3088,7 +3330,10 @@ def test_accept_all_decides_every_pending_suggestion(browser, serve):
         # Waited for, not read once: each is decided by its own round trip, so the
         # last of them is still in flight when the first has settled.
         expect(page.locator(f"[data-cq-for='{widget}']")).to_be_hidden()
-    for widget in ("sug-refill", "sug-in-card"):  # the two that replace rather than insert
+    for widget in (
+        "sug-refill",
+        "sug-in-card",
+    ):  # the two that replace rather than insert
         expect(page.locator(f"#{widget} cq-old")).to_be_hidden()
     # Nothing left to accept, so the button says nothing rather than saying zero.
     expect(page.get_by_role("button", name=re.compile("Accept all"))).to_be_hidden()
@@ -3118,7 +3363,9 @@ def test_a_decision_the_server_never_took_goes_back_to_pending(browser, serve):
     # And the page's own count is derived from that, so it comes back too.
     expect(page.get_by_role("button", name="Accept all (3)")).to_be_visible()
     expect(page.locator(".cq-toast")).to_contain_text("Couldn't send")
-    assert [e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"] == []
+    assert [
+        e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"
+    ] == []
 
     # The retry is a second click, not a reload: the widget is pending again.
     page.unroute("**/api/event")
@@ -3145,7 +3392,9 @@ def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, 
     told(second)
     expect(second.locator("#sug-refill cq-old")).to_be_hidden()
     expect(second.locator("#sug-refill cq-new")).to_be_visible()
-    expect(second.locator("[data-cq-for='sug-refill']")).to_be_hidden()  # nothing left to decide
+    expect(
+        second.locator("[data-cq-for='sug-refill']")
+    ).to_be_hidden()  # nothing left to decide
     expect(second.get_by_role("button", name="Accept all (2)")).to_be_visible()
 
     # Now the race the controls make possible: a window cut off from the log still
@@ -3189,12 +3438,23 @@ def test_render_reports_markup_the_log_replays_over(browser, serve):
         ("approach", "choose", {"options": ["opt-shim"]}),
         ("work", "move", {"card": "card-importer", "to": "col-done", "index": 0}),
     ]:
-        interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
-                                  "widget": widget, "action": action, "detail": detail})
+        interact.append_event(
+            d,
+            {
+                "kind": "action",
+                "author": "user",
+                "version": 1,
+                "widget": widget,
+                "action": action,
+                "detail": detail,
+            },
+        )
 
     def publish(n, html):
         (d / "versions" / f"v{n}.html").write_text(html)
-        interact.append_event(d, {"kind": "note", "author": "claude", "version": n, "text": "t"})
+        interact.append_event(
+            d, {"kind": "note", "author": "claude", "version": n, "text": "t"}
+        )
         return url.replace("v1.html", f"v{n}.html")
 
     # v2 says nothing about either decision; both stand, and nothing is reported.
@@ -3299,7 +3559,9 @@ def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
         )
     ).to_be_visible()
     assert (
-        second.locator("#card-importer").evaluate("el => getComputedStyle(el).outlineStyle")
+        second.locator("#card-importer").evaluate(
+            "el => getComputedStyle(el).outlineStyle"
+        )
         == "solid"
     )
 
@@ -3310,16 +3572,18 @@ def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
         'label="Done">', f'label="Done">{IMPORTER_CARD}'
     )
     (d / "versions" / "v2.html").write_text(honored)
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "t"})
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "t"}
+    )
     third, third_errors = open_page(browser, url.replace("v1.html", "v2.html"))
     expect(third.locator("#col-done #card-importer")).to_be_visible()
     # Absence only counts once replay has decided every action.
     third.wait_for_function("() => document.body.dataset.cqApplied === '1'")
-    expect(third.locator("#card-importer")).not_to_have_attribute("data-cq-pending", "1")
+    expect(third.locator("#card-importer")).not_to_have_attribute(
+        "data-cq-pending", "1"
+    )
     expect(
-        third.get_by_role(
-            "button", name="Move: Wire the importer — Done", exact=True
-        )
+        third.get_by_role("button", name="Move: Wire the importer — Done", exact=True)
     ).to_be_visible()
 
     assert errors == [] and second_errors == [] and third_errors == []
@@ -3353,7 +3617,10 @@ def test_a_pending_suggestion_can_be_discussed_instead_of_decided(browser, serve
     thread = page.locator(".cq-thread .cq-quote").first
     expect(thread).to_be_visible()
     expect(thread).not_to_have_class(re.compile(r"\bdetached\b"))
-    assert painted(page, "cq-mark") == "Refill a feeder when its camera shows it half-empty."
+    assert (
+        painted(page, "cq-mark")
+        == "Refill a feeder when its camera shows it half-empty."
+    )
 
     page.locator("[data-cq-for='sug-refill'] .cq-sug-reject").click()
     expect(thread).to_have_class(re.compile(r"\bdetached\b"))
@@ -3373,10 +3640,20 @@ def test_a_decision_already_in_the_log_retires_its_slot_at_load(browser, serve):
     settles the suggestion on the first poll, so the pass that runs with it has to be
     skipping cq-old already — or the page opens with a live mark on words the reviewer
     accepted away."""
-    url = serve(SUGGESTION_PAGE, anchored=[("replace", "Refill every feeder each morning.")])
-    interact.append_event(serve.page_dir, {"kind": "action", "author": "user", "version": 1,
-                                           "widget": "sug-refill", "action": "accept",
-                                           "detail": {}})
+    url = serve(
+        SUGGESTION_PAGE, anchored=[("replace", "Refill every feeder each morning.")]
+    )
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "sug-refill",
+            "action": "accept",
+            "detail": {},
+        },
+    )
     page, errors = open_page(browser, url)
     expect(page.locator("#sug-refill cq-old")).to_be_hidden()
     expect(page.locator(".cq-thread .cq-quote").first).to_have_class(
@@ -3426,14 +3703,22 @@ def test_a_label_in_a_retired_slot_leaves_the_page_with_the_slot(browser, serve)
     it anywhere else — so the rule has to stop at the slot: a marker that outranks a look
     must not outrank a decision, or a quote lands in the half the reviewer removed."""
     url = serve(RETIRED_WIDGET_PAGE, anchored=[("sug-swap", "chosen")])
-    interact.append_event(serve.page_dir, {"kind": "action", "author": "user", "version": 1,
-                                           "widget": "sug-swap", "action": "accept",
-                                           "detail": {}})
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "sug-swap",
+            "action": "accept",
+            "detail": {},
+        },
+    )
     page, errors = open_page(browser, url)
     expect(page.locator("#sug-swap cq-old")).to_be_hidden()
-    assert page.locator("#old-lax .cq-pick").evaluate("el => el.textContent") == "chosen", (
-        "fixture is not exercising the case — the mark the slot hides never rendered"
-    )
+    assert (
+        page.locator("#old-lax .cq-pick").evaluate("el => el.textContent") == "chosen"
+    ), "fixture is not exercising the case — the mark the slot hides never rendered"
     expect(page.locator(".cq-thread .cq-quote").first).to_have_class(
         re.compile(r"\bdetached\b")
     )
@@ -3452,9 +3737,16 @@ def test_a_decision_that_empties_its_widget_detaches_the_element_anchor(browser,
     outline drew nothing. Pending, the wrapper is a thing to point at; refused, the
     thread detaches like any passage the decision removed."""
     url = serve(SUGGESTION_PAGE)
-    interact.append_event(serve.page_dir, {"kind": "comment", "author": "user", "version": 1,
-                                           "text": "Is thistle worth a feeder?",
-                                           "anchor": {"section": "sug-thistle"}})
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "comment",
+            "author": "user",
+            "version": 1,
+            "text": "Is thistle worth a feeder?",
+            "anchor": {"section": "sug-thistle"},
+        },
+    )
     page, errors = open_page(browser, url)
     thread = page.locator(".cq-thread .cq-quote").first
     expect(thread).not_to_have_class(re.compile(r"\bdetached\b"))
@@ -3462,7 +3754,9 @@ def test_a_decision_that_empties_its_widget_detaches_the_element_anchor(browser,
 
     page.locator("[data-cq-for='sug-thistle'] .cq-sug-reject").click()
     expect(thread).to_have_class(re.compile(r"\bdetached\b"))
-    expect(page.locator("#sug-thistle")).not_to_have_class(re.compile(r"\bcq-mark-el\b"))
+    expect(page.locator("#sug-thistle")).not_to_have_class(
+        re.compile(r"\bcq-mark-el\b")
+    )
     assert errors == []
     page.close()
 
@@ -3491,10 +3785,26 @@ def test_a_reply_renders_the_markdown_it_was_written_in(browser, serve):
     uses, and a bare URL arrives as the link the reviewer will want to follow."""
     url = serve(REPLY_HOST_PAGE)
     d = serve.page_dir
-    interact.append_event(d, {"kind": "comment", "id": "c-ask", "author": "user",
-                              "version": 1, "text": "which one wins?"})
-    interact.append_event(d, {"kind": "reply", "author": "claude", "parent": "c-ask",
-                              "version": 1, "text": MARKDOWN_REPLY})
+    interact.append_event(
+        d,
+        {
+            "kind": "comment",
+            "id": "c-ask",
+            "author": "user",
+            "version": 1,
+            "text": "which one wins?",
+        },
+    )
+    interact.append_event(
+        d,
+        {
+            "kind": "reply",
+            "author": "claude",
+            "parent": "c-ask",
+            "version": 1,
+            "text": MARKDOWN_REPLY,
+        },
+    )
     page, errors = open_page(browser, url)
     page.get_by_role("button", name="Comments", exact=False).click()
     body = page.locator(".cq-msg.claude .cq-msg-body")
@@ -3517,10 +3827,17 @@ def test_a_suggestion_shows_the_characters_it_proposes(browser, serve):
     as typed. Rendering them would promise the reviewer an italic where the next
     version carries the asterisks they wrote."""
     url = serve(REPLY_HOST_PAGE)
-    interact.append_event(serve.page_dir, {
-        "kind": "comment", "id": "s1", "author": "user", "version": 1,
-        "suggestion": True, "text": "Retry up to *five* times.",
-    })
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "comment",
+            "id": "s1",
+            "author": "user",
+            "version": 1,
+            "suggestion": True,
+            "text": "Retry up to *five* times.",
+        },
+    )
     page, errors = open_page(browser, url)
     page.get_by_role("button", name="Comments", exact=False).click()
     body = page.locator(".cq-msg-body.cq-suggest-body")
@@ -3538,13 +3855,38 @@ def test_a_reply_widget_replays_its_action_when_the_page_loads(browser, serve):
     version dropped) rather than one to look for again on the next poll."""
     url = serve(REPLY_HOST_PAGE)
     d = serve.page_dir
-    interact.append_event(d, {"kind": "comment", "id": "c-ask", "author": "user",
-                              "version": 1, "text": "Which of these?"})
-    interact.append_event(d, {"kind": "reply", "author": "claude", "parent": "c-ask",
-                              "version": 1, "text": SPECIMEN_TEXT, "markup": SPECIMEN_MARKUP})
-    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
-                              "widget": "rp-live", "action": "choose",
-                              "detail": {"options": ["rp-shim"]}})
+    interact.append_event(
+        d,
+        {
+            "kind": "comment",
+            "id": "c-ask",
+            "author": "user",
+            "version": 1,
+            "text": "Which of these?",
+        },
+    )
+    interact.append_event(
+        d,
+        {
+            "kind": "reply",
+            "author": "claude",
+            "parent": "c-ask",
+            "version": 1,
+            "text": SPECIMEN_TEXT,
+            "markup": SPECIMEN_MARKUP,
+        },
+    )
+    interact.append_event(
+        d,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "rp-live",
+            "action": "choose",
+            "detail": {"options": ["rp-shim"]},
+        },
+    )
     page, errors = open_page(browser, url)
     page.get_by_role("button", name="Comments", exact=False).click()
     expect(page.locator("#rp-shim")).to_have_attribute("chosen", "")
@@ -3556,10 +3898,15 @@ def test_a_reply_widget_replays_its_action_when_the_page_loads(browser, serve):
 def painted(page, name):
     """What the page is painting under a highlight name, whitespace-flattened. Marks are
     ranges in the highlight registry, not elements, so this is where a test looks."""
-    return " ".join(page.evaluate("""(name) => {
+    return " ".join(
+        page.evaluate(
+            """(name) => {
         const h = CSS.highlights.get(name);
         return h ? [...h].map(r => r.toString()).join('') : '';
-    }""", name).split())
+    }""",
+            name,
+        ).split()
+    )
 
 
 def pending_text(page):
@@ -3569,10 +3916,13 @@ def pending_text(page):
 def mark_point(page, name, index=0):
     """A point inside a painted range, for a real mouse press. A highlight is not an
     element, so there is nothing for a locator to click."""
-    box = page.evaluate("""([name, index]) => {
+    box = page.evaluate(
+        """([name, index]) => {
         const r = [...CSS.highlights.get(name)][index].getClientRects()[0];
         return {x: r.left + r.width / 2, y: r.top + r.height / 2};
-    }""", [name, index])
+    }""",
+        [name, index],
+    )
     return box["x"], box["y"]
 
 
@@ -3617,9 +3967,13 @@ def test_composer_marks_the_passage_instead_of_quoting_it(browser, serve):
     url = serve(INLINE_PAGE)
     page, errors = open_page(browser, url)
 
-    page.locator("#p").click(click_count=3)  # a real selection, spanning the inline tags
+    page.locator("#p").click(
+        click_count=3
+    )  # a real selection, spanning the inline tags
     page.locator(".cq-fab").click()
-    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+    page.wait_for_function(
+        "() => document.querySelector('.cq-composer').style.display === 'block'"
+    )
 
     passage = " ".join(page.locator("#p").inner_text().split())
     quote = composer_quote(page)
@@ -3634,28 +3988,40 @@ def test_composer_marks_the_passage_instead_of_quoting_it(browser, serve):
     assert quote["text"] == f"“{passage}”", (
         f"the composer's description of its passage says {quote['text']!r}"
     )
-    assert page.evaluate(
-        "() => document.querySelector('.cq-composer textarea').getAttribute('aria-describedby')"
-    ) == "cq-composer-quote", "nothing announces what the box is anchored to"
+    assert (
+        page.evaluate(
+            "() => document.querySelector('.cq-composer textarea').getAttribute('aria-describedby')"
+        )
+        == "cq-composer-quote"
+    ), "nothing announces what the box is anchored to"
     # Carrying that description costs the node an id, which is what makes it the one piece
     # of injected chrome that could answer "which section of the document is this in" with
     # itself. The reading position rides on that answer, so a reload would scroll to the
     # comment box instead of to the page.
-    assert page.evaluate(
-        "() => document.getElementById('cq-composer-quote')"
-        ".closest('[id]:not(.cq-ui)')?.id ?? null"
-    ) is None, "the composer's own quote offers itself as a landmark in the document"
+    assert (
+        page.evaluate(
+            "() => document.getElementById('cq-composer-quote')"
+            ".closest('[id]:not(.cq-ui)')?.id ?? null"
+        )
+        is None
+    ), "the composer's own quote offers itself as a landmark in the document"
 
     # A comment landing from elsewhere re-runs the anchor pass, which splits the text
     # nodes the painted range is pinned to. The reader is mid-sentence; their passage
     # can neither blink out nor come back covering the wrong words.
     page.request.post(
         url.rsplit("/versions/", 1)[0] + "/api/event",
-        data={"kind": "comment", "version": 1, "text": "arriving mid-sentence",
-              "anchor": {"section": "p", "quote": "bold text"}},
+        data={
+            "kind": "comment",
+            "version": 1,
+            "text": "arriving mid-sentence",
+            "anchor": {"section": "p", "quote": "bold text"},
+        },
     )
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
-    assert pending_text(page) == passage, "a poll landing while the composer is open disturbed the passage"
+    assert pending_text(page) == passage, (
+        "a poll landing while the composer is open disturbed the passage"
+    )
 
     page.get_by_role("button", name="Cancel").click()
     assert pending_text(page) == "", "the highlight outlived its composer"
@@ -3699,7 +4065,9 @@ def test_composer_marks_the_passage_instead_of_quoting_it(browser, serve):
     # Both classes have to go, asserted apart: leaving .cq-mark-el behind repaints the
     # figure in the posted amber, pointer cursor and all, over no thread to open.
     page.get_by_role("button", name="Cancel").click()
-    assert page.locator("#fig.cq-pending").count() == 0, "the outline outlived its composer"
+    assert page.locator("#fig.cq-pending").count() == 0, (
+        "the outline outlived its composer"
+    )
     assert page.locator("#fig.cq-mark-el").count() == 0, (
         "the figure kept a thread's outline over no thread"
     )
@@ -3761,8 +4129,15 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
 
     def comment(anchor, text):
         return interact.append_event(
-            d, {"kind": "comment", "author": "user", "version": 1, "text": text,
-                "anchor": anchor})["id"]
+            d,
+            {
+                "kind": "comment",
+                "author": "user",
+                "version": 1,
+                "text": text,
+                "anchor": anchor,
+            },
+        )["id"]
 
     c1 = comment({"quote": "first passage"}, "Sharpen this.")
     c2 = comment({"quote": "two separate remarks"}, "Second thought.")
@@ -3834,7 +4209,9 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
     page.mouse.move(box["x"] + box["width"] - 2, box["y"] + box["height"] / 2, steps=8)
     page.mouse.up()
     page.locator(".cq-fab").click()
-    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+    page.wait_for_function(
+        "() => document.querySelector('.cq-composer').style.display === 'block'"
+    )
     page.locator(".cq-composer textarea").fill("Too short.")
     page.get_by_role("button", name="Comment", exact=True).click()
     expect(page.locator("#p2 .cq-mark-note")).to_have_count(1)
@@ -3868,8 +4245,15 @@ def test_the_leader_key_addresses_reply_boxes(browser, serve):
 
     def comment(anchor, text):
         return interact.append_event(
-            d, {"kind": "comment", "author": "user", "version": 1, "text": text,
-                "anchor": anchor})["id"]
+            d,
+            {
+                "kind": "comment",
+                "author": "user",
+                "version": 1,
+                "text": text,
+                "anchor": anchor,
+            },
+        )["id"]
 
     c1 = comment({"quote": "first passage"}, "Sharpen this.")
     c2 = comment({"quote": "two separate remarks"}, "Second thought.")
@@ -3920,7 +4304,9 @@ def test_the_composer_never_stands_on_its_own_mark(browser, serve):
 
     Not off every pixel of it. The box has always covered the tail of a long passage and
     that reads fine; what may not happen is every rect hidden at once."""
-    filler = "\n".join(f"<p id='f{i}'>Filler {i}. " + "Words. " * 20 + "</p>" for i in range(30))
+    filler = "\n".join(
+        f"<p id='f{i}'>Filler {i}. " + "Words. " * 20 + "</p>" for i in range(30)
+    )
     url = serve(SETTLED_PAGE.replace("</main>", filler + "\n</main>"))
     page, errors = open_page(browser, url)
 
@@ -3935,7 +4321,9 @@ def test_the_composer_never_stands_on_its_own_mark(browser, serve):
     page.locator("#opt-strict").click(click_count=3)
     page.locator(".cq-fab").click()
     page.locator(".cq-composer textarea").fill("what did the trial actually show?")
-    assert mark_shows_beside_composer(page), "the box covered the passage it just opened on"
+    assert mark_shows_beside_composer(page), (
+        "the box covered the passage it just opened on"
+    )
 
     page.reload()
     page.wait_for_function(
@@ -3964,7 +4352,9 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
 
     page.locator("#p").click(click_count=3)
     page.locator(".cq-fab").click()
-    page.locator(".cq-composer textarea").fill("half-written when the version turned over")
+    page.locator(".cq-composer textarea").fill(
+        "half-written when the version turned over"
+    )
     passage = " ".join(page.locator("#p").inner_text().split())
     assert not composer_quote(page)["shown"], "the passage is right here, and marked"
 
@@ -3979,7 +4369,9 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
             "Rewritten, with nothing left of the sentence the draft was about.",
         )
     )
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
+    )
     told(page)
     expect(page.locator(".cq-latest-chip")).to_be_visible()
     page.get_by_role("button", name="New version available", exact=False).click()
@@ -3991,7 +4383,9 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
     assert page.locator(".cq-composer textarea").input_value() == (
         "half-written when the version turned over"
     ), "the draft didn't survive the version it was written against"
-    assert pending_text(page) == "", "v2 rewrote the passage and the page marked it anyway"
+    assert pending_text(page) == "", (
+        "v2 rewrote the passage and the page marked it anyway"
+    )
     quote = composer_quote(page)
     assert quote["shown"], (
         "nothing on screen says what the draft is about — no mark, and no quote either"
@@ -4012,7 +4406,9 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
         const s = getSelection(); s.removeAllRanges(); s.addRange(r);
     }""")
     held = page.evaluate("() => getSelection().toString()")
-    assert len(held) == 19, f"this assertion needs a selection to survive; it made {held!r}"
+    assert len(held) == 19, (
+        f"this assertion needs a selection to survive; it made {held!r}"
+    )
     page.request.post(
         url.rsplit("/versions/", 1)[0] + "/api/event",
         data={"kind": "comment", "version": 2, "text": "arriving from another tab"},
@@ -4178,7 +4574,9 @@ def test_a_widgets_attribute_takes_a_comment_like_any_other_passage(browser, ser
         "a drag across the heading selected nothing — it is painted, not said"
     )
     page.locator(".cq-fab").click()
-    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+    page.wait_for_function(
+        "() => document.querySelector('.cq-composer').style.display === 'block'"
+    )
     quoted = composer_quote(page)["text"]
     assert quoted.strip("“”") == "In flight"
     page.locator(".cq-composer textarea").fill("this column's name is wrong")
@@ -4195,7 +4593,9 @@ def test_a_widgets_attribute_takes_a_comment_like_any_other_passage(browser, ser
     (d / "versions" / "v2.html").write_text(
         SAID_PAGE.replace("Waiting on the importer.", "Unblocked; starting Thursday.")
     )
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
+    )
     page.wait_for_url("**/v2.html", timeout=10_000)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     assert page.locator(".cq-thread .cq-quote.detached").count() == 0, (
@@ -4203,7 +4603,9 @@ def test_a_widgets_attribute_takes_a_comment_like_any_other_passage(browser, ser
     )
 
     page.locator(".cq-banner button", has_text="Δ").click()
-    page.wait_for_function("() => document.querySelectorAll('.cq-ins-block').length > 0")
+    page.wait_for_function(
+        "() => document.querySelectorAll('.cq-ins-block').length > 0"
+    )
     assert page.evaluate(
         "() => [...document.querySelectorAll('.cq-ins-block')].map(e => e.id)"
     ) == ["c-backfill"], "the diff read the runtime's own spans as text the base lacked"
@@ -4353,9 +4755,9 @@ def test_a_widgets_label_takes_a_comment_inside_the_control_it_labels(browser, s
     page.mouse.move(box["x"] + box["width"] - 6, y, steps=8)
     page.mouse.up()
 
-    assert page.evaluate("() => getSelection().toString()").strip() == "Heated bird bath", (
-        "a drag across the tab's name selected nothing"
-    )
+    assert (
+        page.evaluate("() => getSelection().toString()").strip() == "Heated bird bath"
+    ), "a drag across the tab's name selected nothing"
     # The drag ended on a button, and the button still switches tabs — but this mouseup
     # was a selection's, not a press, so the reader is still looking at what they were
     # reading when they reached for the name.
@@ -4375,9 +4777,13 @@ def test_a_widgets_label_takes_a_comment_inside_the_control_it_labels(browser, s
     # comment is on is still there, so the comment is still on it.
     d = serve.page_dir
     (d / "versions" / "v2.html").write_text(
-        CONTROL_LABEL_PAGE.replace("the south pair waits on brackets", "the brackets arrived")
+        CONTROL_LABEL_PAGE.replace(
+            "the south pair waits on brackets", "the brackets arrived"
+        )
     )
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
+    )
     page.wait_for_url("**/v2.html", timeout=10_000)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     assert page.locator(".cq-thread .cq-quote.detached").count() == 0, (
@@ -4457,7 +4863,9 @@ def test_the_comment_button_stands_on_no_control(browser, serve):
 
     page.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
     expect(page.locator("#sug-refill")).to_have_attribute("data-cq-state", "accept")
-    expect(page.locator(".cq-composer")).to_be_hidden()  # the press decided, it didn't compose
+    expect(
+        page.locator(".cq-composer")
+    ).to_be_hidden()  # the press decided, it didn't compose
     assert errors == []
     page.close()
 
@@ -4483,7 +4891,9 @@ def test_the_composer_opens_where_the_button_stood(browser, serve):
 
     page.locator(".cq-fab").click()
     expect(page.locator(".cq-composer")).to_be_visible()
-    opened = page.locator(".cq-composer").evaluate("el => el.getBoundingClientRect().top")
+    opened = page.locator(".cq-composer").evaluate(
+        "el => el.getBoundingClientRect().top"
+    )
     assert abs(opened - stood) <= 1, (
         f"the composer opened at {opened}, where the button was asked for, not {stood}"
     )
@@ -4512,8 +4922,12 @@ def test_a_quote_finds_its_passage_whatever_its_whitespace(browser, serve):
     for name, quote in forms.items():
         page.request.post(
             url.rsplit("/versions/", 1)[0] + "/api/event",
-            data={"kind": "comment", "version": 1, "text": name,
-                  "anchor": {"section": None, "quote": quote}},
+            data={
+                "kind": "comment",
+                "version": 1,
+                "text": name,
+                "anchor": {"section": None, "quote": quote},
+            },
         )
     page.get_by_role("button", name="Comments", exact=False).click()
     page.wait_for_function(
@@ -4527,8 +4941,12 @@ def test_a_quote_finds_its_passage_whatever_its_whitespace(browser, serve):
     # something the page doesn't say — "never" must not find the tail of "on every".
     page.request.post(
         url.rsplit("/versions/", 1)[0] + "/api/event",
-        data={"kind": "comment", "version": 1, "text": "words the page never runs together",
-              "anchor": {"section": None, "quote": "boldtext"}},
+        data={
+            "kind": "comment",
+            "version": 1,
+            "text": "words the page never runs together",
+            "anchor": {"section": None, "quote": "boldtext"},
+        },
     )
     page.wait_for_function(
         f"() => document.querySelectorAll('.cq-thread').length === {len(forms) + 1}"
@@ -4617,8 +5035,12 @@ def test_an_open_composer_does_not_eat_the_next_click(browser, serve):
     page, errors = open_page(browser, url)
     page.request.post(
         url.rsplit("/versions/", 1)[0] + "/api/event",
-        data={"kind": "comment", "version": 1, "text": "on the passage",
-              "anchor": {"section": "p", "quote": "bold text"}},
+        data={
+            "kind": "comment",
+            "version": 1,
+            "text": "on the passage",
+            "anchor": {"section": "p", "quote": "bold text"},
+        },
     )
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
 
@@ -4626,7 +5048,9 @@ def test_an_open_composer_does_not_eat_the_next_click(browser, serve):
     # is the one that takes it down.
     page.locator("#q").click(click_count=3)
     page.locator(".cq-fab").click()
-    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+    page.wait_for_function(
+        "() => document.querySelector('.cq-composer').style.display === 'block'"
+    )
 
     page.mouse.click(*mark_point(page, "cq-mark"))
     panel_settled(page)
@@ -4636,9 +5060,13 @@ def test_an_open_composer_does_not_eat_the_next_click(browser, serve):
     page.get_by_role("button", name="Close comments").click()
     page.locator("#p").click(click_count=3)
     page.locator(".cq-fab").click()
-    page.wait_for_function("() => document.querySelector('.cq-composer').style.display === 'block'")
+    page.wait_for_function(
+        "() => document.querySelector('.cq-composer').style.display === 'block'"
+    )
     page.mouse.click(*mark_point(page, "cq-pending"))
-    assert not page.locator(".cq-panel").evaluate("el => el.classList.contains('open')"), (
+    assert not page.locator(".cq-panel").evaluate(
+        "el => el.classList.contains('open')"
+    ), (
         "clicking the composer's own highlight opened the panel, but it belongs to no thread"
     )
     assert errors == []
@@ -4659,8 +5087,12 @@ def test_a_click_on_a_mark_decides_once(browser, serve):
     # covers the same point after the column narrows.
     page.request.post(
         url.rsplit("/versions/", 1)[0] + "/api/event",
-        data={"kind": "comment", "version": 1, "text": "on the caption",
-              "anchor": {"section": "fig", "quote": "A specimen, for element anchors."}},
+        data={
+            "kind": "comment",
+            "version": 1,
+            "text": "on the caption",
+            "anchor": {"section": "fig", "quote": "A specimen, for element anchors."},
+        },
     )
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     if page.locator(".cq-panel.open").count():
@@ -4678,9 +5110,12 @@ def test_a_click_on_a_mark_decides_once(browser, serve):
 
     # The harm that outlives the stray button: a page mid-composition stays put.
     d = serve.page_dir
-    (d / "versions" / "v2.html").write_text(INLINE_PAGE.replace("<h1 id=\"t\">Inline</h1>",
-                                                                 "<h1 id=\"t\">Inline II</h1>"))
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    (d / "versions" / "v2.html").write_text(
+        INLINE_PAGE.replace('<h1 id="t">Inline</h1>', '<h1 id="t">Inline II</h1>')
+    )
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
+    )
     page.wait_for_url("**/v2.html", timeout=15000)
     assert errors == []
     page.close()
@@ -4732,7 +5167,9 @@ def test_code_is_colored_without_a_word_moving(browser, serve):
     one — against the file — and spans a token boundary on its way back."""
     url = serve(CODE_PAGE)
     page, errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
-    page.wait_for_function("() => document.querySelector('cq-code.cq-rendered') !== null")
+    page.wait_for_function(
+        "() => document.querySelector('cq-code.cq-rendered') !== null"
+    )
 
     roles = page.evaluate("""() => {
       const at = sel => [...document.querySelectorAll(sel + ' [data-cq-syn]')]
@@ -4751,24 +5188,33 @@ def test_code_is_colored_without_a_word_moving(browser, serve):
     # page says, which is the whole reason a quote written against one lands in the other.
     # The widget numbers lines, so its own newline is the join; the note it docks at line 2
     # is prose and sits outside the code.
-    assert page.evaluate("() => document.querySelector('#walk pre > code').textContent") == (
+    assert page.evaluate(
+        "() => document.querySelector('#walk pre > code').textContent"
+    ) == (
         "# apply the migration, then run the marked suite\ncd gateway && alembic upgrade head"
     )
     assert page.evaluate(
         "() => [...document.querySelectorAll('#walk-code .cq-code-line')]"
         ".map(l => l.textContent).join('')"
     ) == (
-        'def bucket_key(request):\n    if request.token:\n'
+        "def bucket_key(request):\n    if request.token:\n"
         '        return f"tok:{request.token.id}"\n    return "anon"\n'
     )
 
     # A quote across a token boundary — "upgrade" is plain, "head" is a keyword span.
     page.request.post(
         url.rsplit("/versions/", 1)[0] + "/api/event",
-        data={"kind": "comment", "version": 1, "text": "does prod want --sql here?",
-              "anchor": {"section": "walk", "quote": "alembic upgrade head",
-                         "prefix": "on, then run the marked suite cd gateway &&",
-                         "suffix": ""}},
+        data={
+            "kind": "comment",
+            "version": 1,
+            "text": "does prod want --sql here?",
+            "anchor": {
+                "section": "walk",
+                "quote": "alembic upgrade head",
+                "prefix": "on, then run the marked suite cd gateway &&",
+                "suffix": "",
+            },
+        },
     )
     page.get_by_role("button", name="Comments", exact=False).click()
     # Posted to the server rather than through the page, so the page hears about it
@@ -4800,7 +5246,7 @@ def test_every_language_returns_the_source_it_was_given(browser, serve):
     langs = interact.load_registry(serve.page_dir)["$languages"]["names"]
     samples = [
         'def f(x):\n    """doc\n    <b>&amp;</b>\n    """\n    return f"{x!r}"  # ok\n',
-        "# c\ncd x && ls -la | grep \"a b\" > /dev/null\n",
+        '# c\ncd x && ls -la | grep "a b" > /dev/null\n',
         '{"a": [1, 2, {"b": null}], "c": "<>&"}\n',
         "@@ -1 +1 @@\n-a <b>\n+c &d\n",
         "SELECT * FROM t WHERE a = 'x''y'; -- note\n",
@@ -4896,7 +5342,9 @@ def test_a_diff_is_colored_by_each_files_own_path(browser, serve):
     whole, because a docstring spans lines — coloured a line at a time, the prose inside
     one comes back as code."""
     page, errors = open_page(browser, serve(DIFF_PAGE))
-    page.wait_for_function("() => document.querySelector('cq-diff.cq-rendered') !== null")
+    page.wait_for_function(
+        "() => document.querySelector('cq-diff.cq-rendered') !== null"
+    )
 
     files = page.evaluate("""() => [...document.querySelectorAll('#patch details')].map(d => ({
       path: d.querySelector('summary code').textContent,
@@ -4910,7 +5358,11 @@ def test_a_diff_is_colored_by_each_files_own_path(browser, serve):
       })),
     }))""")
     by_path = {f["path"]: f["lines"] for f in files}
-    assert set(by_path) == {"gateway/limits.py", "gateway/config.yaml", "deploy/Dockerfile"}
+    assert set(by_path) == {
+        "gateway/limits.py",
+        "gateway/config.yaml",
+        "deploy/Dockerfile",
+    }
 
     py = by_path["gateway/limits.py"]
     assert any(["kw", "if"] in line["roles"] for line in py), py
@@ -4940,14 +5392,18 @@ def test_a_diff_is_colored_by_each_files_own_path(browser, serve):
     assert note[0]["roles"] == [], note
 
     # No extension the table names: plain, the way a cq-code with no `language` is.
-    assert all(l["roles"] == [] for l in by_path["deploy/Dockerfile"]), by_path["deploy/Dockerfile"]
+    assert all(l["roles"] == [] for l in by_path["deploy/Dockerfile"]), by_path[
+        "deploy/Dockerfile"
+    ]
 
     # Every displayed source line still reads exactly as authored, sign column and all.
     # File headers are metadata already represented by the summary, so the widget drops
     # them instead of leaving hidden text in the DOM for anchoring to find.
     assert [l["text"] for l in by_path["gateway/config.yaml"]] == [
         "@@ -4,6 +4,6 @@ ratelimit:\n",
-        "-  burst: 20\n", "+  burst: 40\n", "   window: 60\n",
+        "-  burst: 20\n",
+        "+  burst: 40\n",
+        "   window: 60\n",
     ]
     assert errors == []
     page.close()
@@ -4963,7 +5419,12 @@ def test_two_comments_on_one_element_both_stay_anchored(browser, serve):
     for text in ("first on the figure", "second on the figure"):
         page.request.post(
             url.rsplit("/versions/", 1)[0] + "/api/event",
-            data={"kind": "comment", "version": 1, "text": text, "anchor": {"section": "fig"}},
+            data={
+                "kind": "comment",
+                "version": 1,
+                "text": text,
+                "anchor": {"section": "fig"},
+            },
         )
     page.get_by_role("button", name="Comments", exact=False).click()
     page.wait_for_function("() => document.querySelectorAll('.cq-thread').length === 2")
@@ -4981,8 +5442,12 @@ def test_the_pointer_stops_claiming_a_mark_it_scrolled_past(browser, serve):
     page, errors = open_page(browser, url)
     page.request.post(
         url.rsplit("/versions/", 1)[0] + "/api/event",
-        data={"kind": "comment", "version": 1, "text": "up top",
-              "anchor": {"section": "p0", "quote": "Paragraph 0."}},
+        data={
+            "kind": "comment",
+            "version": 1,
+            "text": "up top",
+            "anchor": {"section": "p0", "quote": "Paragraph 0."},
+        },
     )
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     spot = page.evaluate("""() => { const r = [...CSS.highlights.get('cq-mark')][0].getClientRects()[0];
@@ -5061,7 +5526,9 @@ def test_a_repeated_passage_anchors_where_it_was_picked(browser, serve):
         if (!painted) return 'no mark';
         return painted.compareBoundaryPoints(Range.START_TO_START, want) === 0;
     }""")
-    assert landed is True, f"the second copy was picked, the mark went elsewhere ({landed})"
+    assert landed is True, (
+        f"the second copy was picked, the mark went elsewhere ({landed})"
+    )
     assert errors == []
     page.close()
 
@@ -5087,8 +5554,9 @@ DRIFT_V1 = """<!doctype html>
 """.replace("{phrase}", "The version stamp never lands")
 # v2 rewrites the words on both sides of the *commented* copy and leaves the other alone,
 # so the untouched copy is now the better match for the context the comment stored.
-DRIFT_V2 = (DRIFT_V1.replace("Cache warmup runs first.", "Cache warmup is gone now.")
-                    .replace("lands. Retries are capped at three.", "lands. Backoff is capped at three."))
+DRIFT_V2 = DRIFT_V1.replace(
+    "Cache warmup runs first.", "Cache warmup is gone now."
+).replace("lands. Retries are capped at three.", "lands. Backoff is capped at three.")
 
 
 def test_an_ambiguous_revised_passage_detaches_instead_of_guessing(browser, serve):
@@ -5123,7 +5591,9 @@ def test_an_ambiguous_revised_passage_detaches_instead_of_guessing(browser, serv
 
     d = serve.page_dir
     (d / "versions" / "v2.html").write_text(DRIFT_V2)
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"})
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"}
+    )
     page.wait_for_url("**/v2.html", timeout=15000)
     expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(1)
     assert page.evaluate("() => CSS.highlights.get('cq-mark')?.size ?? 0") == 0
@@ -5145,7 +5615,7 @@ def test_an_ambiguous_revised_passage_detaches_instead_of_guessing(browser, serv
 # The two inputs a well-meaning edit would touch, asserted so the fixture can't quietly
 # stop guarding: BMP symbols and padding outside the band both leave the pre-fix code
 # passing, and neither shows up as a failure anywhere.
-MARKERS = '🔴🟢🟡🔵🟣🟤🟠🟥🟩🟦🔴🟢🟡🔵🟣🟤'
+MARKERS = "🔴🟢🟡🔵🟣🟤🟠🟥🟩🟦🔴🟢🟡🔵🟣🟤"
 PAD = "   "
 assert all(ord(c) > 0xFFFF for c in MARKERS), "BMP markers will not reproduce this"
 assert len(PAD) in (3, 4), "outside the band the window is long enough either way"
@@ -5169,7 +5639,8 @@ ASTRAL_PAGE = """<!doctype html>
 </body>
 </html>
 """.replace("{run}", "".join(m + PAD for m in MARKERS)).replace(
-    "{phrase}", "TARGET PHRASE")
+    "{phrase}", "TARGET PHRASE"
+)
 
 
 def test_a_passage_among_padded_emoji_confirms_its_neighbours(browser, serve):
@@ -5207,7 +5678,9 @@ def test_a_passage_among_padded_emoji_confirms_its_neighbours(browser, serve):
         if (!painted) return 'no mark';
         return painted.compareBoundaryPoints(Range.START_TO_START, want) === 0;
     }""")
-    assert landed is True, f"the emoji copy was picked, the mark went elsewhere ({landed})"
+    assert landed is True, (
+        f"the emoji copy was picked, the mark went elsewhere ({landed})"
+    )
     assert errors == []
     page.close()
 
@@ -5250,13 +5723,17 @@ TAIL_PAGE = EDGE_PAGE.replace(
 """,
     "",
 )
-assert TAIL_PAGE != EDGE_PAGE, "the section this removes has moved; the contrast is gone"
+assert TAIL_PAGE != EDGE_PAGE, (
+    "the section this removes has moved; the contrast is gone"
+)
 
 
 @pytest.mark.parametrize(
     "html", [EDGE_PAGE, TAIL_PAGE], ids=["closes-its-section", "ends-the-document"]
 )
-def test_a_repeated_passage_at_an_edge_anchors_where_it_was_picked(browser, serve, html):
+def test_a_repeated_passage_at_an_edge_anchors_where_it_was_picked(
+    browser, serve, html
+):
     """A passage closing its section used to store a suffix clipped at the section's
     edge — one character, a bar the identical copy above it also cleared, so the mark
     painted there while the reviewer was still composing. The neighbours now come from
@@ -5288,22 +5765,36 @@ def test_a_repeated_passage_at_an_edge_anchors_where_it_was_picked(browser, serv
         if (painted.compareBoundaryPoints(Range.START_TO_START, want) === 0) return true;
         return painted.startContainer.parentElement.textContent.slice(0, 40);
     }""")
-    assert landed is True, f"the closing copy was picked, the mark went elsewhere ({landed})"
+    assert landed is True, (
+        f"the closing copy was picked, the mark went elsewhere ({landed})"
+    )
     assert errors == []
     page.close()
 
 
-def test_an_anchor_stored_under_the_section_clipped_capture_still_resolves(browser, serve):
+def test_an_anchor_stored_under_the_section_clipped_capture_still_resolves(
+    browser, serve
+):
     """The bar is however much was stored. An anchor from an older log carries context
     clipped at its section's edge; it confirms at that shorter bar exactly as it did when
     it was written, so nothing already in a log detaches when the capture reaches
     further."""
     url = serve(EDGE_PAGE)
-    interact.append_event(serve.page_dir, {
-        "kind": "comment", "author": "claude", "version": 1, "text": "old bar",
-        "anchor": {"section": "edge", "quote": "the run is retried until it lands",
-                   "prefix": "ails again in the night,",
-                   "suffix": ". Nothing else moves."}})
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "comment",
+            "author": "claude",
+            "version": 1,
+            "text": "old bar",
+            "anchor": {
+                "section": "edge",
+                "quote": "the run is retried until it lands",
+                "prefix": "ails again in the night,",
+                "suffix": ". Nothing else moves.",
+            },
+        },
+    )
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     where = page.evaluate("""() => {
@@ -5325,10 +5816,20 @@ def test_an_ambiguous_one_sided_anchor_from_an_older_capture_detaches(browser, s
     ambiguous and detaches rather than using document order."""
     url = serve(EDGE_PAGE)
     # A suffix that fits the second copy and nothing else, stored with no prefix beside it.
-    interact.append_event(serve.page_dir, {
-        "kind": "comment", "author": "claude", "version": 1, "text": "older anchor",
-        "anchor": {"section": "edge", "quote": "the run is retried until it lands",
-                   "suffix": ". Rollout resumes"}})
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "comment",
+            "author": "claude",
+            "version": 1,
+            "text": "older anchor",
+            "anchor": {
+                "section": "edge",
+                "quote": "the run is retried until it lands",
+                "suffix": ". Rollout resumes",
+            },
+        },
+    )
     page, errors = open_page(browser, url)
     expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(1)
     assert page.evaluate("() => CSS.highlights.get('cq-mark')?.size ?? 0") == 0
@@ -5339,7 +5840,7 @@ def test_an_ambiguous_one_sided_anchor_from_an_older_capture_detaches(browser, s
 # A passage past the 400-code-point quote cap whose 400th code point is a space — the cut
 # lands where the search's own reading of that spot would begin with whitespace, and it
 # trims. Roughly one capped quote in six for English prose.
-CAPPED_PASSAGE = 'Note: the migration replays on every deploy because the version stamp never lands, and the guard reads a column the writer never fills, and the whole batch runs again from the top on each release, and the counters disagree with the log and with each other, and the retry budget is spent before anyone looks at it, and the operator reads the dashboard at noon and files the incident, and the fix ships behind a flag nobody remembers to turn on, and the runbook still names a host that was retired last spring.'
+CAPPED_PASSAGE = "Note: the migration replays on every deploy because the version stamp never lands, and the guard reads a column the writer never fills, and the whole batch runs again from the top on each release, and the counters disagree with the log and with each other, and the retry budget is spent before anyone looks at it, and the operator reads the dashboard at noon and files the incident, and the fix ships behind a flag nobody remembers to turn on, and the runbook still names a host that was retired last spring."
 CAPPED_PAGE = """<!doctype html>
 <html lang="en">
 <head>
@@ -5388,7 +5889,9 @@ def test_a_capped_quote_keeps_a_suffix_the_page_can_show(browser, serve):
         if (!painted) return 'no mark';
         return painted.compareBoundaryPoints(Range.START_TO_START, want) === 0;
     }""")
-    assert landed is True, f"the second copy was picked, the mark went elsewhere ({landed})"
+    assert landed is True, (
+        f"the second copy was picked, the mark went elsewhere ({landed})"
+    )
     assert errors == []
     page.close()
 
@@ -5420,7 +5923,8 @@ THIN_V1 = """<!doctype html>
 # the one neighbour the comment stored.
 THIN_V2 = THIN_V1.replace(
     "lands. Retries are capped at three.</p>\n<p>An unrelated",
-    "lands. Backoff is capped at three.</p>\n<p>An unrelated")
+    "lands. Backoff is capped at three.</p>\n<p>An unrelated",
+)
 
 
 def test_one_neighbour_is_not_enough_to_identify_a_revised_comment(browser, serve):
@@ -5456,7 +5960,9 @@ def test_one_neighbour_is_not_enough_to_identify_a_revised_comment(browser, serv
 
     d = serve.page_dir
     (d / "versions" / "v2.html").write_text(THIN_V2)
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"})
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"}
+    )
     page.wait_for_url("**/v2.html", timeout=15000)
     expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(1)
     assert page.evaluate("() => CSS.highlights.get('cq-mark')?.size ?? 0") == 0
@@ -5510,7 +6016,9 @@ def test_a_diff_anchors_to_the_side_it_was_read_on(browser, serve):
     passage in a coloured block, and the anchor knows nothing about it — a span is no text
     block, so both readings still collapse to the same run of characters."""
     page, errors = open_page(browser, serve(TWICE_PAGE))
-    page.wait_for_function("() => document.querySelector('cq-diff.cq-rendered') !== null")
+    page.wait_for_function(
+        "() => document.querySelector('cq-diff.cq-rendered') !== null"
+    )
     landed = page.evaluate("""async () => {
         const skip = '.cq-ui, script, style';
         const w = document.createTreeWalker(document.getElementById('patch'),
@@ -5548,7 +6056,9 @@ def test_a_diff_anchors_to_the_side_it_was_read_on(browser, serve):
         if (!painted) return 'no mark';
         return painted.compareBoundaryPoints(Range.START_TO_START, want) === 0;
     }""")
-    assert landed is True, f"the added line was picked, the mark went elsewhere ({landed})"
+    assert landed is True, (
+        f"the added line was picked, the mark went elsewhere ({landed})"
+    )
     assert errors == []
     page.close()
 
@@ -5590,15 +6100,20 @@ JOURNEY_SCAFFOLD = """<!doctype html>
 </html>
 """
 PASSAGE = f'<p id="intro">{SENTENCE}</p>'
-JOURNEY_V1 = JOURNEY_SCAFFOLD.format(before=PASSAGE, after="<p id='p-filler'>Filler.</p>")
-JOURNEY_V2 = JOURNEY_SCAFFOLD.format(before="<p id='p-filler'>Filler.</p>", after=PASSAGE)
+JOURNEY_V1 = JOURNEY_SCAFFOLD.format(
+    before=PASSAGE, after="<p id='p-filler'>Filler.</p>"
+)
+JOURNEY_V2 = JOURNEY_SCAFFOLD.format(
+    before="<p id='p-filler'>Filler.</p>", after=PASSAGE
+)
 
 
 def _draft_says(html, text, attrs=""):
     """The journey page with its draft rewritten — the source's indentation and
     all, since that is what the widget dedents back out."""
     return html.replace(
-        '<cq-draft id="draft-ops">\n' + "\n".join(f"    {l}" for l in DRAFT_TEXT.split("\n")),
+        '<cq-draft id="draft-ops">\n'
+        + "\n".join(f"    {l}" for l in DRAFT_TEXT.split("\n")),
         f'<cq-draft id="draft-ops"{attrs}>\n    {text}',
     )
 
@@ -5609,7 +6124,15 @@ def _publish(page_dir, version, html, note):
     (page_dir / "versions" / f"v{version}.html").write_text(html)
     result = CliRunner().invoke(
         interact.cli,
-        ["version", "publish", str(page_dir), "--version", str(version), "--text", note],
+        [
+            "version",
+            "publish",
+            str(page_dir),
+            "--version",
+            str(version),
+            "--text",
+            note,
+        ],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -5634,7 +6157,9 @@ def test_review_round_trip(browser, serve):
         getSelection().addRange(r);
         document.body.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
     }""")
-    page.wait_for_selector(".cq-fab", state="visible")  # the selection raised the button
+    page.wait_for_selector(
+        ".cq-fab", state="visible"
+    )  # the selection raised the button
     page.keyboard.press("c")
     page.wait_for_selector(".cq-composer", state="visible")
     page.locator(".cq-composer textarea").fill("Is 0041 idempotent?")
@@ -5654,7 +6179,9 @@ def test_review_round_trip(browser, serve):
     dest = page.locator("#col-done").bounding_box()
     page.mouse.move(grip["x"] + grip["width"] / 2, grip["y"] + grip["height"] / 2)
     page.mouse.down()
-    page.mouse.move(dest["x"] + dest["width"] / 2, dest["y"] + dest["height"] / 2, steps=15)
+    page.mouse.move(
+        dest["x"] + dest["width"] / 2, dest["y"] + dest["height"] / 2, steps=15
+    )
     page.mouse.up()
     page.wait_for_selector("#col-done #card-x")  # the drop reparented the card
 
@@ -5682,11 +6209,15 @@ def test_review_round_trip(browser, serve):
 
     # Claude ships v2 with the passage moved; the page follows on its next poll.
     (d / "versions" / "v2.html").write_text(JOURNEY_V2)
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "moved"})
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "moved"}
+    )
     page.wait_for_url("**/v2.html", timeout=15000)
     # The anchor pass runs at render: a mark now means the quote was re-found in
     # its new position; no mark within the wait means the anchor lost it.
-    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0", timeout=5000)
+    page.wait_for_function(
+        "() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0", timeout=5000
+    )
     assert not page.evaluate(
         "document.querySelector('.cq-thread .cq-quote').classList.contains('detached')"
     ), "the passage moved and the comment lost it"
@@ -5700,7 +6231,9 @@ def test_review_round_trip(browser, serve):
     assert errors == []
     # The trail those gestures left, exactly — kinds, authorship (the server
     # stamps browser events `user`), the anchor, and the move's placement.
-    events = [json.loads(line) for line in (d / "comments.jsonl").read_text().splitlines()]
+    events = [
+        json.loads(line) for line in (d / "comments.jsonl").read_text().splitlines()
+    ]
     assert [(e["kind"], e["author"], e["version"]) for e in events] == [
         ("note", "claude", 1),
         ("comment", "user", 1),
@@ -5735,7 +6268,9 @@ def test_a_comment_inside_a_widget_stays_out_of_what_the_widget_reads(browser, s
     editor they type into from its body div, so a line left in there arrives in the
     textarea and posts with the edit. It goes on the block the passage sits in, or on the
     element the anchor names — never on the inline run or body div in between."""
-    url = serve(JOURNEY_V1, anchored=[("draft-ops", "Run the migration before deploying.")])
+    url = serve(
+        JOURNEY_V1, anchored=[("draft-ops", "Run the migration before deploying.")]
+    )
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     assert page.locator("#draft-ops > .cq-mark-note").count() == 1, (
@@ -5792,8 +6327,13 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
     # below while the frame the reviewer sees grew 2px on every side, corners
     # rounding wider to match. Bytes, not pixels — the same encoder over the same
     # content gives the same file, so identical files are identical paint.
-    band = dict(x=host["x"] - 4, y=host["y"] - 4, width=host["width"] + 8, height=4)
-    inside = dict(x=host["x"], y=host["y"], width=40, height=40)
+    band = {
+        "x": host["x"] - 4,
+        "y": host["y"] - 4,
+        "width": host["width"] + 8,
+        "height": 4,
+    }
+    inside = {"x": host["x"], "y": host["y"], "width": 40, "height": 40}
     outside_before = page.screenshot(clip=band)
     inside_before = page.screenshot(clip=inside)
 
@@ -5829,15 +6369,20 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
     assert page.locator("#draft-ops").bounding_box() == host, (
         "the draft changed shape under the pointer when the editor opened"
     )
-    assert page.evaluate(
-        "() => getSelection().rangeCount > 0 && "
-        "getSelection().containsNode(document.querySelector('#draft-ops .cq-draft-body'), true)"
-    ) is False, "the gesture left the page's own words selected under the open editor"
+    assert (
+        page.evaluate(
+            "() => getSelection().rangeCount > 0 && "
+            "getSelection().containsNode(document.querySelector('#draft-ops .cq-draft-body'), true)"
+        )
+        is False
+    ), "the gesture left the page's own words selected under the open editor"
     selected = page.evaluate(
         "() => { const t = document.querySelector('#draft-ops textarea');"
         "        return t.value.slice(t.selectionStart, t.selectionEnd); }"
     )
-    assert selected == "migration", f"the box opened on {selected!r} rather than the word clicked"
+    assert selected == "migration", (
+        f"the box opened on {selected!r} rather than the word clicked"
+    )
 
     # Closing states both properties in reverse, and the focus half is a question
     # only because the ✎ is CSS-hidden for as long as the editor is there: #close
@@ -5910,7 +6455,9 @@ def test_a_foreign_edit_waits_for_a_live_draft_and_replays_in_order(browser, ser
     page.keyboard.press("Escape")
     told(page)
     expect(draft.locator(".cq-draft-body")).to_have_text("Foreign committed words.")
-    expect(draft.locator(".cq-draft-history > summary")).to_have_text("Changes · 2 edits")
+    expect(draft.locator(".cq-draft-history > summary")).to_have_text(
+        "Changes · 2 edits"
+    )
     expect(page.locator("body")).to_have_attribute("data-cq-applied", "3")
     assert errors == []
     page.close()
@@ -5925,11 +6472,14 @@ def test_an_empty_draft_survives_reload_and_blocks_a_version_switch(browser, ser
     draft = page.locator("#draft-ops")
     draft.locator(".cq-draft-body").dblclick()
     draft.locator("textarea").fill("")
-    assert page.evaluate(
-        """() => JSON.parse(
+    assert (
+        page.evaluate(
+            """() => JSON.parse(
           sessionStorage.getItem('cq-draft:edit:draft-ops')
         ).text"""
-    ) == ""
+        )
+        == ""
+    )
 
     d = serve.page_dir
     (d / "versions" / "v2.html").write_text(JOURNEY_V2)
@@ -5961,11 +6511,14 @@ def test_an_empty_draft_survives_reload_and_blocks_a_version_switch(browser, ser
     draft.get_by_role("button", name="Save").click()
     expect(draft.locator("textarea")).to_be_focused()
     expect(draft.locator("textarea")).to_have_value("")
-    assert page.evaluate(
-        """() => JSON.parse(
+    assert (
+        page.evaluate(
+            """() => JSON.parse(
           sessionStorage.getItem('cq-draft:edit:draft-ops')
         ).text"""
-    ) == ""
+        )
+        == ""
+    )
 
     page.evaluate("window.cqFailDraft = false")
     draft.get_by_role("button", name="Save").click()
@@ -6015,11 +6568,14 @@ def test_a_draft_send_owns_the_editor_until_its_response(browser, serve):
     draft.locator("textarea").fill(sent)
     draft.get_by_role("button", name="Save").click()
     expect(draft).to_have_attribute("aria-busy", "true")
-    assert page.evaluate(
-        """() => JSON.parse(
+    assert (
+        page.evaluate(
+            """() => JSON.parse(
           sessionStorage.getItem('cq-draft:edit:draft-ops')
         ).text"""
-    ) == sent
+        )
+        == sent
+    )
 
     draft.locator(".cq-draft-pencil").click()
     expect(draft.locator("textarea")).to_have_count(0)
@@ -6070,20 +6626,26 @@ def test_unsent_draft_recovery_belongs_to_its_tab(browser, serve):
             "Changes · 1 edit"
         )
         expect(second_draft.locator("textarea")).to_have_value("")
-        assert second.evaluate(
-            """() => JSON.parse(
+        assert (
+            second.evaluate(
+                """() => JSON.parse(
               sessionStorage.getItem('cq-draft:edit:draft-ops')
             ).text"""
-        ) == ""
+            )
+            == ""
+        )
 
         first_draft.locator(".cq-draft-body").dblclick()
         first_draft.locator("textarea").fill("This tab discards these words.")
         first.keyboard.press("Escape")
-        assert second.evaluate(
-            """() => JSON.parse(
+        assert (
+            second.evaluate(
+                """() => JSON.parse(
               sessionStorage.getItem('cq-draft:edit:draft-ops')
             ).text"""
-        ) == ""
+            )
+            == ""
+        )
 
         second.reload(wait_until="networkidle")
         second.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
@@ -6129,7 +6691,7 @@ def test_text_alignment_is_lossless_and_keeps_a_shared_spine(browser, serve):
     for (before, after), runs in zip(cases, aligned):
         assert "".join(run["text"] for run in runs if run["kind"] != "insert") == before
         assert "".join(run["text"] for run in runs if run["kind"] != "delete") == after
-        assert all(a["kind"] != b["kind"] for a, b in zip(runs, runs[1:]))
+        assert all(a["kind"] != b["kind"] for a, b in itertools.pairwise(runs))
 
     repeated = aligned[-2]
     assert "".join(r["text"] for r in repeated if r["kind"] == "delete") == "once"
@@ -6156,7 +6718,9 @@ def test_a_draft_explains_its_change_and_restores_history_as_an_edit(browser, se
         draft.locator(".cq-draft-body").dblclick()
         draft.locator("textarea").fill(text)
         draft.get_by_role("button", name="Save").click()
-        page.wait_for_function(ROUND_TRIP)  # the history is drawn from the log, not the box
+        page.wait_for_function(
+            ROUND_TRIP
+        )  # the history is drawn from the log, not the box
         expect(draft.locator(".cq-draft-history > summary")).to_have_text(
             f"Changes · {index} {'edit' if index == 1 else 'edits'}"
         )
@@ -6186,7 +6750,9 @@ def test_a_draft_explains_its_change_and_restores_history_as_an_edit(browser, se
     page.keyboard.press("Enter")
     page.wait_for_function(ROUND_TRIP)
     expect(draft.locator(".cq-draft-body")).to_have_text(edits[0])
-    expect(draft.locator(".cq-draft-history > summary")).to_have_text("Changes · 3 edits")
+    expect(draft.locator(".cq-draft-history > summary")).to_have_text(
+        "Changes · 3 edits"
+    )
     expect(draft.locator(".cq-draft-history > summary")).to_be_focused()
     expect(draft).to_have_attribute("data-cq-pending", "1")
 
@@ -6195,7 +6761,11 @@ def test_a_draft_explains_its_change_and_restores_history_as_an_edit(browser, se
         for line in (serve.page_dir / "comments.jsonl").read_text().splitlines()
         if '"kind": "action"' in line
     ]
-    assert [event["detail"]["text"] for event in events] == [edits[0], edits[1], edits[0]]
+    assert [event["detail"]["text"] for event in events] == [
+        edits[0],
+        edits[1],
+        edits[0],
+    ]
     assert [event["action"] for event in events] == ["edit", "edit", "edit"]
 
     sequence = page.evaluate(
@@ -6257,7 +6827,9 @@ def test_action_history_is_bounded_by_the_pinned_version(browser, serve):
     )
     assert old_sequence == [1]
 
-    latest, latest_errors = open_page(browser, url.replace("v1.html", "v2.html"), pin=True)
+    latest, latest_errors = open_page(
+        browser, url.replace("v1.html", "v2.html"), pin=True
+    )
     expect(latest.locator("#draft-ops .cq-draft-history > summary")).to_have_text(
         "Changes · 2 edits"
     )
@@ -6287,19 +6859,37 @@ def test_an_acknowledged_decision_still_survives_the_next_version(browser, serve
     did."""
     url = serve(JOURNEY_V1)
     d = serve.page_dir
-    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
-                              "widget": "board", "action": "move",
-                              "detail": {"card": "card-x", "to": "col-done", "index": 0}})
-    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
-                              "widget": "draft-ops", "action": "edit",
-                              "detail": {"text": DRAFT_EDITED}})
+    interact.append_event(
+        d,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "board",
+            "action": "move",
+            "detail": {"card": "card-x", "to": "col-done", "index": 0},
+        },
+    )
+    interact.append_event(
+        d,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "draft-ops",
+            "action": "edit",
+            "detail": {"text": DRAFT_EDITED},
+        },
+    )
     # The highest reviewer event reached context, so everything so far is ours to answer.
     interact.cmd_ack(d, interact.read_events(d)[-1]["seq"])
     # And the agent answers with a version that carries neither — the page generator
     # emitting its own idea of the board and the draft, as one did for five
     # versions running.
     (d / "versions" / "v2.html").write_text(JOURNEY_V2)
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "v2"})
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "v2"}
+    )
 
     page, errors = open_page(browser, url.replace("v1.html", "v2.html"))
     page.wait_for_function(
@@ -6320,16 +6910,33 @@ def test_a_comment_written_on_an_edited_draft_lands_on_their_words(browser, serv
     in front of the reviewer."""
     url = serve(JOURNEY_V1)
     d = serve.page_dir
-    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
-                              "widget": "draft-ops", "action": "edit",
-                              "detail": {"text": DRAFT_EDITED}})
+    interact.append_event(
+        d,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "draft-ops",
+            "action": "edit",
+            "detail": {"text": DRAFT_EDITED},
+        },
+    )
     refused = CliRunner().invoke(
-        interact.cli, ["review", "comment", str(d), "--quote", "It is online.", "--text", "x"]
+        interact.cli,
+        ["review", "comment", str(d), "--quote", "It is online.", "--text", "x"],
     )
     assert refused.exit_code != 0 and "rewrote § draft-ops" in refused.output
     written = CliRunner().invoke(
         interact.cli,
-        ["review", "comment", str(d), "--quote", "It takes about a minute.", "--text", "Measured where?"],
+        [
+            "review",
+            "comment",
+            str(d),
+            "--quote",
+            "It takes about a minute.",
+            "--text",
+            "Measured where?",
+        ],
         catch_exceptions=False,
     )
     assert written.exit_code == 0, written.output
@@ -6498,7 +7105,9 @@ def test_repeated_half_page_keys_add_up(browser, serve):
         ends = page.evaluate("() => window.cqScrollEnds")
         act()
         try:
-            page.wait_for_function("n => window.cqScrollEnds > n", arg=ends, timeout=5000)
+            page.wait_for_function(
+                "n => window.cqScrollEnds > n", arg=ends, timeout=5000
+            )
         except PlaywrightTimeout:
             pass
         return page.evaluate("() => document.body.scrollTop")
@@ -6516,11 +7125,15 @@ def test_repeated_half_page_keys_add_up(browser, serve):
     assert landed(lambda: page.keyboard.press("u")) == pytest.approx(half, abs=1)
 
     foot = landed(
-        lambda: page.evaluate("() => document.body.scrollTop = document.body.scrollHeight")
+        lambda: page.evaluate(
+            "() => document.body.scrollTop = document.body.scrollHeight"
+        )
     )
     for _ in range(4):
         page.keyboard.press("d")  # nothing left to move, and nothing banked either
-    assert landed(lambda: page.keyboard.press("u")) == pytest.approx(foot - half, abs=1), (
+    assert landed(lambda: page.keyboard.press("u")) == pytest.approx(
+        foot - half, abs=1
+    ), (
         "presses at the foot of the page ran the destination past it, and u spent "
         "itself paying that back"
     )
@@ -6614,12 +7227,24 @@ def test_restating_a_widget_is_how_a_version_takes_the_pen_back(browser, serve):
     saying out loud."""
     url = serve(JOURNEY_V1)
     d = serve.page_dir
-    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
-                              "widget": "draft-ops", "action": "edit",
-                              "detail": {"text": DRAFT_EDITED}})
+    interact.append_event(
+        d,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "draft-ops",
+            "action": "edit",
+            "detail": {"text": DRAFT_EDITED},
+        },
+    )
     corrected = "Run the migration after deploying — it needs the new column."
-    _publish(d, 2, _draft_says(JOURNEY_V2, corrected, " restated"),
-             "0041 needs the column; rewrote the draft")
+    _publish(
+        d,
+        2,
+        _draft_says(JOURNEY_V2, corrected, " restated"),
+        "0041 needs the column; rewrote the draft",
+    )
 
     page, errors = open_page(browser, url.replace("v1.html", "v2.html"))
     body = page.locator("#draft-ops .cq-draft-body")
@@ -6642,9 +7267,17 @@ def test_a_retraction_outlives_the_version_that_made_it(browser, serve):
     on it and every later version inherits it for free."""
     url = serve(JOURNEY_V1)
     d = serve.page_dir
-    interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
-                              "widget": "draft-ops", "action": "edit",
-                              "detail": {"text": DRAFT_EDITED}})
+    interact.append_event(
+        d,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "draft-ops",
+            "action": "edit",
+            "detail": {"text": DRAFT_EDITED},
+        },
+    )
     corrected = "Run the migration after deploying — it needs the new column."
     _publish(d, 2, _draft_says(JOURNEY_V2, corrected, " restated"), "rewrote the draft")
     # v3 keeps v2's words and says nothing about the retraction, because
@@ -6662,13 +7295,16 @@ def test_a_retraction_outlives_the_version_that_made_it(browser, serve):
         _draft_says(JOURNEY_V2, corrected, " restated")
     )
     result = CliRunner().invoke(
-        interact.cli, ["version", "publish", str(d), "--version", "4", "--text", "again"]
+        interact.cli,
+        ["version", "publish", str(d), "--version", "4", "--text", "again"],
     )
     assert result.exit_code != 0
     assert "v2 already took that back" in result.output
 
 
-_CARD = '<cq-card id="card-x"><strong>Guard the session delete</strong> One line.</cq-card>'
+_CARD = (
+    '<cq-card id="card-x"><strong>Guard the session delete</strong> One line.</cq-card>'
+)
 
 
 def _card_done(html):
@@ -6694,7 +7330,9 @@ def test_a_decision_not_yet_honored_wears_the_pending_mark(browser, serve):
     dest = page.locator("#col-done").bounding_box()
     page.mouse.move(grip["x"] + grip["width"] / 2, grip["y"] + grip["height"] / 2)
     page.mouse.down()
-    page.mouse.move(dest["x"] + dest["width"] / 2, dest["y"] + dest["height"] / 2, steps=15)
+    page.mouse.move(
+        dest["x"] + dest["width"] / 2, dest["y"] + dest["height"] / 2, steps=15
+    )
     page.mouse.up()
     expect(page.locator("#card-x[data-cq-pending]")).to_have_count(1)
 
@@ -6711,7 +7349,12 @@ def test_a_decision_not_yet_honored_wears_the_pending_mark(browser, serve):
         assert time.time() < deadline, "the actions never reached the log"
         time.sleep(0.05)
 
-    _publish(d, 2, _card_done(_draft_says(JOURNEY_V2, DRAFT_EDITED)), "honors the move and the edit")
+    _publish(
+        d,
+        2,
+        _card_done(_draft_says(JOURNEY_V2, DRAFT_EDITED)),
+        "honors the move and the edit",
+    )
     page.wait_for_url("**/v2.html", timeout=15000)
     page.wait_for_function("() => document.querySelector('.cq-banner') !== null")
     # A poll has run once the status text resolves, so the pending pass has too.
@@ -6723,7 +7366,9 @@ def test_a_decision_not_yet_honored_wears_the_pending_mark(browser, serve):
     # The diff's state half is quiet about the honored move: base state is the
     # base markup plus the fold as of it, which already has the card in Done.
     page.get_by_role("button", name=re.compile("Δ")).click()
-    page.wait_for_function("() => document.querySelector('.cq-banner .cq-btn.on') !== null")
+    page.wait_for_function(
+        "() => document.querySelector('.cq-banner .cq-btn.on') !== null"
+    )
     assert not page.evaluate(
         "document.getElementById('card-x').classList.contains('cq-ins-block')"
     ), "the reviewer's own honored drag marked as a change"
@@ -6738,11 +7383,15 @@ def test_the_diff_marks_a_card_the_author_relocated(browser, serve):
     with no reviewer action behind it — marks the card itself. The card alone:
     an id'd element nested inside it rode along rather than changing columns,
     and marking it too would double-tint one move."""
-    noted = _CARD.replace("</cq-card>", '<p id="card-x-note">A nested aside.</p></cq-card>')
+    noted = _CARD.replace(
+        "</cq-card>", '<p id="card-x-note">A nested aside.</p></cq-card>'
+    )
     v1 = JOURNEY_V1.replace(_CARD, noted)
     url = serve(v1)
     d = serve.page_dir
-    _publish(d, 2, _card_done(JOURNEY_V1).replace(_CARD, noted), "moved the card to Done")
+    _publish(
+        d, 2, _card_done(JOURNEY_V1).replace(_CARD, noted), "moved the card to Done"
+    )
     page, errors = open_page(browser, url.replace("v1.html", "v2.html"))
     page.get_by_role("button", name=re.compile("Δ")).click()
     page.wait_for_function(
@@ -6769,15 +7418,27 @@ def test_accepting_a_suggestion_resolves_its_thread_in_one_event(browser, serve)
     retired by the honoring version, and a second POST could fail alone, leaving
     the outcome and the resolution disagreeing with no repair path. One event,
     read by both thread builders."""
-    url = serve(JOURNEY_V1.replace('<h2 id="notes">', SUGGEST_BLOCK + '<h2 id="notes">'))
+    url = serve(
+        JOURNEY_V1.replace('<h2 id="notes">', SUGGEST_BLOCK + '<h2 id="notes">')
+    )
     d = serve.page_dir
-    interact.append_event(d, {"kind": "comment", "id": "c1", "author": "user", "version": 1,
-                              "text": "does this take downtime?"})
+    interact.append_event(
+        d,
+        {
+            "kind": "comment",
+            "id": "c1",
+            "author": "user",
+            "version": 1,
+            "text": "does this take downtime?",
+        },
+    )
     page, errors = open_page(browser, url)
     page.get_by_role("button", name=re.compile("^Accept the suggested change")).click()
     page.get_by_role("button", name=re.compile("^Comments")).click()
     expect(page.locator(".cq-details summary")).to_have_text("Resolved (1)")
-    events = [json.loads(line) for line in (d / "comments.jsonl").read_text().splitlines()]
+    events = [
+        json.loads(line) for line in (d / "comments.jsonl").read_text().splitlines()
+    ]
     accept = next(e for e in events if e.get("kind") == "action")
     assert accept["action"] == "accept" and accept["detail"] == {"resolves": "c1"}
     assert not any(e.get("kind") == "resolve" for e in events)
@@ -6897,12 +7558,16 @@ def test_overlapping_polls_never_move_the_log_backwards(browser, serve):
     )
     # A later poll overtakes the held one and renders the newest log.
     told(page)
-    expect(page.locator(".cq-thread", has_text="Newest snapshot stays rendered")).to_have_count(1)
+    expect(
+        page.locator(".cq-thread", has_text="Newest snapshot stays rendered")
+    ).to_have_count(1)
     # Then the stale answer arrives. One more poll after it is what proves the page
     # handled it and kept the thread, rather than being asked before it ever landed.
     page.wait_for_function("() => window.cqDelayedPollReleased === true")
     told(page)
-    expect(page.locator(".cq-thread", has_text="Newest snapshot stays rendered")).to_have_count(1)
+    expect(
+        page.locator(".cq-thread", has_text="Newest snapshot stays rendered")
+    ).to_have_count(1)
     assert errors == []
     page.close()
 
@@ -6925,7 +7590,9 @@ def test_the_help_overlay_answers_to_one_owner(browser, serve):
     page.keyboard.press("?")
     expect(page.locator(".cq-help")).to_be_visible()
     expect(page.locator(".cq-help h3", has_text="On a draft")).to_have_count(2)
-    expect(page.locator(".cq-help", has_text="a project widget using the same heading")).to_be_visible()
+    expect(
+        page.locator(".cq-help", has_text="a project widget using the same heading")
+    ).to_be_visible()
     page.keyboard.press("Escape")
     expect(page.locator(".cq-help")).to_be_hidden()
     page.keyboard.press("?")
@@ -6974,13 +7641,27 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
     """The banner may claim no more than the page directory can prove. A watch that
     has stopped must read differently from a watch with nothing to report, because
     otherwise the reviewer's only way to tell them apart is to ask."""
-    page, _ = open_page(browser, serve(LONG_PAGE, comments=1), init_script=WATCH_TRAFFIC)
+    page, _ = open_page(
+        browser, serve(LONG_PAGE, comments=1), init_script=WATCH_TRAFFIC
+    )
     d = tmp_path / "page"
     text, dot = page.locator(".cq-status-text"), page.locator(".cq-dot")
 
-    def declare(state, detail="", *, agent="Claude", handoff=False, quiet_for=0, session_pid=None):
+    def declare(
+        state,
+        detail="",
+        *,
+        agent="Claude",
+        handoff=False,
+        quiet_for=0,
+        session_pid=None,
+    ):
         ts = datetime.now().astimezone() - timedelta(seconds=quiet_for)
-        status = {"state": state, "detail": detail, "ts": ts.isoformat(timespec="seconds")}
+        status = {
+            "state": state,
+            "detail": detail,
+            "ts": ts.isoformat(timespec="seconds"),
+        }
         if handoff:
             status["handoff"] = True
         interact.write_json(
@@ -6991,7 +7672,9 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
         told(page)
 
     declare("working", "revising the plan")
-    expect(text).to_have_text(re.compile(r"^Claude is working — revising the plan \(.+\)$"))
+    expect(text).to_have_text(
+        re.compile(r"^Claude is working — revising the plan \(.+\)$")
+    )
     expect(dot).to_have_class(re.compile(r"\bworking\b"))
 
     declare("waiting")
@@ -7048,11 +7731,13 @@ def written_anchors(page_dir, html, limit=40):
     words = text.split(" ")
     anchors = []
     for start in range(0, len(words), 3):
-        quote = " ".join(words[start:start + 8])
+        quote = " ".join(words[start : start + 8])
         if len(quote) < 20:
             continue
         try:
-            anchors.append((quote, interact.capture_anchor(html, registry, quote, None)))
+            anchors.append(
+                (quote, interact.capture_anchor(html, registry, quote, None))
+            )
         except ValueError:
             continue
         if len(anchors) == limit:
@@ -7071,10 +7756,21 @@ def test_an_anchor_written_from_the_file_lands_on_the_page(browser, serve, examp
     url = serve(html)
     d = serve.page_dir
     anchors = written_anchors(d, html)
-    assert len(anchors) >= 10, f"only {len(anchors)} anchors over {example.stem}; sweep too thin"
+    assert len(anchors) >= 10, (
+        f"only {len(anchors)} anchors over {example.stem}; sweep too thin"
+    )
     for i, (_, anchor) in enumerate(anchors):
-        interact.append_event(d, {"kind": "comment", "author": "claude", "version": 1,
-                                  "id": f"written{i}", "anchor": anchor, "text": f"note {i}"})
+        interact.append_event(
+            d,
+            {
+                "kind": "comment",
+                "author": "claude",
+                "version": 1,
+                "id": f"written{i}",
+                "anchor": anchor,
+                "text": f"note {i}",
+            },
+        )
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
 
@@ -7082,14 +7778,20 @@ def test_an_anchor_written_from_the_file_lands_on_the_page(browser, serve, examp
     detached = page.eval_on_selector_all(
         ".cq-thread .cq-quote.detached", "els => els.map(e => e.textContent)"
     )
-    assert detached == [], f"{len(detached)} anchors resolved to nothing in {example.stem}: {detached}"
+    assert detached == [], (
+        f"{len(detached)} anchors resolved to nothing in {example.stem}: {detached}"
+    )
     # And that the homes are the right ones. Painted in thread order, one range per
     # segment, so the passages concatenate: whitespace aside, because a quote's is
     # elastic to the search by design — a block boundary is a space in the file's
     # reading and no character at all in the page's.
-    painted = re.sub(r"\s", "", page.evaluate(
-        "() => [...CSS.highlights.get('cq-mark')].map(r => r.toString()).join('')"
-    ))
+    painted = re.sub(
+        r"\s",
+        "",
+        page.evaluate(
+            "() => [...CSS.highlights.get('cq-mark')].map(r => r.toString()).join('')"
+        ),
+    )
     wanted = re.sub(r"\s", "", "".join(quote for quote, _ in anchors))
     assert painted == wanted, f"anchors in {example.stem} painted text they don't name"
     assert errors == []
@@ -7131,16 +7833,28 @@ def test_a_written_anchor_keeps_its_copy_when_the_page_grows_another(browser, se
     d = serve.page_dir
     result = CliRunner().invoke(
         interact.cli,
-        ["review", "comment", str(d), "--quote", "The version stamp never lands", "--text", "capped where?"],
+        [
+            "review",
+            "comment",
+            str(d),
+            "--quote",
+            "The version stamp never lands",
+            "--text",
+            "capped where?",
+        ],
     )
     assert result.exit_code == 0, result.output
     anchor = json.loads(result.output)["anchor"]
-    assert anchor["prefix"] and anchor["suffix"], f"nothing stored to tell copies apart: {anchor}"
+    assert anchor["prefix"] and anchor["suffix"], (
+        f"nothing stored to tell copies apart: {anchor}"
+    )
 
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     (d / "versions" / "v2.html").write_text(TWIN_V2)
-    interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "a twin"})
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "a twin"}
+    )
     page.wait_for_url("**/v2.html", timeout=15000)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     where = page.evaluate(
@@ -7161,10 +7875,23 @@ def test_a_written_comment_keeps_its_originating_agent(browser, serve):
         d / "session.json",
         {"id": "codex", "pid": os.getpid(), "agent": "Codex", "ts": "t"},
     )
-    assert CliRunner().invoke(
-        interact.cli,
-        ["review", "comment", str(d), "--quote", "Retries are capped at three", "--text", "is three right?"],
-    ).exit_code == 0
+    assert (
+        CliRunner()
+        .invoke(
+            interact.cli,
+            [
+                "review",
+                "comment",
+                str(d),
+                "--quote",
+                "Retries are capped at three",
+                "--text",
+                "is three right?",
+            ],
+        )
+        .exit_code
+        == 0
+    )
     interact.write_json(
         d / "session.json",
         {"id": "claude", "pid": os.getpid(), "agent": "Claude", "ts": "t"},
@@ -7172,7 +7899,9 @@ def test_a_written_comment_keeps_its_originating_agent(browser, serve):
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     toggle = page.locator("button[aria-expanded]")
-    expect(toggle).to_have_text("Comments (1)")  # counted as open, like any other thread
+    expect(toggle).to_have_text(
+        "Comments (1)"
+    )  # counted as open, like any other thread
     toggle.click()
     thread = page.locator(".cq-thread").first
     expect(thread.locator(".cq-msg.claude .cq-msg-head b")).to_have_text("Codex")

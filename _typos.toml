@@ -1,0 +1,4 @@
+[default.extend-words]
+# A render check quotes the passage print drops at 40 characters, so it can cut a
+# word in half; tests/test_render.py expects one of those cuts.
+recor = "recor"

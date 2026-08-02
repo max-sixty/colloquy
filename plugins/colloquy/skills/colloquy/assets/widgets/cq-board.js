@@ -56,7 +56,8 @@ customElements.define(
       // Own cards only (:scope-deep would double-wire a nested board's cards).
       for (const card of this.querySelectorAll(":scope > cq-column > cq-card"))
         this.#grip(card);
-      for (const col of this.querySelectorAll(":scope > cq-column")) this.#sortable(col);
+      for (const col of this.querySelectorAll(":scope > cq-column"))
+        this.#sortable(col);
       this.#names();
       // Grip names come from where their cards sit and whether the runtime has
       // marked their move as awaiting a version, so mutations of those two inputs
@@ -206,7 +207,10 @@ customElements.define(
         const target = cols[cols.indexOf(col) + dCol];
         if (!target) return;
         // Same visual index, clamped to the target's end.
-        target.insertBefore(card, this.#cards(target)[this.#cards(col).indexOf(card)] ?? null);
+        target.insertBefore(
+          card,
+          this.#cards(target)[this.#cards(col).indexOf(card)] ?? null,
+        );
       }
       grip.focus({ preventScroll: true }); // reparenting blurred it (Chromium)
       card.scrollIntoView({ behavior: SCROLL, block: "nearest" });
@@ -314,7 +318,12 @@ customElements.define(
       if (action !== "move") return;
       const card = document.getElementById(detail.card);
       const col = document.getElementById(detail.to);
-      if (!card?.matches("cq-card") || !col?.matches("cq-column") || !this.contains(col)) return;
+      if (
+        !card?.matches("cq-card") ||
+        !col?.matches("cq-column") ||
+        !this.contains(col)
+      )
+        return;
       const grip = card.querySelector(":scope > .cq-grip");
       const hadFocus = document.activeElement === grip;
       const first = card.getBoundingClientRect();

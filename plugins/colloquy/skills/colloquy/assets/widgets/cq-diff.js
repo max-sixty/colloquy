@@ -12,7 +12,15 @@
  *
  * What gets tokenized is a hunk, one side at a time, with the +/−/space column
  * cut off. Each of those is load-bearing; see colorHunks. */
-import { failSoft, langForPath, once, settle, synNodes, syntax, tokenLines } from "/colloquy.js";
+import {
+  failSoft,
+  langForPath,
+  once,
+  settle,
+  synNodes,
+  syntax,
+  tokenLines,
+} from "/colloquy.js";
 
 // One entry per file: {path, adds, dels, lines: [{kind, text}]} where kind is
 // add | del | ctx | hunk | note. Tolerates both `diff --git` and bare ---/+++
@@ -55,7 +63,14 @@ function parseDiff(text) {
     } else if (line.startsWith("-")) {
       file.dels++;
       file.lines.push({ kind: "del", text: line });
-    } else if (line.startsWith("index ") || line.startsWith("new file") || line.startsWith("deleted file") || line.startsWith("similarity ") || line.startsWith("rename ") || line.startsWith("Binary files ")) {
+    } else if (
+      line.startsWith("index ") ||
+      line.startsWith("new file") ||
+      line.startsWith("deleted file") ||
+      line.startsWith("similarity ") ||
+      line.startsWith("rename ") ||
+      line.startsWith("Binary files ")
+    ) {
       continue;
     } else if (line.startsWith("\\ ")) {
       // `\ No newline at end of file` — git remarking on the line above rather than
@@ -95,7 +110,10 @@ async function colorHunks(file, lang) {
   let hunk = [];
   const close = () => {
     if (hunk.length)
-      for (const kinds of [["ctx", "del"], ["ctx", "add"]])
+      for (const kinds of [
+        ["ctx", "del"],
+        ["ctx", "add"],
+      ])
         runs.push(hunk.filter((i) => kinds.includes(file.lines[i].kind)));
     hunk = [];
   };
@@ -137,7 +155,9 @@ function fileNode(file, colored) {
   details.open = true;
   const summary = document.createElement("summary");
   summary.append(
-    Object.assign(document.createElement("code"), { textContent: file.path || "(unnamed file)" }),
+    Object.assign(document.createElement("code"), {
+      textContent: file.path || "(unnamed file)",
+    }),
     Object.assign(document.createElement("span"), {
       className: "cq-diff-stat",
       textContent: `+${file.adds} −${file.dels}`,

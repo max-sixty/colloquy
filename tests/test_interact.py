@@ -238,7 +238,9 @@ def test_shim_adds_playwright_only_for_browser_commands(
     tmp_path, monkeypatch, args, needs_playwright
 ):
     fake_uv = tmp_path / "uv"
-    fake_uv.write_text('#!/bin/sh\nfor cli_arg in "$@"; do\n  printf "%s\\n" "$cli_arg"\ndone\n')
+    fake_uv.write_text(
+        '#!/bin/sh\nfor cli_arg in "$@"; do\n  printf "%s\\n" "$cli_arg"\ndone\n'
+    )
     fake_uv.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tmp_path}:{os.environ['PATH']}")
     shim = PLUGIN_ROOT / "bin" / "colloquy"
@@ -267,7 +269,9 @@ def page_dir(tmp_path, monkeypatch):
 
 
 def check(d, version=None):
-    args = ["version", "check", str(d)] + (["--version", str(version)] if version else [])
+    args = ["version", "check", str(d)] + (
+        ["--version", str(version)] if version else []
+    )
     return CliRunner().invoke(interact.cli, args)
 
 
@@ -298,14 +302,18 @@ def fragment_errors(html, registry):
 
 
 def test_claude_and_codex_load_the_same_plugin_payload():
-    claude_marketplace = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
+    claude_marketplace = json.loads(
+        (ROOT / ".claude-plugin" / "marketplace.json").read_text()
+    )
     codex_marketplace = json.loads(
         (ROOT / ".agents" / "plugins" / "marketplace.json").read_text()
     )
     claude_manifest = json.loads(
         (PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text()
     )
-    codex_manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text())
+    codex_manifest = json.loads(
+        (PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text()
+    )
 
     assert claude_marketplace["plugins"][0]["source"] == "./plugins/colloquy"
     assert codex_marketplace["plugins"][0]["source"] == {
@@ -414,7 +422,9 @@ def test_init_user_layer_applies(tmp_path, monkeypatch):
     (home / ".config" / "colloquy" / "widgets").mkdir(parents=True)
     custom_theme = ":root { --accent: teal }\n"
     (home / ".config" / "colloquy" / "theme.css").write_text(custom_theme)
-    (home / ".config" / "colloquy" / "widgets" / "cq-foo.js").write_text("// user widget")
+    (home / ".config" / "colloquy" / "widgets" / "cq-foo.js").write_text(
+        "// user widget"
+    )
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(tmp_path)
     d = tmp_path / "page"
@@ -495,7 +505,9 @@ def test_init_merges_registry_layers_by_complete_entry(tmp_path, monkeypatch):
     assert "cq-options" in registry and "$events" in registry
 
 
-def test_customize_scaffolds_a_project_widget_that_init_can_vendor(tmp_path, monkeypatch):
+def test_customize_scaffolds_a_project_widget_that_init_can_vendor(
+    tmp_path, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
 
@@ -515,9 +527,7 @@ def test_customize_scaffolds_a_project_widget_that_init_can_vendor(tmp_path, mon
     assert entry["x-verbatim"] is True
     assert "<cq-callout" in entry["x-example"]
     assert "cq-callout {" in (layer / "theme.css").read_text()
-    assert "customElements.define(" in (
-        layer / "widgets" / "cq-callout.js"
-    ).read_text()
+    assert "customElements.define(" in (layer / "widgets" / "cq-callout.js").read_text()
 
     page = tmp_path / "page"
     initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
@@ -549,9 +559,7 @@ def test_customize_scaffolds_a_long_widget_name(tmp_path, monkeypatch):
     if len(os.fsencode(module_name)) > name_max:
         pytest.skip("the final module name does not fit this filesystem")
 
-    result = CliRunner().invoke(
-        interact.cli, ["customize", "widget", tag, "--upgrade"]
-    )
+    result = CliRunner().invoke(interact.cli, ["customize", "widget", tag, "--upgrade"])
 
     assert result.exit_code == 0, result.output
     layer = tmp_path / ".colloquy"
@@ -578,17 +586,13 @@ def test_customize_never_overwrites_an_existing_layer(tmp_path, monkeypatch):
     registry_before = (layer / "registry.json").read_text()
     theme_before = theme.read_text()
 
-    duplicate = runner.invoke(
-        interact.cli, ["customize", "widget", "cq-note-card"]
-    )
+    duplicate = runner.invoke(interact.cli, ["customize", "widget", "cq-note-card"])
     assert duplicate.exit_code != 0
     assert "already exists" in duplicate.output
     assert (layer / "registry.json").read_text() == registry_before
     assert theme.read_text() == theme_before
 
-    shipped = runner.invoke(
-        interact.cli, ["customize", "widget", "cq-options"]
-    )
+    shipped = runner.invoke(interact.cli, ["customize", "widget", "cq-options"])
     assert shipped.exit_code != 0
     assert "already exists" in shipped.output
     assert (layer / "registry.json").read_text() == registry_before
@@ -620,9 +624,7 @@ def test_customize_preserves_a_symlinked_registry(tmp_path, monkeypatch):
     registry = layer / "registry.json"
     registry.symlink_to(shared_registry)
 
-    result = CliRunner().invoke(
-        interact.cli, ["customize", "widget", "cq-shared-note"]
-    )
+    result = CliRunner().invoke(interact.cli, ["customize", "widget", "cq-shared-note"])
 
     assert result.exit_code == 0, result.output
     assert registry.is_symlink()
@@ -683,9 +685,7 @@ def test_customize_refuses_targets_aliased_to_another_layer(
         layer.symlink_to(user, target_is_directory=True)
     else:
         layer.mkdir()
-        (layer / alias).symlink_to(
-            user / alias, target_is_directory=alias == "widgets"
-        )
+        (layer / alias).symlink_to(user / alias, target_is_directory=alias == "widgets")
     before = {
         path.relative_to(user): path.read_bytes()
         for path in user.rglob("*")
@@ -717,16 +717,12 @@ def test_customize_refuses_targets_aliased_to_another_layer(
     ],
     ids=["project-theme", "project-widget", "user-theme", "user-widget"],
 )
-def test_customize_protects_another_layers_future_root(
-    tmp_path, monkeypatch, args
-):
+def test_customize_protects_another_layers_future_root(tmp_path, monkeypatch, args):
     project = tmp_path / "project"
     project.mkdir()
     config = tmp_path / "config"
     config.mkdir()
-    (project / ".colloquy").symlink_to(
-        config / "colloquy", target_is_directory=True
-    )
+    (project / ".colloquy").symlink_to(config / "colloquy", target_is_directory=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
     monkeypatch.chdir(project)
 
@@ -748,25 +744,17 @@ def test_path_case_policy_matches_the_filesystem(tmp_path):
     assert interact._filesystem_case_sensitive(tmp_path) is not alias_resolves
 
 
-def test_path_overlap_respects_case_sensitive_future_names(
-    tmp_path, monkeypatch
-):
+def test_path_overlap_respects_case_sensitive_future_names(tmp_path, monkeypatch):
     upper = tmp_path / "FutureScope"
     lower = tmp_path / "fUTUREsCOPE"
-    monkeypatch.setattr(
-        interact, "_filesystem_case_sensitive", lambda path: True
-    )
+    monkeypatch.setattr(interact, "_filesystem_case_sensitive", lambda path: True)
     assert not interact.paths_overlap(upper, lower)
 
-    monkeypatch.setattr(
-        interact, "_filesystem_case_sensitive", lambda path: False
-    )
+    monkeypatch.setattr(interact, "_filesystem_case_sensitive", lambda path: False)
     assert interact.paths_same(upper, lower)
 
 
-def test_customize_refuses_case_aliased_future_roots(
-    tmp_path, monkeypatch
-):
+def test_customize_refuses_case_aliased_future_roots(tmp_path, monkeypatch):
     project = tmp_path / "Project"
     project.mkdir()
     alias = case_alias(project)
@@ -789,9 +777,7 @@ def test_customize_refuses_a_broken_case_alias_to_its_future_target(
     config = tmp_path / "Config"
     user_theme = config / "colloquy" / "theme.css"
     user_theme.parent.mkdir(parents=True)
-    user_theme.symlink_to(
-        alias / ".COLLOQUY" / "THEME.CSS"
-    )
+    user_theme.symlink_to(alias / ".COLLOQUY" / "THEME.CSS")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
     monkeypatch.chdir(project)
 
@@ -800,14 +786,10 @@ def test_customize_refuses_a_broken_case_alias_to_its_future_target(
     assert result.exit_code != 0
     assert "overlaps another layer source" in result.output
     assert user_theme.is_symlink() and not user_theme.exists()
-    assert not (
-        project / ".colloquy" / "theme.css"
-    ).exists()
+    assert not (project / ".colloquy" / "theme.css").exists()
 
 
-def test_customize_refuses_an_existing_member_case_alias(
-    tmp_path, monkeypatch
-):
+def test_customize_refuses_an_existing_member_case_alias(tmp_path, monkeypatch):
     project = tmp_path / "Project"
     project.mkdir()
     config = tmp_path / "Config"
@@ -817,16 +799,12 @@ def test_customize_refuses_an_existing_member_case_alias(
     config_alias = case_alias(config)
     project_theme = project / ".colloquy" / "theme.css"
     project_theme.parent.mkdir(parents=True)
-    project_theme.symlink_to(
-        config_alias / "COLLOQUY" / "THEME.CSS"
-    )
+    project_theme.symlink_to(config_alias / "COLLOQUY" / "THEME.CSS")
     before = user_theme.read_bytes()
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
     monkeypatch.chdir(project)
 
-    result = CliRunner().invoke(
-        interact.cli, ["customize", "widget", "cq-case-member"]
-    )
+    result = CliRunner().invoke(interact.cli, ["customize", "widget", "cq-case-member"])
 
     assert result.exit_code != 0
     assert "overlaps another layer source" in result.output
@@ -835,9 +813,7 @@ def test_customize_refuses_an_existing_member_case_alias(
 
 
 @pytest.mark.parametrize("user", [False, True], ids=["project", "user"])
-def test_customize_refuses_an_initialized_page_as_a_layer(
-    tmp_path, monkeypatch, user
-):
+def test_customize_refuses_an_initialized_page_as_a_layer(tmp_path, monkeypatch, user):
     project = tmp_path / "project"
     project.mkdir()
     config = tmp_path / "config"
@@ -916,9 +892,7 @@ def test_customize_refuses_members_aliased_into_an_initialized_page(
     assert not (layer / "registry.json").exists() or relative == "registry.json"
 
 
-def test_customize_recognizes_a_page_without_runtime_status(
-    tmp_path, monkeypatch
-):
+def test_customize_recognizes_a_page_without_runtime_status(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -975,9 +949,7 @@ def test_customize_refuses_sources_aliased_to_page_owned_state(
 
     layer = project / ".colloquy"
     layer.mkdir(parents=True)
-    (layer / source_name).symlink_to(
-        target, target_is_directory=target.is_dir()
-    )
+    (layer / source_name).symlink_to(target, target_is_directory=target.is_dir())
 
     result = runner.invoke(
         interact.cli,
@@ -995,9 +967,7 @@ def test_customize_refuses_sources_aliased_to_page_owned_state(
     assert not (layer / "registry.json").exists()
 
 
-def test_customize_continues_when_the_project_root_is_the_page(
-    tmp_path, monkeypatch
-):
+def test_customize_continues_when_the_project_root_is_the_page(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     themed = runner.invoke(interact.cli, ["customize", "theme"])
@@ -1049,26 +1019,17 @@ def test_customize_continues_when_the_project_root_is_the_page(
         "session.json",
     ),
 )
-def test_initialized_page_owns_runtime_state_paths(
-    tmp_path, monkeypatch, name
-):
+def test_initialized_page_owns_runtime_state_paths(tmp_path, monkeypatch, name):
     monkeypatch.chdir(tmp_path)
     page = tmp_path / "page"
     initialized = CliRunner().invoke(interact.cli, ["page", "init", str(page)])
     assert initialized.exit_code == 0, initialized.output
 
     assert interact.initialized_page_owning(page / name) == page
-    assert (
-        interact.initialized_page_owning(
-            page / ".colloquy" / name
-        )
-        is None
-    )
+    assert interact.initialized_page_owning(page / ".colloquy" / name) is None
 
 
-@pytest.mark.parametrize(
-    "directory", ("versions", "widgets", "vendor", "media")
-)
+@pytest.mark.parametrize("directory", ("versions", "widgets", "vendor", "media"))
 def test_initialized_page_owns_declared_directory_trees(
     tmp_path, monkeypatch, directory
 ):
@@ -1077,15 +1038,10 @@ def test_initialized_page_owns_declared_directory_trees(
     initialized = CliRunner().invoke(interact.cli, ["page", "init", str(page)])
     assert initialized.exit_code == 0, initialized.output
 
-    assert (
-        interact.initialized_page_owning(page / directory / "future")
-        == page
-    )
+    assert interact.initialized_page_owning(page / directory / "future") == page
 
 
-def test_customize_allows_a_symlink_managed_external_layer(
-    tmp_path, monkeypatch
-):
+def test_customize_allows_a_symlink_managed_external_layer(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     layer = tmp_path / ".colloquy"
     layer.mkdir(parents=True)
@@ -1114,26 +1070,18 @@ def test_customize_allows_a_symlink_managed_external_layer(
     assert (widgets / "cq-managed.js").is_file()
 
 
-def test_replace_files_rejects_case_aliased_future_targets(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr(
-        interact, "_filesystem_case_sensitive", lambda path: False
-    )
+def test_replace_files_rejects_case_aliased_future_targets(tmp_path, monkeypatch):
+    monkeypatch.setattr(interact, "_filesystem_case_sensitive", lambda path: False)
     first = tmp_path / "Result.css"
     second = tmp_path / "rESULT.CSS"
 
     with pytest.raises(SystemExit, match="resolve to the same target"):
-        interact.replace_files(
-            [(first, b"first", False), (second, b"second", False)]
-        )
+        interact.replace_files([(first, b"first", False), (second, b"second", False)])
 
     assert not first.exists() and not second.exists()
 
 
-def test_customize_widget_names_a_wrong_kind_lower_layer(
-    tmp_path, monkeypatch
-):
+def test_customize_widget_names_a_wrong_kind_lower_layer(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
     config = tmp_path / "config"
@@ -1143,9 +1091,7 @@ def test_customize_widget_names_a_wrong_kind_lower_layer(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
     monkeypatch.chdir(project)
 
-    result = CliRunner().invoke(
-        interact.cli, ["customize", "widget", "cq-clear-error"]
-    )
+    result = CliRunner().invoke(interact.cli, ["customize", "widget", "cq-clear-error"])
 
     assert result.exit_code != 0
     assert f"{user_layer} must be a directory" in result.output
@@ -1211,9 +1157,7 @@ def test_customize_refuses_an_existing_member_aliased_to_another_scope(
     user_module = config / "colloquy" / "widgets" / "cq-shared.js"
     user_module.parent.mkdir(parents=True)
     user_module.write_text("// shared source\n")
-    project_module = (
-        project / ".colloquy" / "widgets" / "cq-shared.js"
-    )
+    project_module = project / ".colloquy" / "widgets" / "cq-shared.js"
     project_module.parent.mkdir(parents=True)
     project_module.symlink_to(user_module)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
@@ -1229,9 +1173,7 @@ def test_customize_refuses_an_existing_member_aliased_to_another_scope(
 
 
 @pytest.mark.parametrize("user", [False, True], ids=["project", "user"])
-def test_init_refuses_to_overwrite_a_customization_source(
-    tmp_path, monkeypatch, user
-):
+def test_init_refuses_to_overwrite_a_customization_source(tmp_path, monkeypatch, user):
     project = tmp_path / "project"
     project.mkdir()
     config = tmp_path / "config"
@@ -1264,9 +1206,7 @@ def test_init_refuses_to_overwrite_a_customization_source(
     assert after == before
 
 
-def test_init_refuses_overlapping_customization_scopes(
-    tmp_path, monkeypatch
-):
+def test_init_refuses_overlapping_customization_scopes(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
     config = tmp_path / "config"
@@ -1297,9 +1237,7 @@ def test_init_refuses_overlapping_customization_scopes(
     assert not page.exists()
 
 
-def test_init_refuses_case_aliased_layer_scopes(
-    tmp_path, monkeypatch
-):
+def test_init_refuses_case_aliased_layer_scopes(tmp_path, monkeypatch):
     project = tmp_path / "Project"
     project.mkdir()
     alias = case_alias(project)
@@ -1320,9 +1258,7 @@ def test_init_refuses_case_aliased_layer_scopes(
     assert not page.exists()
 
 
-def test_init_refuses_to_write_inside_a_customization_source(
-    tmp_path, monkeypatch
-):
+def test_init_refuses_to_write_inside_a_customization_source(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     scaffold = runner.invoke(
@@ -1383,9 +1319,7 @@ def test_init_refuses_a_case_aliased_page_inside_a_customization_source(
     assert after == before
 
 
-def test_customize_widget_validates_every_target_before_writing(
-    tmp_path, monkeypatch
-):
+def test_customize_widget_validates_every_target_before_writing(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     layer = tmp_path / ".colloquy"
     theme = layer / "theme.css"
@@ -1404,9 +1338,7 @@ def test_customize_widget_validates_every_target_before_writing(
     assert not (layer / "widgets").exists()
 
 
-def test_customize_widget_refuses_malformed_css_before_writing(
-    tmp_path, monkeypatch
-):
+def test_customize_widget_refuses_malformed_css_before_writing(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     layer = tmp_path / ".colloquy"
     layer.mkdir(parents=True)
@@ -1424,9 +1356,7 @@ def test_customize_widget_refuses_malformed_css_before_writing(
     assert not (layer / "widgets").exists()
 
 
-def test_init_reads_the_complete_layer_before_revendoring(
-    tmp_path, monkeypatch
-):
+def test_init_reads_the_complete_layer_before_revendoring(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     page = tmp_path / "page"
@@ -1459,9 +1389,7 @@ def test_init_reads_the_complete_layer_before_revendoring(
     assert after == before
 
 
-def test_init_refuses_malformed_layer_css_before_revendoring(
-    tmp_path, monkeypatch
-):
+def test_init_refuses_malformed_layer_css_before_revendoring(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     page = tmp_path / "page"
@@ -1519,9 +1447,7 @@ def test_init_does_not_partially_revendor_on_a_destination_conflict(
 
 
 @pytest.mark.parametrize("sub", ["versions", "widgets", "vendor"])
-def test_init_refuses_a_symlinked_page_directory(
-    tmp_path, monkeypatch, sub
-):
+def test_init_refuses_a_symlinked_page_directory(tmp_path, monkeypatch, sub):
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     page = tmp_path / "page"
@@ -1617,9 +1543,7 @@ def test_init_refuses_a_case_aliased_source_at_a_page_destination(
     assert after == before
 
 
-def test_init_preserves_tmp_files_even_when_a_layer_reads_one(
-    tmp_path, monkeypatch
-):
+def test_init_preserves_tmp_files_even_when_a_layer_reads_one(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     page = tmp_path / "page"
@@ -1658,9 +1582,7 @@ def test_init_refuses_wrong_kind_customization_paths(
     else:
         path.write_text("not a directory")
 
-    result = CliRunner().invoke(
-        interact.cli, ["page", "init", str(tmp_path / "page")]
-    )
+    result = CliRunner().invoke(interact.cli, ["page", "init", str(tmp_path / "page")])
 
     assert result.exit_code != 0
     assert str(path) in result.output
@@ -1671,9 +1593,7 @@ def test_init_refuses_an_upgraded_custom_widget_without_its_module(
 ):
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
-    scaffold = runner.invoke(
-        interact.cli, ["customize", "widget", "cq-unfinished"]
-    )
+    scaffold = runner.invoke(interact.cli, ["customize", "widget", "cq-unfinished"])
     assert scaffold.exit_code == 0, scaffold.output
 
     registry_path = tmp_path / ".colloquy" / "registry.json"
@@ -1692,9 +1612,7 @@ def test_init_refuses_a_registry_example_that_violates_its_schema(
 ):
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
-    scaffold = runner.invoke(
-        interact.cli, ["customize", "widget", "cq-toned-note"]
-    )
+    scaffold = runner.invoke(interact.cli, ["customize", "widget", "cq-toned-note"])
     assert scaffold.exit_code == 0, scaffold.output
 
     registry_path = tmp_path / ".colloquy" / "registry.json"
@@ -1730,9 +1648,7 @@ def test_init_refuses_invalid_ids_in_a_registry_example(
 ):
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
-    scaffold = runner.invoke(
-        interact.cli, ["customize", "widget", "cq-toned-note"]
-    )
+    scaffold = runner.invoke(interact.cli, ["customize", "widget", "cq-toned-note"])
     assert scaffold.exit_code == 0, scaffold.output
     registry_path = tmp_path / ".colloquy" / "registry.json"
     registry = json.loads(registry_path.read_text())
@@ -1821,7 +1737,9 @@ def test_check_rejects_duplicate_attributes_the_browser_reads_differently(page_d
         'id="feeder-board"', 'id="browser-board" id="file-board"'
     )
     version = page_dir / "versions" / "v1.html"
-    version.write_text(version.read_text().replace("</section>", board + "\n</section>"))
+    version.write_text(
+        version.read_text().replace("</section>", board + "\n</section>")
+    )
 
     result = check(page_dir)
 
@@ -1851,7 +1769,10 @@ def test_check_rejects_a_language_nothing_will_color(page_dir):
     result = check(page_dir)
     assert result.exit_code == 1
     out = result.output
-    assert 'class="language-pythn"' in out and "not a language this page's layer speaks" in out
+    assert (
+        'class="language-pythn"' in out
+        and "not a language this page's layer speaks" in out
+    )
     assert 'class="language-python"' in out and "only <pre><code> is colored" in out
     assert '<cq-code language="pythn">' in out, out
     # The well-formed block is not among the complaints.
@@ -1896,7 +1817,9 @@ def test_the_block_content_lists_agree_and_cover_the_vocabulary():
         "stacked-group triggers"
     )
     tag_sets = [{t.strip() for t in found.split(",")} for found in lists]
-    assert tag_sets[0] == tag_sets[1] == tag_sets[2], "the block-content lists have drifted"
+    assert tag_sets[0] == tag_sets[1] == tag_sets[2], (
+        "the block-content lists have drifted"
+    )
     registry = json.loads((interact.ASSETS / "registry.json").read_text())
     top_level = {
         tag
@@ -1909,7 +1832,9 @@ def test_the_block_content_lists_agree_and_cover_the_vocabulary():
     )
 
 
-def test_a_tone_the_layer_cannot_paint_is_refused_where_the_author_can_still_fix_it(page_dir):
+def test_a_tone_the_layer_cannot_paint_is_refused_where_the_author_can_still_fix_it(
+    page_dir,
+):
     """The same failure a misspelt language has, and caught for the same reason: a
     tone nothing matches paints nothing, so the chip renders neutral on a page that
     otherwise looks perfectly well. The reviewer cannot see it — they never knew it
@@ -1993,9 +1918,13 @@ def test_check_rejects_loose_content_in_items_container(page_dir):
 
 
 def test_flag_attribute_accepts_both_html_spellings(page_dir):
-    (page_dir / "versions" / "v1.html").write_text(PAGE.replace(" recommended>", ' recommended="">'))
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace(" recommended>", ' recommended="">')
+    )
     assert check(page_dir).exit_code == 0
-    (page_dir / "versions" / "v1.html").write_text(PAGE.replace(" recommended>", ' recommended="yes">'))
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace(" recommended>", ' recommended="yes">')
+    )
     result = check(page_dir)
     assert result.exit_code == 1
     assert "is not of type 'boolean'" in result.output
@@ -2063,14 +1992,22 @@ def suggest(page_dir, version=2, markup=SUGGESTION):
     check against."""
     (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<cq-options>", markup))
     publish(page_dir)
-    (page_dir / "versions" / f"v{version}.html").write_text(PAGE.replace("<cq-options>", markup))
+    (page_dir / "versions" / f"v{version}.html").write_text(
+        PAGE.replace("<cq-options>", markup)
+    )
 
 
 def decide(page_dir, outcome, widget="sug-refill"):
     interact.append_event(
         page_dir,
-        {"kind": "action", "author": "user", "version": 1, "widget": widget,
-         "action": outcome, "detail": {}},
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": widget,
+            "action": outcome,
+            "detail": {},
+        },
     )
 
 
@@ -2083,31 +2020,44 @@ def test_suggestion_rejects_malformed_shapes(page_dir):
     for markup, expected in [
         ('<cq-suggestion id="sug-a"></cq-suggestion><cq-options>', "needs a <cq-old>"),
         (
-            '<cq-suggestion id="sug-a"><cq-new><p>x</p></cq-new>'
-            '<cq-new><p>y</p></cq-new></cq-suggestion><cq-options>',
+            (
+                '<cq-suggestion id="sug-a"><cq-new><p>x</p></cq-new>'
+                "<cq-new><p>y</p></cq-new></cq-suggestion><cq-options>"
+            ),
             "one at most",
         ),
         (
-            '<cq-suggestion id="sug-a"><cq-new>'
-            '<cq-suggestion id="sug-b"><cq-new>x</cq-new></cq-suggestion>'
-            "</cq-new></cq-suggestion><cq-options>",
+            (
+                '<cq-suggestion id="sug-a"><cq-new>'
+                '<cq-suggestion id="sug-b"><cq-new>x</cq-new></cq-suggestion>'
+                "</cq-new></cq-suggestion><cq-options>"
+            ),
             "don't nest",
         ),
-        ('<cq-old><p>orphan</p></cq-old><cq-options>', "must be a direct child of <cq-suggestion>"),
         (
-            '<cq-suggestion id="sug-a" resolves="nosuch"><cq-new><p>x</p></cq-new>'
-            "</cq-suggestion><cq-options>",
+            "<cq-old><p>orphan</p></cq-old><cq-options>",
+            "must be a direct child of <cq-suggestion>",
+        ),
+        (
+            (
+                '<cq-suggestion id="sug-a" resolves="nosuch"><cq-new><p>x</p></cq-new>'
+                "</cq-suggestion><cq-options>"
+            ),
             "names no comment in the log",
         ),
     ]:
-        (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<cq-options>", markup))
+        (page_dir / "versions" / "v1.html").write_text(
+            PAGE.replace("<cq-options>", markup)
+        )
         result = check(page_dir, version=1)
         assert result.exit_code == 1, markup
         assert expected in result.output, f"{markup}\n{result.output}"
 
 
 def test_suggestion_resolves_accepts_a_real_comment(page_dir):
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"}
+    )
     markup = '<cq-suggestion id="sug-a" resolves="c1"><cq-new><p>x</p></cq-new></cq-suggestion><cq-options>'
     (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<cq-options>", markup))
     assert check(page_dir, version=1).exit_code == 0
@@ -2118,7 +2068,8 @@ def test_accepting_licenses_retiring_the_replaced_markup(page_dir):
     # proposal inlined. Nothing but a logged accept makes that legal.
     suggest(page_dir)
     honored = PAGE.replace(
-        "<cq-options>", '<p id="refill-camera">Refill when the camera shows it half-empty.</p><cq-options>'
+        "<cq-options>",
+        '<p id="refill-camera">Refill when the camera shows it half-empty.</p><cq-options>',
     )
     (page_dir / "versions" / "v2.html").write_text(honored)
     result = check(page_dir, version=2)
@@ -2138,7 +2089,10 @@ def test_an_unanswered_proposal_cant_be_kept_as_settled_content(page_dir):
 <cq-options>"""
     suggest(page_dir, markup=insert)
     (page_dir / "versions" / "v2.html").write_text(
-        PAGE.replace("<cq-options>", '<p id="thistle-plan">Switch the north feeder to thistle in autumn.</p><cq-options>')
+        PAGE.replace(
+            "<cq-options>",
+            '<p id="thistle-plan">Switch the north feeder to thistle in autumn.</p><cq-options>',
+        )
     )
     result = check(page_dir, version=2)
     assert result.exit_code == 1
@@ -2157,12 +2111,20 @@ def test_rejecting_licenses_retiring_the_proposal(page_dir):
     # thread about it is open — the reviewer has already answered.
     suggest(page_dir)
     (page_dir / "versions" / "v2.html").write_text(
-        PAGE.replace("<cq-options>", '<p id="refill-rule">Refill every feeder each morning.</p><cq-options>')
+        PAGE.replace(
+            "<cq-options>",
+            '<p id="refill-rule">Refill every feeder each morning.</p><cq-options>',
+        )
     )
     interact.append_event(
         page_dir,
-        {"kind": "comment", "id": "c1", "author": "user",
-         "anchor": {"section": "refill-camera"}, "text": "cameras aren't reliable yet"},
+        {
+            "kind": "comment",
+            "id": "c1",
+            "author": "user",
+            "anchor": {"section": "refill-camera"},
+            "text": "cameras aren't reliable yet",
+        },
     )
     assert check(page_dir, version=2).exit_code == 1
     decide(page_dir, "reject")
@@ -2195,36 +2157,57 @@ def test_withdrawing_an_unanswered_suggestion_needs_no_consent(page_dir):
     # an unresolved thread is anchored in it.
     suggest(page_dir)
     (page_dir / "versions" / "v2.html").write_text(
-        PAGE.replace("<cq-options>", '<p id="refill-rule">Refill every feeder each morning.</p><cq-options>')
+        PAGE.replace(
+            "<cq-options>",
+            '<p id="refill-rule">Refill every feeder each morning.</p><cq-options>',
+        )
     )
     assert check(page_dir, version=2).exit_code == 0
     interact.append_event(
         page_dir,
-        {"kind": "comment", "id": "c1", "author": "user",
-         "anchor": {"section": "refill-camera"}, "text": "why the camera?"},
+        {
+            "kind": "comment",
+            "id": "c1",
+            "author": "user",
+            "anchor": {"section": "refill-camera"},
+            "text": "why the camera?",
+        },
     )
     result = check(page_dir, version=2)
     assert result.exit_code == 1
     assert "refill-camera" in result.output
-    interact.append_event(page_dir, {"kind": "resolve", "author": "user", "parent": "c1"})
+    interact.append_event(
+        page_dir, {"kind": "resolve", "author": "user", "parent": "c1"}
+    )
     assert check(page_dir, version=2).exit_code == 0
 
 
 def test_reply_refuses_a_suggestion(page_dir):
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"}
+    )
     result = CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text", "Fixed:", "--markup",
-         '<cq-suggestion id="sug-x"><cq-new><p>fixed</p></cq-new></cq-suggestion>'],
+        [
+            "review",
+            "reply",
+            str(page_dir),
+            "--to",
+            "c1",
+            "--text",
+            "Fixed:",
+            "--markup",
+            '<cq-suggestion id="sug-x"><cq-new><p>fixed</p></cq-new></cq-suggestion>',
+        ],
     )
     assert result.exit_code != 0
     assert "frozen in the log" in result.output
 
 
 def test_check_rejects_wrong_scaffold(page_dir):
-    html = PAGE.replace('<script type="module" src="/colloquy.js"></script>', "").replace(
-        '<link rel="stylesheet" href="/theme.css">', ""
-    )
+    html = PAGE.replace(
+        '<script type="module" src="/colloquy.js"></script>', ""
+    ).replace('<link rel="stylesheet" href="/theme.css">', "")
     (page_dir / "versions" / "v1.html").write_text(html)
     result = check(page_dir)
     assert result.exit_code == 1
@@ -2236,17 +2219,22 @@ def test_check_owns_the_cq_meta_vocabulary(page_dir):
     # The sign-off declaration: valid on its one value, rejected on a misspelled
     # value or name — either would silently declare nothing in the browser.
     signoff = PAGE.replace(
-        "<title>t</title>", '<title>t</title>\n<meta name="cq-review" content="sign-off">'
+        "<title>t</title>",
+        '<title>t</title>\n<meta name="cq-review" content="sign-off">',
     )
     (page_dir / "versions" / "v1.html").write_text(signoff)
     assert check(page_dir).exit_code == 0
 
-    (page_dir / "versions" / "v1.html").write_text(signoff.replace("sign-off", "approve"))
+    (page_dir / "versions" / "v1.html").write_text(
+        signoff.replace("sign-off", "approve")
+    )
     result = check(page_dir)
     assert result.exit_code == 1
     assert "content must be one of ['sign-off'], found 'approve'" in result.output
 
-    (page_dir / "versions" / "v1.html").write_text(signoff.replace("cq-review", "cq-signoff"))
+    (page_dir / "versions" / "v1.html").write_text(
+        signoff.replace("cq-review", "cq-signoff")
+    )
     result = check(page_dir)
     assert result.exit_code == 1
     assert "unknown cq- meta" in result.output
@@ -2271,14 +2259,26 @@ def _decided(page_dir, words):
     """v1 carrying a draft the reviewer has since rewritten, and the log that
     says so. Whatever v2 does about it, `version check` is what has to notice."""
     (page_dir / "versions" / "v1.html").write_text(
-        PAGE.replace("<h2>Plan</h2>", f'<h2>Plan</h2><cq-draft id="d1">{words}</cq-draft>')
+        PAGE.replace(
+            "<h2>Plan</h2>", f'<h2>Plan</h2><cq-draft id="d1">{words}</cq-draft>'
+        )
     )
     publish(page_dir)
-    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
-                                     "widget": "d1", "action": "edit",
-                                     "detail": {"text": "Cut the flag; backfill first."}})
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "d1",
+            "action": "edit",
+            "detail": {"text": "Cut the flag; backfill first."},
+        },
+    )
     return lambda words, attrs="": (page_dir / "versions" / "v2.html").write_text(
-        PAGE.replace("<h2>Plan</h2>", f'<h2>Plan</h2><cq-draft id="d1"{attrs}>{words}</cq-draft>')
+        PAGE.replace(
+            "<h2>Plan</h2>", f'<h2>Plan</h2><cq-draft id="d1"{attrs}>{words}</cq-draft>'
+        )
     )
 
 
@@ -2294,7 +2294,9 @@ def test_a_version_may_not_quietly_rewrite_what_the_reviewer_decided(page_dir):
     # Re-emitting what v1 said is the ordinary republish, and costs nothing:
     # the reviewer's edit is already on screen over it.
     v2("Ship the flag dark, then backfill.")
-    assert check(page_dir, version=2).exit_code == 0, "a republish that changes nothing must pass"
+    assert check(page_dir, version=2).exit_code == 0, (
+        "a republish that changes nothing must pass"
+    )
 
     # Writing their own words back is the other quiet case, and the commoner
     # one: the version agrees with the edit rather than overruling it. A gate
@@ -2321,7 +2323,9 @@ def test_restating_on_the_first_version_is_refused(page_dir):
     a misreading of what the word does — and one that would record a retraction
     of nothing into the log."""
     (page_dir / "versions" / "v1.html").write_text(
-        PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1" restated>Words.</cq-draft>')
+        PAGE.replace(
+            "<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1" restated>Words.</cq-draft>'
+        )
     )
     result = check(page_dir)
     assert result.exit_code == 1
@@ -2365,6 +2369,7 @@ def test_the_gate_asks_about_the_card_that_was_moved_and_not_the_board(page_dir)
     So the subject is the card, and `restated` on it retracts that card's moves
     alone. The rest of the board stays where the reviewer put it, which is what
     keeps a typo fix from costing them an afternoon's arrangement."""
+
     def write(version, todo, done):
         (page_dir / "versions" / f"v{version}.html").write_text(
             PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + _board(todo, done))
@@ -2372,26 +2377,40 @@ def test_the_gate_asks_about_the_card_that_was_moved_and_not_the_board(page_dir)
 
     write(1, [X, Y], [])
     publish(page_dir)
-    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
-                                     "widget": "b1", "action": "move",
-                                     "detail": {"card": "card-x", "to": "c-done", "index": 0}})
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "b1",
+            "action": "move",
+            "detail": {"card": "card-x", "to": "c-done", "index": 0},
+        },
+    )
     assert check(page_dir).exit_code == 0
 
     # An untouched card rewritten, the moved card's own words left alone.
     write(2, [X, ("card-y", "", "Wire the importer and its backfill")], [])
-    assert check(page_dir, version=2).exit_code == 0, "an untouched card is not the gate's business"
+    assert check(page_dir, version=2).exit_code == 0, (
+        "an untouched card is not the gate's business"
+    )
 
     # The card written where the reviewer put it. Redundant now that replay
     # carries the move, but a version that does it anyway is not wrong.
     write(2, [Y], [X])
-    assert check(page_dir, version=2).exit_code == 0, "relocating the moved card must pass"
+    assert check(page_dir, version=2).exit_code == 0, (
+        "relocating the moved card must pass"
+    )
 
     # The moved card's own words rewritten: now the decision is in question.
     write(2, [("card-x", "", "Guard the delete behind the flag"), Y], [])
     result = check(page_dir, version=2)
     assert result.exit_code == 1
     assert "card-x" in result.output and "move on v1" in result.output
-    assert "card-y" not in result.output, "the gate named a card nobody had decided about"
+    assert "card-y" not in result.output, (
+        "the gate named a card nobody had decided about"
+    )
 
     write(2, [("card-x", " restated", "Guard the delete behind the flag"), Y], [])
     assert check(page_dir, version=2).exit_code == 0
@@ -2400,8 +2419,9 @@ def test_the_gate_asks_about_the_card_that_was_moved_and_not_the_board(page_dir)
     # a board is never what a decision rests on, and offering `restated` there
     # would be a door onto an error message about retracting nothing.
     (page_dir / "versions" / "v2.html").write_text(
-        (page_dir / "versions" / "v2.html").read_text().replace('<cq-board id="b1">',
-                                                                  '<cq-board id="b1" restated>')
+        (page_dir / "versions" / "v2.html")
+        .read_text()
+        .replace('<cq-board id="b1">', '<cq-board id="b1" restated>')
     )
     result = check(page_dir, version=2)
     assert result.exit_code == 1
@@ -2426,27 +2446,48 @@ def test_the_gate_reads_a_pick_the_same_way_it_reads_an_edit(page_dir):
     changing what they picked and lands in the same comparison its prose does.
     The gate reads the version the way the anchor pass does, which is what keeps
     that true without anything here knowing a chip from a paragraph."""
+
     def write(version, **kw):
-        opts = OPTIONS.format(**{"a": "", "b": "", "chip": "", "shim": "Fastest to ship.",
-                                 "stage": "Table by table.", **kw})
+        opts = OPTIONS.format(
+            **{
+                "a": "",
+                "b": "",
+                "chip": "",
+                "shim": "Fastest to ship.",
+                "stage": "Table by table.",
+                **kw,
+            }
+        )
         (page_dir / "versions" / f"v{version}.html").write_text(
             PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts)
         )
 
     write(1)
     publish(page_dir)
-    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
-                                     "widget": "g1", "action": "choose",
-                                     "detail": {"options": ["o-shim"]}})
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "g1",
+            "action": "choose",
+            "detail": {"options": ["o-shim"]},
+        },
+    )
     assert check(page_dir).exit_code == 0
 
     # The record the next version owes: the picked card marked, nothing else.
     write(2, a=" chosen")
-    assert check(page_dir, version=2).exit_code == 0, "marking the pick is not a rewrite"
+    assert check(page_dir, version=2).exit_code == 0, (
+        "marking the pick is not a rewrite"
+    )
 
     # An option nobody picked, rewritten freely.
     write(2, a=" chosen", stage="One table at a time, behind a flag.")
-    assert check(page_dir, version=2).exit_code == 0, "an unpicked option is free to change"
+    assert check(page_dir, version=2).exit_code == 0, (
+        "an unpicked option is free to change"
+    )
 
     # The picked one, rewritten — the reviewer chose those words.
     write(2, a=" chosen", shim="Fastest to ship, and we own the shim forever.")
@@ -2474,18 +2515,32 @@ def test_a_cleared_pick_rests_on_the_group_that_holds_it(page_dir):
     falls out of the subject rule rather than being written for this case — which
     is why the group takes `restated` and a board, whose every move names a card,
     does not."""
+
     def write(version, shim="Fastest to ship.", attrs=""):
         opts = OPTIONS.format(a="", b="", chip="", shim=shim, stage="Table by table.")
         (page_dir / "versions" / f"v{version}.html").write_text(
-            PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts.replace(
-                '<cq-options id="g1" choose>', f'<cq-options id="g1" choose{attrs}>'))
+            PAGE.replace(
+                "<h2>Plan</h2>",
+                "<h2>Plan</h2>"
+                + opts.replace(
+                    '<cq-options id="g1" choose>', f'<cq-options id="g1" choose{attrs}>'
+                ),
+            )
         )
 
     write(1)
     publish(page_dir)
-    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
-                                     "widget": "g1", "action": "choose",
-                                     "detail": {"options": []}})
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "g1",
+            "action": "choose",
+            "detail": {"options": []},
+        },
+    )
     write(2, shim="Fastest to ship, and we own the shim forever.")
     result = check(page_dir, version=2)
     assert result.exit_code == 1
@@ -2503,18 +2558,32 @@ def test_a_version_may_not_quietly_move_the_pick(page_dir):
     the author's again: the next version moves the pick freely, because a unit
     with no surviving folded action is exempt — that exemption is what keeps
     the retract-and-ask-again flow from deadlocking one version later."""
+
     def write(version, a="", b="", attrs="", shim="Fastest to ship."):
         opts = OPTIONS.format(a=a, b=b, chip="", shim=shim, stage="Table by table.")
         (page_dir / "versions" / f"v{version}.html").write_text(
-            PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts.replace(
-                '<cq-options id="g1" choose>', f'<cq-options id="g1" choose{attrs}>'))
+            PAGE.replace(
+                "<h2>Plan</h2>",
+                "<h2>Plan</h2>"
+                + opts.replace(
+                    '<cq-options id="g1" choose>', f'<cq-options id="g1" choose{attrs}>'
+                ),
+            )
         )
 
     write(1)
     publish(page_dir)
-    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
-                                     "widget": "g1", "action": "choose",
-                                     "detail": {"options": ["o-shim"]}})
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "g1",
+            "action": "choose",
+            "detail": {"options": ["o-shim"]},
+        },
+    )
 
     # The author's markup contradicting the recorded pick, words untouched.
     write(2, b=" chosen")
@@ -2527,7 +2596,16 @@ def test_a_version_may_not_quietly_move_the_pick(page_dir):
     write(2, b=" chosen", attrs=" restated")
     assert check(page_dir, version=2).exit_code == 0, check(page_dir, version=2).output
     result = CliRunner().invoke(
-        interact.cli, ["version", "publish", str(page_dir), "--version", "2", "--text", "moved the default"]
+        interact.cli,
+        [
+            "version",
+            "publish",
+            str(page_dir),
+            "--version",
+            "2",
+            "--text",
+            "moved the default",
+        ],
     )
     assert result.exit_code == 0, result.output
 
@@ -2549,17 +2627,28 @@ def test_check_reports_record_lag_without_erroring(page_dir):
     the markup, so `version check` says where it lags the log, as advice on a passing
     run. `review transcript` says the same to stderr, where the debt stops being
     fixable."""
+
     def write(version, a=""):
-        opts = OPTIONS.format(a=a, b="", chip="", shim="Fastest to ship.", stage="Table by table.")
+        opts = OPTIONS.format(
+            a=a, b="", chip="", shim="Fastest to ship.", stage="Table by table."
+        )
         (page_dir / "versions" / f"v{version}.html").write_text(
             PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts)
         )
 
     write(1)
     publish(page_dir)
-    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
-                                     "widget": "g1", "action": "choose",
-                                     "detail": {"options": ["o-shim"]}})
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "g1",
+            "action": "choose",
+            "detail": {"options": ["o-shim"]},
+        },
+    )
     write(2)
     result = check(page_dir, version=2)
     assert result.exit_code == 0
@@ -2580,15 +2669,41 @@ def test_an_accept_carries_its_thread_resolution(page_dir):
     """One atomic event: the accept snapshots the thread it answers, because the
     honoring version retires the wrapper that held the `resolves` mapping and a
     second POST could fail alone. A reject answers nothing."""
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user",
-                                     "text": "cameras are flaky"})
-    interact.append_event(page_dir, {"kind": "comment", "id": "c2", "author": "user",
-                                     "text": "and the other thing"})
-    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
-                                     "widget": "sug-a", "action": "accept",
-                                     "detail": {"resolves": "c1"}})
-    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
-                                     "widget": "sug-b", "action": "reject", "detail": {}})
+    interact.append_event(
+        page_dir,
+        {"kind": "comment", "id": "c1", "author": "user", "text": "cameras are flaky"},
+    )
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "comment",
+            "id": "c2",
+            "author": "user",
+            "text": "and the other thing",
+        },
+    )
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "sug-a",
+            "action": "accept",
+            "detail": {"resolves": "c1"},
+        },
+    )
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "sug-b",
+            "action": "reject",
+            "detail": {},
+        },
+    )
     threads = interact.build_threads(interact.read_events(page_dir))
     assert threads["c1"]["resolved"] is True
     assert threads["c2"]["resolved"] is False
@@ -2608,9 +2723,17 @@ def test_init_refuses_a_log_the_incoming_layer_no_longer_speaks(page_dir):
         )
     )
     publish(page_dir)
-    interact.append_event(page_dir, {"kind": "action", "author": "user", "version": 1,
-                                     "widget": "d1", "action": "decide",
-                                     "detail": {"decision": "approved"}})
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "d1",
+            "action": "decide",
+            "detail": {"decision": "approved"},
+        },
+    )
     result = CliRunner().invoke(interact.cli, ["page", "init", str(page_dir)])
     assert result.exit_code != 0
     assert "no longer speaks" in result.output
@@ -2648,7 +2771,9 @@ def test_init_tracks_logged_verbs_by_the_widget_that_declared_them(page_dir):
     registry = json.loads((page_dir / "registry.json").read_text())
     board = registry["cq-board"]["x-example"]
     version = page_dir / "versions" / "v1.html"
-    version.write_text(version.read_text().replace("</section>", board + "\n</section>"))
+    version.write_text(
+        version.read_text().replace("</section>", board + "\n</section>")
+    )
     publish(page_dir)
     interact.append_event(
         page_dir,
@@ -2693,7 +2818,9 @@ def test_init_refuses_an_incoming_detail_contract_that_rejects_logged_actions(
     registry = json.loads((page_dir / "registry.json").read_text())
     board = registry["cq-board"]["x-example"]
     version = page_dir / "versions" / "v1.html"
-    version.write_text(version.read_text().replace("</section>", board + "\n</section>"))
+    version.write_text(
+        version.read_text().replace("</section>", board + "\n</section>")
+    )
     publish(page_dir)
     interact.append_event(
         page_dir,
@@ -2805,7 +2932,10 @@ def test_check_refuses_an_invalid_action_detail_schema(page_dir):
 
     result = check(page_dir)
     assert result.exit_code != 0
-    assert "<cq-options> x-state verb `choose` has an invalid detail schema" in result.output
+    assert (
+        "<cq-options> x-state verb `choose` has an invalid detail schema"
+        in result.output
+    )
 
 
 def test_action_detail_schemas_match_the_post_object_contract(page_dir):
@@ -2821,9 +2951,9 @@ def test_action_detail_schemas_match_the_post_object_contract(page_dir):
 @pytest.mark.parametrize("subschema", [True, False])
 def test_state_reader_fields_reject_boolean_subschemas(page_dir, subschema):
     registry = json.loads((page_dir / "registry.json").read_text())
-    registry["cq-options"]["x-state"]["choose"]["detail"]["properties"][
-        "options"
-    ] = subschema
+    registry["cq-options"]["x-state"]["choose"]["detail"]["properties"]["options"] = (
+        subschema
+    )
     (page_dir / "registry.json").write_text(json.dumps(registry))
 
     result = check(page_dir)
@@ -2872,7 +3002,9 @@ def test_per_part_state_records_positions(page_dir, tag, verb, field):
         ("cq-draft", "edit", "text", "must be a string"),
     ],
 )
-def test_record_values_have_the_type_the_reader_uses(page_dir, tag, verb, field, wanted):
+def test_record_values_have_the_type_the_reader_uses(
+    page_dir, tag, verb, field, wanted
+):
     registry = json.loads((page_dir / "registry.json").read_text())
     spec = registry[tag]["x-state"][verb]
     spec["detail"]["properties"][field] = {"type": "integer"}
@@ -2978,9 +3110,7 @@ def test_init_requires_tones_to_be_a_list_membership_can_be_tested_against(
 
 
 @pytest.mark.parametrize("field", [None, "restated"])
-def test_init_requires_the_event_vocabulary_the_layer_writes(
-    page_dir, tmp_path, field
-):
+def test_init_requires_the_event_vocabulary_the_layer_writes(page_dir, tmp_path, field):
     overlay = tmp_path / ".colloquy"
     overlay.mkdir(parents=True)
     registry = json.loads((page_dir / "registry.json").read_text())
@@ -3002,11 +3132,16 @@ def test_a_widget_nobody_has_touched_is_not_the_gate_s_business(page_dir):
     """The gate is about decisions, so it holds nothing against a version that
     rewrites a widget the reviewer never acted on."""
     (page_dir / "versions" / "v1.html").write_text(
-        PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">First words.</cq-draft>')
+        PAGE.replace(
+            "<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">First words.</cq-draft>'
+        )
     )
     publish(page_dir)
     (page_dir / "versions" / "v2.html").write_text(
-        PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">Quite different words.</cq-draft>')
+        PAGE.replace(
+            "<h2>Plan</h2>",
+            '<h2>Plan</h2><cq-draft id="d1">Quite different words.</cq-draft>',
+        )
     )
     assert check(page_dir, version=2).exit_code == 0
 
@@ -3023,7 +3158,9 @@ def test_check_requires_the_vendored_layer(tmp_path):
 def test_check_takes_column_width_from_vendored_theme(page_dir):
     # theme.css sets a 720px main column; a wider fixed-width element must fail.
     (page_dir / "versions" / "v1.html").write_text(
-        PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><svg width="900" height="10"></svg>')
+        PAGE.replace(
+            "<h2>Plan</h2>", '<h2>Plan</h2><svg width="900" height="10"></svg>'
+        )
     )
     result = check(page_dir)
     assert result.exit_code == 1
@@ -3055,7 +3192,10 @@ def test_check_names_a_media_reference_the_directory_cannot_answer(page_dir):
     would see the 404, but it runs once; this runs on every version, and whether a
     file is there is as deterministic as whether an id is."""
     (page_dir / "versions" / "v1.html").write_text(
-        PAGE.replace("<h2>Plan</h2>", '<h2>Plan</h2><p><img alt="x" src="/media/deadbeefdeadbeef.png"></p>')
+        PAGE.replace(
+            "<h2>Plan</h2>",
+            '<h2>Plan</h2><p><img alt="x" src="/media/deadbeefdeadbeef.png"></p>',
+        )
     )
     result = check(page_dir)
     assert result.exit_code == 1
@@ -3082,7 +3222,10 @@ def test_check_reads_only_the_page_stylesheet_and_stays_near_free(page_dir):
     and not on a slow machine; the assertion above it fails on the shape that fed it the
     page."""
     blob = "A" * 1_000_000
-    html = PAGE.replace("<h2>Plan</h2>", f'<h2>Plan</h2><p><img alt="shot" src="data:image/png;base64,{blob}"></p>')
+    html = PAGE.replace(
+        "<h2>Plan</h2>",
+        f'<h2>Plan</h2><p><img alt="shot" src="data:image/png;base64,{blob}"></p>',
+    )
     (page_dir / "versions" / "v1.html").write_text(html)
     parser = interact._StructParser()
     parser.feed(html)
@@ -3111,8 +3254,13 @@ def test_check_reads_a_page_stylesheet_as_css(page_dir):
         (page_dir / "versions" / "v1.html").write_text(styled(css))
         return check(page_dir)
 
-    assert "sets width: 900px" in checked("@media print { .wide { width: 900px } }").output
-    assert "sets width: 900px" in checked('.wide::before { content: "}"; width: 900px }').output
+    assert (
+        "sets width: 900px" in checked("@media print { .wide { width: 900px } }").output
+    )
+    assert (
+        "sets width: 900px"
+        in checked('.wide::before { content: "}"; width: 900px }').output
+    )
     assert checked("/* .wide { width: 900px } */").exit_code == 0
 
 
@@ -3154,7 +3302,10 @@ def test_check_takes_its_column_from_what_a_page_states_outright(page_dir):
 
     # And nesting is not a condition: a column stated on a rule that also wraps one stands.
     (page_dir / "versions" / "v1.html").write_text(
-        styled("main { max-width: 1000px; & p { color: red } }", '<svg width="900" height="10"></svg>')
+        styled(
+            "main { max-width: 1000px; & p { color: red } }",
+            '<svg width="900" height="10"></svg>',
+        )
     )
     assert check(page_dir).exit_code == 0
 
@@ -3168,7 +3319,9 @@ def test_check_counts_only_a_width_fixed_in_pixels(page_dir):
     )
     assert check(page_dir).exit_code == 0
 
-    (page_dir / "versions" / "v1.html").write_text(styled(".d { width: 900px !important }"))
+    (page_dir / "versions" / "v1.html").write_text(
+        styled(".d { width: 900px !important }")
+    )
     assert "sets width: 900px" in check(page_dir).output
 
 
@@ -3186,14 +3339,19 @@ def test_check_reads_widths_where_the_document_states_them(page_dir):
     for one instead read a rule quoted in the page's prose as a rule the page applies,
     and never saw a style="" written with the other quote character."""
     (page_dir / "versions" / "v1.html").write_text(
-        PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2><div style='width:900px'>wide</div>")
+        PAGE.replace(
+            "<h2>Plan</h2>", "<h2>Plan</h2><div style='width:900px'>wide</div>"
+        )
     )
     result = check(page_dir)
     assert result.exit_code == 1
     assert "inline style width: 900px (column is 720px)" in result.output
 
     (page_dir / "versions" / "v1.html").write_text(
-        PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2><p>Write it as <code>.wide { width: 900px }</code>.</p>")
+        PAGE.replace(
+            "<h2>Plan</h2>",
+            "<h2>Plan</h2><p>Write it as <code>.wide { width: 900px }</code>.</p>",
+        )
     )
     assert check(page_dir).exit_code == 0
 
@@ -3243,7 +3401,10 @@ def test_server_round_trip(server, page_dir):
     assert status == 404
     status, _ = fetch(f"{server}/versions/v1.html")
     assert status == 404
-    CliRunner().invoke(interact.cli, ["version", "publish", str(page_dir), "--version", "1", "--text", "cut"])
+    CliRunner().invoke(
+        interact.cli,
+        ["version", "publish", str(page_dir), "--version", "1", "--text", "cut"],
+    )
     status, body = fetch(f"{server}/")  # urllib follows the 302
     assert status == 200 and b"cq-options" in body
     # Vendored files serve; the log and directory paths don't.
@@ -3298,9 +3459,27 @@ def test_server_round_trip(server, page_dir):
         {"kind": "action", "action": "move"},  # no widget
         {"kind": "action", "widget": "", "action": "move", "detail": {}, "version": 1},
         {"kind": "action", "widget": "b", "action": "move", "version": 1},  # no detail
-        {"kind": "action", "widget": "b", "action": "move", "detail": None, "version": 1},
-        {"kind": "action", "widget": "b", "action": "move", "detail": {}, "version": "1"},
-        {"kind": "action", "widget": "b", "action": "move", "detail": {}, "version": True},
+        {
+            "kind": "action",
+            "widget": "b",
+            "action": "move",
+            "detail": None,
+            "version": 1,
+        },
+        {
+            "kind": "action",
+            "widget": "b",
+            "action": "move",
+            "detail": {},
+            "version": "1",
+        },
+        {
+            "kind": "action",
+            "widget": "b",
+            "action": "move",
+            "detail": {},
+            "version": True,
+        },
         {"kind": "action", "widget": "b", "action": "move", "detail": {}, "version": 0},
         {"kind": "action", "widget": "b", "action": "move", "detail": {}, "version": 2},
         {"kind": "comment", "version": 1},  # no text: a blank thread nobody can read
@@ -3419,7 +3598,13 @@ def test_server_resolves_actions_from_claude_thread_widgets(server, page_dir):
     publish(page_dir)
     interact.append_event(
         page_dir,
-        {"kind": "comment", "id": "c1", "author": "user", "version": 1, "text": "pick one"},
+        {
+            "kind": "comment",
+            "id": "c1",
+            "author": "user",
+            "version": 1,
+            "text": "pick one",
+        },
     )
     reply = CliRunner().invoke(
         interact.cli,
@@ -3432,9 +3617,11 @@ def test_server_resolves_actions_from_claude_thread_widgets(server, page_dir):
             "--text",
             "Pick one:",
             "--markup",
-            '<cq-options id="thread-pick" choose>'
-            '<cq-option id="thread-a"><strong>A</strong></cq-option>'
-            "</cq-options>",
+            (
+                '<cq-options id="thread-pick" choose>'
+                '<cq-option id="thread-a"><strong>A</strong></cq-option>'
+                "</cq-options>"
+            ),
         ],
     )
     assert reply.exit_code == 0, reply.output
@@ -3493,7 +3680,15 @@ def test_server_rejects_an_action_from_a_widget_removed_by_revendoring(
     )
     noted = CliRunner().invoke(
         interact.cli,
-        ["version", "publish", str(page_dir), "--version", "1", "--text", "custom widget"],
+        [
+            "version",
+            "publish",
+            str(page_dir),
+            "--version",
+            "1",
+            "--text",
+            "custom widget",
+        ],
     )
     assert noted.exit_code == 0, noted.output
 
@@ -3523,7 +3718,10 @@ def test_server_rejects_an_action_from_a_widget_removed_by_revendoring(
 
 
 def test_concurrent_posts_never_tear_the_log(server, page_dir):
-    CliRunner().invoke(interact.cli, ["version", "publish", str(page_dir), "--version", "1", "--text", "cut"])
+    CliRunner().invoke(
+        interact.cli,
+        ["version", "publish", str(page_dir), "--version", "1", "--text", "cut"],
+    )
 
     def post(i):
         fetch(
@@ -3549,7 +3747,10 @@ def test_a_reader_without_the_key_reads_and_writes_nothing(server, page_dir):
     """The page is served wherever the SSH session reached this machine, so the
     port is open to whatever else is on that network. Reading is half of it: the
     log outranks the document and takes appends from anyone who can POST."""
-    CliRunner().invoke(interact.cli, ["version", "publish", str(page_dir), "--version", "1", "--text", "cut"])
+    CliRunner().invoke(
+        interact.cli,
+        ["version", "publish", str(page_dir), "--version", "1", "--text", "cut"],
+    )
 
     assert fetch(f"{server}/versions/v1.html", token=None)[0] == 403
     assert fetch(f"{server}/api/state", token=None)[0] == 403
@@ -3557,7 +3758,9 @@ def test_a_reader_without_the_key_reads_and_writes_nothing(server, page_dir):
     assert (
         fetch(
             f"{server}/api/event",
-            data=json.dumps({"kind": "comment", "version": 1, "text": "not mine"}).encode(),
+            data=json.dumps(
+                {"kind": "comment", "version": 1, "text": "not mine"}
+            ).encode(),
             token=None,
         )[0]
         == 403
@@ -3572,7 +3775,10 @@ def test_the_key_arrives_in_the_query_and_stays_in_the_cookie(server, page_dir):
     it from there. The runtime's own fetches are relative and hold no query, and a
     reviewer who reloads the bare address is the same reviewer — so nothing has to
     thread it through the page, and `colloquy.js` never learns there is one."""
-    CliRunner().invoke(interact.cli, ["version", "publish", str(page_dir), "--version", "1", "--text", "cut"])
+    CliRunner().invoke(
+        interact.cli,
+        ["version", "publish", str(page_dir), "--version", "1", "--text", "cut"],
+    )
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 
@@ -3585,7 +3791,9 @@ def test_the_key_arrives_in_the_query_and_stays_in_the_cookie(server, page_dir):
         assert polled.status == 200
 
 
-def test_a_page_is_reached_where_the_ssh_session_reached_this_machine(page_dir, monkeypatch):
+def test_a_page_is_reached_where_the_ssh_session_reached_this_machine(
+    page_dir, monkeypatch
+):
     """SSH_CONNECTION is "client_ip client_port server_ip server_port" — the third
     field is the address that carried the session, so it is a route the reviewer has
     already used rather than a hostname guessed from this end. The server binds that
@@ -3635,7 +3843,9 @@ def test_the_stated_host_wildcard_serves_both_families(page_dir):
     """The URL promises whatever the stated name resolves to, so the socket must
     answer both: "::" with V6ONLY off reaches IPv4 as ::ffff:... — an AF_INET
     0.0.0.0 would leave an IPv6-only reviewer a URL nothing listens on."""
-    httpd = interact.DualStackHTTPServer(("::", 0), interact.handler_for(page_dir, TOKEN))
+    httpd = interact.DualStackHTTPServer(
+        ("::", 0), interact.handler_for(page_dir, TOKEN)
+    )
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     port = httpd.server_address[1]
     try:
@@ -3645,7 +3855,9 @@ def test_the_stated_host_wildcard_serves_both_families(page_dir):
         httpd.shutdown()
 
 
-def test_the_address_and_key_outlive_the_session_that_minted_them(page_dir, monkeypatch):
+def test_the_address_and_key_outlive_the_session_that_minted_them(
+    page_dir, monkeypatch
+):
     """`revive_server` restarts a dead server by re-running `server run`. The
     reviewer's browser has been polling one URL since it died, so a fresh address or
     key there would leave the page it reopens talking to nothing."""
@@ -3677,9 +3889,13 @@ def test_a_bare_ipv6_address_is_bracketed_in_the_url():
 
 def test_wait_prints_unacknowledged_user_events_and_flips_status(page_dir, capsys):
     # A live server.json (our own pid) satisfies wait's liveness probe.
-    interact.write_json(page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"})
+    interact.write_json(
+        page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"}
+    )
     interact.cmd_status(page_dir, "waiting", "")
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hi"})
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hi"}
+    )
     interact.append_event(
         page_dir,
         {
@@ -3711,7 +3927,9 @@ def test_wait_prints_unacknowledged_user_events_and_flips_status(page_dir, capsy
     assert page_state(page_dir)["pending"] == 1
 
     assert interact.cmd_wait(page_dir) == 0
-    assert [json.loads(line)["id"] for line in capsys.readouterr().out.splitlines()] == ["c2"]
+    assert [
+        json.loads(line)["id"] for line in capsys.readouterr().out.splitlines()
+    ] == ["c2"]
     interact.cmd_ack(page_dir, 3)
     assert page_state(page_dir)["pending"] == 0
     # The wait status is marked a handoff, which dates the claim: the agent's own
@@ -3724,7 +3942,8 @@ def test_wait_prints_unacknowledged_user_events_and_flips_status(page_dir, capsy
 
 def test_ack_checks_its_target_and_advances_monotonically(page_dir):
     interact.append_event(
-        page_dir, {"kind": "note", "author": "claude", "version": 1, "text": "published"}
+        page_dir,
+        {"kind": "note", "author": "claude", "version": 1, "text": "published"},
     )
     interact.append_event(
         page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hi"}
@@ -3750,16 +3969,21 @@ def test_ack_checks_its_target_and_advances_monotonically(page_dir):
 
 
 def test_wait_preserves_a_working_status_on_mid_work_output(page_dir, capsys):
-    interact.write_json(page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"})
+    interact.write_json(
+        page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"}
+    )
     interact.cmd_status(page_dir, "working", "running the browser suite")
     status_path = page_dir / "status.json"
     before = status_path.read_bytes()
     interact.append_event(
-        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "one more thing"}
+        page_dir,
+        {"kind": "comment", "id": "c1", "author": "user", "text": "one more thing"},
     )
 
     assert interact.cmd_wait(page_dir) == 0
-    assert [json.loads(line)["id"] for line in capsys.readouterr().out.splitlines()] == ["c1"]
+    assert [
+        json.loads(line)["id"] for line in capsys.readouterr().out.splitlines()
+    ] == ["c1"]
     assert status_path.read_bytes() == before
 
 
@@ -3772,7 +3996,9 @@ def test_wait_restarts_a_server_that_died_under_it(page_dir, capsys):
         for _ in range(100):
             time.sleep(0.1)
             if interact.running_server(page_dir):
-                interact.append_event(page_dir, {"kind": "comment", "author": "user", "text": "hi"})
+                interact.append_event(
+                    page_dir, {"kind": "comment", "author": "user", "text": "hi"}
+                )
                 return
 
     threading.Thread(target=comment_once_served, daemon=True).start()
@@ -3783,9 +4009,10 @@ def test_wait_restarts_a_server_that_died_under_it(page_dir, capsys):
         # the reviewer's browser has been polling that address since it died.
         assert info
         state = urllib.parse.urlsplit(info["url"])
-        assert urllib.request.urlopen(
-            state._replace(path="/api/state").geturl()
-        ).status == 200
+        assert (
+            urllib.request.urlopen(state._replace(path="/api/state").geturl()).status
+            == 200
+        )
         assert "server had died; restarted" in capsys.readouterr().err
     finally:
         interact.cmd_stop(page_dir)
@@ -3804,7 +4031,9 @@ def test_wait_holds_a_page_nobody_has_opened(page_dir, capsys):
     from one they can't reach, so the wait doesn't guess between them: over a page
     no request has ever touched it holds for the reviewer exactly as it would for
     one reading, and reports nothing of its own."""
-    interact.write_json(page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"})
+    interact.write_json(
+        page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"}
+    )
     interact.cmd_status(page_dir, "waiting", "")
     threading.Timer(
         0.2,
@@ -3873,7 +4102,9 @@ def test_codex_launcher_claims_the_page_for_its_thread(codex_claimed_page):
     assert page_state(codex_claimed_page)["agent"] == "Codex"
 
 
-def test_stop_hook_keeps_codex_inside_the_exact_wait_session(codex_claimed_page, capsys):
+def test_stop_hook_keeps_codex_inside_the_exact_wait_session(
+    codex_claimed_page, capsys
+):
     page = codex_claimed_page
     interact.cmd_status(page, "waiting", "")
     interact.write_json(page / "heartbeat.json", {"t": time.time()})
@@ -3927,7 +4158,9 @@ def test_stop_hook_blocks_a_turn_that_leaves_a_page_unwatched(claimed, capsys):
 
     # Blocking twice in a row is how a Stop hook loops, so a block already in
     # flight stands down.
-    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1", "stop_hook_active": True})
+    interact.cmd_hook(
+        {"hook_event_name": "Stop", "session_id": "s1", "stop_hook_active": True}
+    )
     assert capsys.readouterr().out == ""
 
     # A live watcher, and a closed review, each end the turn cleanly.
@@ -3942,7 +4175,9 @@ def test_stop_hook_blocks_a_turn_that_leaves_a_page_unwatched(claimed, capsys):
     # A page a second session has since picked up is that session's to watch, so
     # s1 is no longer held to it.
     interact.cmd_status(claimed, "waiting", "")
-    interact.write_json(claimed / "session.json", {"id": "s2", "pid": os.getpid(), "ts": "t"})
+    interact.write_json(
+        claimed / "session.json", {"id": "s2", "pid": os.getpid(), "ts": "t"}
+    )
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
     assert capsys.readouterr().out == ""
 
@@ -3952,7 +4187,9 @@ def test_prompt_hook_surfaces_comments_claude_never_picked_up(claimed, capsys):
     interact.append_event(claimed, {"kind": "comment", "author": "user", "text": "hi"})
     assert page_state(claimed)["pending"] == 1
     interact.cmd_hook({"hook_event_name": "UserPromptSubmit", "session_id": "s1"})
-    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"][
+        "additionalContext"
+    ]
     assert "1 user event you haven't picked up" in context
 
     # Not while a watcher is live: it prints them itself, and sending Claude to start a
@@ -3973,7 +4210,10 @@ def test_only_serving_or_watching_a_page_puts_the_session_under_the_guard(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "s7")
     monkeypatch.setenv("CLAUDE_PID", str(os.getpid()))
     assert check(page_dir).exit_code == 0
-    assert CliRunner().invoke(interact.cli, ["page", "catalog", str(page_dir)]).exit_code == 0
+    assert (
+        CliRunner().invoke(interact.cli, ["page", "catalog", str(page_dir)]).exit_code
+        == 0
+    )
     assert interact.session_pages("s7") == []
     # `page init` left the page "working", which is the state the guard blocks on —
     # but only for a page some session answers for, and none does.
@@ -3981,7 +4221,10 @@ def test_only_serving_or_watching_a_page_puts_the_session_under_the_guard(
     assert capsys.readouterr().out == ""
 
     interact.append_event(page_dir, {"kind": "comment", "author": "user", "text": "hi"})
-    assert CliRunner().invoke(interact.cli, ["review", "wait", str(page_dir)]).exit_code == 0
+    assert (
+        CliRunner().invoke(interact.cli, ["review", "wait", str(page_dir)]).exit_code
+        == 0
+    )
     assert interact.session_pages("s7") == [page_dir.resolve()]
 
     # If wait's process finished without its output entering model context, the event
@@ -3996,7 +4239,6 @@ def test_only_serving_or_watching_a_page_puts_the_session_under_the_guard(
 
 def test_review_guard_agrees_with_interact_on_state_home(tmp_path, monkeypatch):
     """The plain-Python hook inlines the uv script's XDG state resolution."""
-    root = Path(__file__).parent.parent
 
     def load(path):
         spec = importlib.util.spec_from_file_location(path.stem.replace("-", "_"), path)
@@ -4021,7 +4263,9 @@ def test_idle_cannot_close_a_review_over_events_nobody_read(claimed, capsys):
     idled over them ends the review on someone still waiting for an answer, and
     from the browser that looks exactly like a review that ran its course."""
     interact.append_event(claimed, {"kind": "comment", "author": "user", "text": "hi"})
-    refused = CliRunner().invoke(interact.cli, ["review", "state", str(claimed), "idle"])
+    refused = CliRunner().invoke(
+        interact.cli, ["review", "state", str(claimed), "idle"]
+    )
     assert refused.exit_code == 1
     assert "1 user event nobody has picked up" in refused.output
     assert interact.ACK_BATCH_INSTRUCTION in refused.output
@@ -4029,11 +4273,20 @@ def test_idle_cannot_close_a_review_over_events_nobody_read(claimed, capsys):
 
     # `review wait` returns at once, and acknowledgement records that its output reached
     # model context; only then can idle close the review.
-    assert CliRunner().invoke(interact.cli, ["review", "wait", str(claimed)]).exit_code == 0
-    assert CliRunner().invoke(
-        interact.cli, ["review", "ack", str(claimed), "1"]
-    ).exit_code == 0
-    assert CliRunner().invoke(interact.cli, ["review", "state", str(claimed), "idle"]).exit_code == 0
+    assert (
+        CliRunner().invoke(interact.cli, ["review", "wait", str(claimed)]).exit_code
+        == 0
+    )
+    assert (
+        CliRunner().invoke(interact.cli, ["review", "ack", str(claimed), "1"]).exit_code
+        == 0
+    )
+    assert (
+        CliRunner()
+        .invoke(interact.cli, ["review", "state", str(claimed), "idle"])
+        .exit_code
+        == 0
+    )
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
     assert capsys.readouterr().out == ""
 
@@ -4105,7 +4358,9 @@ def test_a_live_session_can_take_over_an_existing_server(page_dir):
                 process.wait(timeout=5)
 
 
-def test_a_sessionless_server_ignores_a_stale_claim_and_requires_explicit_stop(page_dir):
+def test_a_sessionless_server_ignores_a_stale_claim_and_requires_explicit_stop(
+    page_dir,
+):
     dead = subprocess.Popen([sys.executable, "-c", ""])
     dead.wait(timeout=5)
     interact.write_json(
@@ -4137,7 +4392,9 @@ def test_a_sessionless_server_ignores_a_stale_claim_and_requires_explicit_stop(p
     assert server.stdout.readline().startswith("http://127.0.0.1:")
     try:
         time.sleep(interact.ORPHAN_GRACE_SECS + 0.5)
-        assert server.poll() is None, "a manual server inherited the stale session claim"
+        assert server.poll() is None, (
+            "a manual server inherited the stale session claim"
+        )
         assert "stopped server" in interact.cmd_stop(page_dir)
         server.wait(timeout=5)
     finally:
@@ -4152,7 +4409,9 @@ def test_state_reports_whether_the_owning_session_still_exists(claimed):
     assert page_state(claimed)["session_alive"] is True
     dead = subprocess.Popen([sys.executable, "-c", ""])
     dead.wait()
-    interact.write_json(claimed / "session.json", {"id": "s1", "pid": dead.pid, "ts": "t"})
+    interact.write_json(
+        claimed / "session.json", {"id": "s1", "pid": dead.pid, "ts": "t"}
+    )
     assert page_state(claimed)["session_alive"] is False
 
 
@@ -4160,7 +4419,8 @@ def test_versions_publish_only_once_noted(page_dir):
     assert live_versions(page_dir) == []
     assert page_state(page_dir)["versions"] == []
     result = CliRunner().invoke(
-        interact.cli, ["version", "publish", str(page_dir), "--version", "1", "--text", "first cut"]
+        interact.cli,
+        ["version", "publish", str(page_dir), "--version", "1", "--text", "first cut"],
     )
     assert result.exit_code == 0, result.output
     assert live_versions(page_dir) == [1]
@@ -4179,7 +4439,16 @@ def test_versions_run_in_number_order_past_v9(page_dir):
     assert interact.list_versions(page_dir) == list(range(1, 12))
     for n in range(1, 12):
         result = CliRunner().invoke(
-            interact.cli, ["version", "publish", str(page_dir), "--version", str(n), "--text", f"cut {n}"]
+            interact.cli,
+            [
+                "version",
+                "publish",
+                str(page_dir),
+                "--version",
+                str(n),
+                "--text",
+                f"cut {n}",
+            ],
         )
         assert result.exit_code == 0, result.output
     assert live_versions(page_dir) == list(range(1, 12))
@@ -4237,7 +4506,9 @@ def test_settling_a_decision_drops_no_ids(page_dir):
 
     group = '<cq-options id="pick" choose{}><cq-option id="opt-a"{}><strong>A</strong></cq-option>'
     group += '<cq-option id="opt-b"><strong>B</strong></cq-option></cq-options>'
-    (page_dir / "versions" / "v1.html").write_text(PAGE.replace("</main>", group.format("", "") + "</main>"))
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace("</main>", group.format("", "") + "</main>")
+    )
     publish(page_dir)
     (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace("</main>", group.format(" settled", " chosen") + "</main>")
@@ -4256,19 +4527,14 @@ def test_registry_examples_validate(page_dir):
         for tag, entry in registry.items()
     )
     assert (
-        interact.validate_registry_examples(registry, "vendored registry")
-        is registry
+        interact.validate_registry_examples(registry, "vendored registry") is registry
     )
 
 
 def test_registry_example_ids_are_independent_between_entries(page_dir):
     registry = interact.load_registry(page_dir)
-    registry["cq-diff"]["x-example"] = (
-        '<cq-diff id="shared">one changed line</cq-diff>'
-    )
-    registry["cq-tree"]["x-example"] = (
-        '<cq-tree id="shared">one/file.py</cq-tree>'
-    )
+    registry["cq-diff"]["x-example"] = '<cq-diff id="shared">one changed line</cq-diff>'
+    registry["cq-tree"]["x-example"] = '<cq-tree id="shared">one/file.py</cq-tree>'
 
     assert (
         interact.validate_registry_examples(registry, "independent examples")
@@ -4286,8 +4552,12 @@ def test_every_path_a_diff_resolves_names_a_language_the_bundle_carries(page_dir
     reg = json.loads((page_dir / "registry.json").read_text())
     names = set(reg["$languages"]["names"])
     paths = reg["$languages"]["paths"]
-    assert paths  # a table with nothing in it would pass the check below and colour nothing
-    assert set(paths.values()) <= names, f"no bundle for {sorted(set(paths.values()) - names)}"
+    assert (
+        paths
+    )  # a table with nothing in it would pass the check below and colour nothing
+    assert set(paths.values()) <= names, (
+        f"no bundle for {sorted(set(paths.values()) - names)}"
+    )
 
 
 def test_examples_pass_check(tmp_path, monkeypatch):
@@ -4324,15 +4594,29 @@ def test_catalog_prints_widgets_and_idioms(page_dir):
 
 
 def test_reply_validates_widget_markup(page_dir):
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"}
+    )
     reply = lambda markup: CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text", "See:", "--markup", markup],
+        [
+            "review",
+            "reply",
+            str(page_dir),
+            "--to",
+            "c1",
+            "--text",
+            "See:",
+            "--markup",
+            markup,
+        ],
     )
     bad = reply('<cq-diagram id="f"><b>x</b></cq-diagram>')
     assert bad.exit_code != 0
     assert "its body is data" in bad.output
-    duplicate = reply('<cq-diagram id="browser-id" id="file-id">graph LR\nA --> B</cq-diagram>')
+    duplicate = reply(
+        '<cq-diagram id="browser-id" id="file-id">graph LR\nA --> B</cq-diagram>'
+    )
     assert duplicate.exit_code != 0
     assert "duplicate attribute" in duplicate.output
     # Prose belongs in --text, where it renders as Markdown; a markup field
@@ -4352,29 +4636,56 @@ def test_reply_validates_widget_markup(page_dir):
 def test_widget_ids_are_one_universe_across_page_and_replies(page_dir):
     """The runtime resolves actions document-wide by id, so a reply widget must not
     reuse a page id — and a later version must not take a reply's."""
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"}
+    )
     reply = lambda markup: CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text", "Pick:", "--markup", markup],
+        [
+            "review",
+            "reply",
+            str(page_dir),
+            "--to",
+            "c1",
+            "--text",
+            "Pick:",
+            "--markup",
+            markup,
+        ],
     )
     # `flow` is the page's cq-diagram id (PAGE fixture) — refused.
-    clash = reply('<cq-options id="flow" choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>')
+    clash = reply(
+        '<cq-options id="flow" choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>'
+    )
     assert clash.exit_code != 0 and "flow" in clash.output
-    fresh = reply('<cq-options id="q1" choose><cq-option id="q1-a"><strong>A</strong></cq-option></cq-options>')
+    fresh = reply(
+        '<cq-options id="q1" choose><cq-option id="q1-a"><strong>A</strong></cq-option></cq-options>'
+    )
     assert fresh.exit_code == 0, fresh.output
     # A second reply can't reuse the first reply's ids either, nor its own within itself.
-    again = reply('<cq-options id="q1" choose><cq-option id="q1-b"><strong>B</strong></cq-option></cq-options>')
+    again = reply(
+        '<cq-options id="q1" choose><cq-option id="q1-b"><strong>B</strong></cq-option></cq-options>'
+    )
     assert again.exit_code != 0 and "q1" in again.output
-    selfdup = reply('<cq-options id="q2" choose><cq-option id="q2"><strong>B</strong></cq-option></cq-options>')
+    selfdup = reply(
+        '<cq-options id="q2" choose><cq-option id="q2"><strong>B</strong></cq-option></cq-options>'
+    )
     assert selfdup.exit_code != 0 and "within itself" in selfdup.output
     # Text claims no ids however it quotes a tag — only the `markup` field does, and
     # a reviewer's message never carries one (the log is append-only; a false claim
     # would deadlock every future version).
     interact.append_event(
         page_dir,
-        {"kind": "reply", "author": "user", "parent": "c1", "text": 'why not <cq-diagram id="quoted"> here?'},
+        {
+            "kind": "reply",
+            "author": "user",
+            "parent": "c1",
+            "text": 'why not <cq-diagram id="quoted"> here?',
+        },
     )
-    ok = reply('<cq-options id="quoted" choose><cq-option id="quoted-a"><strong>A</strong></cq-option></cq-options>')
+    ok = reply(
+        '<cq-options id="quoted" choose><cq-option id="quoted-a"><strong>A</strong></cq-option></cq-options>'
+    )
     assert ok.exit_code == 0, ok.output
     # And a new version taking the reply's id fails check.
     (page_dir / "versions" / "v2.html").write_text(
@@ -4382,7 +4693,9 @@ def test_widget_ids_are_one_universe_across_page_and_replies(page_dir):
     )
     result = check(page_dir, version=2)
     assert result.exit_code == 1
-    assert "taken by widget markup in a reply" in result.output and "q1" in result.output
+    assert (
+        "taken by widget markup in a reply" in result.output and "q1" in result.output
+    )
 
 
 def test_the_runtimes_cq_id_namespace_is_off_limits(page_dir):
@@ -4391,17 +4704,30 @@ def test_the_runtimes_cq_id_namespace_is_off_limits(page_dir):
     instead, silently. One rule over both places an id can be authored: a version, and
     the widget markup in Claude's reply."""
     (page_dir / "versions" / "v2.html").write_text(
-        PAGE.replace('<section id="plan">', '<section id="plan"><p id="cq-msg-7">mine</p>')
+        PAGE.replace(
+            '<section id="plan">', '<section id="plan"><p id="cq-msg-7">mine</p>'
+        )
     )
     result = check(page_dir, version=2)
     assert result.exit_code == 1
     assert "cq- namespace" in result.output and "cq-msg-7" in result.output
 
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"}
+    )
     reply = CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text", "Pick:", "--markup",
-         '<cq-options id="cq-pick" choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>'],
+        [
+            "review",
+            "reply",
+            str(page_dir),
+            "--to",
+            "c1",
+            "--text",
+            "Pick:",
+            "--markup",
+            '<cq-options id="cq-pick" choose><cq-option id="o1"><strong>A</strong></cq-option></cq-options>',
+        ],
     )
     assert reply.exit_code != 0
     assert "cq- namespace" in reply.output and "cq-pick" in reply.output
@@ -4417,12 +4743,26 @@ def test_the_wire_ships_a_message_as_logged(page_dir):
     the log's own, which $events stamps."""
     interact.append_event(
         page_dir,
-        {"kind": "comment", "id": "c1", "author": "user", "text": "two things:\n\n- one\n- **two**"},
+        {
+            "kind": "comment",
+            "id": "c1",
+            "author": "user",
+            "text": "two things:\n\n- one\n- **two**",
+        },
     )
     result = CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text", "Fixed in `poll()`.",
-         "--markup", '<cq-diagram id="fix">\ngraph LR\n  A --> B\n</cq-diagram>'],
+        [
+            "review",
+            "reply",
+            str(page_dir),
+            "--to",
+            "c1",
+            "--text",
+            "Fixed in `poll()`.",
+            "--markup",
+            '<cq-diagram id="fix">\ngraph LR\n  A --> B\n</cq-diagram>',
+        ],
     )
     assert result.exit_code == 0, result.output
     wire = {e["kind"]: e for e in page_state(page_dir)["events"]}
@@ -4440,8 +4780,12 @@ def test_markup_enters_only_through_the_cli_gate(server, page_dir):
     status, body = fetch(
         f"{server}/api/event",
         data=json.dumps(
-            {"kind": "comment", "version": 1, "text": "hi",
-             "markup": '<cq-diagram id="m">graph LR\n  A --> B</cq-diagram>'}
+            {
+                "kind": "comment",
+                "version": 1,
+                "text": "hi",
+                "markup": '<cq-diagram id="m">graph LR\n  A --> B</cq-diagram>',
+            }
         ).encode(),
     )
     assert status == 400
@@ -4451,11 +4795,22 @@ def test_markup_enters_only_through_the_cli_gate(server, page_dir):
 
 def test_export_prints_threads_and_versions(page_dir):
     # The heading is the page's title as a reader sees it, entities and all.
-    (page_dir / "versions" / "v1.html").write_text(PAGE.replace("<title>t</title>", "<title>Cutoff &amp; backfill</title>"))
-    CliRunner().invoke(interact.cli, ["version", "publish", str(page_dir), "--version", "1", "--text", "first cut"])
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace("<title>t</title>", "<title>Cutoff &amp; backfill</title>")
+    )
+    CliRunner().invoke(
+        interact.cli,
+        ["version", "publish", str(page_dir), "--version", "1", "--text", "first cut"],
+    )
     interact.append_event(
         page_dir,
-        {"kind": "comment", "id": "c1", "author": "user", "anchor": {"quote": "flip reads"}, "text": "why?"},
+        {
+            "kind": "comment",
+            "id": "c1",
+            "author": "user",
+            "anchor": {"quote": "flip reads"},
+            "text": "why?",
+        },
     )
     interact.append_event(
         page_dir,
@@ -4469,10 +4824,18 @@ def test_export_prints_threads_and_versions(page_dir):
             "markup": '<cq-diagram id="why">graph LR\n  A --> B</cq-diagram>',
         },
     )
-    interact.append_event(page_dir, {"kind": "resolve", "id": "x1", "author": "user", "parent": "r1"})
+    interact.append_event(
+        page_dir, {"kind": "resolve", "id": "x1", "author": "user", "parent": "r1"}
+    )
     interact.append_event(
         page_dir,
-        {"kind": "comment", "id": "c2", "author": "user", "anchor": {"section": "flow"}, "text": "arrow?"},
+        {
+            "kind": "comment",
+            "id": "c2",
+            "author": "user",
+            "anchor": {"section": "flow"},
+            "text": "arrow?",
+        },
     )
     interact.append_event(
         page_dir,
@@ -4504,16 +4867,35 @@ def test_markup_needs_the_registry_and_text_does_not(page_dir):
     validate and posts without the registry; markup is checked against it, so without
     one the gate refuses rather than guessing."""
     (page_dir / "registry.json").unlink()
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"}
+    )
     plain = CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text", "plain answer, x < y"],
+        [
+            "review",
+            "reply",
+            str(page_dir),
+            "--to",
+            "c1",
+            "--text",
+            "plain answer, x < y",
+        ],
     )
     assert plain.exit_code == 0, plain.output
     with_markup = CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text", "See:",
-         "--markup", '<cq-diagram id="f">graph LR\n  A --> B</cq-diagram>'],
+        [
+            "review",
+            "reply",
+            str(page_dir),
+            "--to",
+            "c1",
+            "--text",
+            "See:",
+            "--markup",
+            '<cq-diagram id="f">graph LR\n  A --> B</cq-diagram>',
+        ],
     )
     assert with_markup.exit_code != 0
     assert "no registry.json" in with_markup.output
@@ -4525,14 +4907,18 @@ def test_comment_requires_the_registry_its_runtime_reads(page_dir):
     before = interact.read_events(page_dir)
     result = comment(page_dir, "--quote", "Ship dark", "--text", "Still posts")
     assert result.exit_code != 0
-    assert "no registry.json" in result.output and "run `colloquy page init`" in result.output
+    assert (
+        "no registry.json" in result.output
+        and "run `colloquy page init`" in result.output
+    )
     assert interact.read_events(page_dir) == before
 
 
 def test_note_refuses_a_version_that_fails_check(page_dir):
     (page_dir / "versions" / "v1.html").write_text(PAGE.replace("</section>", ""))
     result = CliRunner().invoke(
-        interact.cli, ["version", "publish", str(page_dir), "--version", "1", "--text", "broken"]
+        interact.cli,
+        ["version", "publish", str(page_dir), "--version", "1", "--text", "broken"],
     )
     assert result.exit_code != 0
     assert "refusing to publish" in result.output
@@ -4543,9 +4929,15 @@ def test_note_refuses_a_version_that_fails_check(page_dir):
 
 
 def published(page_dir):
-    assert CliRunner().invoke(
-        interact.cli, ["version", "publish", str(page_dir), "--version", "1", "--text", "first"]
-    ).exit_code == 0
+    assert (
+        CliRunner()
+        .invoke(
+            interact.cli,
+            ["version", "publish", str(page_dir), "--version", "1", "--text", "first"],
+        )
+        .exit_code
+        == 0
+    )
     return page_dir
 
 
@@ -4554,10 +4946,16 @@ def comment(page_dir, *args):
 
 
 def test_comment_anchors_on_a_quote_and_posts_as_claude(page_dir):
-    result = comment(published(page_dir), "--quote", "Ship dark", "--text", "dark for how long?")
+    result = comment(
+        published(page_dir), "--quote", "Ship dark", "--text", "dark for how long?"
+    )
     assert result.exit_code == 0, result.output
     event = json.loads(result.output)
-    assert event["kind"] == "comment" and event["author"] == "claude" and event["version"] == 1
+    assert (
+        event["kind"] == "comment"
+        and event["author"] == "claude"
+        and event["version"] == 1
+    )
     assert event["agent"] == "Agent"
     assert event["anchor"]["quote"] == "Ship dark"
     # The section is derived the way the browser derives it — the nearest enclosing id.
@@ -4568,13 +4966,21 @@ def test_comment_anchors_on_a_quote_and_posts_as_claude(page_dir):
 def test_a_comment_carries_the_neighbours_that_tell_two_copies_apart(page_dir):
     """The context is the whole reason a later version can't hand the comment to another
     copy of the same words, so a written anchor stores it exactly as a selection does."""
-    event = json.loads(comment(published(page_dir), "--quote", "Verify, then flip", "--text", "ok").output)
+    event = json.loads(
+        comment(
+            published(page_dir), "--quote", "Verify, then flip", "--text", "ok"
+        ).output
+    )
     anchor = event["anchor"]
     # Read out of the whole collapsed text and stopped by the fences around the option
     # row — the runtime writes controls between options, words this reading doesn't
     # hold. The runtime reads its side back the same way, and only a full match counts.
-    assert anchor["prefix"] == "risk: low Backfill first"  # the option's own chip band, then its title
-    assert anchor["suffix"] == "."  # the option's last words; the fence ends the reading
+    assert (
+        anchor["prefix"] == "risk: low Backfill first"
+    )  # the option's own chip band, then its title
+    assert (
+        anchor["suffix"] == "."
+    )  # the option's last words; the fence ends the reading
 
 
 def test_a_quote_closing_its_section_stores_the_next_sections_words(page_dir):
@@ -4591,7 +4997,9 @@ def test_a_quote_closing_its_section_stores_the_next_sections_words(page_dir):
     )
     (page_dir / "versions" / "v1.html").write_text(two)
     event = json.loads(
-        comment(published(page_dir), "--quote", "Deploys pause overnight.", "--text", "x").output
+        comment(
+            published(page_dir), "--quote", "Deploys pause overnight.", "--text", "x"
+        ).output
     )
     assert event["anchor"]["section"] == "plan"
     assert event["anchor"]["suffix"] == "The rollout resumes."
@@ -4612,7 +5020,9 @@ def test_a_comment_refuses_a_quote_the_version_holds_twice(page_dir):
     assert result.exit_code != 0
     assert "2 times" in result.output
     # Scoping it to one of them is the way out the message offers.
-    scoped = comment(page_dir, "--quote", "Ship dark", "--section", "flag-first", "--text", "x")
+    scoped = comment(
+        page_dir, "--quote", "Ship dark", "--section", "flag-first", "--text", "x"
+    )
     assert scoped.exit_code == 0, scoped.output
     assert json.loads(scoped.output)["anchor"]["section"] == "flag-first"
 
@@ -4623,7 +5033,9 @@ def test_a_widgets_data_body_is_not_quotable_but_the_widget_is(page_dir):
     on that diagram does in the browser, and that is the anchor offered instead."""
     body = comment(published(page_dir), "--quote", "graph LR", "--text", "x")
     assert body.exit_code != 0 and "--section" in body.output
-    element = comment(page_dir, "--section", "flow", "--text", "the retry edge is missing")
+    element = comment(
+        page_dir, "--section", "flow", "--text", "the retry edge is missing"
+    )
     assert element.exit_code == 0, element.output
     assert json.loads(element.output)["anchor"] == {"section": "flow"}
 
@@ -4635,9 +5047,9 @@ def test_a_quote_may_not_run_across_a_widgets_parts(page_dir):
     it. Either side of the join quotes fine."""
     fenced = PAGE.replace(
         '  <cq-diagram id="flow">\ngraph LR\n  A --> B\n  </cq-diagram>',
-        '  <p>Before the diagram.</p>\n'
+        "  <p>Before the diagram.</p>\n"
         '  <cq-diagram id="flow">\ngraph LR\n  A --> B\n  </cq-diagram>\n'
-        '  <p>After the diagram.</p>',
+        "  <p>After the diagram.</p>",
     )
     (page_dir / "versions" / "v1.html").write_text(fenced)
     published(page_dir)
@@ -4650,7 +5062,10 @@ def test_a_quote_may_not_run_across_a_widgets_parts(page_dir):
     )
     assert across.exit_code != 0
     assert "across a widget's parts" in across.output
-    assert comment(page_dir, "--quote", "Before the diagram.", "--text", "x").exit_code == 0
+    assert (
+        comment(page_dir, "--quote", "Before the diagram.", "--text", "x").exit_code
+        == 0
+    )
 
 
 DRAFTED = PAGE.replace(
@@ -4668,15 +5083,23 @@ def drafted(page_dir):
 def edit(page_dir, text, widget="note", version=1):
     interact.append_event(
         page_dir,
-        {"kind": "action", "author": "user", "version": version, "widget": widget,
-         "action": "edit", "detail": {"text": text}},
+        {
+            "kind": "action",
+            "author": "user",
+            "version": version,
+            "widget": widget,
+            "action": "edit",
+            "detail": {"text": text},
+        },
     )
 
 
 def test_a_verbatim_body_is_quotable_where_a_source_body_is_not(page_dir):
     """The registry draws the line: cq-draft renders the authored text into a plain div
     the anchor pass can see (x-verbatim), and cq-diagram renders a picture instead."""
-    result = comment(drafted(page_dir), "--quote", "every mutating command", "--text", "which ones?")
+    result = comment(
+        drafted(page_dir), "--quote", "every mutating command", "--text", "which ones?"
+    )
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["anchor"]["section"] == "note"
 
@@ -4723,7 +5146,16 @@ def test_a_restated_draft_takes_the_pen_back_from_the_reading(page_dir):
     )
     (page_dir / "versions" / "v2.html").write_text(revised)
     noted = CliRunner().invoke(
-        interact.cli, ["version", "publish", str(page_dir), "--version", "2", "--text", "took the pen back"]
+        interact.cli,
+        [
+            "version",
+            "publish",
+            str(page_dir),
+            "--version",
+            "2",
+            "--text",
+            "took the pen back",
+        ],
     )
     assert noted.exit_code == 0, noted.output
     kept = comment(page_dir, "--quote", "the rest apply live", "--text", "x")
@@ -4743,8 +5175,14 @@ def test_a_verb_the_registry_no_longer_speaks_moves_nothing(page_dir):
     drafted(page_dir)
     interact.append_event(
         page_dir,
-        {"kind": "action", "author": "user", "version": 1, "widget": "note",
-         "action": "scribble", "detail": {"text": "Words no layer speaks."}},
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "note",
+            "action": "scribble",
+            "detail": {"text": "Words no layer speaks."},
+        },
     )
     kept = comment(page_dir, "--quote", "every mutating command", "--text", "x")
     assert kept.exit_code == 0, kept.output
@@ -4761,7 +5199,16 @@ def test_an_unhonored_edit_outlives_a_republish(page_dir):
     edit(page_dir, "Adds --dry-run to purge and rebuild only.")
     (page_dir / "versions" / "v2.html").write_text(DRAFTED)
     noted = CliRunner().invoke(
-        interact.cli, ["version", "publish", str(page_dir), "--version", "2", "--text", "changes elsewhere"]
+        interact.cli,
+        [
+            "version",
+            "publish",
+            str(page_dir),
+            "--version",
+            "2",
+            "--text",
+            "changes elsewhere",
+        ],
     )
     assert noted.exit_code == 0, noted.output
     kept = comment(page_dir, "--quote", "purge and rebuild only", "--text", "x")
@@ -4777,10 +5224,10 @@ def test_a_widgets_x_says_attribute_is_quotable_like_any_other_passage(page_dir)
     chip band opens the element, and the metric's delta closes it."""
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
-            "  <cq-diagram id=\"flow\">",
+            '  <cq-diagram id="flow">',
             '  <cq-metrics><cq-metric id="k-visits" value="312" delta="+41"'
             ' direction="up-good">daily visits</cq-metric></cq-metrics>\n'
-            "  <cq-diagram id=\"flow\">",
+            '  <cq-diagram id="flow">',
         )
     )
     published(page_dir)
@@ -4810,7 +5257,9 @@ def test_a_decision_retires_its_losing_slot_from_comments_reach(page_dir):
     standing."""
     suggested(page_dir)
     decide(page_dir, "accept")
-    gone = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
+    gone = comment(
+        page_dir, "--quote", "Refill every feeder each morning.", "--text", "x"
+    )
     assert gone.exit_code != 0
     assert "chose to accept § sug-refill" in gone.output and "retired" in gone.output
     kept = comment(page_dir, "--quote", "camera shows it half-empty", "--text", "x")
@@ -4819,7 +5268,9 @@ def test_a_decision_retires_its_losing_slot_from_comments_reach(page_dir):
     decide(page_dir, "reject")
     gone = comment(page_dir, "--quote", "camera shows it half-empty", "--text", "x")
     assert gone.exit_code != 0 and "chose to reject § sug-refill" in gone.output
-    kept = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
+    kept = comment(
+        page_dir, "--quote", "Refill every feeder each morning.", "--text", "x"
+    )
     assert kept.exit_code == 0, kept.output
 
 
@@ -4881,10 +5332,14 @@ def test_a_decision_settles_which_copy_a_quote_names(page_dir):
     )
     (page_dir / "versions" / "v1.html").write_text(twice)
     published(page_dir)
-    ambiguous = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
+    ambiguous = comment(
+        page_dir, "--quote", "Refill every feeder each morning.", "--text", "x"
+    )
     assert ambiguous.exit_code != 0 and "2 times" in ambiguous.output
     decide(page_dir, "accept")
-    result = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
+    result = comment(
+        page_dir, "--quote", "Refill every feeder each morning.", "--text", "x"
+    )
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["anchor"]["section"] == "plan"
 
@@ -4898,13 +5353,26 @@ def test_a_restated_suggestion_hands_its_slot_back(page_dir):
     revised = SUGGESTED.replace(
         "Refill when the camera shows it half-empty.",
         "Refill when the camera shows it two-thirds empty.",
-    ).replace('<cq-suggestion id="sug-refill">', '<cq-suggestion id="sug-refill" restated>')
+    ).replace(
+        '<cq-suggestion id="sug-refill">', '<cq-suggestion id="sug-refill" restated>'
+    )
     (page_dir / "versions" / "v2.html").write_text(revised)
     noted = CliRunner().invoke(
-        interact.cli, ["version", "publish", str(page_dir), "--version", "2", "--text", "revised the proposal"]
+        interact.cli,
+        [
+            "version",
+            "publish",
+            str(page_dir),
+            "--version",
+            "2",
+            "--text",
+            "revised the proposal",
+        ],
     )
     assert noted.exit_code == 0, noted.output
-    result = comment(page_dir, "--quote", "Refill every feeder each morning.", "--text", "x")
+    result = comment(
+        page_dir, "--quote", "Refill every feeder each morning.", "--text", "x"
+    )
     assert result.exit_code == 0, result.output
 
 
@@ -4914,7 +5382,9 @@ def test_what_the_reader_never_sees_is_not_quotable(page_dir):
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace("<title>t</title>", "<title>Backfill cutover plan</title>")
     )
-    result = comment(published(page_dir), "--quote", "Backfill cutover plan", "--text", "x")
+    result = comment(
+        published(page_dir), "--quote", "Backfill cutover plan", "--text", "x"
+    )
     assert result.exit_code != 0
     assert "doesn't say" in result.output
 
@@ -4944,14 +5414,33 @@ def test_a_comments_widget_markup_shares_one_id_universe_with_replies(page_dir):
     """A Claude comment's markup lands in the panel exactly as a reply's does, so it
     validates the same way and claims ids from the same pool."""
     published(page_dir)
-    assert comment(
-        page_dir, "--quote", "Ship dark", "--text", "Pick:", "--markup",
-        '<cq-options id="q1" choose><cq-option id="q1-a"><strong>A</strong></cq-option></cq-options>',
-    ).exit_code == 0
-    interact.append_event(page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"})
+    assert (
+        comment(
+            page_dir,
+            "--quote",
+            "Ship dark",
+            "--text",
+            "Pick:",
+            "--markup",
+            '<cq-options id="q1" choose><cq-option id="q1-a"><strong>A</strong></cq-option></cq-options>',
+        ).exit_code
+        == 0
+    )
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hm"}
+    )
     clash = CliRunner().invoke(
         interact.cli,
-        ["review", "reply", str(page_dir), "--to", "c1", "--text", "See:",
-         "--markup", '<cq-diagram id="q1">\ngraph LR\n  A --> B\n</cq-diagram>'],
+        [
+            "review",
+            "reply",
+            str(page_dir),
+            "--to",
+            "c1",
+            "--text",
+            "See:",
+            "--markup",
+            '<cq-diagram id="q1">\ngraph LR\n  A --> B\n</cq-diagram>',
+        ],
     )
     assert clash.exit_code != 0 and "q1" in clash.output

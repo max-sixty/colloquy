@@ -32,7 +32,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-INTERACT = Path(__file__).resolve().parents[2] / "skills" / "colloquy" / "scripts" / "interact.py"
+INTERACT = (
+    Path(__file__).resolve().parents[2]
+    / "skills"
+    / "colloquy"
+    / "scripts"
+    / "interact.py"
+)
 # Must match interact.py's state_home(): this script runs under plain python3
 # and can't import the uv script it fronts.
 SESSIONS = (
@@ -54,9 +60,10 @@ def main() -> None:
             capture_output=True,
             text=True,
             timeout=15,
+            check=False,
         )
         sys.stdout.write(answer.stdout)
-    except Exception:
+    except Exception:  # noqa: BLE001 — a hook that raises stops the turn it guards
         return
 
 

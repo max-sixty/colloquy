@@ -523,7 +523,9 @@ def read_events(page_dir: Path) -> list:
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
-            if i == len(lines) - 1:  # a concurrent append mid-flush; complete on the next read
+            if (
+                i == len(lines) - 1
+            ):  # a concurrent append mid-flush; complete on the next read
                 break
             raise
         event["seq"] = i + 1
@@ -718,7 +720,9 @@ def page_url(access: dict, port: int) -> str:
 
 def config_home() -> Path:
     """$XDG_CONFIG_HOME/colloquy (~/.config/colloquy/) — the user's overlay layer."""
-    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "colloquy"
+    return (
+        Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "colloquy"
+    )
 
 
 def state_home() -> Path:
@@ -726,7 +730,10 @@ def state_home() -> Path:
     directories by convention, sessions/ the live-session registry. State, not
     config: page directories carry pids, ports, and absolute paths, so they are
     bound to this machine."""
-    return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "colloquy"
+    return (
+        Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+        / "colloquy"
+    )
 
 
 def claim_page(page_dir: Path) -> bool:
@@ -743,11 +750,17 @@ def claim_page(page_dir: Path) -> bool:
     session only wrote to, like a throwaway page for testing the widget layer,
     owes nobody a watcher. Return whether this invocation made a claim, so a
     bare-shell server never inherits a stale claim's lifetime."""
-    sid = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("COLLOQUY_SESSION_ID")
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get(
+        "COLLOQUY_SESSION_ID"
+    )
     pid = os.environ.get("CLAUDE_PID") or os.environ.get("COLLOQUY_SESSION_PID")
     if not sid or not pid:
         return False
-    agent = "Claude" if os.environ.get("CLAUDE_CODE_SESSION_ID") else os.environ["COLLOQUY_AGENT"]
+    agent = (
+        "Claude"
+        if os.environ.get("CLAUDE_CODE_SESSION_ID")
+        else os.environ["COLLOQUY_AGENT"]
+    )
     write_json(
         page_dir / "session.json",
         {"id": sid, "pid": int(pid), "agent": agent, "ts": now_iso()},
@@ -762,7 +775,9 @@ def claim_page(page_dir: Path) -> bool:
             stale.unlink(missing_ok=True)
     entry = read_json(sessions / f"{sid}.json") or {"pages": []}
     pages = sorted({*entry["pages"], str(page_dir)})
-    write_json(sessions / f"{sid}.json", {"pid": int(pid), "pages": pages, "ts": now_iso()})
+    write_json(
+        sessions / f"{sid}.json", {"pid": int(pid), "pages": pages, "ts": now_iso()}
+    )
     return True
 
 
@@ -777,7 +792,8 @@ def owned_pages(session_id: str) -> list:
     A page another session has since picked up belongs to that one — its watcher,
     its server, its turn to be held to the loop."""
     return [
-        d for d in session_pages(session_id)
+        d
+        for d in session_pages(session_id)
         if (read_json(d / "session.json") or {"id": None})["id"] == session_id
     ]
 
@@ -793,7 +809,11 @@ def unacknowledged(events: list, cursor: int) -> list:
 def full_state(page_dir: Path, events: list, versions: list) -> dict:
     # A file that isn't there stands in as its whole record, so every read below
     # indexes rather than asking twice whether the field arrived.
-    status = read_json(page_dir / "status.json") or {"state": "idle", "detail": "", "ts": None}
+    status = read_json(page_dir / "status.json") or {
+        "state": "idle",
+        "detail": "",
+        "ts": None,
+    }
     heartbeat = read_json(page_dir / "heartbeat.json") or {"t": 0}
     session = read_json(page_dir / "session.json")
     # What the agent has acknowledged from model context: an action past this seq
@@ -835,7 +855,11 @@ class Handler(BaseHTTPRequestHandler):
     def versions_live(self, events):
         if self.preview_upto is None:
             return published_versions(self.page_dir, events)
-        return [version for version in list_versions(self.page_dir) if version <= self.preview_upto]
+        return [
+            version
+            for version in list_versions(self.page_dir)
+            if version <= self.preview_upto
+        ]
 
     def log_message(self, *args):
         pass
@@ -846,7 +870,9 @@ class Handler(BaseHTTPRequestHandler):
         relative and carry no query, and a reader who reloads or bookmarks the bare
         address is the same reader. So nothing has to thread the key through the
         page, and `colloquy.js` never learns there is one."""
-        if secrets.compare_digest(parse_qs(urlsplit(self.path).query).get("t", [""])[0], self.token):
+        if secrets.compare_digest(
+            parse_qs(urlsplit(self.path).query).get("t", [""])[0], self.token
+        ):
             self.set_cookie = True
         else:
             jar = SimpleCookie(self.headers.get("Cookie", ""))
@@ -876,7 +902,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _json(self, obj, status: int = 200) -> None:
-        self._send(status, "application/json", json.dumps(obj, ensure_ascii=False).encode())
+        self._send(
+            status, "application/json", json.dumps(obj, ensure_ascii=False).encode()
+        )
 
     def do_GET(self):
         if not self.authorized():
@@ -911,7 +939,9 @@ class Handler(BaseHTTPRequestHandler):
                 version = version_num(Path(path).name)
                 if version not in self.versions_live(read_events(self.page_dir)):
                     self._json(
-                        {"error": "not published yet; run `colloquy version publish` first"},
+                        {
+                            "error": "not published yet; run `colloquy version publish` first"
+                        },
                         404,
                     )
                     return
@@ -936,7 +966,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, 404)
             return
         try:
-            event = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            event = json.loads(
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            )
         except json.JSONDecodeError:
             self._json({"error": "invalid JSON"}, 400)
             return
@@ -945,17 +977,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         kind = event.get("kind")
         if not isinstance(kind, str) or kind not in BROWSER_EVENT_FIELDS:
-            self._json({"error": f"kind must be one of {sorted(BROWSER_EVENT_FIELDS)}"}, 400)
+            self._json(
+                {"error": f"kind must be one of {sorted(BROWSER_EVENT_FIELDS)}"}, 400
+            )
             return
         # Identity, authorship, and time belong to the server. Drop client copies
         # before checking the kind's declared payload, so none can be forged into
         # the append-only record.
         for field in ("id", "author", "agent", "ts"):
             event.pop(field, None)
-        unexpected = set(event) - {"kind"} - (EVENT_VOCABULARY[kind] - AGENT_ONLY_FIELDS)
+        unexpected = (
+            set(event) - {"kind"} - (EVENT_VOCABULARY[kind] - AGENT_ONLY_FIELDS)
+        )
         if unexpected:
             self._json(
-                {"error": f"{event['kind']} events have unexpected fields {sorted(unexpected)}"},
+                {
+                    "error": f"{event['kind']} events have unexpected fields {sorted(unexpected)}"
+                },
                 400,
             )
             return
@@ -1013,7 +1051,9 @@ class Handler(BaseHTTPRequestHandler):
             terminal = "done" if mode == "sign-off" else "close"
             if kind != terminal:
                 purpose = (
-                    "sign-off" if terminal == "done" else "ending its comments-only review"
+                    "sign-off"
+                    if terminal == "done"
+                    else "ending its comments-only review"
                 )
                 self._json(
                     {
@@ -1041,7 +1081,9 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": True, "event": append_event(self.page_dir, event)})
 
 
-def handler_for(page_dir: Path, token: str, preview_upto=None, protocol_version="HTTP/1.0"):
+def handler_for(
+    page_dir: Path, token: str, preview_upto=None, protocol_version="HTTP/1.0"
+):
     """A request handler bound to one page, publication view, and key. The key has no
     default: every server over a page directory is reachable by whatever reached the
     machine, so there is no construction that should quietly go without one."""
@@ -1106,10 +1148,7 @@ def layer_source_paths(layers: list) -> list:
         paths.extend(
             path.resolve()
             for name in VENDORED_FILES
-            if (
-                (path := layer / name).exists()
-                or path.is_symlink()
-            )
+            if ((path := layer / name).exists() or path.is_symlink())
         )
         for sub in VENDORED_DIRS:
             directory = layer / sub
@@ -1163,9 +1202,7 @@ def _filesystem_case_sensitive(path: Path) -> bool:
     attr_vol_info = 0x80000000
     attr_vol_capabilities = 0x00020000
     case_sensitive = 0x00000100
-    attributes = AttrList(
-        5, 0, 0, attr_vol_info | attr_vol_capabilities, 0, 0, 0
-    )
+    attributes = AttrList(5, 0, 0, attr_vol_info | attr_vol_capabilities, 0, 0, 0)
     result = VolumeCapabilities()
     getattrlist = ctypes.CDLL(None, use_errno=True).getattrlist
     getattrlist.argtypes = [
@@ -1252,7 +1289,9 @@ def layered_dir_files(layers: list, sub: str) -> dict:
 
 def layered_theme(layers: list) -> str:
     """One stylesheet whose source order is the layer precedence."""
-    sources = [layer / "theme.css" for layer in layers if (layer / "theme.css").is_file()]
+    sources = [
+        layer / "theme.css" for layer in layers if (layer / "theme.css").is_file()
+    ]
     if not sources:
         sys.exit("the incoming layer has no theme.css")
     parts = []
@@ -1309,9 +1348,7 @@ def cmd_init(page_dir: Path) -> None:
             f"{destination}; source and vendored page paths must be separate"
         )
     incoming = incoming_registry(layers)
-    directory_sources = {
-        sub: layered_dir_files(layers, sub) for sub in VENDORED_DIRS
-    }
+    directory_sources = {sub: layered_dir_files(layers, sub) for sub in VENDORED_DIRS}
     missing_modules = sorted(
         tag
         for tag, entry in incoming.items()
@@ -1352,7 +1389,9 @@ def cmd_init(page_dir: Path) -> None:
     # The registry makes the theme and modules live, so it commits last.
     top_files["registry.json"] = json_bytes(incoming)
     directory_files = {
-        sub: {name: source.read_bytes() for name, source in directory_sources[sub].items()}
+        sub: {
+            name: source.read_bytes() for name, source in directory_sources[sub].items()
+        }
         for sub in VENDORED_DIRS
     }
 
@@ -1361,9 +1400,7 @@ def cmd_init(page_dir: Path) -> None:
     # than its modules.
     if (page_dir.exists() or page_dir.is_symlink()) and not page_dir.is_dir():
         sys.exit(f"{page_dir} must be a directory")
-    directories = [page_dir / "versions"] + [
-        page_dir / sub for sub in VENDORED_DIRS
-    ]
+    directories = [page_dir / "versions"] + [page_dir / sub for sub in VENDORED_DIRS]
     for destination in directories:
         if destination.is_symlink():
             sys.exit(f"{destination} must be a real directory, not a symlink")
@@ -1405,9 +1442,8 @@ def cmd_init(page_dir: Path) -> None:
     for sub in VENDORED_DIRS:
         destination = page_dir / sub
         for stale in destination.iterdir():
-            if (
-                stale.name not in directory_files[sub]
-                and (stale.is_symlink() or stale.is_file())
+            if stale.name not in directory_files[sub] and (
+                stale.is_symlink() or stale.is_file()
             ):
                 stale.unlink()
     if not (page_dir / "status.json").exists():
@@ -1470,23 +1506,18 @@ def initialized_page_owning(path: Path):
     for root in (resolved, *resolved.parents):
         # Runtime state is disposable and regenerated; it cannot identify the
         # page whose owned paths this gate protects.
-        if (
+        if not (
             (root / "versions").is_dir()
             and all((root / name).is_file() for name in VENDORED_FILES)
             and all((root / name).is_dir() for name in VENDORED_DIRS)
         ):
-            if (
-                paths_same(resolved, root)
-                or any(
-                    paths_same(resolved, root / name)
-                    for name in PAGE_OWNED_FILES
-                )
-                or any(
-                    path_is_within(resolved, root / name)
-                    for name in PAGE_OWNED_DIRS
-                )
-            ):
-                return root
+            continue
+        if (
+            paths_same(resolved, root)
+            or any(paths_same(resolved, root / name) for name in PAGE_OWNED_FILES)
+            or any(path_is_within(resolved, root / name) for name in PAGE_OWNED_DIRS)
+        ):
+            return root
     return None
 
 
@@ -1610,9 +1641,7 @@ def cmd_customize_widget(tag: str, user: bool, upgrade: bool) -> None:
             sys.exit(f"<{tag}> already exists in {source_path}")
 
     widgets_dir = layer / "widgets"
-    if (
-        widgets_dir.exists() or widgets_dir.is_symlink()
-    ) and not widgets_dir.is_dir():
+    if (widgets_dir.exists() or widgets_dir.is_symlink()) and not widgets_dir.is_dir():
         sys.exit(f"{widgets_dir} must be a directory")
     module_path = layer / "widgets" / f"{tag}.js"
     if module_path.exists() or module_path.is_symlink():
@@ -1647,9 +1676,7 @@ def cmd_customize_widget(tag: str, user: bool, upgrade: bool) -> None:
     # The registry is the declaration that makes the other files live, so it
     # commits last after every target has been staged.
     writes.append((registry_path, json_bytes(entries, indent=2), True))
-    if overlap := customization_overlap(
-        [path for path, _, _ in writes], protected
-    ):
+    if overlap := customization_overlap([path for path, _, _ in writes], protected):
         target, source = overlap
         sys.exit(
             f"customization target {target} overlaps another layer source "
@@ -1677,7 +1704,9 @@ def cmd_media(page_dir: Path, files: list) -> list:
     (page_dir / MEDIA_DIR).mkdir(exist_ok=True)
     for src in files:
         if src.suffix.lower() not in MEDIA_TYPES:
-            sys.exit(f"{src}: not an image colloquy serves — {', '.join(sorted(MEDIA_TYPES))}")
+            sys.exit(
+                f"{src}: not an image colloquy serves — {', '.join(sorted(MEDIA_TYPES))}"
+            )
         data = src.read_bytes()
         name = hashlib.sha256(data).hexdigest()[:16] + src.suffix.lower()
         (page_dir / MEDIA_DIR / name).write_bytes(data)
@@ -1736,7 +1765,10 @@ def cmd_serve(page_dir: Path, host: str | None = None) -> None:
                 "interface and put NAME in the URL."
             )
     url = page_url(access, httpd.server_address[1])
-    write_json(page_dir / "server.json", {"port": httpd.server_address[1], "pid": os.getpid(), "url": url})
+    write_json(
+        page_dir / "server.json",
+        {"port": httpd.server_address[1], "pid": os.getpid(), "url": url},
+    )
     print(url, flush=True)
     if claimed:
         threading.Thread(
@@ -1828,8 +1860,13 @@ def cmd_wait(page_dir: Path) -> int:
                     # An idle page has no reviewer to keep online, and the
                     # SessionEnd hook idles then stops: without this the watcher
                     # it raced would put the server straight back up.
-                    if (read_json(page_dir / "status.json") or {"state": "idle"})["state"] == "idle":
-                        print("the review is closed; not restarting the server", file=sys.stderr)
+                    if (read_json(page_dir / "status.json") or {"state": "idle"})[
+                        "state"
+                    ] == "idle":
+                        print(
+                            "the review is closed; not restarting the server",
+                            file=sys.stderr,
+                        )
                         return 2
                     # One revival per wait: a server that dies the moment it comes
                     # up would otherwise respawn every five seconds forever.
@@ -1926,18 +1963,21 @@ def action_contract_error(page_dir: Path, event: dict, events: list, registry: d
     entry = registry.get(tag)
     if entry is None:
         return (
-            f"registry no longer declares <{tag}> for action widget "
-            f"{event['widget']!r}"
+            f"registry no longer declares <{tag}> for action widget {event['widget']!r}"
         )
     state = entry.get("x-state", {})
     if event["action"] not in state:
         return f"<{tag}> does not declare action verb {event['action']!r}"
     errors = sorted(
-        Draft202012Validator(state[event["action"]]["detail"]).iter_errors(event["detail"]),
+        Draft202012Validator(state[event["action"]]["detail"]).iter_errors(
+            event["detail"]
+        ),
         key=str,
     )
     if errors:
-        return f"<{tag}> action {event['action']!r} detail is invalid: {errors[0].message}"
+        return (
+            f"<{tag}> action {event['action']!r} detail is invalid: {errors[0].message}"
+        )
     return None
 
 
@@ -1976,7 +2016,9 @@ def check_markup(page_dir: Path, kind: str, markup: str, events: list) -> None:
     frag.close()
     errs = fragment_errors(frag, registry, registry["$languages"]["names"])
     if errs:
-        sys.exit(f"{kind} markup doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs))
+        sys.exit(
+            f"{kind} markup doesn't validate:\n" + "\n".join(f"  - {e}" for e in errs)
+        )
     if not frag.cq_elements:
         sys.exit("--markup carries no widget; put prose in --text")
     if frag.suggestions:
@@ -1986,12 +2028,16 @@ def check_markup(page_dir: Path, kind: str, markup: str, events: list) -> None:
             "version instead"
         )
     if frag.duplicate_ids:
-        sys.exit(f"{kind} widget markup reuses an id within itself: {frag.duplicate_ids}")
+        sys.exit(
+            f"{kind} widget markup reuses an id within itself: {frag.duplicate_ids}"
+        )
     if frag.reserved_ids:
         sys.exit(f"{kind} widget markup takes " + reserved_ids_error(frag.reserved_ids))
     clash = sorted(frag.ids & (version_ids(page_dir) | thread_widget_ids(events)))
     if clash:
-        sys.exit(f"{kind} widget ids already taken by the page or an earlier message: {clash}")
+        sys.exit(
+            f"{kind} widget ids already taken by the page or an earlier message: {clash}"
+        )
 
 
 def message_agent(page_dir: Path) -> str:
@@ -2011,7 +2057,9 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text, markup: str) -> 
     events = read_events(page_dir)
     published = published_versions(page_dir, events)
     if not published:
-        sys.exit("no published version to anchor in; run `colloquy version publish` first")
+        sys.exit(
+            "no published version to anchor in; run `colloquy version publish` first"
+        )
     version = published[-1]
     html = version_path(page_dir, version).read_text(encoding="utf-8")
     registry = load_registry(page_dir)
@@ -2064,11 +2112,15 @@ def cmd_publish(page_dir: Path, version: int, text) -> None:
     name = version_name(version)
     path = version_path(page_dir, version)
     if not path.is_file():
-        sys.exit(f"no v{version}.html in {page_dir / 'versions'}; write the version file first")
+        sys.exit(
+            f"no v{version}.html in {page_dir / 'versions'}; write the version file first"
+        )
     # Publishing makes the note the server's visibility gate, so a version that
     # fails the check cannot go live.
     if cmd_check(page_dir, version) != 0:
-        sys.exit(f"refusing to publish {name}: `colloquy version check` failed (issues above)")
+        sys.exit(
+            f"refusing to publish {name}: `colloquy version check` failed (issues above)"
+        )
     # Publishing is also where a `restated` declaration becomes a fact. The
     # attribute is how the author says it while writing the version — beside the
     # words they rewrote, where it can't be forgotten — and the log is where it
@@ -2080,7 +2132,12 @@ def cmd_publish(page_dir: Path, version: int, text) -> None:
     parser.feed(path.read_text(encoding="utf-8"))
     parser.close()
     retracts = sorted(parser.restated)
-    event = {"kind": "note", "author": "claude", "version": version, "text": read_text_arg(text)}
+    event = {
+        "kind": "note",
+        "author": "claude",
+        "version": version,
+        "text": read_text_arg(text),
+    }
     if retracts:
         event["restated"] = retracts
     print(json.dumps(append_event(page_dir, event), ensure_ascii=False))
@@ -2116,7 +2173,8 @@ def cmd_transcript(page_dir: Path) -> None:
     # way round — an edit shown as final that a later version overruled.
     # Widget-agnostic rendering: verb + detail pairs, against the version edited.
     edits = [
-        e for e in events
+        e
+        for e in events
         if e["kind"] == "action" or (e["kind"] == "note" and e.get("restated"))
     ]
     if edits:
@@ -2124,7 +2182,9 @@ def cmd_transcript(page_dir: Path) -> None:
         for e in edits:
             if e["kind"] == "note":
                 for wid in e["restated"]:
-                    print(f"- `{wid}`: rewritten by v{e['version']}, retracting what was decided on it")
+                    print(
+                        f"- `{wid}`: rewritten by v{e['version']}, retracting what was decided on it"
+                    )
                 continue
             detail = " ".join(f"{k}={v}" for k, v in e["detail"].items())
             verb = f"{e['action']} {detail}".strip()  # a bare reject carries no detail
@@ -2191,22 +2251,36 @@ def cmd_catalog(page_dir: Path) -> None:
     if reg is None:
         sys.exit(f"no registry.json in {page_dir}; run `colloquy page init` first")
     print(CATALOG_PREAMBLE)
-    print(json.dumps({k: v for k, v in reg.items() if not k.startswith("$")}, indent=2, ensure_ascii=False))
+    print(
+        json.dumps(
+            {k: v for k, v in reg.items() if not k.startswith("$")},
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
     restated = reg.get("$restated")
     if restated:
-        print("\n# `restated` — the one attribute that spans widgets; read it before revising one.\n")
+        print(
+            "\n# `restated` — the one attribute that spans widgets; read it before revising one.\n"
+        )
         print(json.dumps(restated, indent=2, ensure_ascii=False))
     state = reg.get("$state")
     if state:
-        print("\n# x-state — how a widget's action verbs and their record forms are declared.\n")
+        print(
+            "\n# x-state — how a widget's action verbs and their record forms are declared.\n"
+        )
         print(json.dumps(state, indent=2, ensure_ascii=False))
     languages = reg.get("$languages")
     if languages:
-        print("\n# The languages this page colors, in a code block's class or an x-language attribute.\n")
+        print(
+            "\n# The languages this page colors, in a code block's class or an x-language attribute.\n"
+        )
         print(json.dumps(languages, indent=2, ensure_ascii=False))
     idioms = reg.get("$idioms")
     if idioms:
-        print("\n# Theme idioms — shapes the theme styles directly; no registry entry, no JS.\n")
+        print(
+            "\n# Theme idioms — shapes the theme styles directly; no registry entry, no JS.\n"
+        )
         print(json.dumps(idioms, indent=2, ensure_ascii=False))
 
 
@@ -2317,23 +2391,77 @@ def cmd_hook(payload: dict) -> None:
 # ---------- check: deterministic pre-handover lint ----------
 
 VOID_TAGS = {
-    "area", "base", "br", "col", "embed", "hr", "img", "input",
-    "link", "meta", "param", "source", "track", "wbr",
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
 }
 # Elements whose end tag HTML lets you omit — leaving one "unclosed" is valid,
 # so the balance check must not flag them (only genuinely-open structural
 # elements like <div>/<section> point at a real layout bug).
 OPTIONAL_END = {
-    "p", "li", "dd", "dt", "td", "th", "tr", "thead", "tbody", "tfoot",
-    "option", "optgroup", "caption", "colgroup", "rp", "rt",
-    "html", "head", "body",
+    "p",
+    "li",
+    "dd",
+    "dt",
+    "td",
+    "th",
+    "tr",
+    "thead",
+    "tbody",
+    "tfoot",
+    "option",
+    "optgroup",
+    "caption",
+    "colgroup",
+    "rp",
+    "rt",
+    "html",
+    "head",
+    "body",
 }
 # A start tag on the left implicitly closes matching open elements on the right.
 P_CLOSERS = {
-    "address", "article", "aside", "blockquote", "details", "div", "dl",
-    "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3",
-    "h4", "h5", "h6", "header", "hgroup", "hr", "main", "menu", "nav", "ol",
-    "p", "pre", "section", "table", "ul",
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "details",
+    "div",
+    "dl",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hgroup",
+    "hr",
+    "main",
+    "menu",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "ul",
 }
 # …and closes its own kind: a start tag ends the open siblings it can't nest inside.
 SIBLING_CLOSERS = {
@@ -2357,7 +2485,15 @@ SIBLING_CLOSERS = {
 LANGUAGE_CLASS = re.compile(r"(?:^|\s)language-([\w+.#-]+)(?=\s|$)")
 
 # Container selectors whose max-width defines the readable column.
-COLUMN_SELECTORS = ("main", "body", "article", ".container", ".wrap", ".content", ".page")
+COLUMN_SELECTORS = (
+    "main",
+    "body",
+    "article",
+    ".container",
+    ".wrap",
+    ".content",
+    ".page",
+)
 COLUMN_FALLBACK = 780
 # Attribute widths only count as pixels on these elements.
 PIXEL_WIDTH_TAGS = {"img", "svg", "table", "canvas", "iframe", "video", "object"}
@@ -2476,14 +2612,20 @@ class _StructParser(HTMLParser):
             if tag in ("cq-old", "cq-new"):
                 slot = tag  # the slot's own id belongs to the slot
             if suggestion and slot:
-                suggestion["old_ids" if slot == "cq-old" else "new_ids"].add(attrs_d["id"])
+                suggestion["old_ids" if slot == "cq-old" else "new_ids"].add(
+                    attrs_d["id"]
+                )
         if tag == "script" and attrs_d.get("src"):
             self.external_scripts.append((attrs_d["src"], attrs_d.get("type")))
         if tag == "link" and "stylesheet" in (attrs_d.get("rel") or ""):
             self.stylesheets.append(attrs_d.get("href"))
         if tag == "meta" and (attrs_d.get("name") or "").startswith("cq-"):
             self.cq_metas.append(
-                {"name": attrs_d["name"], "content": attrs_d.get("content"), "line": self.getpos()[0]}
+                {
+                    "name": attrs_d["name"],
+                    "content": attrs_d.get("content"),
+                    "line": self.getpos()[0],
+                }
             )
         if attrs_d.get("style"):
             self.inline_styles.append(attrs_d["style"])
@@ -2530,12 +2672,14 @@ class _StructParser(HTMLParser):
         # After it, so the parent recorded here is the one the browser will see.
         lang = LANGUAGE_CLASS.search(attrs_d.get("class") or "")
         if lang:
-            self.language_blocks.append({
-                "tag": tag,
-                "parent": self.stack[-1][0] if self.stack else None,
-                "lang": lang.group(1),
-                "line": self.getpos()[0],
-            })
+            self.language_blocks.append(
+                {
+                    "tag": tag,
+                    "parent": self.stack[-1][0] if self.stack else None,
+                    "lang": lang.group(1),
+                    "line": self.getpos()[0],
+                }
+            )
         if tag in VOID_TAGS:
             if self.stack and self.stack[-1][2] is not None:
                 self.stack[-1][2]["children"].append(tag)
@@ -2603,14 +2747,20 @@ class _StructParser(HTMLParser):
             return
         for i in range(len(self.stack) - 1, -1, -1):
             if self.stack[i][0] == tag:
-                orphaned = [(t, ln) for t, ln, _ in self.stack[i + 1:] if t not in OPTIONAL_END]
+                orphaned = [
+                    (t, ln) for t, ln, _ in self.stack[i + 1 :] if t not in OPTIONAL_END
+                ]
                 if orphaned:
                     unclosed = ", ".join(f"<{t}> (line {ln})" for t, ln in orphaned)
-                    self.errors.append(f"</{tag}> at line {self.getpos()[0]} closes over unclosed: {unclosed}")
+                    self.errors.append(
+                        f"</{tag}> at line {self.getpos()[0]} closes over unclosed: {unclosed}"
+                    )
                 del self.stack[i:]
                 return
         if tag not in OPTIONAL_END:
-            self.errors.append(f"stray </{tag}> at line {self.getpos()[0]} with no matching open tag")
+            self.errors.append(
+                f"stray </{tag}> at line {self.getpos()[0]} with no matching open tag"
+            )
 
 
 def version_review_mode(page_dir: Path, version: int):
@@ -2668,8 +2818,22 @@ def version_review_mode(page_dir: Path, version: int):
 # goes wherever two runs of text sit in different blocks, and none where they share one,
 # so `<p>a</p><p>b</p>` reads "a b" and `set<em>up</em>` reads "setup".
 TEXT_BLOCK_TAGS = {
-    "p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "td", "th", "pre",
-    "blockquote", "dd", "dt", "figcaption", "summary",
+    "p",
+    "li",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "td",
+    "th",
+    "pre",
+    "blockquote",
+    "dd",
+    "dt",
+    "figcaption",
+    "summary",
 }
 # Text no anchor can reach. script/style are the anchor pass's own skip list; head is
 # outside the tree it searches at all, the runtime rooting a section-less anchor at
@@ -2679,6 +2843,8 @@ UNQUOTABLE_TAGS = {"script", "style", "head"}
 # surrounding text it stores to tell two identical passages apart.
 QUOTE_CAP = 400
 CONTEXT = 24
+
+
 class _PassageParser(HTMLParser):
     """A version's prose as the anchor pass reads it. `text` is the whole page collapsed
     the way a captured quote is; `owner[i]` is the ids enclosing text[i], outermost
@@ -2707,7 +2873,9 @@ class _PassageParser(HTMLParser):
         self.retired = {}  # id under a retired slot → the suggestion whose decision did it
         self.rewritten = {}  # id whose body the reviewer rewrote → the verb that did it
         self.gone = {}  # decided id whose decision left it empty → the outcome that did it
-        self.bearing = set()  # ids still showing something: text under them, or a surviving child
+        self.bearing = (
+            set()
+        )  # ids still showing something: text under them, or a surviving child
         self.stack = []  # [{"tag", "id", "ids", "skip", "sub", "opaque", "fenced", "retired_by", "tb", "block", "tail"}]
         self._uid = 0
         self._block = None  # the block the last character came from
@@ -2745,7 +2913,9 @@ class _PassageParser(HTMLParser):
         # renderSaid puts each value in its own <span>, so each is its own block wherever
         # the widget sits outside a text block — the same rule, applied to the span.
         for value in values:
-            self._write(value, frame["tb"] if frame["tb"] else self._fresh(), frame["ids"])
+            self._write(
+                value, frame["tb"] if frame["tb"] else self._fresh(), frame["ids"]
+            )
 
     def _close(self, frame: dict) -> None:
         """Everything an element's end does, whether it was written or inferred — an
@@ -2757,7 +2927,11 @@ class _PassageParser(HTMLParser):
         # A decided element closing with nothing shown left the page with its decision:
         # a deletion accepted, an insertion refused. Everything it held is either a
         # retired slot or silent, so there is nothing on screen for an anchor to reach.
-        if frame["id"] in self.decided and not frame["skip"] and frame["id"] not in self.bearing:
+        if (
+            frame["id"] in self.decided
+            and not frame["skip"]
+            and frame["id"] not in self.bearing
+        ):
             self.gone[frame["id"]] = self.decided[frame["id"]]
 
     def handle_starttag(self, tag, attrs):
@@ -2771,7 +2945,11 @@ class _PassageParser(HTMLParser):
         parent = self.stack[-1] if self.stack else None
         entry = self.registry.get(tag) or {}
         # The innermost open text block, if any: the runtime's `closest(TEXT_BLOCK)`.
-        tb = self._fresh() if tag in TEXT_BLOCK_TAGS else (parent["tb"] if parent else None)
+        tb = (
+            self._fresh()
+            if tag in TEXT_BLOCK_TAGS
+            else (parent["tb"] if parent else None)
+        )
         # A module may write anywhere inside the element it upgrades, unless the registry
         # says the body reaches the reader as its own words.
         opaque = bool(entry.get("x-upgrade") and not entry.get("x-verbatim"))
@@ -2780,7 +2958,8 @@ class _PassageParser(HTMLParser):
         # own id — the same child-of-suggestion shape as the browser's selector.
         retired_by = (parent["retired_by"] if parent else None) or (
             parent["id"]
-            if parent and entry.get("x-retired-when")
+            if parent
+            and entry.get("x-retired-when")
             and self.decided.get(parent["id"]) == entry["x-retired-when"]
             else None
         )
@@ -2805,8 +2984,11 @@ class _PassageParser(HTMLParser):
         frame = {
             "tag": tag,
             "id": attrs_d.get("id"),
-            "ids": (parent["ids"] if parent else ()) + ((attrs_d["id"],) if attrs_d.get("id") else ()),
-            "skip": silenced or sub is not None or (opaque and entry.get("x-content") == "data"),
+            "ids": (parent["ids"] if parent else ())
+            + ((attrs_d["id"],) if attrs_d.get("id") else ()),
+            "skip": silenced
+            or sub is not None
+            or (opaque and entry.get("x-content") == "data"),
             "sub": sub,
             "retired_by": retired_by,
             "opaque": opaque,
@@ -2873,7 +3055,12 @@ def page_passages(html: str, registry=None, decided=None, rewrites=None) -> Pass
     parser.feed(html)
     parser.close()
     return Passages(
-        parser.text, parser.owner, parser.fences, parser.retired, parser.rewritten, parser.gone
+        parser.text,
+        parser.owner,
+        parser.fences,
+        parser.retired,
+        parser.rewritten,
+        parser.gone,
     )
 
 
@@ -2918,7 +3105,7 @@ def spoken(html: str, registry: dict) -> dict:
     # element the next block opens, so a slice can start or end on one. It marks a
     # boundary rather than saying anything.
     return {
-        wid: Spoken(p.text[lo:last[wid] + 1].strip(), p.owner[lo])
+        wid: Spoken(p.text[lo : last[wid] + 1].strip(), p.owner[lo])
         for wid, lo in first.items()
     }
 
@@ -2945,7 +3132,9 @@ def occurrences(text: str, quote: str, lo: int, hi: int, fences=frozenset()) -> 
     return found
 
 
-def capture_anchor(html: str, registry, quote: str, section: str, decided=None, rewrites=None) -> dict:
+def capture_anchor(
+    html: str, registry, quote: str, section: str, decided=None, rewrites=None
+) -> dict:
     """The anchor a quote makes, written the way a selection's is. Raises ValueError with
     what to do about it — a quote the file doesn't hold, or holds twice, is a question
     with an answer, and asking now beats posting a comment that lands nowhere.
@@ -2954,7 +3143,9 @@ def capture_anchor(html: str, registry, quote: str, section: str, decided=None, 
     than the version as authored: a slot their decision retired is off the page, and a
     body their edit rewrote holds their words — so an anchor is met here the way it
     would land there, instead of detaching in front of them."""
-    text, owner, fences, retired, rewritten, gone = page_passages(html, registry, decided, rewrites)
+    text, owner, fences, retired, rewritten, gone = page_passages(
+        html, registry, decided, rewrites
+    )
     if section:
         # Against the structure, not the text: an element anchor is the one a click makes
         # on a diagram or an image, and those hold no text to look for.
@@ -3007,7 +3198,10 @@ def capture_anchor(html: str, registry, quote: str, section: str, decided=None, 
             "is a picture by the time it is read), so --section the element instead."
         )
     if len(hits) > 1:
-        shown = [f"  - …{text[max(lo_bound, at - 30):at + len(wanted) + 30]}…" for at in hits[:4]]
+        shown = [
+            f"  - …{text[max(lo_bound, at - 30) : at + len(wanted) + 30]}…"
+            for at in hits[:4]
+        ]
         if len(hits) > len(shown):
             shown.append(f"  - …and {len(hits) - len(shown)} more")
         raise ValueError(
@@ -3029,8 +3223,10 @@ def capture_anchor(html: str, registry, quote: str, section: str, decided=None, 
     # Both are trimmed before they are cut, since the runtime reads its side back through
     # the same collapse, which trims — a stored space no occurrence produces fails at the
     # first comparison.
-    prefix = text[max([0] + [f for f in fences if f <= lo]):lo].strip()[-CONTEXT:]
-    suffix = text[tail:min([len(text)] + [f for f in fences if f >= tail])].strip()[:CONTEXT]
+    prefix = text[max([0] + [f for f in fences if f <= lo]) : lo].strip()[-CONTEXT:]
+    suffix = text[tail : min([len(text)] + [f for f in fences if f >= tail])].strip()[
+        :CONTEXT
+    ]
     return {
         "section": section,
         "quote": stored,
@@ -3054,7 +3250,7 @@ def _removed_by(html, registry, wanted: str, section: str, decided, rewritten):
             return None
         lo, hi = span
     for at in occurrences(p.text, wanted, lo, hi, p.fences):
-        for ids in p.owner[at:at + len(wanted)]:
+        for ids in p.owner[at : at + len(wanted)]:
             sid = next((wid for wid in ids if wid in decided), None)
             if sid:
                 return (
@@ -3103,13 +3299,19 @@ def css_rules(css: str):
     true for a rule inside an at-rule, which applies only when a condition this check
     never evaluates holds: `@media print`, a viewport query. Nesting alone is not a
     condition, so a rule nested in a conditional one is conditional and no more."""
-    yield from _rules(tinycss2.parse_stylesheet(css, skip_comments=True, skip_whitespace=True))
+    yield from _rules(
+        tinycss2.parse_stylesheet(css, skip_comments=True, skip_whitespace=True)
+    )
 
 
 def css_syntax_errors(css: str, source: str, *, block=False) -> list:
     """Every parse error in a stylesheet or declaration block, including nested rules."""
-    parse = css_block if block else lambda value: tinycss2.parse_stylesheet(
-        value, skip_comments=True, skip_whitespace=True
+    parse = (
+        css_block
+        if block
+        else lambda value: tinycss2.parse_stylesheet(
+            value, skip_comments=True, skip_whitespace=True
+        )
     )
     errors = []
     seen = set()
@@ -3220,7 +3422,9 @@ def _overwide_elements(parser: _StructParser, column: int) -> list:
     for selector, block, _ in css_rules(parser.css):
         for prop, px in _px_widths(block, OVERFLOW_PROPS):
             if px > column:
-                hits.append(f"rule `{selector}` sets {prop}: {px:g}px (column is {column}px)")
+                hits.append(
+                    f"rule `{selector}` sets {prop}: {px:g}px (column is {column}px)"
+                )
     for style in parser.inline_styles:
         for prop, px in _px_widths(css_block(style), OVERFLOW_PROPS):
             if px > column:
@@ -3248,10 +3452,19 @@ def read_registry_entries(path: Path):
         sys.exit(f"{path}: registry must be a JSON object")
     if not isinstance(registry, dict):
         sys.exit(f"{path}: registry must be a JSON object")
-    non_objects = [name for name, entry in registry.items() if not isinstance(entry, dict)]
+    non_objects = [
+        name for name, entry in registry.items() if not isinstance(entry, dict)
+    ]
     if non_objects:
         sys.exit(f"{path}: registry entries must be objects: {non_objects}")
     return registry
+
+
+def declares_string(field_schema) -> bool:
+    """Whether a detail field allows a string and nothing else, however it says so."""
+    declared = field_schema.get("type") if isinstance(field_schema, dict) else None
+    allowed = {declared} if isinstance(declared, str) else set(declared or [])
+    return allowed == {"string"}
 
 
 def validate_registry(registry: dict, source) -> dict:
@@ -3267,17 +3480,16 @@ def validate_registry(registry: dict, source) -> dict:
             f"{path}: registry must declare $events.kinds, $languages.names/paths "
             "and $tones.names"
         )
-    if (
-        not isinstance(kinds, dict)
-        or not all(
-            isinstance(kind, str)
-            and isinstance(fields, list)
-            and all(isinstance(field, str) for field in fields)
-            and len(fields) == len(set(fields))
-            for kind, fields in kinds.items()
-        )
+    if not isinstance(kinds, dict) or not all(
+        isinstance(kind, str)
+        and isinstance(fields, list)
+        and all(isinstance(field, str) for field in fields)
+        and len(fields) == len(set(fields))
+        for kind, fields in kinds.items()
     ):
-        sys.exit(f"{path}: $events.kinds must map event names to unique field-name lists")
+        sys.exit(
+            f"{path}: $events.kinds must map event names to unique field-name lists"
+        )
     missing_events = []
     for kind, required in EVENT_VOCABULARY.items():
         if kind not in kinds:
@@ -3297,12 +3509,9 @@ def validate_registry(registry: dict, source) -> dict:
         or len(names) != len(set(names))
     ):
         sys.exit(f"{path}: $languages.names must be a unique list of strings")
-    if (
-        not isinstance(paths, dict)
-        or not all(
-            isinstance(extension, str) and language in names
-            for extension, language in paths.items()
-        )
+    if not isinstance(paths, dict) or not all(
+        isinstance(extension, str) and language in names
+        for extension, language in paths.items()
     ):
         sys.exit(f"{path}: $languages.paths must map extensions to declared languages")
     # Shape, not just presence, because `tone_errors` asks a list for membership and a
@@ -3330,12 +3539,16 @@ def validate_registry(registry: dict, source) -> dict:
             Draft202012Validator.check_schema(entry)
         except SchemaError as error:
             sys.exit(f"{path}: <{tag}> is not a valid JSON Schema: {error.message}")
-        extensions = {key: value for key, value in entry.items() if key.startswith("x-")}
+        extensions = {
+            key: value for key, value in entry.items() if key.startswith("x-")
+        }
         errors = sorted(
             Draft202012Validator(EXTENSION_SCHEMA).iter_errors(extensions), key=str
         )
         if errors:
-            sys.exit(f"{path}: <{tag}> registry extensions are invalid: {errors[0].message}")
+            sys.exit(
+                f"{path}: <{tag}> registry extensions are invalid: {errors[0].message}"
+            )
         for verb, spec in entry.get("x-state", {}).items():
             try:
                 Draft202012Validator.check_schema(spec["detail"])
@@ -3364,7 +3577,9 @@ def validate_registry(registry: dict, source) -> dict:
             sys.exit(f"{path}: <{tag}> x-tone names undeclared attribute `{tone}`")
         language = entry.get("x-language")
         if language and language not in properties:
-            sys.exit(f"{path}: <{tag}> x-language names undeclared attribute `{language}`")
+            sys.exit(
+                f"{path}: <{tag}> x-language names undeclared attribute `{language}`"
+            )
         needs_upgrade = [
             key
             for key in ("x-state", "x-language", "x-verbatim")
@@ -3406,12 +3621,7 @@ def validate_registry(registry: dict, source) -> dict:
                     "only position records support that"
                 )
 
-            def field_types(field):
-                field_schema = detail_properties[field]
-                declared = field_schema.get("type") if isinstance(field_schema, dict) else None
-                return {declared} if isinstance(declared, str) else set(declared or [])
-
-            if unit != "widget" and field_types(unit) != {"string"}:
+            if unit != "widget" and not declares_string(detail_properties[unit]):
                 sys.exit(
                     f"{path}: <{tag}> x-state verb `{verb}` fold unit `{unit}` "
                     "must be a string"
@@ -3434,7 +3644,7 @@ def validate_registry(registry: dict, source) -> dict:
                             f"{path}: <{tag}> x-state verb `{verb}` record value `{value}` "
                             "must be an array of strings"
                         )
-                elif field_types(value) != {"string"}:
+                elif not declares_string(schema):
                     sys.exit(
                         f"{path}: <{tag}> x-state verb `{verb}` record value `{value}` "
                         "must be a string"
@@ -3548,7 +3758,10 @@ def vocabulary_gaps(page_dir: Path, events: list, incoming: dict) -> list:
         else:
             continue
         missing[key] = missing.get(key, 0) + 1
-    return [f"{n} event{'s' if n != 1 else ''} of {key}" for key, n in sorted(missing.items())]
+    return [
+        f"{n} event{'s' if n != 1 else ''} of {key}"
+        for key, n in sorted(missing.items())
+    ]
 
 
 def widget_errors(cq_elements: list, registry: dict) -> list:
@@ -3567,7 +3780,9 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
         tag, where = rec["tag"], f"<{rec['tag']}> (line {rec['line']})"
         entry = registry.get(tag)
         if entry is None:
-            errors.append(f"{where}: unknown widget — not in the vendored registry.json")
+            errors.append(
+                f"{where}: unknown widget — not in the vendored registry.json"
+            )
             continue
         # The element validates as the instance built from its attributes:
         # values as strings, flag attributes as True. HTML's two flag spellings
@@ -3603,7 +3818,9 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
             )
         elif content == "items":
             if stray:
-                errors.append(f"{where}: admits only {sorted(allowed)} children, found {stray}")
+                errors.append(
+                    f"{where}: admits only {sorted(allowed)} children, found {stray}"
+                )
             if rec["text"]:
                 errors.append(f"{where}: loose text between its items isn't allowed")
     return errors
@@ -3617,7 +3834,7 @@ def reference_errors(cq_elements: list, registry: dict, ids: set) -> list:
     carries no page to check against, and one of its widgets pointing at the version
     beside it is exactly right."""
     return [
-        f"<{rec['tag']}> (line {rec['line']}): {attr}=\"{target}\" names no element "
+        f'<{rec["tag"]}> (line {rec["line"]}): {attr}="{target}" names no element '
         "in this version"
         for rec in cq_elements
         for attr in registry.get(rec["tag"], {}).get("x-refers", [])
@@ -3625,7 +3842,9 @@ def reference_errors(cq_elements: list, registry: dict, ids: set) -> list:
     ]
 
 
-def language_errors(blocks: list, cq_elements: list, registry: dict, known: list) -> list:
+def language_errors(
+    blocks: list, cq_elements: list, registry: dict, known: list
+) -> list:
     """A declared language the runtime won't honor. Nothing here is visible to the
     reviewer either way — a class in the wrong place and a misspelt language both render
     as an ordinary uncolored block — so the failure is routed to the one party who can
@@ -3651,7 +3870,9 @@ def language_errors(blocks: list, cq_elements: list, registry: dict, known: list
                 f"for a walkthrough"
             )
         elif block["lang"] not in known:
-            errors.append(f"{where}: not a language this page's layer speaks — known: {known}")
+            errors.append(
+                f"{where}: not a language this page's layer speaks — known: {known}"
+            )
     for rec in cq_elements:
         attr = (registry.get(rec["tag"]) or {}).get("x-language")
         word = rec["attrs"].get(attr) if attr else None
@@ -3702,7 +3923,9 @@ def suggestion_errors(suggestions: list, comment_ids: set) -> list:
             )
         for slot in ("cq-old", "cq-new"):
             if s["slots"].count(slot) > 1:
-                errors.append(f"{where}: carries {s['slots'].count(slot)} <{slot}> children, one at most")
+                errors.append(
+                    f"{where}: carries {s['slots'].count(slot)} <{slot}> children, one at most"
+                )
         if s["resolves"] and s["resolves"] not in comment_ids:
             errors.append(
                 f"{where}: resolves={s['resolves']!r} names no comment in the log"
@@ -3756,7 +3979,8 @@ def action_subjects(event: dict, byid: dict, now: dict, registry: dict) -> list:
     widget = event["widget"]
     parts = action_rests_on(event, now)[1:]
     leaves = [
-        v for v in parts
+        v
+        for v in parts
         if registry.get(byid.get(v, {}).get("tag"), {}).get("x-content") != "items"
     ]
     return leaves or [widget]
@@ -3804,7 +4028,9 @@ def action_rests_on(event: dict, spk: dict) -> list:
 NO_RECORD = object()
 
 
-def state_fold(events: list, byid: dict, spk: dict, registry: dict, upto, floors: dict) -> dict:
+def state_fold(
+    events: list, byid: dict, spk: dict, registry: dict, upto, floors: dict
+) -> dict:
     """unit id → (action, spec): the last surviving action per declared unit.
 
     The registry's x-state names each verb's fold unit — the widget itself for
@@ -3824,7 +4050,11 @@ def state_fold(events: list, byid: dict, spk: dict, registry: dict, upto, floors
         if upto is not None and e["version"] > upto:
             continue
         rec = byid.get(e["widget"])
-        spec = (registry.get(rec["tag"], {}).get("x-state") or {}).get(e["action"]) if rec else None
+        spec = (
+            (registry.get(rec["tag"], {}).get("x-state") or {}).get(e["action"])
+            if rec
+            else None
+        )
         if not spec:
             continue
         if any(floors.get(i, 0) > e["version"] for i in action_rests_on(e, spk)):
@@ -3852,12 +4082,15 @@ def markup_facet(unit: str, spec: dict, byid: dict, spk: dict):
         return NO_RECORD
     if record["kind"] == "attribute":
         return sorted(
-            oid for oid, orec in byid.items()
-            if record["attr"] in orec["attrs"] and unit in spk.get(oid, EMPTY).within[:-1]
+            oid
+            for oid, orec in byid.items()
+            if record["attr"] in orec["attrs"]
+            and unit in spk.get(oid, EMPTY).within[:-1]
         )
     if record["kind"] == "position":
         enclosing = [
-            i for i in spk.get(unit, EMPTY).within[:-1]
+            i
+            for i in spk.get(unit, EMPTY).within[:-1]
             if byid.get(i, {}).get("tag") == record["within"]
         ]
         return enclosing[-1] if enclosing else None
@@ -3891,7 +4124,11 @@ def page_fold(html: str, events: list, registry: dict, upto):
     parser.close()
     byid = {r["attrs"]["id"]: r for r in parser.cq_elements if r["attrs"].get("id")}
     spk = spoken(html, registry)
-    return state_fold(events, byid, spk, registry, upto, retractions(events, upto)), byid, spk
+    return (
+        state_fold(events, byid, spk, registry, upto, retractions(events, upto)),
+        byid,
+        spk,
+    )
 
 
 def rewritten_bodies(fold: dict) -> dict:
@@ -3916,7 +4153,9 @@ def decisions(fold: dict, registry: dict) -> dict:
     verb by name, and a verb a later layer retires folds to nothing rather than
     standing on trust."""
     deciding = {e["x-retired-when"] for e in registry.values() if "x-retired-when" in e}
-    return {unit: e["action"] for unit, (e, _) in fold.items() if e["action"] in deciding}
+    return {
+        unit: e["action"] for unit, (e, _) in fold.items() if e["action"] in deciding
+    }
 
 
 def record_lag(html: str, events: list, registry: dict) -> list:
@@ -3943,7 +4182,9 @@ def record_lag(html: str, events: list, registry: dict) -> list:
     return lag
 
 
-def restatement_errors(cur, prev, was: dict, now: dict, events: list, prev_num: int, registry: dict) -> list:
+def restatement_errors(
+    cur, prev, was: dict, now: dict, events: list, prev_num: int, registry: dict
+) -> list:
     """The other half of the id-survival rule. That one keeps a republish from
     dropping the anchors a reviewer hung on the page; this one keeps it from
     dropping the decisions they recorded on it. CLAUDE.md carries why the log
@@ -4087,7 +4328,9 @@ def structure_errors(parser: _StructParser) -> list:
     errors = list(parser.errors)
     leftover = [(t, ln) for t, ln, _ in parser.stack if t not in OPTIONAL_END]
     if leftover:
-        errors.append("unclosed tags: " + ", ".join(f"<{t}> (line {ln})" for t, ln in leftover))
+        errors.append(
+            "unclosed tags: " + ", ".join(f"<{t}> (line {ln})" for t, ln in leftover)
+        )
     return errors
 
 
@@ -4108,7 +4351,9 @@ def fragment_errors(parser: _StructParser, registry: dict, known: list) -> list:
 def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     versions = list_versions(page_dir)
     if not versions:
-        sys.exit(f"no versions in {page_dir / 'versions'}; write versions/v1.html first")
+        sys.exit(
+            f"no versions in {page_dir / 'versions'}; write versions/v1.html first"
+        )
     selected = version if version is not None else versions[-1]
     if selected not in versions:
         sys.exit(f"no v{version}.html in {page_dir / 'versions'}")
@@ -4157,7 +4402,9 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
             )
 
     if parser.duplicate_ids:
-        errors.append(f"duplicate ids (anchors need unique targets): {parser.duplicate_ids}")
+        errors.append(
+            f"duplicate ids (anchors need unique targets): {parser.duplicate_ids}"
+        )
     if parser.reserved_ids:
         errors.append(reserved_ids_error(parser.reserved_ids))
 
@@ -4177,7 +4424,10 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
         for tag, entry in registry.items():
             if not tag.startswith("cq-"):
                 continue
-            if entry["x-upgrade"] and not (page_dir / "widgets" / f"{tag}.js").is_file():
+            if (
+                entry["x-upgrade"]
+                and not (page_dir / "widgets" / f"{tag}.js").is_file()
+            ):
                 errors.append(
                     f"registry marks <{tag}> as upgraded but widgets/{tag}.js "
                     f"isn't vendored; run `colloquy page init`"
@@ -4199,7 +4449,11 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     # nothing decided, which is exactly what makes a `restated` on it an error
     # like any other unearned one.
     noted = {e["version"] for e in events if e["kind"] == "note"}
-    earlier = [candidate for candidate in versions if candidate < selected and candidate in noted]
+    earlier = [
+        candidate
+        for candidate in versions
+        if candidate < selected and candidate in noted
+    ]
     prev, prev_num, was = _StructParser(), 0, {}
     prev.close()
     if earlier:
@@ -4215,7 +4469,10 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
         gone = prev.ids - parser.ids
         fold, _, _ = page_fold(prev_html, events, registry or {}, None)
         dropped = sorted(
-            gone - retirable_ids(prev.suggestions, events, gone, decisions(fold, registry or {}))
+            gone
+            - retirable_ids(
+                prev.suggestions, events, gone, decisions(fold, registry or {})
+            )
         )
         if dropped:
             errors.append(
@@ -4225,7 +4482,13 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     # And the decisions recorded on the ids that stayed.
     errors.extend(
         restatement_errors(
-            parser, prev, was, spoken(html, registry or {}), events, prev_num, registry or {}
+            parser,
+            prev,
+            was,
+            spoken(html, registry or {}),
+            events,
+            prev_num,
+            registry or {},
         )
     )
 
@@ -4245,7 +4508,11 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
                 f"{ref} isn't in the page directory; `colloquy page media` puts it there"
             )
 
-    theme_css = (page_dir / "theme.css").read_text(encoding="utf-8") if (page_dir / "theme.css").exists() else ""
+    theme_css = (
+        (page_dir / "theme.css").read_text(encoding="utf-8")
+        if (page_dir / "theme.css").exists()
+        else ""
+    )
     errors.extend(css_syntax_errors(parser.css, "page <style>"))
     for number, style in enumerate(parser.inline_styles, 1):
         errors.extend(css_syntax_errors(style, f"inline style #{number}", block=True))
@@ -4268,7 +4535,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     # version is the page that must read right without the log.
     for line in record_lag(html, events, registry or {}):
         print(f"  · record behind the log — {line}")
-    # Render only what passed the static half: an unparseable page would drown
+    # Render only what passed the static half: an unparsable page would drown
     # the browser's report in consequences of what the lint already named.
     return render_check(page_dir, selected) if render else 0
 
@@ -4559,15 +4826,22 @@ def render_version(browser, url: str) -> list:
     def in_scheme(scheme):
         page = browser.new_page(viewport=RENDER_VIEWPORT, color_scheme=scheme)
         errors = []
-        page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+        page.on(
+            "console", lambda m: errors.append(m.text) if m.type == "error" else None
+        )
         page.on("pageerror", lambda e: errors.append(str(e)))
         # The console's own word for a bad response is "Failed to load resource",
         # which names nothing; carry the status and URL so a failure says what
         # went missing.
-        page.on("response", lambda r: errors.append(f"{r.status} {r.url}") if r.status >= 400 else None)
+        page.on(
+            "response",
+            lambda r: errors.append(f"{r.status} {r.url}") if r.status >= 400 else None,
+        )
         try:
             page.goto(url, wait_until="networkidle")
-            page.wait_for_function("() => document.querySelector('.cq-banner') !== null")
+            page.wait_for_function(
+                "() => document.querySelector('.cq-banner') !== null"
+            )
         except PlaywrightTimeout:
             page.close()
             return [
@@ -4608,7 +4882,9 @@ def render_version(browser, url: str) -> list:
                           w: Math.round(el.getBoundingClientRect().width),
                           h: Math.round(el.getBoundingClientRect().height) }))
             .filter(box => box.w < 40 || box.h < 10)""")
-        overflow = page.evaluate("document.body.scrollWidth - document.body.clientWidth")
+        overflow = page.evaluate(
+            "document.body.scrollWidth - document.body.clientWidth"
+        )
         spills = page.evaluate(PAST_THE_COLUMN)
         unreachable = page.evaluate(UNREACHABLE_WORDS)
         covered = page.evaluate(COVERED_WORDS)
@@ -4660,7 +4936,9 @@ def render_version(browser, url: str) -> list:
                 + ", ".join(f"<{tag}>" for tag in missing_upgrades)
             )
         if tiny:
-            found.append(f"[{scheme}] widgets rendered with no usable size: {json.dumps(tiny)}")
+            found.append(
+                f"[{scheme}] widgets rendered with no usable size: {json.dumps(tiny)}"
+            )
         if overflow > 0:
             found.append(f"[{scheme}] the page scrolls sideways by {overflow}px")
         found += [f"[{scheme}] {s}" for s in spills]
@@ -4715,21 +4993,20 @@ def render_check(page_dir: Path, version: int) -> int:
         )
         return 1
     name = version_name(version)
-    with preview_server(page_dir, version) as url:
-        with sync_playwright() as p:
-            try:
-                browser = p.chromium.launch(channel="chrome")
-            except PlaywrightError as error:
-                print(
-                    "✗ render check failed — Chrome did not launch: "
-                    + str(error).strip().splitlines()[0],
-                    file=sys.stderr,
-                )
-                return 1
-            try:
-                failures = render_version(browser, url)
-            finally:
-                browser.close()
+    with preview_server(page_dir, version) as url, sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(channel="chrome")
+        except PlaywrightError as error:
+            print(
+                "✗ render check failed — Chrome did not launch: "
+                + str(error).strip().splitlines()[0],
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            failures = render_version(browser, url)
+        finally:
+            browser.close()
     if failures:
         print(f"✗ {name}: renders broken — {len(failures)} issue(s)", file=sys.stderr)
         for f in failures:
@@ -4781,10 +5058,19 @@ def inline_assets(html: str, page_dir: Path) -> str:
     the widget modules were imports rather than elements, and a `cq-ref`'s link was
     always somewhere else."""
     theme = (page_dir / "theme.css").read_text(encoding="utf-8")
-    html, n = re.subn(r'<link[^>]+href="/theme\.css"[^>]*>', lambda _: f"<style>{theme}</style>", html, count=1)
+    html, n = re.subn(
+        r'<link[^>]+href="/theme\.css"[^>]*>',
+        lambda _: f"<style>{theme}</style>",
+        html,
+        count=1,
+    )
     if not n:
-        sys.exit("the rendered page carried no /theme.css link — it would open unstyled")
-    for src in sorted(set(re.findall(r"/" + MEDIA_DIR + r"/[a-f0-9]{16}\.[a-z]+", html))):
+        sys.exit(
+            "the rendered page carried no /theme.css link — it would open unstyled"
+        )
+    for src in sorted(
+        set(re.findall(r"/" + MEDIA_DIR + r"/[a-f0-9]{16}\.[a-z]+", html))
+    ):
         file = page_dir / src.lstrip("/")
         data = base64.b64encode(file.read_bytes()).decode()
         html = html.replace(src, f"data:{MEDIA_TYPES[file.suffix]};base64,{data}")
@@ -4858,19 +5144,18 @@ def cmd_export(page_dir: Path, out: Path, version) -> int:
         )
     name = version_name(version)
 
-    with preview_server(page_dir, version) as url:
-        with sync_playwright() as p:
-            try:
-                browser = p.chromium.launch(channel="chrome")
-            except PlaywrightError as e:
-                sys.exit(
-                    f"export needs Chrome, and it didn't launch ({str(e).strip().splitlines()[0]}). "
-                    "A copy is the drawn page, so there is nothing to write without one."
-                )
-            try:
-                html = export_page(browser, url, page_dir)
-            finally:
-                browser.close()
+    with preview_server(page_dir, version) as url, sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(channel="chrome")
+        except PlaywrightError as e:
+            sys.exit(
+                f"export needs Chrome, and it didn't launch ({str(e).strip().splitlines()[0]}). "
+                "A copy is the drawn page, so there is nothing to write without one."
+            )
+        try:
+            html = export_page(browser, url, page_dir)
+        finally:
+            browser.close()
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
@@ -4913,7 +5198,9 @@ def customize() -> None:
 
 
 @customize.command("theme", short_help="Create the theme override file.")
-@click.option("--user", is_flag=True, help="Use the user layer instead of this project.")
+@click.option(
+    "--user", is_flag=True, help="Use the user layer instead of this project."
+)
 def customize_theme(user: bool) -> None:
     """Create the CSS override file without replacing one that exists."""
     cmd_customize_theme(user)
@@ -4921,7 +5208,9 @@ def customize_theme(user: bool) -> None:
 
 @customize.command("widget", short_help="Add a widget scaffold.")
 @click.argument("tag")
-@click.option("--user", is_flag=True, help="Use the user layer instead of this project.")
+@click.option(
+    "--user", is_flag=True, help="Use the user layer instead of this project."
+)
 @click.option("--upgrade", is_flag=True, help="Also create an ES-module upgrade.")
 def customize_widget(tag: str, user: bool, upgrade: bool) -> None:
     """Add a registry entry and CSS scaffold for a cq-* widget."""
@@ -4980,7 +5269,9 @@ def check(dir: str, version: int, render: bool) -> None:
 
 @version.command(short_help="Publish a checked version with a changelog.")
 @click.argument("dir", metavar="PAGE")
-@click.option("--version", type=int, required=True, metavar="N", help="version to publish")
+@click.option(
+    "--version", type=int, required=True, metavar="N", help="version to publish"
+)
 @click.option("--text", help="changelog text (default: stdin)")
 def publish(dir: str, version: int, text: str) -> None:
     """Publish a checked version with a changelog.

@@ -42,14 +42,18 @@ def main() -> None:
     name = (sys.argv[1] if len(sys.argv) > 1 else "gallery").removesuffix(".html")
     source = ROOT / "examples" / f"{name}.html"
     if not source.exists():
-        sys.exit(f"no example named {name}; examples/ holds "
-                 + ", ".join(sorted(p.stem for p in (ROOT / "examples").glob("*.html"))))
+        sys.exit(
+            f"no example named {name}; examples/ holds "
+            + ", ".join(sorted(p.stem for p in (ROOT / "examples").glob("*.html")))
+        )
 
     if PAGE.exists():  # a previous preview may still hold the port
         colloquy("server", "stop", str(PAGE), check=False)
         shutil.rmtree(PAGE)
     colloquy("page", "init", str(PAGE))
-    (PAGE / "versions" / "v1.html").write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    (PAGE / "versions" / "v1.html").write_text(
+        source.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     colloquy(
         "version",
         "publish",

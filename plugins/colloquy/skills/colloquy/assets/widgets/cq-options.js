@@ -115,7 +115,8 @@ customElements.define(
         // until the reviewer clears it.
         const sel = getSelection();
         const card = e.target.closest?.("cq-option");
-        if (e.detail !== 0 && sel && !sel.isCollapsed && card?.contains(sel.focusNode)) return;
+        if (e.detail !== 0 && sel && !sel.isCollapsed && card?.contains(sel.focusNode))
+          return;
         if (e.target.closest("a")) return; // links keep their job
         const option = e.target.closest("cq-option");
         if (!option || option.parentElement !== this) return;
@@ -133,12 +134,14 @@ customElements.define(
           : next.has(option)
             ? `Chose “${name}”`
             : `Dropped “${name}”`;
-        sendAction(this, "choose", { options: [...next].map((o) => o.id) }).then((ok) => {
-          if (ok) toast(`${said} — sent to ${agentName()}`);
-          // Unsent means unrecorded: rewind rather than show a pick Claude will never
-          // see. (post already toasted the failure.)
-          else this.#pick(was);
-        });
+        sendAction(this, "choose", { options: [...next].map((o) => o.id) }).then(
+          (ok) => {
+            if (ok) toast(`${said} — sent to ${agentName()}`);
+            // Unsent means unrecorded: rewind rather than show a pick Claude will never
+            // see. (post already toasted the failure.)
+            else this.#pick(was);
+          },
+        );
       });
     }
 
@@ -174,7 +177,9 @@ customElements.define(
       // answer is what decides whether a comment can land on it. data-cq-gen either way,
       // since the diff parses the base version unupgraded and would read any mark as text
       // that version lacked.
-      const mark = pressable ? offer("button", "cq-pick") : document.createElement("span");
+      const mark = pressable
+        ? offer("button", "cq-pick")
+        : document.createElement("span");
       if (!pressable) {
         mark.className = "cq-pick";
         mark.dataset.cqGen = "1";

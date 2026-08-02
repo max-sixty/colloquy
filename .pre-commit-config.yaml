@@ -1,0 +1,39 @@
+# https://pre-commit.com/
+#
+# The vendored bundles are upstream's bytes, re-fetched by scripts/vendor-*.sh, so
+# every hook leaves them alone; a formatted copy conflicts on the next fetch.
+exclude: ^plugins/colloquy/skills/colloquy/assets/vendor/
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: mixed-line-ending
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.1
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+  # JavaScript only. Prettier reflows the body of an element it doesn't know, so a
+  # page's cq-code, cq-diff or cq-tree comes back as one wrapped paragraph; it splits
+  # theme.css's grouped rules one per line; and in markdown it strips the indent off a
+  # list item's continuation lines.
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.9.6
+    hooks:
+      - id: prettier
+        types_or: [javascript]
+  - repo: https://github.com/adhtruong/mirrors-typos
+    rev: v1.48.0
+    hooks:
+      - id: typos
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint

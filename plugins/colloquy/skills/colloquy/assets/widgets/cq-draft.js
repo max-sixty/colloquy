@@ -117,7 +117,11 @@ function wordAt(body, x, y) {
   const pos = document.caretPositionFromPoint(x, y);
   if (!pos || pos.offsetNode !== body.firstChild) return null;
   for (const w of words.segment(body.textContent)) {
-    if (w.isWordLike && pos.offset >= w.index && pos.offset <= w.index + w.segment.length)
+    if (
+      w.isWordLike &&
+      pos.offset >= w.index &&
+      pos.offset <= w.index + w.segment.length
+    )
       return [w.index, w.index + w.segment.length];
   }
   return [pos.offset, pos.offset];
@@ -129,7 +133,9 @@ function wordAt(body, x, y) {
 function capture(el) {
   const raw = el.textContent.replace(/^\n/, "").replace(/\s+$/, "");
   const lines = raw.split("\n");
-  const indents = lines.filter((l) => l.trim()).map((l) => l.match(/^[ \t]*/)[0].length);
+  const indents = lines
+    .filter((l) => l.trim())
+    .map((l) => l.match(/^[ \t]*/)[0].length);
   const cut = indents.length ? Math.min(...indents) : 0;
   return lines.map((l) => l.slice(cut)).join("\n");
 }
@@ -137,7 +143,10 @@ function capture(el) {
 customElements.define(
   "cq-draft",
   class extends HTMLElement {
-    #body; #pencil; #row; #raw;
+    #body;
+    #pencil;
+    #row;
+    #raw;
     #history = null;
     #historyKey = "";
     #alignments = new Map();
@@ -272,12 +281,15 @@ customElements.define(
       current.className = "cq-draft-current";
       const currentLabel = document.createElement("strong");
       currentLabel.textContent =
-        standing === this.#raw ? "Standing text matches this version" : "This version → standing text";
+        standing === this.#raw
+          ? "Standing text matches this version"
+          : "This version → standing text";
       current.append(currentLabel);
       // This pair changes with every standing edit. Recomputing it once for the new
       // history render is cheaper than retaining every obsolete full-body comparison;
       // adjacent log revisions below are stable and remain worth caching.
-      if (standing !== this.#raw) current.append(this.#delta(this.#raw, standing, false));
+      if (standing !== this.#raw)
+        current.append(this.#delta(this.#raw, standing, false));
 
       const list = document.createElement("ol");
       list.className = "cq-draft-revisions";
@@ -286,7 +298,12 @@ customElements.define(
       actions.forEach((event, index) => {
         const text = event.detail.text;
         list.append(
-          this.#snapshot(`Edit ${index + 1} · v${event.version}`, text, previous, standing),
+          this.#snapshot(
+            `Edit ${index + 1} · v${event.version}`,
+            text,
+            previous,
+            standing,
+          ),
         );
         previous = text;
       });
@@ -391,8 +408,7 @@ customElements.define(
     // the authored text and marks data-cq-pending for every widget alike.
     applyAction(action, detail) {
       if (action !== "edit" || typeof detail?.text !== "string") return;
-      if (this.#ta || this.#sending)
-        return false; // defer rather than yank words out from under a live edit/send
+      if (this.#ta || this.#sending) return false; // defer rather than yank words out from under a live edit/send
       this.#body.textContent = detail.text;
     }
   },

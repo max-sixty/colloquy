@@ -52,7 +52,9 @@ customElements.define(
         const lang = this.getAttribute("language");
         // One representation either way: an uncolored block is the whole source as a
         // single roleless token, so the line walk below has one shape to handle.
-        const lines = tokenLines(lang ? await syntax(source, lang) : [{ text: source }]);
+        const lines = tokenLines(
+          lang ? await syntax(source, lang) : [{ text: source }],
+        );
         const hi = parseRanges(this.getAttribute("hi"));
         const byLine = new Map();
         for (const note of notes) {
@@ -69,7 +71,8 @@ customElements.define(
           for (const note of byLine.get(n) ?? []) pre.append(noteNode(note));
           byLine.delete(n);
         });
-        for (const notes of byLine.values()) for (const note of notes) pre.append(noteNode(note));
+        for (const notes of byLine.values())
+          for (const note of notes) pre.append(noteNode(note));
         this.replaceChildren(pre);
         this.classList.add("cq-rendered");
       } catch (err) {

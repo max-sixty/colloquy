@@ -51,7 +51,9 @@ def test_every_example_is_published_standalone(site):
     for source in sorted(EXAMPLES.glob("*.html")):
         copy = (site / "examples" / source.name).read_text()
         assert "<script" not in copy, f"{source.name} carries script a host can't serve"
-        assert 'href="/theme.css"' not in copy, f"{source.name} still asks for the theme"
+        assert 'href="/theme.css"' not in copy, (
+            f"{source.name} still asks for the theme"
+        )
         assert 'class="cq-copy"' in copy
         # The theme inlined and the widgets' own output: an example that only
         # copied its source would be a fraction of this.
@@ -74,8 +76,9 @@ def test_the_site_takes_its_palette_from_the_theme(site, browser, scheme):
     try:
         for name in sorted(p.name for p in DOCS.glob("*.html")):
             page.goto((site / name).as_uri())
-            assert page.evaluate("getComputedStyle(document.body).backgroundColor") == (
-                PAPER[scheme]
+            assert (
+                page.evaluate("getComputedStyle(document.body).backgroundColor")
+                == (PAPER[scheme])
             ), name
     finally:
         page.close()

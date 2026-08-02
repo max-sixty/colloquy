@@ -19,7 +19,12 @@ function parseTree(text) {
     while (tokens.length > 1 && BADGE.test(tokens[tokens.length - 1]))
       badges.unshift(tokens.pop());
     const name = tokens.join(" ");
-    const node = { name: name.replace(/\/$/, ""), dir: name.endsWith("/"), badges, children: [] };
+    const node = {
+      name: name.replace(/\/$/, ""),
+      dir: name.endsWith("/"),
+      badges,
+      children: [],
+    };
     while (stack[stack.length - 1].indent >= indent) stack.pop();
     stack[stack.length - 1].node.children.push(node);
     stack.push({ indent, node });

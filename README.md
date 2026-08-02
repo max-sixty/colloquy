@@ -121,6 +121,13 @@ alone. The tests need the same set anyway, because they load `interact.py` by pa
 uv run pytest tests
 ```
 
+Ruff and prettier run from `.pre-commit-config.yaml`, which says what each covers
+and why:
+
+```
+pre-commit run --all-files
+```
+
 ## Rebuilding the syntax bundle
 
 Code blocks are colored in the browser from

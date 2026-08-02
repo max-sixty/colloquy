@@ -36,7 +36,9 @@ COLLOQUY = ROOT / "plugins" / "colloquy" / "bin" / "colloquy"
 THEME = ROOT / "plugins" / "colloquy" / "skills" / "colloquy" / "assets" / "theme.css"
 DOCS = ROOT / "docs"
 EXAMPLES = ROOT / "examples"
-OUT = ROOT / ".tmp" / "site"  # gitignored; the workflow uploads it as the Pages artifact
+OUT = (
+    ROOT / ".tmp" / "site"
+)  # gitignored; the workflow uploads it as the Pages artifact
 
 REPO = "https://github.com/max-sixty/colloquy"
 THEME_LINK = f'<link rel="stylesheet" href="../{THEME.relative_to(ROOT)}">'
@@ -68,7 +70,9 @@ class Links(HTMLParser):
             if name in ("href", "src"):
                 self.found.append(value)
             elif name == "srcset":
-                self.found += [c.strip().split()[0] for c in value.split(",") if c.strip()]
+                self.found += [
+                    c.strip().split()[0] for c in value.split(",") if c.strip()
+                ]
 
 
 def local_targets(html: str) -> list[str]:
@@ -98,11 +102,15 @@ def check_links(out: Path) -> None:
         if not resolves(out, page, target)
     ]
     if dead:
-        sys.exit("the site would publish links that reach nothing:\n  " + "\n  ".join(dead))
+        sys.exit(
+            "the site would publish links that reach nothing:\n  " + "\n  ".join(dead)
+        )
 
 
 def colloquy(env: dict, *args: str) -> None:
-    subprocess.run([str(COLLOQUY), *args], check=True, env=env, stdout=subprocess.DEVNULL)
+    subprocess.run(
+        [str(COLLOQUY), *args], check=True, env=env, stdout=subprocess.DEVNULL
+    )
 
 
 def export_examples(out: Path, env: dict) -> None:
@@ -115,10 +123,24 @@ def export_examples(out: Path, env: dict) -> None:
             (page / "versions" / "v1.html").write_text(
                 source.read_text(encoding="utf-8"), encoding="utf-8"
             )
-            colloquy(env, "version", "publish", str(page), "--version", "1",
-                     "--text", f"{source.name}, as it stands in the tree")
-            colloquy(env, "version", "export", str(page),
-                     "-o", str(out / "examples" / source.name))
+            colloquy(
+                env,
+                "version",
+                "publish",
+                str(page),
+                "--version",
+                "1",
+                "--text",
+                f"{source.name}, as it stands in the tree",
+            )
+            colloquy(
+                env,
+                "version",
+                "export",
+                str(page),
+                "-o",
+                str(out / "examples" / source.name),
+            )
         print(f"  {source.stem}")
 
 

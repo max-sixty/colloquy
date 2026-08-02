@@ -66,11 +66,15 @@ customElements.define(
         const at = order.indexOf(e.target);
         if (at === -1) return;
         const to =
-          e.key === "ArrowRight" ? (at + 1) % order.length
-          : e.key === "ArrowLeft" ? (at - 1 + order.length) % order.length
-          : e.key === "Home" ? 0
-          : e.key === "End" ? order.length - 1
-          : -1;
+          e.key === "ArrowRight"
+            ? (at + 1) % order.length
+            : e.key === "ArrowLeft"
+              ? (at - 1 + order.length) % order.length
+              : e.key === "Home"
+                ? 0
+                : e.key === "End"
+                  ? order.length - 1
+                  : -1;
         if (to === -1) return;
         e.preventDefault();
         order[to].focus();

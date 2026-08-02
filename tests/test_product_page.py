@@ -61,7 +61,10 @@ def test_tour_walks_the_interactive_and_live_workflows():
     for example in ("triage-board", "live-progress"):
         assert f'href="../examples/{example}.html"' in tour
         assert f"scripts/preview.py {example}" in tour
-    assert '"widget":"release-board","action":"move","detail":{"card":"card-export"' in tour
+    assert (
+        '"widget":"release-board","action":"move","detail":{"card":"card-export"'
+        in tour
+    )
     assert 'src="demo.gif"' in tour
 
     live = (ROOT / "examples" / "live-progress.html").read_text()
