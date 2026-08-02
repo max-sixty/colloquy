@@ -413,14 +413,132 @@ def serve(tmp_path, monkeypatch):
         httpd.shutdown()
 
 
+# Being the loaded machine on purpose, because the tests that go red under load are only
+# the ones with the least room and fixing those hands the next loaded run a different
+# victim. `COLLOQUY_TEST_LOAD=1` makes every page slow in the two ways a busy machine is,
+# and the sweep is a full run under it: a test that passes here does not depend on how
+# fast the machine is. tests/CLAUDE.md, "Being the loaded machine on purpose".
+#
+# Slow to answer: each `/api/state` response is held back, so every poll-carried effect —
+# a version turning over, a status arriving, another window's action — lands a long way
+# after the write that caused it. That is the margin an assertion made straight after a
+# write is spending.
+#
+# Slow to run: CPU throttling slows the page's own JS, which reaches what holding the
+# network cannot — a listener that hasn't run yet, a frame that hasn't been painted, a
+# timer whose callback is still queued. The resize wait (`resized`) is the bug this half
+# of the sweep found.
+LOADED = os.environ.get("COLLOQUY_TEST_LOAD") == "1"
+CPU_SLOWDOWN = 20
+# Installed ahead of any init script a test asks for, so a counter like WATCH_TRAFFIC
+# wraps this rather than the other way round: what the page waits for is what a test
+# watching the traffic waits for too. Held only once the page is up, since a request
+# permanently in flight is a page that never reaches networkidle and so never loads.
+HOLD_STATE = """
+  const HOLD_MS = 3500;  // well past POLL_MS, so no assertion can outwait one answer
+  const first = window.fetch;
+  window.fetch = function (...args) {
+    const res = first.apply(this, args);
+    if (!String(args[0] ?? "").includes("/api/state")) return res;
+    return res.then((r) => (window.__cqHold
+      ? new Promise((go) => setTimeout(() => go(r), HOLD_MS))
+      : r));
+  };
+"""
+
+
+# What the page has sent and how much of it has come back, counted where the traffic is.
+# The runtime posts every action and comment through fetch and reads state back the same
+# way, so one wrapper sees both halves and no widget has to say anything. A poll notes the
+# posts already answered when it goes out, so what it has told the page on arrival is
+# those and no later ones — which is what makes ROUND_TRIP a statement about this gesture
+# rather than about whichever poll happened to land last. Init scripts run on every
+# navigation, so a reload keeps it.
+WATCH_TRAFFIC = """
+  window.__cqSends = 0;  // events posted
+  window.__cqAcked = 0;  // posts the server has answered
+  window.__cqRead = 0;   // answered posts the newest state the page has read accounts for
+  window.__cqAsked = 0;  // state the page has gone out for
+  window.__cqHeard = 0;  // ... and been given
+  const inner = window.fetch;
+  window.fetch = function (...args) {
+    const url = String(args[0] ?? "");
+    const posting = url.includes("/api/event");
+    const polling = url.includes("/api/state");
+    const asOf = window.__cqAcked;
+    if (posting) window.__cqSends++;
+    if (polling) window.__cqAsked++;
+    const res = inner.apply(this, args);
+    const over = () => {
+      if (posting) window.__cqAcked++;
+      if (polling) {
+        window.__cqHeard++;
+        // Two polls can be in flight at once — a post's own and the timer's — so the
+        // freshest reading stands rather than the last one to arrive.
+        window.__cqRead = Math.max(window.__cqRead, asOf);
+      }
+    };
+    res.then(over, over);  // over either way: a post the server refuses is over too
+    return res;
+  };
+"""
+# A gesture that sends is not over when its response lands. The runtime answers a post by
+# polling, and what the page does about the gesture arrives with that poll rather than with
+# the post, so a read taken on the post is a read from before the gesture had an effect —
+# passing or failing by where the round trip happened to be. That is the flake CLAUDE.md
+# calls worse than an outright failure, and it hid the sign-off regression on about half
+# the runs meant to prove the press sweep catches it.
+#
+# So the wait is the round trip itself, watched rather than timed. Holding for the poll
+# interval instead would state a number the runtime is free to change, and would still
+# be a guess on a loaded machine — while charging every gesture two seconds for a trip
+# that takes ten milliseconds.
+ROUND_TRIP = "() => window.__cqRead >= window.__cqSends"
+
+
+# The other direction of the same trip. Nothing a test writes into the page directory
+# announces itself — a declared status, a bumped heartbeat, an appended event all reach
+# the page when its next poll asks — so an assertion made straight after the write is
+# waiting out the poll interval on whatever budget expect() happens to carry. Timed, that
+# wait takes 1.8 to 2.3 of the default five seconds, and it takes them every time: an
+# assertion returns just after a poll lands, leaving the next one a whole interval away.
+# The remainder is all a loaded machine has to overrun, and a busy one did: holding each
+# poll's answer back by 3.5 seconds reproduces, to the character, the failure a full-suite
+# run reported for the banner's own test.
+#
+# So the wait is the trip again, watched rather than timed. A poll counted out after the
+# write is one that went looking for it, and its answer is the page being told; the
+# expect that follows only has to read what arrived.
+def told(page):
+    """Wait for a poll that goes out from here on to come back."""
+    asked = page.evaluate("() => window.__cqAsked")
+    page.wait_for_function("(out) => window.__cqHeard > out", arg=asked)
+
+
 def open_page(
-    browser, url, *, pin=False, init_script=None, wait_until="networkidle", context=None
+    browser,
+    url,
+    *,
+    pin=False,
+    init_script=None,
+    wait_until="networkidle",
+    context=None,
+    upgraded=True,
 ):
-    """A page with its console errors collected, settled enough for mermaid.
+    """A page with its console errors collected, done becoming itself.
 
     `pin` asks for the version the URL names rather than the newest, and is a keyword
     because the URL a handover carries already has a query holding the page's key: a
-    test appending its own `?pin` overwrote that key and got a page that never loaded."""
+    test appending its own `?pin` overwrote that key and got a page that never loaded.
+
+    `upgraded` is the page's own stamp for having finished: widgets upgraded, the anchor
+    pass run, and with it the Comment button able to answer a selection at all. Waiting on
+    the banner instead says only that the runtime's module evaluated, which happens long
+    before — so a test that reads without an auto-retrying wait is racing the upgrade, and
+    on a loaded machine loses. The passage sweep lost it on the gallery, the heaviest page
+    here: its first selection raised no button, and what it reported was a passage it had
+    not tested rather than one that failed. False is for the one test whose subject is that
+    interval, which holds the registry fetch open and so never earns the stamp."""
     page = (
         context.new_page()
         if context
@@ -428,6 +546,11 @@ def open_page(
             viewport={"width": 1200, "height": 900}, color_scheme="light"
         )
     )
+    if LOADED:
+        page.add_init_script(HOLD_STATE)
+        page.context.new_cdp_session(page).send(
+            "Emulation.setCPUThrottlingRate", {"rate": CPU_SLOWDOWN}
+        )
     errors = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -439,10 +562,19 @@ def open_page(
     )
     if init_script:
         page.add_init_script(init_script)
+    # Outermost, so what it counts as answered is what the page was handed: a test that
+    # holds a response back is between this wrapper and the network, not in front of it.
+    page.add_init_script(WATCH_TRAFFIC)
     if pin:
         url += ("&" if "?" in url else "?") + "pin"
     page.goto(url, wait_until=wait_until)
-    page.wait_for_function("() => document.querySelector('.cq-banner') !== null")
+    page.wait_for_function(
+        "() => document.body.dataset.cqUpgraded === '1'"
+        if upgraded
+        else "() => document.querySelector('.cq-banner') !== null"
+    )
+    if LOADED:
+        page.evaluate("() => { window.__cqHold = true; }")
     return page, errors
 
 
@@ -723,18 +855,6 @@ BANNER_WATCH = f"""(sel) => {{
 DEFINE_BOXES = """() => { window.__cqBoxes = () => window.__cqNeighbours.map(
     (n) => window.__cqOnScreen(n)
       ? [n.offsetLeft, n.offsetTop, n.offsetWidth, n.offsetHeight] : null); }"""
-# A press that sends is not over when its response lands. The runtime answers a post by
-# polling, and what the banner does about the press arrives with that poll rather than
-# with the post, so two matching frames read the page from before the press had an
-# effect — passing or failing by where the round trip happened to be. That is the flake
-# CLAUDE.md calls worse than an outright failure, and it hid the sign-off regression on
-# about half the runs meant to prove this test catches it.
-#
-# So the wait is the round trip itself, watched rather than timed. Holding for the poll
-# interval instead would state a number the runtime is free to change, and would still
-# be a guess on a loaded machine — while charging every press two seconds for a trip
-# that takes ten milliseconds.
-ROUND_TRIP = "() => window.__cqRead >= window.__cqSends"
 SETTLE_MS = 50  # a few frames: enough for a transition to finish
 SETTLED = """(hold) => {
   const now = JSON.stringify(window.__cqBoxes());
@@ -745,60 +865,6 @@ SETTLED = """(hold) => {
   }
   return performance.now() - window.__cqSince > hold;
 }"""
-# What the page has sent and how much of it has come back, counted where the traffic is.
-# The runtime posts every action and comment through fetch and reads state back the same
-# way, so one wrapper sees both halves and no widget has to say anything. A poll notes the
-# posts already answered when it goes out, so what it has told the page on arrival is
-# those and no later ones — which is what makes ROUND_TRIP a statement about this press
-# rather than about whichever poll happened to land last. Init scripts run on every
-# navigation, so the reloads below keep it.
-WATCH_TRAFFIC = """
-  window.__cqSends = 0;  // events posted
-  window.__cqAcked = 0;  // posts the server has answered
-  window.__cqRead = 0;   // answered posts the newest state the page has read accounts for
-  window.__cqAsked = 0;  // state the page has gone out for
-  window.__cqHeard = 0;  // ... and been given
-  const inner = window.fetch;
-  window.fetch = function (...args) {
-    const url = String(args[0] ?? "");
-    const posting = url.includes("/api/event");
-    const polling = url.includes("/api/state");
-    const asOf = window.__cqAcked;
-    if (posting) window.__cqSends++;
-    if (polling) window.__cqAsked++;
-    const res = inner.apply(this, args);
-    const over = () => {
-      if (posting) window.__cqAcked++;
-      if (polling) {
-        window.__cqHeard++;
-        // Two polls can be in flight at once — a post's own and the timer's — so the
-        // freshest reading stands rather than the last one to arrive.
-        window.__cqRead = Math.max(window.__cqRead, asOf);
-      }
-    };
-    res.then(over, over);  // over either way: a post the server refuses is over too
-    return res;
-  };
-"""
-
-
-# The other direction of the same trip. Nothing a test writes into the page directory
-# announces itself — a declared status, a bumped heartbeat, an appended event all reach
-# the page when its next poll asks — so an assertion made straight after the write is
-# waiting out the poll interval on whatever budget expect() happens to carry. Timed, that
-# wait takes 1.8 to 2.3 of the default five seconds, and it takes them every time: an
-# assertion returns just after a poll lands, leaving the next one a whole interval away.
-# The remainder is all a loaded machine has to overrun, and a busy one did: holding each
-# poll's answer back by 3.5 seconds reproduces, to the character, the failure a full-suite
-# run reported for the banner test below.
-#
-# So the wait is the trip again, watched rather than timed. A poll counted out after the
-# write is one that went looking for it, and its answer is the page being told; the
-# expect that follows only has to read what arrived.
-def told(page):
-    """Wait for a poll that goes out from here on to come back."""
-    asked = page.evaluate("() => window.__cqAsked")
-    page.wait_for_function("(out) => window.__cqHeard > out", arg=asked)
 
 
 @pytest.mark.parametrize(
@@ -831,7 +897,7 @@ def test_the_page_ask_chooses_its_terminal_event(
     looks right says nothing about the event the agent's loop receives.
     """
     html = LONG_PAGE.replace("<title>long</title>", f"<title>long</title>{review_meta}")
-    page, errors = open_page(browser, serve(html), init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, serve(html))
     button = page.locator(shown)
     expect(button).to_be_visible()
     expect(button).to_have_attribute("title", tooltip)
@@ -893,7 +959,7 @@ def test_a_press_leaves_its_neighbours_where_they_were(browser, serve, example):
     the status text takes up the slack instead of the buttons — a real regression,
     silently masked by the sweep's own previous gesture."""
     url = serve(example.read_text())
-    page, errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, url)
     total = page.locator(PRESS).count()
     pressed, dirty = 0, False
     for i in range(total):
@@ -907,13 +973,11 @@ def test_a_press_leaves_its_neighbours_where_they_were(browser, serve, example):
             # according to how many times the sweep had toggled Comments.
             page.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }")
             page.goto(url, wait_until="networkidle")
-            # Both stamps, and the banner first: half these controls are the runtime's
-            # own, so a list read before it has injected them is a short list — and a
-            # short list skips by index rather than failing, which is how this sweep
-            # quietly stopped pressing the sign-off button between one run and the next.
-            page.wait_for_function(
-                "() => document.querySelector('.cq-banner') !== null"
-            )
+            # The upgrade stamp, which the reload has to earn again: half these controls
+            # are the runtime's own, so a list read before it has injected them is a short
+            # list — and a short list skips by index rather than failing, which is how this
+            # sweep quietly stopped pressing the sign-off button between one run and the
+            # next.
             page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
             dirty = False
             assert page.locator(PRESS).count() == total, (
@@ -985,7 +1049,6 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
     url = serve(html, comments=9)
     d = serve.page_dir
     page, errors = open_page(browser, url, pin=True)
-    page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
     comments = ".cq-banner button[aria-expanded]"
     accept_all = '.cq-banner [title^="Accept every"]'
     page.wait_for_function(
@@ -1057,7 +1120,7 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
             "fewer controls than it always has — this step asserts almost nothing"
         )
         drive()
-        page.wait_for_function(arrived, timeout=15_000)
+        page.wait_for_function(arrived)
         page.evaluate("() => { window.__cqSettle = null; window.__cqSince = null; }")
         page.wait_for_function(SETTLED, arg=SETTLE_MS)
         moved = displaced(before, page.evaluate("() => window.__cqBoxes()"))
@@ -1637,18 +1700,18 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
     # Navigation still positions the page: a quote click scrolls its passage into
     # view under the lock, so the sheet closes onto the passage it talked about.
     page.locator(".cq-quote", has_text="Paragraph 40").click()
-    # Settled, not merely arrived: the click scrolls twice — instantly, to bring the
-    # passage's own box into view, then smoothly to centre the painted range — so both
-    # "it is on screen" and "scrollTop read the same twice" are already true while the
-    # page is still moving, and a position read there is hundreds of pixels off the
-    # resting one. Held for 200ms is the page saying it has stopped.
+    # Arrived where it was aimed, which is the only thing about this the page states. The
+    # click scrolls twice — instantly, to bring the passage's own box into view, then
+    # smoothly to centre the painted range — and the browser fires a scrollend for each,
+    # so the first statement it makes comes 232px short of the rest position. "On screen"
+    # is true there too, and so is stillness sampled between the two, which reads exactly
+    # as it does after both (tests/CLAUDE.md, "A wait consumes a fact the system states");
+    # the hold that used to cover the gap was a duration guessed at. Centring is what the
+    # runtime aimed for, so the mark reaching the middle is arrival, and a glide that
+    # approaches it passes through no earlier position that could be taken for one.
     page.wait_for_function(
-        """() => { const t = document.body.scrollTop, now = performance.now();
-                   if (window.__testLastTop !== t) {
-                     window.__testLastTop = t; window.__testSince = now; return false;
-                   }
-                   const r = document.getElementById('p40').getBoundingClientRect();
-                   return now - window.__testSince > 200 && r.top >= 0 && r.top < innerHeight; }"""
+        """() => { const m = [...CSS.highlights.get('cq-mark')][0].getClientRects()[0];
+                   return Math.abs(m.top + m.height / 2 - innerHeight / 2) < 1; }"""
     )
     at_mark = page.evaluate("() => document.body.scrollTop")
     assert at_mark != before
@@ -1814,7 +1877,7 @@ def test_a_sent_comment_is_revealed_in_the_panel(browser, serve):
     fold and put the scroll back where it was — the reviewer's own words landed out of
     sight, silently. Both send routes then end in the composer the words left, where
     the rebuild sent a button click's focus somewhere else than ⌘⏎'s."""
-    page, errors = open_page(browser, serve(LONG_PAGE, comments=12), init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, serve(LONG_PAGE, comments=12))
     page.locator("button[aria-expanded]").click()
     panel_settled(page)
     assert page.evaluate(
@@ -1852,7 +1915,7 @@ def test_an_arriving_reply_leaves_the_list_where_the_reader_put_it(browser, serv
     place as a box on screen, not as a scrollTop the browser's own scroll anchoring is
     free to adjust. The old rebuild restored the offset and let the content slide under
     it."""
-    page, errors = open_page(browser, serve(LONG_PAGE, comments=12), init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, serve(LONG_PAGE, comments=12))
     page.locator("button[aria-expanded]").click()
     panel_settled(page)
     held = page.evaluate("""() => {
@@ -1866,11 +1929,19 @@ def test_an_arriving_reply_leaves_the_list_where_the_reader_put_it(browser, serv
     }""")
     assert held["scrolled"], "the list doesn't scroll, so nothing here can move"
 
-    first = next(e for e in interact.read_events(serve.page_dir) if e["kind"] == "comment")
+    first = next(
+        e for e in interact.read_events(serve.page_dir) if e["kind"] == "comment"
+    )
     reply = interact.append_event(
         serve.page_dir,
-        {"kind": "reply", "author": "claude", "agent": "Claude", "version": 1,
-         "parent": first["id"], "text": "News, not a gesture."},
+        {
+            "kind": "reply",
+            "author": "claude",
+            "agent": "Claude",
+            "version": 1,
+            "parent": first["id"],
+            "text": "News, not a gesture.",
+        },
     )
     told(page)
     expect(page.locator(f'.cq-msg[data-mid="{reply["id"]}"]')).to_have_count(1)
@@ -1892,7 +1963,7 @@ def test_an_arrival_interrupts_nothing_the_reviewer_holds(browser, serve):
     arrival lands inside that very thread, right above the reply box. The rebuild
     could only approximate this by saving and restoring focus and caret by hand, and
     the two send routes proved the restore had holes."""
-    page, errors = open_page(browser, serve(LONG_PAGE, comments=3), init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, serve(LONG_PAGE, comments=3))
     page.locator("button[aria-expanded]").click()
     panel_settled(page)
     ta = page.locator(".cq-threads > .cq-thread").first.locator("textarea")
@@ -1903,11 +1974,19 @@ def test_an_arrival_interrupts_nothing_the_reviewer_holds(browser, serve):
         window.__probe = document.activeElement.closest('.cq-thread');
     }""")
 
-    first = next(e for e in interact.read_events(serve.page_dir) if e["kind"] == "comment")
+    first = next(
+        e for e in interact.read_events(serve.page_dir) if e["kind"] == "comment"
+    )
     reply = interact.append_event(
         serve.page_dir,
-        {"kind": "reply", "author": "claude", "agent": "Claude", "version": 1,
-         "parent": first["id"], "text": "Landing right above the box being typed in."},
+        {
+            "kind": "reply",
+            "author": "claude",
+            "agent": "Claude",
+            "version": 1,
+            "parent": first["id"],
+            "text": "Landing right above the box being typed in.",
+        },
     )
     told(page)
     expect(page.locator(f'.cq-msg[data-mid="{reply["id"]}"]')).to_have_count(1)
@@ -1930,10 +2009,12 @@ def test_resolving_an_early_thread_renumbers_the_rest_in_place(browser, serve):
     disclosure itself is kept too, so the reviewer's open toggle survives the next
     resolution instead of snapping shut on every arrival, which is what the rebuild
     did."""
-    page, errors = open_page(browser, serve(LONG_PAGE, comments=3), init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, serve(LONG_PAGE, comments=3))
     page.locator("button[aria-expanded]").click()
     panel_settled(page)
-    c1, c2, c3 = [e["id"] for e in interact.read_events(serve.page_dir) if e["kind"] == "comment"]
+    c1, c2, c3 = [
+        e["id"] for e in interact.read_events(serve.page_dir) if e["kind"] == "comment"
+    ]
     expect(page.locator(f'.cq-thread[data-id="{c2}"] .cq-thread-num')).to_have_text("2")
     page.evaluate(
         """(id) => { window.__second = document.querySelector(`.cq-thread[data-id="${id}"]`); }""",
@@ -1967,7 +2048,9 @@ def test_resolving_an_early_thread_renumbers_the_rest_in_place(browser, serve):
     ta3.click()
     ta3.type("held mid-sentence")
     page.evaluate("() => document.activeElement.setSelectionRange(4, 4)")
-    interact.append_event(serve.page_dir, {"kind": "resolve", "author": "user", "parent": c2})
+    interact.append_event(
+        serve.page_dir, {"kind": "resolve", "author": "user", "parent": c2}
+    )
     told(page)
     expect(page.locator(".cq-details summary")).to_have_text("Resolved (2)")
     expect(page.locator(".cq-details[open]")).to_have_count(1)
@@ -2443,7 +2526,7 @@ def test_a_pick_the_page_only_reports_can_still_be_pointed_at(browser, serve):
     interact.append_event(
         d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
     )
-    page.wait_for_url("**/v2.html", timeout=10_000)
+    page.wait_for_url("**/v2.html")
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(0)
 
@@ -2530,7 +2613,7 @@ def test_a_pick_offered_can_be_pointed_at_too(browser, serve):
     interact.append_event(
         d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
     )
-    page.wait_for_url("**/v2.html", timeout=10_000)
+    page.wait_for_url("**/v2.html")
     expect(page.locator("#opt-bearer[chosen]")).to_have_count(
         1
     )  # replay carried the pick
@@ -2828,7 +2911,7 @@ def test_a_pick_states_the_whole_set(browser, serve):
     idempotent and a second tab converges rather than drifting. Without `multiple` the
     set a click toggles from is empty, which is what makes a pick replace instead of
     join — one rule, not two code paths."""
-    page, errors = open_page(browser, serve(ASK_PAGE), init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, serve(ASK_PAGE))
 
     page.locator("#job-mounts").click()
     expect(page.locator("#jobs > cq-option[chosen]")).to_have_count(1)
@@ -3027,12 +3110,11 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
     page.locator("#rp-memory").click()
     page.locator("#rp-stage").click()
 
-    deadline = time.time() + 5
-    while time.time() < deadline:
-        actions = [e for e in interact.read_events(d) if e["kind"] == "action"]
-        if actions:
-            break
-
+    # Waiting on the log for *an* action would settle for the live group's and never see
+    # a second one the exhibit had no business sending. The page's own count is the whole
+    # of what it sent, so this waits out an exhibit's stray post too.
+    page.wait_for_function(ROUND_TRIP)
+    actions = [e for e in interact.read_events(d) if e["kind"] == "action"]
     assert [(e["widget"], e["detail"]) for e in actions] == [
         ("rp-live", {"options": ["rp-stage"]})
     ]
@@ -3554,6 +3636,10 @@ def test_accept_all_decides_every_pending_suggestion(browser, serve):
     # Nothing left to accept, so the button says nothing rather than saying zero.
     expect(page.get_by_role("button", name=re.compile("Accept all"))).to_be_hidden()
 
+    # Every one of those settled optimistically — the page shows a decision before the
+    # server has taken it, which is the next test's whole subject — so the page reading
+    # done is not the log holding it, and the last of the three is still in flight here.
+    page.wait_for_function(ROUND_TRIP)
     logged = [e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"]
     assert [(e["widget"], e["action"]) for e in logged] == [
         ("sug-refill", "accept"),
@@ -3600,8 +3686,8 @@ def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, 
     one has to settle it without the click that settled the tab that sent it. Where
     the two disagree, the later entry in the log is what both end on."""
     url = serve(SUGGESTION_PAGE)
-    first, first_errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
-    second, second_errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
+    first, first_errors = open_page(browser, url)
+    second, second_errors = open_page(browser, url)
 
     # A tab that did not click has only its own poll to learn from.
     first.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
@@ -3617,7 +3703,7 @@ def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, 
     # shows both buttons, so the reviewer can decide the other way there. Two
     # decisions on one change, and the log's order — not either tab's belief —
     # settles it for both once the cut-off one catches up.
-    third, third_errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
+    third, third_errors = open_page(browser, url)
     third.route("**/api/state", lambda route: route.abort())
     first.locator("[data-cq-for='sug-thistle'] .cq-sug-accept").click()
     # In the log before the reject is clicked, so which one is later is this test's
@@ -4358,7 +4444,7 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
     c1 = comment({"quote": "first passage"}, "Sharpen this.")
     c2 = comment({"quote": "two separate remarks"}, "Second thought.")
     comment({"section": "fig"}, "The figure too.")
-    page, errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     # Two threads on one block count up, and leave one line rather than two.
     assert "2 comments" in page.locator("#p1").aria_snapshot(), (
@@ -4564,7 +4650,7 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
     the quote is the only record there is, and it comes back: dashed and muted, the same
     detached treatment the panel gives a thread this version dropped."""
     url = serve(INLINE_PAGE)
-    page, errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, url)
 
     page.locator("#p").click(click_count=3)
     page.locator(".cq-fab").click()
@@ -4591,7 +4677,7 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
     told(page)
     expect(page.locator(".cq-latest-chip")).to_be_visible()
     page.get_by_role("button", name="New version available", exact=False).click()
-    page.wait_for_url("**/v2.html", timeout=15000)
+    page.wait_for_url("**/v2.html")
     page.wait_for_function(
         "() => document.querySelector('.cq-composer').style.display === 'block'"
     )
@@ -4812,7 +4898,7 @@ def test_a_widgets_attribute_takes_a_comment_like_any_other_passage(browser, ser
     interact.append_event(
         d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
     )
-    page.wait_for_url("**/v2.html", timeout=10_000)
+    page.wait_for_url("**/v2.html")
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     assert page.locator(".cq-thread .cq-quote.detached").count() == 0, (
         "the comment came loose from the heading when the version turned over"
@@ -5000,7 +5086,7 @@ def test_a_widgets_label_takes_a_comment_inside_the_control_it_labels(browser, s
     interact.append_event(
         d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
     )
-    page.wait_for_url("**/v2.html", timeout=10_000)
+    page.wait_for_url("**/v2.html")
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     assert page.locator(".cq-thread .cq-quote.detached").count() == 0, (
         "the comment came loose from the tab's name when the version turned over"
@@ -5332,7 +5418,7 @@ def test_a_click_on_a_mark_decides_once(browser, serve):
     interact.append_event(
         d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
     )
-    page.wait_for_url("**/v2.html", timeout=15000)
+    page.wait_for_url("**/v2.html")
     assert errors == []
     page.close()
 
@@ -5382,7 +5468,7 @@ def test_code_is_colored_without_a_word_moving(browser, serve):
     the color of its own ink. The quote below is written the way `review comment` writes
     one — against the file — and spans a token boundary on its way back."""
     url = serve(CODE_PAGE)
-    page, errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, url)
     page.wait_for_function(
         "() => document.querySelector('cq-code.cq-rendered') !== null"
     )
@@ -5810,7 +5896,7 @@ def test_an_ambiguous_revised_passage_detaches_instead_of_guessing(browser, serv
     interact.append_event(
         d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"}
     )
-    page.wait_for_url("**/v2.html", timeout=15000)
+    page.wait_for_url("**/v2.html")
     expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(1)
     assert page.evaluate("() => CSS.highlights.get('cq-mark')?.size ?? 0") == 0
     expect(page.locator(".cq-thread .cq-quote")).to_have_attribute(
@@ -6179,7 +6265,7 @@ def test_one_neighbour_is_not_enough_to_identify_a_revised_comment(browser, serv
     interact.append_event(
         d, {"kind": "note", "author": "claude", "version": 2, "text": "revised"}
     )
-    page.wait_for_url("**/v2.html", timeout=15000)
+    page.wait_for_url("**/v2.html")
     expect(page.locator(".cq-thread .cq-quote.detached")).to_have_count(1)
     assert page.evaluate("() => CSS.highlights.get('cq-mark')?.size ?? 0") == 0
     assert errors == []
@@ -6415,25 +6501,22 @@ def test_review_round_trip(browser, serve):
         arg=DRAFT_EDITED,
     )
 
-    # The edit must be in the log before v2's note lands, or the trail below
-    # would interleave — the browser posts it, so wait server-side.
+    # Every gesture above must be in the log before v2's note lands, or the trail below
+    # would interleave. The page posted them, so the page is what says they are all in:
+    # polling the file for one of them would be a second reading of the same trip, and a
+    # narrower one — it can only ever ask after the send it happens to name.
     d = serve.page_dir
-    deadline = time.time() + 5
-    while '"action": "edit"' not in (d / "comments.jsonl").read_text():
-        assert time.time() < deadline, "the edit never reached the log"
-        time.sleep(0.05)
+    page.wait_for_function(ROUND_TRIP)
 
     # Claude ships v2 with the passage moved; the page follows on its next poll.
     (d / "versions" / "v2.html").write_text(JOURNEY_V2)
     interact.append_event(
         d, {"kind": "note", "author": "claude", "version": 2, "text": "moved"}
     )
-    page.wait_for_url("**/v2.html", timeout=15000)
+    page.wait_for_url("**/v2.html")
     # The anchor pass runs at render: a mark now means the quote was re-found in
     # its new position; no mark within the wait means the anchor lost it.
-    page.wait_for_function(
-        "() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0", timeout=5000
-    )
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     assert not page.evaluate(
         "document.querySelector('.cq-thread .cq-quote').classList.contains('detached')"
     ), "the passage moved and the comment lost it"
@@ -6632,7 +6715,7 @@ def test_a_foreign_edit_waits_for_a_live_draft_and_replays_in_order(browser, ser
     when the box closes. An unrelated board move proves the poll saw the same
     batch while the editor was open, without making the test depend on time.
     """
-    page, errors = open_page(browser, serve(JOURNEY_V1), init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, serve(JOURNEY_V1))
     draft = page.locator("#draft-ops")
     draft.locator(".cq-draft-body").dblclick()
     editor = draft.locator("textarea")
@@ -6702,7 +6785,8 @@ def test_an_empty_draft_survives_reload_and_blocks_a_version_switch(browser, ser
     interact.append_event(
         d, {"kind": "note", "author": "claude", "version": 2, "text": "v2"}
     )
-    expect(page.locator(".cq-latest-chip")).to_be_visible(timeout=10000)
+    told(page)
+    expect(page.locator(".cq-latest-chip")).to_be_visible()
     assert "/v1.html" in page.url, "an empty live edit was mistaken for no composition"
 
     page.reload(wait_until="networkidle")
@@ -6738,7 +6822,7 @@ def test_an_empty_draft_survives_reload_and_blocks_a_version_switch(browser, ser
 
     page.evaluate("window.cqFailDraft = false")
     draft.get_by_role("button", name="Save").click()
-    page.wait_for_url("**/v2.html", timeout=10000)
+    page.wait_for_url("**/v2.html")
     expect(page.locator("#draft-ops .cq-draft-body")).to_have_text("")
     page.wait_for_function(
         "() => sessionStorage.getItem('cq-draft:edit:draft-ops') === null"
@@ -6924,7 +7008,7 @@ def test_a_draft_explains_its_change_and_restores_history_as_an_edit(browser, se
     and walks back by posting another ordinary edit. A second tab proves restore is
     durable replay rather than local history state; copy mode proves the generated
     controls do not survive without their handlers."""
-    page, errors = open_page(browser, serve(JOURNEY_V1), init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, serve(JOURNEY_V1))
     draft = page.locator("#draft-ops")
     edits = [
         "Run the migration before deploying. It takes one minute.",
@@ -7558,12 +7642,10 @@ def test_a_decision_not_yet_honored_wears_the_pending_mark(browser, serve):
     draft.get_by_role("button", name="Save").click()
     expect(page.locator("#draft-ops[data-cq-pending]")).to_have_count(1)
 
-    # Both actions must be in the log before the honoring version publishes.
+    # Both actions must be in the log before the honoring version publishes, and the
+    # page is what says so: it sent them, and counts what has come back.
     d = serve.page_dir
-    deadline = time.time() + 5
-    while (d / "comments.jsonl").read_text().count('"kind": "action"') < 2:
-        assert time.time() < deadline, "the actions never reached the log"
-        time.sleep(0.05)
+    page.wait_for_function(ROUND_TRIP)
 
     _publish(
         d,
@@ -7571,7 +7653,7 @@ def test_a_decision_not_yet_honored_wears_the_pending_mark(browser, serve):
         _card_done(_draft_says(JOURNEY_V2, DRAFT_EDITED)),
         "honors the move and the edit",
     )
-    page.wait_for_url("**/v2.html", timeout=15000)
+    page.wait_for_url("**/v2.html")
     page.wait_for_function("() => document.querySelector('.cq-banner') !== null")
     # A poll has run once the status text resolves, so the pending pass has too.
     page.wait_for_function(
@@ -7696,6 +7778,9 @@ def test_chrome_is_safe_during_the_registry_fetch(browser, serve):
         serve(html, anchored=[("intro", SENTENCE)]),
         init_script=gate_registry,
         wait_until="domcontentloaded",
+        # The held registry is this test's subject, so the upgrade stamp never lands and
+        # waiting for it would hang out a whole timeout.
+        upgraded=False,
     )
     page.wait_for_function("() => window.cqRegistryBlocked === true")
     expect(page.locator("#gate-milestone .cq-chips")).to_have_count(0)
@@ -7750,13 +7835,9 @@ def test_overlapping_polls_never_move_the_log_backwards(browser, serve):
         });
       };
     """
-    # The traffic watcher goes on outermost, so what it counts as answered is what the
-    # page was handed — the held poll included, which is the whole subject here.
-    page, errors = open_page(
-        browser,
-        serve(JOURNEY_V1),
-        init_script=delay_second_state + WATCH_TRAFFIC,
-    )
+    # open_page's traffic watcher goes on outside this, so what it counts as answered is
+    # what the page was handed — the held poll included, which is the whole subject here.
+    page, errors = open_page(browser, serve(JOURNEY_V1), init_script=delay_second_state)
     page.get_by_role("button", name=re.compile("^Comments")).click()
     page.locator(".cq-general textarea").fill("Starts the slow poll")
     page.locator(".cq-general button").click()
@@ -7857,9 +7938,7 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
     """The banner may claim no more than the page directory can prove. A watch that
     has stopped must read differently from a watch with nothing to report, because
     otherwise the reviewer's only way to tell them apart is to ask."""
-    page, _ = open_page(
-        browser, serve(LONG_PAGE, comments=1), init_script=WATCH_TRAFFIC
-    )
+    page, _ = open_page(browser, serve(LONG_PAGE, comments=1))
     d = tmp_path / "page"
     text, dot = page.locator(".cq-status-text"), page.locator(".cq-dot")
 
@@ -8071,7 +8150,7 @@ def test_a_written_anchor_keeps_its_copy_when_the_page_grows_another(browser, se
     interact.append_event(
         d, {"kind": "note", "author": "claude", "version": 2, "text": "a twin"}
     )
-    page.wait_for_url("**/v2.html", timeout=15000)
+    page.wait_for_url("**/v2.html")
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     where = page.evaluate(
         "() => [...CSS.highlights.get('cq-mark')][0].startContainer.parentElement.id"
@@ -8152,7 +8231,7 @@ def test_a_reply_toast_keeps_its_originating_agent(browser, serve):
         d / "session.json",
         {"id": "claude", "pid": os.getpid(), "agent": "Claude", "ts": "t"},
     )
-    page, errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
+    page, errors = open_page(browser, url)
     expect(page.locator("button[aria-expanded]")).to_have_text("Comments (1)")
 
     interact.append_event(

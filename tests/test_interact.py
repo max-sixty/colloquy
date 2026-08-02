@@ -4422,6 +4422,11 @@ def test_a_sessionless_server_ignores_a_stale_claim_and_requires_explicit_stop(
     )
     assert server.stdout.readline().startswith("http://127.0.0.1:")
     try:
+        # The only held window in the suite, because it is the only assertion with nothing
+        # to consume: a watcher that never starts states nothing, and the server going on
+        # living is not an event to wait for (tests/CLAUDE.md, "A wait consumes a fact the
+        # system states"). So the window is the grace a watcher would have acted after,
+        # plus room to act — long enough that the bug, had it been here, would have shown.
         time.sleep(interact.ORPHAN_GRACE_SECS + 0.5)
         assert server.poll() is None, (
             "a manual server inherited the stale session claim"

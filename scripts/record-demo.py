@@ -148,7 +148,9 @@ def run_colloquy(*args: str) -> None:
     exit status, and the streams it captured — the only thing that says what went
     wrong — die with it, because nothing prints them. Every step of staging the
     recording is one of these, so that is what the suite gets to report."""
-    done = subprocess.run([str(COLLOQUY), *args], text=True, capture_output=True)
+    done = subprocess.run(
+        [str(COLLOQUY), *args], text=True, capture_output=True, check=False
+    )
     if done.returncode:
         raise RuntimeError(
             f"colloquy {' '.join(args)} exited {done.returncode}\n"
@@ -428,7 +430,10 @@ def shoot_stills(
         page.locator(".cq-banner button[aria-expanded]").click()
         page.wait_for_selector(".cq-thread .cq-msg.claude")
         page.locator("#top").scroll_into_view_if_needed()
-        page.wait_for_timeout(400)  # the panel's margin transition
+        # The panel's margin transition, asked of the transition rather than waited out:
+        # a finished one has left the list, and this context asks for reduced motion, so
+        # the move it would have covered runs untransitioned and the wait returns at once.
+        page.wait_for_function("() => document.body.getAnimations().length === 0")
         page.screenshot(
             path=into / f"session-{scheme}.png", animations="disabled", caret="hide"
         )

@@ -32,6 +32,14 @@ press two seconds for a trip that takes ten milliseconds.
 `wait_for_load_state("networkidle")` is not the wait either: with no navigation to answer
 for, it returns at once.
 
+`open_page` puts that wrapper on every page: a test that had to ask for the counter first
+is a test that asserted straight through the trip instead, and counting costs a page
+nothing. `ROUND_TRIP` is the page's own sends coming back, which is what to wait on before
+reading the event log — a widget settles a decision in front of the reviewer before the
+server has taken it, so the page reading done is not the log holding it. Polling the log
+instead only ever asks after the send it names, and a stray one from the widget that was
+supposed to stay quiet passes straight through it.
+
 A file the test writes is the same trip the other way round, and `expect`'s own timeout is
 the hold in disguise. A declared status, a bumped heartbeat, an appended event: none of
 them announce themselves, so the page learns of each when its next poll asks, and an
@@ -39,15 +47,10 @@ assertion made straight after the write spends a whole poll interval of whatever
 `expect` was given — 1.8 to 2.3 of the default five, measured, and every time, because
 each assertion returns just after a poll lands. `told(page)` is that wait watched instead:
 a poll counted out after the write went looking for it, and its answer is the page being
-told.
-
-Two tests went red on this, on the runs where a machine was busy enough to eat the
-remainder. Being that machine on purpose found seven more standing on the same margin: an
-init script that wraps `fetch` and resolves each `/api/state` answer 3.5 seconds late,
-switched on once the page is up, since a request permanently in flight is a page that
-never reaches networkidle and so never finishes loading at all. Do that before believing a
-suite is clear of this. The tests that go red under load are only the two with the least
-room, and fixing those two hands the next loaded run a different victim.
+told. A wait's own timeout is the net under a hang rather than a budget for the work, so
+once the wait is right the number is left alone: raising it buys back a margin while
+hiding what is being bought, and lowering it — ten seconds for a version turnover where
+the default gives thirty — makes the outcome a question about the machine.
 
 ## A wait consumes a fact the system states
 
@@ -61,13 +64,50 @@ The press sweep drew the same wrong inference from two matching frames before it
 learned to watch the trip (above).
 
 So a wait asks for what the system declares — an element existing,
-`document.body.getAnimations()` emptying, the wrapped fetch resolving. Where stillness
-is itself the assertion, an observed edge precedes it: the press sweep measures
-"nothing moved" only after `ROUND_TRIP` has watched the response land, so the quiet it
-reads is after the effect. And a timing flake reproduces by emulating the poller's own
-schedule in the page — `wait_for_function` runs its predicate once at injection, then
-once per animation frame — which makes the failure a rate to measure rather than a
-rerun to hope for.
+`document.body.getAnimations()` emptying, the wrapped fetch resolving, a resize reaching
+its listeners. Where stillness is itself the assertion, an observed edge precedes it: the
+press sweep measures "nothing moved" only after `ROUND_TRIP` has watched the response
+land, so the quiet it reads is after the effect. And a timing flake reproduces by
+emulating the poller's own schedule in the page — `wait_for_function` runs its predicate
+once at injection, then once per animation frame — which makes the failure a rate to
+measure rather than a rerun to hope for.
+
+An edge is not the same fact as arrival, and a gesture that moves the page twice is where
+they come apart. Clicking a quote scrolls instantly to bring the passage's box on screen,
+then smoothly to centre the painted range, and `scrollend` fires for each: the first is a
+statement the browser makes, and it is 232 pixels short of where the click was aimed. The
+fact worth waiting on is the destination — the mark reaching the middle, which is what
+`scrollToThread` computed — because a glide that approaches it passes through no earlier
+position that could be mistaken for it.
+
+Where nothing will happen there is nothing to consume, and polling has no end. An absence
+holds a window instead, long enough that the thing would have happened, with the length
+derived from the mechanism rather than picked: a manually launched server must outlive
+the grace a session watcher would have shut it down after, so the window is
+`ORPHAN_GRACE_SECS` plus room to act. A window too short fails the other way round from
+everything above — it passes vacuously rather than flaking — which is why nearly every
+absence here holds none at all. A POST the test aborted cannot reach the log, and a
+decision the page never took cannot be in it; those assert straight after the edge that
+proves the gesture was handled.
+
+## Be the loaded machine on purpose
+
+Only a slow machine can say a suite is clear of all this. `COLLOQUY_TEST_LOAD=1` is that
+machine: every `/api/state` answer held back three and a half seconds, so a poll-carried
+effect lands a long way after the write that caused it, and the page's own JS throttled
+twentyfold, so a listener, a frame, or a queued timer is still outstanding when the next
+read arrives. The hold spends the margin an assertion made straight after a write lives
+on. The throttle reaches what holding the network cannot, which is the page not having got
+to its own work yet: `resized` exists because `set_viewport_size` returns on a fact about
+the browser and the runtime's listener had not run, and `open_page` waits for the upgrade
+stamp because the gallery, the heaviest page here, had not finished upgrading when the
+banner appeared. Run it before believing the suite.
+
+The hold goes on once the page is up, since a request permanently in flight is a page that
+never reaches networkidle and so never finishes loading at all. Two tests went red on an
+ordinary busy run, and being that machine on purpose found seven more standing on the same
+margin: the ones that go red are only ever those with the least room, so fixing them
+without running this again hands the next loaded run a different victim.
 
 ## A sweep that walks controls by index must prove it pressed them
 
