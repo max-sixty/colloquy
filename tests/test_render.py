@@ -649,6 +649,52 @@ def told(page):
     page.wait_for_function("(out) => window.__cqHeard > out", arg=asked)
 
 
+@pytest.mark.parametrize(
+    ("review_meta", "shown", "absent", "kind", "tooltip"),
+    [
+        pytest.param(
+            "",
+            ".cq-end-review",
+            ".cq-signoff",
+            "close",
+            "End this comments-only review",
+            id="comments-only",
+        ),
+        pytest.param(
+            '<meta name="cq-review" content="sign-off">',
+            ".cq-signoff",
+            ".cq-end-review",
+            "done",
+            "Approve this work; the page stays open for follow-up",
+            id="sign-off",
+        ),
+    ],
+)
+def test_the_page_ask_chooses_its_terminal_event(
+    browser, serve, review_meta, shown, absent, kind, tooltip
+):
+    """Ending comments is neutral; approving exists only where the page asks for it.
+
+    Drive the shipped browser through the real POST door, since a button that merely
+    looks right says nothing about the event the agent's loop receives.
+    """
+    html = LONG_PAGE.replace("<title>long</title>", f"<title>long</title>{review_meta}")
+    page, errors = open_page(browser, serve(html), init_script=WATCH_TRAFFIC)
+    button = page.locator(shown)
+    expect(button).to_be_visible()
+    expect(button).to_have_attribute("title", tooltip)
+    assert page.locator(absent).count() == 0
+
+    button.click()
+    page.wait_for_function(ROUND_TRIP)
+    event = interact.read_events(serve.page_dir)[-1]
+    assert (event["kind"], event["author"], event["version"]) == (kind, "user", 1)
+    assert ("text" in event) is (kind == "done")
+    expect(button).to_be_disabled()
+    assert errors == []
+    page.close()
+
+
 def displaced(before, boxes):
     """Which of the watched controls are somewhere else, in the failure's own words.
 
@@ -5949,17 +5995,17 @@ def test_action_history_is_bounded_by_the_pinned_version(browser, serve):
     latest.close()
 
 
-def test_a_decision_claude_has_seen_still_survives_the_next_version(browser, serve):
-    """The round trip above, differing in one fact: `review wait` has handed the actions
-    to Claude before v2 publishes. That is the ordinary case — Claude writes a
+def test_an_acknowledged_decision_still_survives_the_next_version(browser, serve):
+    """The round trip above, differing in one fact: the agent has acknowledged the
+    actions before v2 publishes. That is the ordinary case — the agent writes a
     version *because* it was handed the reviewer's edits — and it used to be the
-    one that lost them: replay stopped at the delivery cursor, on the premise
+    one that lost them: replay stopped at the handoff cursor, on the premise
     that a version written after seeing an action encodes it. Nothing checks that
     premise, so a version that quietly omits the state re-emitted the widget as
     untouched and the reviewer's work vanished with no error anywhere.
 
-    Delivery is not assent. Only the next version's markup can say what Claude
-    did with an edit, and until it says otherwise the log is what the reviewer
+    Acknowledgement is not assent. Only the next version's markup can say what the
+    agent did with an edit, and until it says otherwise the log is what the reviewer
     did."""
     url = serve(JOURNEY_V1)
     d = serve.page_dir
@@ -5969,9 +6015,9 @@ def test_a_decision_claude_has_seen_still_survives_the_next_version(browser, ser
     interact.append_event(d, {"kind": "action", "author": "user", "version": 1,
                               "widget": "draft-ops", "action": "edit",
                               "detail": {"text": DRAFT_EDITED}})
-    # What `review wait` writes on its way out: everything so far is Claude's to answer.
-    interact.write_json(d / "cursor.json", {"seq": len(interact.read_events(d))})
-    # And Claude answers with a version that carries neither — the page generator
+    # The highest reviewer event reached context, so everything so far is ours to answer.
+    interact.cmd_ack(d, interact.read_events(d)[-1]["seq"])
+    # And the agent answers with a version that carries neither — the page generator
     # emitting its own idea of the board and the draft, as one did for five
     # versions running.
     (d / "versions" / "v2.html").write_text(JOURNEY_V2)
@@ -6677,14 +6723,14 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
 
     # No watcher, but Claude checked in moments ago, so it is between turns.
     expect(text).to_have_text(
-        "Claude isn't watching right now. 1 comment waiting. It picks them up next turn."
+        "Claude isn't watching right now. 1 update waiting. It picks them up next turn."
     )
 
-    # The failure the whole mechanism exists for: `review wait` delivered, set this
+    # The failure the whole mechanism exists for: `review wait` printed, set this
     # status, and Claude never came back. The handoff mark is what dates it.
     declare("working", "picking up 1 update", handoff=True, quiet_for=20 * 60)
     expect(text).to_have_text(
-        "Claude last checked in 20m ago. 1 comment waiting. Nudge it in the terminal."
+        "Claude last checked in 20m ago. 1 update waiting. Nudge it in the terminal."
     )
     expect(dot).to_have_class(re.compile(r"\baway\b"))
 
@@ -6695,7 +6741,7 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
     # A dead session needs no timeout at all — the owning pid is simply gone.
     declare("working", "running the migration", session_pid=dead_pid)
     expect(text).to_have_text(
-        "The Claude session reviewing this page has ended. 1 comment waiting."
+        "The Claude session reviewing this page has ended. 1 update waiting."
         " Start one in the terminal to pick it up."
     )
 

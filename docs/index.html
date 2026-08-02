@@ -98,15 +98,20 @@ twice. Diagrams and images take comments by click, and a suggestion mode propose
 replacement text that the agent takes verbatim or answers with why not. The agent opens
 threads the same way — a question about one sentence arrives in the margin beside
 it, not in the terminal.</li>
-<li id="loop-wake"><strong>Your comment reaches the session.</strong> A background
-<code>review wait</code> hands it over, and on Claude Code it can arrive while the agent is
-still working, so "skip that one" lands in time to change what it does next.</li>
+<li id="loop-wake"><strong>Your comment reaches the session.</strong> On Claude Code, a
+background <code>review wait</code> wakes or joins the agent. On Codex, the agent keeps
+the handover turn active and polls the exact wait session. Either way it acknowledges
+only after a complete, untruncated batch is in model context, so "printed" cannot
+masquerade as "seen".</li>
 <li id="loop-revise"><strong>A revision ships.</strong> Versions are immutable,
 each with a one-line changelog. The page follows the newest while keeping your
 place on it, and the Δ toggle marks every passage that changed since the version
 before.</li>
-<li id="loop-signoff"><strong>Sign off.</strong> "✓ Looks good" closes the review;
-pages that seek approval carry the button, informational ones take comments only.
+<li id="loop-signoff"><strong>Conclude deliberately.</strong> Pages seeking approval offer
+"✓ Looks good"; comments-only pages offer a neutral "End review" instead. Approval
+records assent and can leave the page live for follow-up; ending comments is a separate
+event. After either complete batch is received, an explicit idle state closes the agent
+loop when its work there is finished.
 <code>review transcript</code> prints the whole thread as Markdown for a PR
 description.</li>
 </ol>

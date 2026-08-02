@@ -160,12 +160,13 @@ Options:
   --help  Show this message and exit.
 
 Commands:
+  ack         Acknowledge one complete, untruncated wait batch.
   comment     Open an agent thread on a page passage.
   events      Print the event log as JSON lines.
   reply       Reply to a thread as the agent.
   state       Set the agent's banner state.
   transcript  Print the review as Markdown.
-  wait        Print new reviewer events, then exit.
+  wait        Print unacknowledged reviewer events, then exit.
 """,
             id="review",
         ),
@@ -181,6 +182,28 @@ def test_cli_help_groups_commands_with_complete_summaries(args, expected):
 
     assert result.exit_code == 0
     assert result.output == expected
+
+
+@pytest.mark.parametrize("command", ["wait", "ack"])
+def test_wait_and_ack_help_require_a_complete_batch(command):
+    result = CliRunner().invoke(
+        interact.cli,
+        ["review", command, "--help"],
+        terminal_width=200,
+    )
+
+    assert result.exit_code == 0
+    assert " ".join(interact.ACK_BATCH_INSTRUCTION.split()) in " ".join(
+        result.output.split()
+    )
+
+
+def test_ack_batch_instruction_preserves_scalar_cursor_safety():
+    assert interact.ACK_BATCH_INSTRUCTION == (
+        "If wait output is truncated, acknowledge nothing and rerun with enough output "
+        "capacity for the whole batch. After a complete batch enters context, run "
+        "`colloquy review ack <page> <highest-seq>`."
+    )
 
 
 def test_hidden_hook_remains_callable():
@@ -3186,7 +3209,7 @@ def test_server_round_trip(server, page_dir):
     status, body = fetch(f"{server}/api/state")
     state = json.loads(body)
     assert state["versions"] == [1]
-    assert state["cursor"] == 0  # nothing delivered to Claude yet
+    assert state["cursor"] == 0  # no reviewer event acknowledged yet
     assert state["events"][-1]["id"] == posted["id"]
     # A widget action rides the same channel; half-formed ones are refused at the edge.
     status, _ = fetch(
@@ -3238,6 +3261,32 @@ def test_server_round_trip(server, page_dir):
     ]:
         status, body = fetch(f"{server}/api/event", data=json.dumps(bad).encode())
         assert status == 400, bad
+
+
+def test_server_keeps_approval_separate_from_ending_comments(server, page_dir):
+    publish(page_dir, version=1)
+
+    status, body = fetch(
+        f"{server}/api/event",
+        data=json.dumps({"kind": "done", "version": 1, "text": "Looks good"}).encode(),
+    )
+    assert status == 400
+    assert json.loads(body)["error"] == (
+        "version 1 uses 'close' for ending its comments-only review"
+    )
+
+    signoff = PAGE.replace(
+        "<title>t</title>",
+        '<title>t</title>\n<meta name="cq-review" content="sign-off">',
+    )
+    (page_dir / "versions" / "v2.html").write_text(signoff)
+    publish(page_dir, version=2)
+    status, body = fetch(
+        f"{server}/api/event",
+        data=json.dumps({"kind": "close", "version": 2}).encode(),
+    )
+    assert status == 400
+    assert json.loads(body)["error"] == "version 2 uses 'done' for sign-off"
 
 
 def test_server_validates_an_action_against_its_version_and_widget(server, page_dir):
@@ -3560,7 +3609,7 @@ def test_a_bare_ipv6_address_is_bracketed_in_the_url():
     )
 
 
-def test_wait_delivers_new_user_events_and_flips_status(page_dir, capsys):
+def test_wait_prints_unacknowledged_user_events_and_flips_status(page_dir, capsys):
     # A live server.json (our own pid) satisfies wait's liveness probe.
     interact.write_json(page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"})
     interact.cmd_status(page_dir, "waiting", "")
@@ -3577,13 +3626,29 @@ def test_wait_delivers_new_user_events_and_flips_status(page_dir, capsys):
         },
     )
     assert interact.cmd_wait(page_dir) == 0
-    delivered = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
-    assert [e["kind"] for e in delivered] == ["comment", "action"]
-    assert delivered[1]["detail"]["to"] == "y"
-    # Delivered means delivered: the cursor has moved past them, so nothing is pending.
+    shown = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert [e["kind"] for e in shown] == ["comment", "action"]
+    assert shown[1]["detail"]["to"] == "y"
+    # Printing is not acknowledgement: a detached Codex command can finish without
+    # putting its output in the model's context, so wait leaves both events pending.
+    assert interact.read_json(page_dir / "cursor.json") is None
+    assert page_state(page_dir)["pending"] == 2
+
+    # An event posted between wait and acknowledgement is beyond the highest sequence
+    # the model saw. Acknowledging that visible batch therefore leaves the newcomer.
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c2", "author": "user", "text": "later"}
+    )
+    interact.cmd_ack(page_dir, 2)
+    interact.cmd_ack(page_dir, 2)  # retries are harmless
     assert interact.read_json(page_dir / "cursor.json")["seq"] == 2
+    assert page_state(page_dir)["pending"] == 1
+
+    assert interact.cmd_wait(page_dir) == 0
+    assert [json.loads(line)["id"] for line in capsys.readouterr().out.splitlines()] == ["c2"]
+    interact.cmd_ack(page_dir, 3)
     assert page_state(page_dir)["pending"] == 0
-    # The delivery status is marked a handoff, which dates the claim: Claude's own
+    # The wait status is marked a handoff, which dates the claim: the agent's own
     # `review state` clears the mark, so the mark surviving is a pickup that never landed.
     status = interact.read_json(page_dir / "status.json")
     assert (status["state"], status["handoff"]) == ("working", True)
@@ -3591,7 +3656,34 @@ def test_wait_delivers_new_user_events_and_flips_status(page_dir, capsys):
     assert "handoff" not in interact.read_json(page_dir / "status.json")
 
 
-def test_wait_preserves_a_working_status_on_mid_work_delivery(page_dir, capsys):
+def test_ack_checks_its_target_and_advances_monotonically(page_dir):
+    interact.append_event(
+        page_dir, {"kind": "note", "author": "claude", "version": 1, "text": "published"}
+    )
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hi"}
+    )
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c2", "author": "user", "text": "later"}
+    )
+    runner = CliRunner()
+
+    missing = runner.invoke(interact.cli, ["review", "ack", str(page_dir), "4"])
+    assert missing.exit_code == 1
+    assert "event 4 does not exist" in missing.output
+
+    agent_event = runner.invoke(interact.cli, ["review", "ack", str(page_dir), "1"])
+    assert agent_event.exit_code == 1
+    assert "event 1 is not a reviewer event" in agent_event.output
+
+    first = runner.invoke(interact.cli, ["review", "ack", str(page_dir), "3"])
+    retry = runner.invoke(interact.cli, ["review", "ack", str(page_dir), "3"])
+    older = runner.invoke(interact.cli, ["review", "ack", str(page_dir), "2"])
+    assert first.exit_code == retry.exit_code == older.exit_code == 0
+    assert interact.read_json(page_dir / "cursor.json") == {"seq": 3}
+
+
+def test_wait_preserves_a_working_status_on_mid_work_output(page_dir, capsys):
     interact.write_json(page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"})
     interact.cmd_status(page_dir, "working", "running the browser suite")
     status_path = page_dir / "status.json"
@@ -3715,6 +3807,48 @@ def test_codex_launcher_claims_the_page_for_its_thread(codex_claimed_page):
     assert page_state(codex_claimed_page)["agent"] == "Codex"
 
 
+def test_stop_hook_keeps_codex_inside_the_exact_wait_session(codex_claimed_page, capsys):
+    page = codex_claimed_page
+    interact.cmd_status(page, "waiting", "")
+    interact.write_json(page / "heartbeat.json", {"t": time.time()})
+
+    # A fresh heartbeat means Claude may end its turn, but Codex must keep this one
+    # active and poll the unified-exec session whose output can enter this context.
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "codex-thread"})
+    reason = json.loads(capsys.readouterr().out)["reason"]
+    assert "poll the existing" in reason and "write_stdin" in reason
+
+    # The existing one-shot escape still prevents a hook recursion.
+    interact.cmd_hook(
+        {
+            "hook_event_name": "Stop",
+            "session_id": "codex-thread",
+            "stop_hook_active": True,
+        }
+    )
+    assert capsys.readouterr().out == ""
+
+    # With no waiter, the remedy names both halves of the Codex loop.
+    (page / "heartbeat.json").unlink()
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "codex-thread"})
+    reason = json.loads(capsys.readouterr().out)["reason"]
+    assert "Start `colloquy review wait`" in reason
+    assert "unified exec" in reason and "write_stdin" in reason
+
+    # Pending output still has to cross context and be acknowledged before handling.
+    interact.append_event(page, {"kind": "comment", "author": "user", "text": "hi"})
+    interact.write_json(page / "heartbeat.json", {"t": time.time()})
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "codex-thread"})
+    reason = json.loads(capsys.readouterr().out)["reason"]
+    assert "review ack" in reason and "address every one" in reason
+    assert interact.ACK_BATCH_INSTRUCTION in reason
+
+    interact.cmd_ack(page, 1)
+    interact.cmd_status(page, "idle", "")
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "codex-thread"})
+    assert capsys.readouterr().out == ""
+
+
 def test_stop_hook_blocks_a_turn_that_leaves_a_page_unwatched(claimed, capsys):
     """Between turns a page is either watched or idle. The failure this prevents:
     a `review wait` exits, its notification is buried behind the next thing the
@@ -3755,8 +3889,8 @@ def test_prompt_hook_surfaces_comments_claude_never_picked_up(claimed, capsys):
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "1 user event you haven't picked up" in context
 
-    # Not while a watcher is live: it delivers them itself, and sending Claude to
-    # start a second `review wait` would race the cursor and deliver everything twice.
+    # Not while a watcher is live: it prints them itself, and sending Claude to start a
+    # second `review wait` would print every unacknowledged event twice.
     interact.write_json(claimed / "heartbeat.json", {"t": time.time()})
     interact.cmd_hook({"hook_event_name": "UserPromptSubmit", "session_id": "s1"})
     assert capsys.readouterr().out == ""
@@ -3783,6 +3917,13 @@ def test_only_serving_or_watching_a_page_puts_the_session_under_the_guard(
     interact.append_event(page_dir, {"kind": "comment", "author": "user", "text": "hi"})
     assert CliRunner().invoke(interact.cli, ["review", "wait", str(page_dir)]).exit_code == 0
     assert interact.session_pages("s7") == [page_dir.resolve()]
+
+    # If wait's process finished without its output entering model context, the event
+    # remains recoverable and the next hook names it rather than calling it delivered.
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s7"})
+    assert "1 user event" in json.loads(capsys.readouterr().out)["reason"]
+
+    interact.cmd_ack(page_dir, 1)
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s7"})
     assert "no watcher" in json.loads(capsys.readouterr().out)["reason"]
 
@@ -3817,10 +3958,15 @@ def test_idle_cannot_close_a_review_over_events_nobody_read(claimed, capsys):
     refused = CliRunner().invoke(interact.cli, ["review", "state", str(claimed), "idle"])
     assert refused.exit_code == 1
     assert "1 user event nobody has picked up" in refused.output
+    assert interact.ACK_BATCH_INSTRUCTION in refused.output
     assert interact.read_json(claimed / "status.json")["state"] != "idle"
 
-    # `review wait` is the way through, and it returns at once when events already wait.
+    # `review wait` returns at once, and acknowledgement records that its output reached
+    # model context; only then can idle close the review.
     assert CliRunner().invoke(interact.cli, ["review", "wait", str(claimed)]).exit_code == 0
+    assert CliRunner().invoke(
+        interact.cli, ["review", "ack", str(claimed), "1"]
+    ).exit_code == 0
     assert CliRunner().invoke(interact.cli, ["review", "state", str(claimed), "idle"]).exit_code == 0
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
     assert capsys.readouterr().out == ""
@@ -4708,7 +4854,7 @@ def test_a_comment_points_at_something(page_dir):
     assert "--quote" in result.output
 
 
-def test_claudes_own_comment_is_not_delivered_back_to_it(page_dir):
+def test_the_agents_own_comment_is_not_printed_back_to_it(page_dir):
     """`review wait` and the banner's unread count both turn on author, so a note
     Claude leaves can't wake its own watcher or read as a comment nobody answered."""
     published(page_dir)

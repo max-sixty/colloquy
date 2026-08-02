@@ -56,22 +56,3 @@
   more thing to keep in step. The server is where Slack keeps drafts and the one place
   these cannot go: here the server is the agent, and an unsent draft would be words the
   reviewer has not decided to say, sitting where the next `review wait` can read them.
-
-- (2026-08-01) The review loop's wake-up is unverified on Codex, one of the two hosts the
-  plugin ships for, and the skill instructs both of them in Claude Code's vocabulary.
-  `SKILL.md` says to start `server run` and `review wait` "as a background task
-  (`run_in_background`)", naming a Claude Code tool parameter in a payload both hosts
-  read, and says the wait "exits — re-invoking you — when the user comments", which is
-  one host's behaviour stated as though it were universal. Claude Code turns a finished
-  background task into input on its own; Codex has no unprompted completion notification
-  at all, so `review wait` exiting there delivers to nobody and the agent has to come
-  back and look. Which failure that produces is unobserved. A wait run in the foreground
-  holds the turn until a comment lands or the shell tool times out, and `cmd_wait` writes
-  its cursor after printing, so a killed wait redelivers rather than drops. A wait run in
-  the background has nothing reading its stdout, and whether anything then says so rests
-  on the Stop hook, which refuses to end a turn that leaves a page unwatched but stands
-  down silently when the session id in its payload doesn't match the record
-  `bin/colloquy` wrote. That identity mapping is the only Codex-specific code in the
-  plugin, and the tests reach no further than the claim record it writes. Whether this
-  wants host-conditional instructions, a wait Codex can drive itself, or first running
-  one round under Codex to find out which of the two failures it has, is open.

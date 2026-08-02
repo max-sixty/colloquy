@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>how colloquy works</title>
-<meta name="description" content="The mechanism behind colloquy: one uv script, an append-only event log, a background wait that ends when you comment, and a vendored theme-and-widget layer.">
+<meta name="description" content="The mechanism behind colloquy: one uv script, an append-only event log, host-specific review loops, and a vendored theme-and-widget layer.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:title" content="how colloquy works">
-<meta property="og:description" content="One uv script, an append-only event log, a background wait that ends when you comment, and a vendored theme-and-widget layer.">
+<meta property="og:description" content="One uv script, an append-only event log, host-specific review loops, and a vendored theme-and-widget layer.">
 <meta property="og:url" content="https://max-sixty.github.io/colloquy/how-it-works.html">
 <meta property="og:image" content="https://max-sixty.github.io/colloquy/session-light.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -42,8 +42,8 @@ and version picker.</p>
 <svg class="arch" id="arch" viewBox="0 0 720 190" role="img"
      aria-labelledby="arch-title">
 <title id="arch-title">The agent writes version files and runs colloquy commands,
-both reaching the browser through interact.py's loopback server; a comment ends
-the background wait and reaches the agent.</title>
+both reaching the browser through interact.py's loopback server; review wait carries
+a comment back into the agent's context.</title>
 <defs>
 <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7"
         markerHeight="7" orient="auto-start-reverse">
@@ -85,16 +85,22 @@ the background wait and reaches the agent.</title>
 <path d="M622 116 L622 160 L98 160 L98 122" fill="none" stroke="var(--accent)"
       stroke-width="1.5" marker-end="url(#arr-accent)"></path>
 <text x="360" y="152" text-anchor="middle" font-size="12"
-      fill="var(--accent)">a comment ends the background wait and reaches the agent</text>
+      fill="var(--accent)">review wait carries a comment into the agent's context</text>
 </svg>
 
-<p id="wait-trick">The agent runs <code>review wait</code> as a background task and
-restarts it as soon as it delivers. On Claude Code a delivered event arrives on the same
-queue as a message typed into the terminal: an idle session takes it as the start of its
-next turn, and a working one folds it into the turn already running, at the boundary
-between one tool call and the next. So "skip that one" doesn't stop the step the agent is
-on. The comment waits that step out — a quick edit, or a long test run — and reaches the
-agent before its next decision.</p>
+<p id="wait-trick">The two hosts carry that context through different loops. On Claude
+Code, <code>review wait</code> is a background task whose completion joins the same queue
+as a terminal message: an idle session takes it as a new turn, and a working one folds
+it in between tool calls. On Codex, the wait runs in a unified-exec session inside the
+turn that handed over the URL; the agent keeps that turn active and polls that exact
+session until it returns. A detached Codex command has no completion that can start a
+future turn, which is why the loop stays active there.</p>
+<p id="wait-ack">After either host puts a complete, untruncated JSON batch in model
+context, the agent explicitly acknowledges its highest sequence before acting. A
+truncated batch is acknowledged not at all and retrieved again with enough room for the
+whole result. Until acknowledgement the next wait prints the events again. That small
+separation makes “the process printed it” and “the agent saw it” two different facts,
+so an abandoned wait cannot silently consume a reviewer's words.</p>
 <p id="wait-stateless">The server and the wait both go down with the session, and the page
 directory is the whole state.</p>
 </section>
@@ -125,8 +131,8 @@ publishes it. Until the publication note lands the file is on disk and unreachab
 and publishing lints it first, so a broken version is never exposed. The next poll
 moves the tab onto the new version, keeping the reader's place, and holds while the
 reviewer is mid-comment or mid-drag. Coming back the other way, <code>review wait</code>
-picks up where the last one stopped, so a comment posted in the moment between one wait
-and the next still lands.</p>
+starts after the last acknowledged reviewer event, so a comment posted between a wait
+and its acknowledgement remains beyond the cursor and still lands.</p>
 </section>
 
 <section id="pages">
@@ -168,7 +174,7 @@ to load leaves a readable page rather than a blank one.</p>
 reader: one that seeks approval declares
 <code>&lt;meta name="cq-review" content="sign-off"&gt;</code>, and only then does
 the banner offer "✓ Looks good". The declaration versions with the document;
-without it a review is open-ended and takes comments only.</p>
+without it the banner offers a neutral "End review" for a comments-only page.</p>
 <p id="dogfood">This page is set in the plugin's own <code>theme.css</code>, and
 the widgets below are rendering in it right now, with no script involved. Each
 sits in a <code>cq-specimen</code> — the gutter that marks quoted material — so

@@ -6,8 +6,9 @@ dates from the day it was written and will drift.
 
 Anything that hands an agent's work to a person in a browser answers three questions:
 what the document is made of, where it lives, and how the reader's reply gets back to the
-agent. Colloquy's answers are authored HTML, a directory on your machine, and a background
-task inside the session.
+agent. Colloquy's answers are authored HTML, a directory on your machine, and a
+host-specific wait inside the session: background completion in Claude Code, an exact
+unified-exec session kept inside the active turn in Codex.
 
 ## Workbench
 
@@ -21,7 +22,7 @@ underneath", and "the doc is the API".
 | ------------ | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Document     | Markdown with fenced components — board, chat, sheet, chart, custom widget — edited in place, with named versions to restore from | Authored HTML, any structure the page needs, changed by the agent publishing a new version — each with a changelog note to step back to — or by the reviewer working an affordance it offers |
 | Home         | Hosted, at a private link                                                                                                  | A directory on your machine, served where your session reached it, behind a key                                                                                                     |
-| Return path  | An HTTP long-poll the agent holds open                                                                                     | A background task inside the agent's session                                                                                                                                        |
+| Return path  | An HTTP long-poll the agent holds open                                                                                     | A background task that wakes Claude Code; an exact unified-exec wait Codex polls inside the active turn                                                                             |
 | Reach        | Anything that speaks HTTP                                                                                                  | Claude Code and Codex                                                                                                                                                               |
 | Built for    | A team of agents and people coordinating                                                                                   | One session presenting to one reviewer                                                                                                                                              |
 
@@ -29,17 +30,19 @@ The two return paths are closer than the hosting difference suggests. An agent w
 Workbench doc by holding an HTTP long-poll open: `GET /api/docs/DOC_ID/events?since=SEQ&wait=55`,
 which "returns the moment an event lands past `since`". Colloquy's `review wait` tails the
 page directory on disk and exits on the first event the agent hasn't seen. Different
-transport, same bargain: one call that blocks until the reviewer does something. Workbench
-also offers webhooks and a supervised watcher, for wake-ups that outlive the agent's
-process.
+transport, same bargain: one call that blocks until the reviewer does something. Colloquy
+acknowledges the event separately, only after a complete, untruncated wait result enters
+model context.
+Workbench also offers webhooks and a supervised watcher, for wake-ups that outlive the
+agent's process.
 
 What the HTTP surface gives Workbench is reach: "any agent that can fetch a URL can work
 here — no SDK, no plugin", which covers Claude, Codex, Cursor and curl alike. Colloquy's
-coupling to the agent host is the opposite bet, and what it gets in return is arrival time:
-on Claude Code a comment folds into a turn already running, so "skip that one" can change
-what the agent does next. It costs twice. Colloquy runs on two hosts and no others, and the
-arrival time belongs to one of them — Claude Code turns a finished background task into
-input on its own, and Codex does not.
+coupling to the agent host is the opposite bet, and what it gets in return is arrival in
+model context: on Claude Code a finished background wait wakes or joins the session; on
+Codex the agent keeps the handover turn active and polls the exact wait session. Either
+can take "skip that one" into account before the next decision. It costs a host-specific
+loop, and Colloquy runs on those two hosts and no others.
 
 ## html-effectiveness
 
@@ -59,8 +62,8 @@ live return path.
   further: two people commenting are one voice, there are no live cursors, and nothing
   merges concurrent edits.
 - **An agent that is only an HTTP client.** The loop is a command the agent runs and gets
-  woken by, so an agent that cannot run one cannot drive it — and the hooks that hold a
-  session to the loop exist only in the two hosts.
+  back into model context, so an agent that cannot run one cannot drive it — and the
+  hooks that hold a session to the loop exist only in the two hosts.
 - **An artifact that has to last.** The server and the wait go down with the session. The
   page directory stays on disk and `version export` makes a standalone copy, but the
   review stops there, and a document a team will edit for months belongs in the

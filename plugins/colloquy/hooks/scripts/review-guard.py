@@ -2,11 +2,11 @@
 """Stop / UserPromptSubmit / SessionEnd hook — keeps the review loop honest.
 
 The review loop asks the agent to restart `review wait` after every round, and a page
-whose watcher never came back is invisible from the browser: it looks exactly
-like a page whose reviewer has said nothing yet. These hooks make the loop the
-harness's business rather than the model's memory — Stop refuses to end a turn
-that leaves one of this session's pages unwatched, UserPromptSubmit surfaces
-comments the agent hasn't picked up, and SessionEnd idles the pages and stops
+whose watcher never came back is invisible from the browser: it looks exactly like a
+page whose reviewer has said nothing yet. These hooks make the loop the harness's
+business rather than the model's memory. Stop protects Claude Code's background wait
+and keeps Codex inside the active turn that polls its exact unified-exec session;
+UserPromptSubmit surfaces unacknowledged events; SessionEnd idles the pages and stops
 their servers.
 
 The decision lives in interact.py, which owns the page-directory model. This

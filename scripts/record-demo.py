@@ -214,16 +214,27 @@ def select_text(page: Page, selector: str, text: str) -> None:
     page.dispatch_event("body", "mouseup")
 
 
-def start_waiter() -> subprocess.Popen[bytes]:
+def start_waiter() -> subprocess.Popen[str]:
     return subprocess.Popen(
         [str(COLLOQUY), "review", "wait", str(PAGE_DIR)],
-        stdout=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
+        text=True,
     )
 
 
+def receive(waiter: subprocess.Popen[str]) -> list[dict]:
+    """Read one complete wait result and acknowledge exactly what entered this driver."""
+    stdout, _ = waiter.communicate(timeout=10)
+    events = [json.loads(line) for line in stdout.splitlines() if line.strip()]
+    if not events:
+        raise RuntimeError("the demo waiter returned without reviewer events")
+    run_colloquy("review", "ack", str(PAGE_DIR), str(events[-1]["seq"]))
+    return events
+
+
 def record(
-    page: Page, waiters: list[subprocess.Popen[bytes]]
+    page: Page, waiters: list[subprocess.Popen[str]]
 ) -> tuple[list[Image.Image], list[int]]:
     frames: list[Image.Image] = []
     durations: list[int] = []
@@ -257,7 +268,7 @@ def record(
     shot(1500)
 
     comment_id = wait_for_comment()
-    waiters[0].wait(timeout=10)
+    receive(waiters[0])
     run_colloquy(
         "review",
         "state",
@@ -321,11 +332,12 @@ def record(
         "() => document.querySelector('.cq-toast').classList.contains('show')"
     )
     shot(2400)
+    receive(waiters[-1])
     return frames, durations
 
 
 def shoot_stills(
-    browser, url: str, waiters: list[subprocess.Popen[bytes]], into: Path
+    browser, url: str, waiters: list[subprocess.Popen[str]], into: Path
 ) -> None:
     """The landing page's two session stills, off the scene `record` has just left,
     written beside the GIF rather than to a path of their own.
@@ -348,23 +360,11 @@ def shoot_stills(
     not something to toggle on a live page: the vendored diagram palette is read once
     at load, so a flipped page would carry the other scheme's diagrams.
 
-    Getting the banner to say "Claude is listening" takes stating both halves of it,
-    and neither survives `record` on its own. The heartbeat half is a live `review
-    wait`: one started over a log with undelivered activity delivers and returns
-    instead, taking its heartbeat with it, and `record` always leaves activity behind
-    — the board drag is the last thing it does. The status half is that the delivery
-    marks the review `working — picking up N updates`, the handoff Claude's own
-    `review state` clears on waking, and working outranks listening until something
-    does. Drain, then say what the scene is, then start the waiter: setting the state
-    only on the branch where the drain had something to deliver left it saying
-    "picking up 1 update" on the branch where the waiter `record` left had already
-    delivered it."""
-    drain = start_waiter()
-    waiters.append(drain)
-    try:
-        drain.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        pass  # already idling; the state below and the waiter after it still apply
+    Getting the banner to say "Claude is listening" takes stating both halves of it.
+    `record` has received and acknowledged the board action through the waiter it
+    started, so no reviewer event remains to make this fresh waiter return immediately.
+    State the scene, then start that waiter: its heartbeat is the proof the browser
+    renders."""
     run_colloquy("review", "state", str(PAGE_DIR), "waiting")
     waiters.append(start_waiter())
     # The reviewer's board move has to have landed in each shot, or it shows a page
@@ -458,7 +458,7 @@ def main() -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    waiters: list[subprocess.Popen[bytes]] = []
+    waiters: list[subprocess.Popen[str]] = []
     try:
         url = wait_for_server()
         waiters.append(start_waiter())

@@ -10,7 +10,8 @@
  * they need from here.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
- * through it as an `action` event — sendAction posts it, `review wait` delivers it. The live
+ * through it as an `action` event — sendAction posts it, `review wait` prints it, and
+ * `review ack` records that the complete wait batch reached model context. The live
  * view is the version plus every action recorded up to it, replayed on each poll:
  * authored markup is what a widget was before anyone touched it, the log is every
  * transition since, and the log wins. A decision therefore outlives the version it
@@ -942,7 +943,9 @@ const toggleBtn = el("button", "cq-btn cq-comments", "Comments");
 toggleBtn.title = "Show or hide the comment panel (c toggles, Esc closes, ? lists all keys)";
 toggleBtn.setAttribute("aria-expanded", "false");
 const approveBtn = el("button", "cq-btn primary cq-signoff", "✓ Looks good");
-approveBtn.title = "Sign off — the agent stops watching this page";
+approveBtn.title = "Approve this work; the page stays open for follow-up";
+const endReviewBtn = el("button", "cq-btn cq-end-review", "End review");
+endReviewBtn.title = "End this comments-only review";
 banner.append(
   dot,
   statusText,
@@ -953,7 +956,7 @@ banner.append(
   versionSelect,
   toggleBtn,
 );
-if (SIGNOFF) banner.append(approveBtn);
+banner.append(SIGNOFF ? approveBtn : endReviewBtn);
 
 const panel = el("aside", "cq-ui cq-panel");
 const panelHead = el("div", "cq-panel-head");
@@ -1418,9 +1421,12 @@ function renderThreads() {
   // The first nine open threads are addressable (g 1–9), in the order j/k walk;
   // past nine, digits stop and j/k still reach everything.
   open.forEach((t, i) => threadsBox.append(threadNode(t, syncs, i < 9 ? i + 1 : 0)));
-  for (const e of events)
+  for (const e of events) {
     if (e.kind === "done")
       threadsBox.append(el("div", "cq-system", `✓ Approved ${ago(e.ts)}`));
+    else if (e.kind === "close")
+      threadsBox.append(el("div", "cq-system", `Review ended ${ago(e.ts)}`));
+  }
   if (resolved.length) {
     const details = el("details", "cq-details");
     details.append(el("summary", "", `Resolved (${resolved.length})`));
@@ -2601,6 +2607,7 @@ const syncGeneral = wireInput(generalInput, {
 
 approveBtn.onclick = () =>
   post({ kind: "done", version: VNUM, text: "Looks good" });
+endReviewBtn.onclick = () => post({ kind: "close", version: VNUM });
 
 // ---------- keyboard ----------
 // One table drives both the dispatcher and the "?" overlay, so help can't drift
@@ -2992,8 +2999,9 @@ function renderStatus(state) {
   // nothing claimed (interact.py run outside Claude Code) isn't an abandoned one.
   const alive = session_alive !== false;
   // How long the claim has gone unrefreshed. The rope is short for the status
-  // `review wait` writes as it delivers, because Claude's first act on waking is its
-  // own `review state` — that mark outliving minutes is a dropped pickup, not a long turn.
+  // `review wait` writes as it prints a batch, because the agent writes its own
+  // `review state` after acknowledgement — that mark outliving minutes is a dropped
+  // pickup, not a long turn.
   const grace = status.handoff ? HANDOFF_GRACE_MS : WORKING_GRACE_MS;
   const quiet = Boolean(status.ts) && Date.now() - new Date(status.ts).getTime() > grace;
   let cls = "away",
@@ -3021,9 +3029,10 @@ function renderStatus(state) {
       : quiet
         ? [`${agentName()} last checked in ${ago(status.ts)}.`, "Nudge it in the terminal."]
         : [`${agentName()} isn't watching right now.`, "It picks them up next turn."];
-    // Comments land in the append-only log either way; what changes is when they're read.
+    // Reviewer updates land in the append-only log either way; what changes is when
+    // they're read.
     const held = pending
-      ? `${pending} comment${pending === 1 ? "" : "s"} waiting.`
+      ? `${pending} update${pending === 1 ? "" : "s"} waiting.`
       : "Your comments are saved.";
     text = `${why} ${held} ${how}`;
   }
@@ -3112,10 +3121,10 @@ latestChip.onclick = () => (location.href = "/");
 // The log outranks the markup, and that is the whole rule: authored state is the
 // initial condition, never a later correction, so nothing a version does or
 // omits can un-make a decision by itself. The repo's own CLAUDE.md carries why,
-// and what it cost to learn. Replay used to stop at the delivery cursor, on the
-// premise that a version written after Claude was handed an action encoded it — a
-// premise nothing checked, and delivery is not assent. Only a version can say what
-// Claude did with an action, and saying it is `version check`'s business now
+// and what it cost to learn. Replay used to stop at the handoff cursor, on the
+// premise that a version written after the agent saw an action encoded it — a
+// premise nothing checked, and acknowledgement is not assent. Only a version can say
+// what the agent did with an action, and saying it is `version check`'s business now
 // (restatement_errors), not something inferred here from silence.
 const appliedActions = new Set();
 // What an action rests on: the widget that sent it, and the parts of that widget
@@ -3388,6 +3397,7 @@ async function poll() {
     const approved = events.some((e) => e.kind === "done");
     approveBtn.disabled = approved;
     approveBtn.textContent = approved ? "✓ Approved" : "✓ Looks good";
+    endReviewBtn.disabled = events.some((e) => e.kind === "close");
     const agentReplies = events.filter(
       (e) => e.author === "claude" && e.kind === "reply",
     );

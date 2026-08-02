@@ -344,7 +344,7 @@
     "x-retired-when": "reject"
   },
   "cq-draft": {
-    "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach the agent as an `edit` action naming the element. After the first edit, Changes shows a bounded, lossless word-aligned difference from this version, every recorded body in order, and a Restore control for each older body; very large divergent middles appear as one replacement rather than freezing the page. Restoring posts another ordinary `edit`, so it converges across tabs and later versions instead of creating private undo state. The body is the draft text verbatim (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off close the review. Usable anywhere prose flows. The agent rewriting prose of its own goes in a cq-suggestion instead; a draft is the reviewer's own words, so there is nothing for them to accept. Once they have edited one those words are theirs: re-emit the body you wrote and their edit still stands over it — and `review comment` reads it their way, quoting the words their edit left and refusing the ones it replaced. To take the pen back — a fact of yours to fix in a sentence they rewrote — write the new text and mark the element `restated` (see $restated in `page catalog`).",
+    "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach the agent as an `edit` action naming the element. After the first edit, Changes shows a bounded, lossless word-aligned difference from this version, every recorded body in order, and a Restore control for each older body; very large divergent middles appear as one replacement rather than freezing the page. Restoring posts another ordinary `edit`, so it converges across tabs and later versions instead of creating private undo state. The body is the draft text verbatim (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off approve the page as a whole. Usable anywhere prose flows. The agent rewriting prose of its own goes in a cq-suggestion instead; a draft is the reviewer's own words, so there is nothing for them to accept. Once they have edited one those words are theirs: re-emit the body you wrote and their edit still stands over it — and `review comment` reads it their way, quoting the words their edit left and refusing the ones it replaced. To take the pen back — a fact of yours to fix in a sentence they rewrote — write the new text and mark the element `restated` (see $restated in `page catalog`).",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
@@ -398,6 +398,7 @@
       "reply": ["parent", "version", "text", "agent", "markup"],
       "resolve": ["parent"],
       "done": ["version", "text"],
+      "close": ["version"],
       "action": ["widget", "action", "detail", "version"],
       "note": ["version", "text", "restated"]
     }

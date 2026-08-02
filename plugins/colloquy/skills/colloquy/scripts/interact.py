@@ -41,12 +41,12 @@ A page directory holds:
                          optimisation over inlining; inlining was never available
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
     status.json          the agent's declared state: {"state": working|waiting|idle, "detail", "ts"};
-                         when delivery wakes a non-working page, `review wait` writes
-                         it working with "handoff": true until the agent's own
+                         when `review wait` prints for a non-working page, it writes
+                         working with "handoff": true until the agent's own
                          `review state` lands
     heartbeat.json       watcher liveness, bumped by `review wait` while it runs
-    cursor.json          seq of the last event delivered to the agent, written by
-                         `review wait` on exit
+    cursor.json          seq of the last reviewer event acknowledged from the agent's
+                         model context, written by `review ack`
     server.json          {"port", "pid", "url"} for the running server
     access.json          {"host", "bind", "token"}: the name the page's URL carries,
                          the interface its server binds, and the key the URL carries.
@@ -58,23 +58,23 @@ status.json is a claim, and a claim never expires on its own: an agent that
 stopped watching renders exactly like one that is watching and has nothing to
 say, so a comment can sit unread with the page still reading "Claude is
 working". The directory therefore also carries what it can prove — a heartbeat
-only a live `review wait` bumps, the delivery cursor, and the owning session's pid —
+only a live `review wait` bumps, the acknowledgement cursor, and the owning session's pid —
 and `/api/state` ships those beside the claim, so the banner can say when the
-claim has outlived them. When delivery wakes a non-working page, `review wait`
-marks the status it writes "handoff", which dates it: Claude's first act on
-waking is its own `review state`, so the mark surviving is a dropped pickup
-rather than a long turn, and the banner gives it a much shorter rope. A
-delivery that lands while Claude is already working leaves that claim
-untouched; there is no pickup gap to date.
+claim has outlived them. When a wait prints for a non-working page, it marks the
+status it writes "handoff", which dates it: after acknowledgement the agent writes
+its own `review state`, so the mark surviving is a dropped pickup rather than a
+long turn, and the banner gives it a much shorter rope. Wait output that lands
+while the agent is already working leaves that claim untouched; there is no pickup
+gap to date.
 
 The `hook` command closes the same gap from the agent's side. Registered on
 Stop, UserPromptSubmit and SessionEnd, it refuses to let a turn end with one of
-this session's pages unwatched, surfaces undelivered comments at the next
+this session's pages unwatched, surfaces unacknowledged reviewer events at the next
 prompt, and idles the pages and stops their servers when the session exits. It
 finds them through ~/.local/state/colloquy/sessions/<session id>.json, which
 `server run` and `review wait` write the host session identity supplied by the launcher —
 absent that (interact.py run outside an agent host), nothing is claimed and the
-hooks stand down. Undelivered events are the one thing `review state <page> idle`
+hooks stand down. Unacknowledged events are the one thing `review state <page> idle`
 can't close over: idling is how a review ends, and a review can't end on comments
 nobody read.
 
@@ -134,7 +134,8 @@ Event kinds: comment (optional anchor {section, quote, and the neighbouring
 text as prefix/suffix where there is any, which is what tells two identical
 passages apart), reply (parent=id),
 resolve (parent=id), done (user sign-off; the banner offers it only on a page
-declaring <meta name="cq-review" content="sign-off">), action (user; a widget reporting the
+declaring <meta name="cq-review" content="sign-off">), close (a neutral end to a
+comments-only review), action (user; a widget reporting the
 user editing the document through it — widget=element id, action=verb, detail
 per widget, version the edit was made against), note (agent; per-version
 changelog, carrying `restated`: the element ids whose decisions the publishing
@@ -154,7 +155,7 @@ Either side can open a thread, and `author` is the whole difference between them
 reviewer selects a passage and the browser writes the anchor from the
 selection; `review comment` writes the same anchor from a quote, reading the
 version the way the anchor pass reads the DOM (see "passages" below).
-Everything downstream already turns on `author`: `review wait` delivers user
+Everything downstream already turns on `author`: `review wait` prints user
 events and the banner counts them, so Claude's own comment neither wakes its
 watcher nor reads as unanswered. What Claude cannot do is `resolve` — a note's
 purpose is discharged by being read, and only the reader knows that happened;
@@ -165,7 +166,7 @@ Commands:
     customize  theme widget
     version    check publish export
     server     run stop
-    review     state wait comment reply events transcript
+    review     state wait ack comment reply events transcript
 
 `version check` is a deterministic pre-handover lint (no browser, near-free;
 `version publish` re-runs it on every version): the HTML parses with balanced
@@ -254,6 +255,7 @@ BROWSER_EVENT_FIELDS = {
     "reply": {"parent": str, "version": int, "text": str},
     "resolve": {"parent": str},
     "done": {"version": int, "text": str},
+    "close": {"version": int},
     "action": {"widget": str, "action": str, "detail": dict, "version": int},
 }
 # Every field the current browser and CLI may write, beyond append_event's
@@ -264,9 +266,15 @@ EVENT_VOCABULARY = {
     "reply": {"parent", "version", "text", "agent", "markup"},
     "resolve": {"parent"},
     "done": {"version", "text"},
+    "close": {"version"},
     "action": {"widget", "action", "detail", "version"},
     "note": {"version", "text", "restated"},
 }
+ACK_BATCH_INSTRUCTION = (
+    "If wait output is truncated, acknowledge nothing and rerun with enough output "
+    "capacity for the whole batch. After a complete batch enters context, run "
+    "`colloquy review ack <page> <highest-seq>`."
+)
 # Fields whose one door is the CLI. The browser door refuses them rather than
 # silently dropping: `markup` enters only through the gate `review comment` and
 # `review reply` run, which is what lets every reader trust what the log holds
@@ -473,10 +481,10 @@ def json_bytes(obj, *, indent=None) -> bytes:
 
 
 def write_json(path: Path, obj) -> None:
-    # Atomic: the serve process reads these files (cursor.json every poll) while
-    # wait/status write them; a torn read of cursor.json would replay declined
-    # actions in the browser, stickily. Each writer stages through an exclusively
-    # created name so simultaneous writers cannot replace one another's temp file.
+    # Atomic: the serve process reads these files while review commands write them;
+    # a torn cursor or status would make the page report false state. Each writer
+    # stages through an exclusively created name so simultaneous writers cannot
+    # replace one another's temp file.
     replace_files([(path, json_bytes(obj), False)])
 
 
@@ -761,10 +769,11 @@ def owned_pages(session_id: str) -> list:
     ]
 
 
-def undelivered(events: list, cursor: int) -> list:
-    """The reviewer's events past the handoff cursor: posted, and not yet in
-    Claude's hands. The one predicate for that — the banner's pending count and
-    `review wait`'s delivery must agree on which events those are."""
+def unacknowledged(events: list, cursor: int) -> list:
+    """The reviewer's events past the acknowledgement cursor: posted, and not yet
+    confirmed in the agent's model context. The one predicate for that — the
+    banner's pending count and `review wait`'s output must agree on which events
+    those are."""
     return [e for e in events if e["seq"] > cursor and e["author"] == "user"]
 
 
@@ -774,16 +783,16 @@ def full_state(page_dir: Path, events: list, versions: list) -> dict:
     status = read_json(page_dir / "status.json") or {"state": "idle", "detail": "", "ts": None}
     heartbeat = read_json(page_dir / "heartbeat.json") or {"t": 0}
     session = read_json(page_dir / "session.json")
-    # What `review wait` has delivered to Claude: an action past this seq can't have
-    # been seen (so not declined), which is what lets the runtime carry it
-    # forward onto versions written without it.
+    # What the agent has acknowledged from model context: an action past this seq
+    # can't have been seen (so not declined), which is what lets the runtime carry
+    # it forward onto versions written without it.
     cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
     return {
         "versions": versions,
         "status": status,
         "listening": time.time() - heartbeat["t"] < HEARTBEAT_FRESH_SECS,
         "cursor": cursor,
-        "pending": len(undelivered(events, cursor)),
+        "pending": len(unacknowledged(events, cursor)),
         "agent": session.get("agent", "Claude") if session else "Claude",
         # None when nothing claimed the page — interact.py run outside an agent host.
         "session_alive": pid_alive(session["pid"]) if session else None,
@@ -983,6 +992,20 @@ class Handler(BaseHTTPRequestHandler):
             if event["version"] not in live_versions:
                 self._json(
                     {"error": f"{kind} version must be one of {live_versions}"},
+                    400,
+                )
+                return
+        if kind in {"done", "close"}:
+            mode = version_review_mode(self.page_dir, event["version"])
+            terminal = "done" if mode == "sign-off" else "close"
+            if kind != terminal:
+                purpose = (
+                    "sign-off" if terminal == "done" else "ending its comments-only review"
+                )
+                self._json(
+                    {
+                        "error": f"version {event['version']} uses {terminal!r} for {purpose}"
+                    },
                     400,
                 )
                 return
@@ -1766,17 +1789,15 @@ def cmd_wait(page_dir: Path) -> int:
         while True:
             write_json(page_dir / "heartbeat.json", {"t": time.time()})
             events = read_events(page_dir)
-            new_user = undelivered(events, cursor)
+            new_user = unacknowledged(events, cursor)
             if new_user:
                 for event in new_user:
                     print(json.dumps(event, ensure_ascii=False), flush=True)
-                # cursor after print: a kill mid-wait redelivers rather than drops
-                write_json(page_dir / "cursor.json", {"seq": events[-1]["seq"]})
                 status = read_json(page_dir / "status.json") or {"state": "idle"}
                 if status["state"] != "working":
-                    # Flip before Claude's next turn: the handoff gap between this
+                    # Flip before the agent handles the batch: the handoff gap between this
                     # exit and pickup must not show "waiting". handoff=True dates
-                    # that claim; Claude's own `review state` clears it. Mid-work delivery
+                    # that claim; the agent's own `review state` clears it. Mid-work output
                     # has no pickup gap, so leave the existing claim byte-for-byte
                     # untouched instead of shortening its freshness window.
                     # "update", not "comment": a batch may mix comments and actions.
@@ -1814,6 +1835,23 @@ def cmd_wait(page_dir: Path) -> int:
             time.sleep(1)
     finally:
         (page_dir / "heartbeat.json").unlink(missing_ok=True)
+
+
+def cmd_ack(page_dir: Path, seq: int) -> None:
+    """Acknowledge through one reviewer event after complete wait output reached context.
+
+    The target itself must be a reviewer event. This catches a mistyped sequence and
+    prevents an agent from advancing the cursor to a trailing log entry it never saw.
+    Writing only when the cursor advances makes retries harmless.
+    """
+    events = read_events(page_dir)
+    if seq > len(events):
+        sys.exit(f"event {seq} does not exist; the log ends at {len(events)}")
+    if events[seq - 1]["author"] != "user":
+        sys.exit(f"event {seq} is not a reviewer event")
+    cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
+    if seq > cursor:
+        write_json(page_dir / "cursor.json", {"seq": seq})
 
 
 def read_text_arg(text) -> str:
@@ -2100,6 +2138,9 @@ def cmd_transcript(page_dir: Path) -> None:
         if e["kind"] == "done":
             print(f"Approved at {e['ts']}.")
             break
+        if e["kind"] == "close":
+            print(f"Review ended at {e['ts']}.")
+            break
 
     # To stderr — stdout is the artifact. A transcript is a review's closing act,
     # and the record debt it reports here is about to stop being fixable.
@@ -2179,23 +2220,51 @@ def unattended_pages(session_id: str) -> list:
     for page_dir in owned_pages(session_id):
         events = read_events(page_dir)
         state = full_state(page_dir, events, published_versions(page_dir, events))
-        if state["listening"]:
-            # A live `review wait` is the watch, and it delivers what's pending on its own.
+        codex = state["agent"] == "Codex"
+        if state["listening"] and not codex:
+            # A live `review wait` is the watch, and it prints what's pending on its own.
             # Reporting the page here would have Claude start a second one, and two
-            # waiters race the cursor and deliver the same events twice.
+            # waiters would print the same unacknowledged events twice.
             continue
         n = state["pending"]
         if n:
+            if codex and state["listening"]:
+                remedy = (
+                    "Poll the existing `colloquy review wait` unified-exec session with "
+                    "`write_stdin`."
+                )
+            elif codex:
+                remedy = (
+                    "Start `colloquy review wait` in unified exec, retain its session id, "
+                    "and poll it with `write_stdin`."
+                )
+            else:
+                remedy = "`colloquy review wait` prints them."
+            remedy += f" {ACK_BATCH_INSTRUCTION} Then address every one."
             reasons.append(
-                f"{page_dir}: {n} user event{'s' if n != 1 else ''} you haven't picked up."
-                " `colloquy review wait` prints them; address every one."
+                f"{page_dir}: {n} user event{'s' if n != 1 else ''} you haven't picked up. "
+                + remedy
             )
         elif state["status"]["state"] != "idle":
-            reasons.append(
-                f"{page_dir}: no watcher. Start `colloquy review wait` on it as a "
-                "background task, or run `colloquy review state <page> idle` if the "
-                "review is over."
-            )
+            if codex and state["listening"]:
+                reasons.append(
+                    f"{page_dir}: Codex review is still open. Keep this turn active and "
+                    "poll the existing `colloquy review wait` unified-exec session with "
+                    "`write_stdin`."
+                )
+            elif codex:
+                reasons.append(
+                    f"{page_dir}: no watcher. Start `colloquy review wait` in unified exec, "
+                    "retain its session id, and keep this turn active while polling it with "
+                    "`write_stdin`; or run `colloquy review state <page> idle` if the review "
+                    "is over."
+                )
+            else:
+                reasons.append(
+                    f"{page_dir}: no watcher. Start `colloquy review wait` on it as a "
+                    "background task, or run `colloquy review state <page> idle` if the "
+                    "review is over."
+                )
     return reasons
 
 
@@ -2529,6 +2598,17 @@ class _StructParser(HTMLParser):
                 return
         if tag not in OPTIONAL_END:
             self.errors.append(f"stray </{tag}> at line {self.getpos()[0]} with no matching open tag")
+
+
+def version_review_mode(page_dir: Path, version: int):
+    """The review ask declared by a published version, or None for comments only."""
+    parser = _StructParser()
+    parser.feed(version_path(page_dir, version).read_text(encoding="utf-8"))
+    parser.close()
+    return next(
+        (meta["content"] for meta in parser.cq_metas if meta["name"] == "cq-review"),
+        None,
+    )
 
 
 # ---------- passages: the text an anchor points at ----------
@@ -4844,7 +4924,7 @@ def review() -> None:
 def state(dir: str, state: str, detail: str) -> None:
     """Set the agent's banner state."""
     page_dir = resolve_dir(dir)
-    # Idling over undelivered events ends the review on a reviewer still owed an
+    # Idling over unacknowledged events ends the review on a reviewer still owed an
     # answer. Here rather than in cmd_status because SessionEnd idles pages whose
     # session is already gone, where nothing is left to pick them up.
     events = read_events(page_dir)
@@ -4857,20 +4937,34 @@ def state(dir: str, state: str, detail: str) -> None:
         sys.exit(
             f"{pending} user event{'s' if pending != 1 else ''} nobody has picked up; "
             "idling closes the review over them. `colloquy review wait` prints them "
-            "and returns at once when events are already waiting."
+            "and returns at once when events are already waiting. "
+            + ACK_BATCH_INSTRUCTION
         )
     cmd_status(page_dir, state, detail)
 
 
-@review.command(short_help="Print new reviewer events, then exit.")
+@review.command(
+    short_help="Print unacknowledged reviewer events, then exit.",
+    help=(
+        "Wait for reviewer events not yet acknowledged from model context and print "
+        "them as JSON lines.\n\n" + ACK_BATCH_INSTRUCTION
+    ),
+)
 @click.argument("dir", metavar="PAGE")
 def wait(dir: str) -> None:
-    """Print new reviewer events, then exit.
-
-    Waits for undelivered reviewer events, prints them as JSON lines, and marks
-    them delivered.
-    """
+    """Print unacknowledged reviewer events, then exit."""
     sys.exit(cmd_wait(resolve_dir(dir)))
+
+
+@review.command(
+    short_help="Acknowledge one complete, untruncated wait batch.",
+    help=ACK_BATCH_INSTRUCTION,
+)
+@click.argument("dir", metavar="PAGE")
+@click.argument("seq", type=click.IntRange(min=1), metavar="SEQ")
+def ack(dir: str, seq: int) -> None:
+    """Acknowledge one complete, untruncated wait batch."""
+    cmd_ack(resolve_dir(dir), seq)
 
 
 @review.command(short_help="Open an agent thread on a page passage.")
@@ -4910,7 +5004,7 @@ def reply(dir: str, to: str, text: str, markup: str) -> None:
 def events(dir: str, after: int) -> None:
     """Print the event log as JSON lines.
 
-    This is read-only and does not mark reviewer events delivered.
+    This is read-only and does not acknowledge reviewer events.
     """
     cmd_events(resolve_dir(dir), after)
 

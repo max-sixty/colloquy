@@ -52,9 +52,9 @@ follows each new version by itself, deferring only while they are mid-comment or
 mid-drag, so a version costs them nothing. Ship one when an item's state actually
 changes rather than at every step it took, and let
 `review state <page> working "<detail>"` carry the finer grain in between. Keep
-`review wait <page>` running while you work, restarting it as soon as it delivers: a
-comment that lands mid-flight ("skip that one") then reaches you at the next step
-rather than at the end, and the banner reads as working throughout.
+`review wait <page>` running while you work, in the host-specific loop below: a comment
+that lands mid-flight ("skip that one") then reaches you at the next step rather than at
+the end, and the banner reads as working throughout.
 
 ## Setup
 
@@ -77,9 +77,10 @@ colloquy page media <page> <file>…           # add images; print each page pat
 colloquy version check <page> --render       # browser gate, once per page
 colloquy version publish <page> --version 1 --text "<changelog>"
 colloquy version export <page> -o <file>     # standalone HTML copy
-colloquy server run <page> [--host NAME]     # background task; prints the URL
+colloquy server run <page> [--host NAME]     # long-running; prints the URL
 colloquy review state <page> working "<detail>"  # or: waiting, idle
-colloquy review wait <page>                  # background task; exits on reviewer events
+colloquy review wait <page>                  # prints unacknowledged reviewer events
+colloquy review ack <page> <seq>             # complete, untruncated output reached context
 colloquy review comment <page> --quote "<passage>" --text "…"
 colloquy review reply <page> --to <id> --text "…"
 colloquy review events <page>                # full event log
@@ -93,15 +94,17 @@ repository checkout it lives at `plugins/colloquy/bin/colloquy`.
    registry (widget schemas with examples) and the theme's class idioms, which vary per
    project.
 2. Write the page as `<page>/versions/v1.html` (conventions below).
-3. Run `server run <page>` as a background task (`run_in_background`). Hand over the URL
-   it prints as printed: the key in it is what opens the page. Address, key and port are
-   all stable per directory, so the URL survives a restart.
+3. Start `server run <page>` as a long-running background command: a background task in
+   Claude Code, or a unified-exec session in Codex. Hand over the URL it prints exactly
+   as printed: the key in it is what opens the page. Address, key and port are all stable
+   per directory, so the URL survives a restart.
 4. Run `version publish <page> --version 1 --text "<changelog>"`. Publishing checks
    the version first and refuses a failure, so a half-written or broken file is never
    live in the reviewer's browser. Before the URL first goes out, run the browser gate
    too: `version check <page> --render` (see "Before the URL goes out"). Then hand the
    user the URL with a one-line orientation (select text to comment; on a sign-off
-   page, "✓ Looks good" approves) and enter the review loop.
+   page, "✓ Looks good" approves; otherwise "End review" ends comments without
+   approval) and enter the review loop.
 
 ## When the deliverable is the file
 
@@ -178,11 +181,12 @@ and the comment layer left behind.
 - The runtime injects the status banner, comment sidebar, version picker, and keyboard
   shortcuts (`?` in the browser shows the reference); don't build page UI for any of
   those.
-- **Sign-off is declared, not assumed.** A page whose review ends in the reader's
-  assent — a plan, a design, a proposed change, anything where approval unblocks
-  work — declares `<meta name="cq-review" content="sign-off">` in the head, and the
+- **Sign-off is declared, not assumed.** A page that asks for the reader's assent — a
+  plan, a design, a proposed change, anything where approval unblocks work — declares
+  `<meta name="cq-review" content="sign-off">` in the head, and the
   banner offers "✓ Looks good". A page that only informs (a status report, an
-  incident chronicle) omits it: its review is comments only, with nothing to approve.
+  incident chronicle) omits it: its review is comments only, and the banner instead
+  offers a neutral "End review" control with no approval meaning.
   `version check` rejects unknown `cq-*` metas and any other `cq-review` value.
 - **Announce interactivity in prose.** A fresh reviewer won't guess from a grip glyph
   or a hover cursor that a board takes drags or an options group takes clicks — the
@@ -254,21 +258,42 @@ and the comment layer left behind.
 ## The review loop
 
 Whenever you hand over the URL or finish a round of work, run
-`review state <page> waiting`, start `review wait <page>` as a background task, and end
-your turn. The reply ending each round carries the page's URL again: the reviewer opens
-the page from the turn in front of them. While `review wait` runs, the banner names the
-current agent as listening; it exits — re-invoking you — when the user comments,
-replies, resolves, approves, or edits an interactive widget (a drag on a `cq-board`
-arrives as an `action` event), printing the new events as JSON. It waits as long as the
-reviewer takes. `review wait` delivers
-everything no previous `review wait` has delivered, including events posted while you
-were working, so comments never get lost between rounds. Reading the log with
-`review events` doesn't count as delivery. User comments exist only through the
-browser; `review comment` posts as you, never as them.
-A delivery while the page already says `working` leaves that status untouched;
+`review state <page> waiting`, then enter the loop for the current host:
+
+Every handover message carries the page's URL again, so the reviewer can open the page
+from the turn in front of them.
+
+- **Claude Code:** start `review wait <page>` as a background task and end the turn.
+  Its completion returns as host input: an idle session starts a turn, while a working
+  session receives it between tool calls. Restart the background wait after each batch.
+- **Codex:** send the URL to the user in an intermediate update before waiting. Start
+  `review wait <page>` in unified exec, retain the returned session id, and keep the
+  current turn active. Where the reviewer owns the next move, poll that exact session
+  with empty `write_stdin` calls and long yields until it returns. Where you are working,
+  leave the same waiter running, continue the work, and poll it between tool calls or
+  milestones so a comment can change the next decision. Never detach the wait and never
+  end the turn expecting its completion to start another one: Codex has no unprompted
+  completion delivery. Start a fresh wait session after each batch and retain its new id.
+
+While `review wait` runs, the banner names the current agent as listening. It can stay
+open as long as the reviewer takes, and exits when the user comments, replies, resolves,
+ends or approves the review, or edits an interactive widget (a drag on a `cq-board`
+arrives as an `action` event), printing the unacknowledged reviewer events as JSON
+lines. Printing is deliberately not receipt: a
+detached process can finish without its output ever entering model context. As soon as
+a complete wait result enters context, run `review ack <page> <highest-seq>` before
+interpreting or handling it. If the wait output was truncated at all, acknowledge
+nothing: run a new wait with enough output capacity to receive the whole batch. A scalar
+cursor cannot represent a missing line in the middle. Acknowledgement is monotonic and
+idempotent; an event posted between wait and ack has a higher sequence and remains
+pending. Until ack, the next wait prints the batch again. Reading the full log with
+`review events` does not acknowledge it. User comments exist only through the browser;
+`review comment` posts as you, never as them.
+
+A wait result while the page already says `working` leaves that status untouched;
 `handoff` dates only a pickup from a non-working state.
 
-On wake:
+For each acknowledged batch:
 
 1. Run `review state <page> working "<what you're doing>"` and refresh the detail at
    each milestone. The banner shows it live, and reads a state left unrefreshed long
@@ -323,8 +348,10 @@ On wake:
    `version publish <page> --version 2 --text "<changelog>"`. Keep the changelog brief,
    though a decline's why can take a sentence or two. The browser follows the published
    version automatically.
-4. Restart `review wait <page>`, under `review state <page> waiting` where the next move
-   is the reviewer's and `working` where it is yours.
+4. Re-enter the host's loop above: start a new background wait in Claude Code, or a new
+   unified-exec wait in Codex and retain its exact session. Use `review state <page>
+   waiting` and long-poll where the next move is the reviewer's. Where it is yours, use
+   `working`, keep doing the work, and poll the running waiter between milestones.
 
 A `done` event is sign-off — it arrives only from a page declaring it (see the
 conventions). It approves the work rather than ending the page: carry the approval back
@@ -332,24 +359,38 @@ into the main task, and where the approved work is yours to do, the page keeps u
 it from here. So the page stays `working` under a live `review wait` — "skip that one"
 then reaches you mid-flight rather than at the end.
 
-`review state <page> idle` ends a page, and is the only thing that does: when the work
-it tracks is finished, or when a comments-only page's discussion has served its purpose
-— that page has no terminal event of its own. The server needs no stopping; it goes
-down with the session. A review ending with record debt publishes one final honoring
-version first, because the final version is the page that has to read right without the
-log; `review transcript` lists what still lags on stderr, and prints the whole review as
-Markdown when a PR description wants it. `version export` writes the page itself as one
-file when that is what outlives the review.
+On a comments-only page, `close` is the neutral terminal event from "End review". It
+does not approve anything and does not mutate the page status by itself. If wait output
+is truncated, acknowledge nothing and retrieve the whole batch. After the complete,
+untruncated batch enters context, acknowledge through its highest sequence, handle every
+earlier event in that batch, then run `review state <page> idle`. That explicit state
+command remains the act that ends the agent side of a page.
+Use it directly when the work a sign-off page tracks is finished too. The server needs
+no stopping; it goes down with the session. A review ending with record debt publishes
+one final honoring version first, because the final version is the page that has to read
+right without the log; `review transcript` lists what still lags on stderr, and prints
+the whole review as Markdown when a PR description wants it. `version export` writes
+the page itself as one file when that is what outlives the review.
 
-Between turns a page is either watched or idle, and a `Stop` hook holds you to it:
-ending a turn with a page not yet idle and no live `review wait`, or holding events
-you never picked up, is blocked and names the page. The invariant is what the reviewer
-is owed — from the browser, a page nobody is listening to looks exactly like a page
-whose reviewer simply hasn't commented yet, so without it they find out by asking. It
-covers the pages you run `server run` or `review wait` on, the two acts that put a
-reviewer on the other end, so a directory you only built or linted is outside it.
-`review state <page> idle` refuses while events sit unread: pick them up first with
-`review wait`, which returns at once when events are already there.
+The `Stop` hook applies the same invariant differently by host. In Claude Code, a fresh
+wait heartbeat means the background watcher can safely carry the next comment into a
+later turn. In Codex, that heartbeat only proves a command is running, so Stop continues
+to block until the page is idle and directs you to poll the exact unified-exec session
+inside the current turn. With no waiter it directs you to start one; with pending events
+it directs you to retrieve a complete, untruncated wait batch (acknowledging nothing and
+retrying if output is truncated), then acknowledge and handle it. The hook's one-shot
+recursion escape
+still lets a turn it has already blocked proceed once.
+
+The invariant is what the reviewer is owed — from the browser, a page nobody is
+listening to looks exactly like a page whose reviewer simply has not commented yet, so
+without it they find out by asking. It covers the pages you run `server run` or `review
+wait` on, the two acts that put a reviewer on the other end, so a directory you only
+built or linted is outside it. `review state <page> idle` refuses while events remain
+unacknowledged: run `review wait`, which returns at once when they are already there,
+If its output is truncated, acknowledge nothing and rerun with enough output capacity
+for the whole batch. After a complete batch enters context, run `review ack` through
+its highest sequence.
 `review wait` also restarts a server that died under it and reports the restart on
 stderr; exit 2 means it couldn't, and the page stays down until `server run`.
 
