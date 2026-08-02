@@ -791,9 +791,9 @@ style.textContent = `
   ::highlight(cq-pending) { background-color: color-mix(in srgb, var(--accent) 20%, transparent);
     text-decoration: underline 2px solid var(--accent); text-underline-offset: 3px; }
   body.cq-over-mark { cursor: pointer; }
-  /* PROTOTYPE (element comments) #2. Holding ⌥ changes what a click means, and nothing on
-     the page said so — the route's whole cost is that it is invisible. Two things say it
-     now, and the division matters: the item under the pointer outlines, which answers
+  /* Holding ⌥ changes what a click means, and nothing on the page said so — the chord's
+     whole cost is that it is invisible. Two things say it now, and the division
+     matters: the item under the pointer outlines, which answers
      *which*, and the cursor only has to stop saying "text". crosshair was tried and read
      as a cross — an icon for closing something, not for aiming at it — and every other
      stock cursor names an action this isn't (copy, alias, a menu). So the plain arrow: it
@@ -967,9 +967,9 @@ style.textContent = `
     .cq-details { margin-top: 6px; color: var(--muted); background: none; border: none; padding: 0; }
     .cq-system { color: var(--ok); margin: 8px 0; }
     .cq-fab { position: fixed; z-index: 9100; display: none; }
-    /* PROTOTYPE (element comments) #1. Its own fixed row beside the button, so the button
-       keeps its box. The chips are quieter than it because the words are still the ordinary
-       case — an item is what the reviewer reaches for when the words are not the point. */
+    /* Its own fixed row beside the button, so the button keeps its box. The chips are
+       quieter than it because the words are still the ordinary case — an item is what
+       the reviewer reaches for when the words are not the point. */
     .cq-fab-chain { position: fixed; z-index: 9100; display: none; gap: 4px; }
     .cq-fab-item { background: var(--card); color: var(--ink-2); }
     .cq-composer { position: fixed; z-index: 9100; display: none; width: 320px; background: var(--card);
@@ -1093,9 +1093,9 @@ generalRow.append(generalInput, generalSend);
 panel.append(panelHead, threadsBox, generalRow);
 
 const fab = el("button", "cq-ui cq-btn primary cq-fab", "💬 Comment");
-// PROTOTYPE (element comments) #1: a chip per element enclosing the selection, in its own
-// row beside the button rather than inside it. The 💬 keeps its words, its width and its
-// place, because the reviewer's aim is on it before the chips are drawn — a control that
+// A chip per element enclosing the selection, in its own row beside the button rather
+// than inside it. The 💬 keeps its words, its width and its place, because the
+// reviewer's aim is on it before the chips are drawn — a control that
 // changes size under a pointer already reaching for it is what the press sweep exists to
 // catch. See "pointing at an item" below.
 const fabChain = el("div", "cq-ui cq-fab-chain");
@@ -1478,10 +1478,10 @@ function msgNode(m) {
 // selection) and names its section instead of quoting it. One function, so the two places
 // can't come to say it differently.
 //
-// PROTOTYPE (element comments) #4: an id is the page's name for an item and not the
-// reviewer's. `card-migration` says nothing they wrote, and once pointing at an item is an
-// ordinary gesture rather than the diagram's special case, most anchors in the panel read
-// that way. So an element anchor is labelled with the item's own opening words, and falls
+// An id is the page's name for an item and not the reviewer's. `card-migration` says
+// nothing they wrote, and pointing at an item is an ordinary gesture rather than the
+// diagram's special case, so anchors reading this way are ordinary in the panel too.
+// An element anchor is labelled with the item's own opening words, and falls
 // back to the id where this version has no such element. The kind goes before the words
 // because the two together are a name, where the words alone read as a quote the thread
 // does not hold.
@@ -1603,7 +1603,12 @@ function threadNode(t, grow) {
       sendBtn: send,
       save: (v) => saveDraft(draftCtx, v),
       send: async (text) => {
-        const sent = await post({ kind: "reply", parent: t.root.id, version: VNUM, text });
+        const sent = await post({
+          kind: "reply",
+          parent: t.root.id,
+          version: VNUM,
+          text,
+        });
         if (!sent) return;
         // post() polled, so the reconcile has already appended the message — and kept
         // this very box, which empties for the next thought and holds focus whichever
@@ -1652,7 +1657,8 @@ function renderThreads() {
   });
   for (const e of events) {
     if (e.kind === "done") wanted.push(systemNode(e, `✓ Approved ${ago(e.ts)}`));
-    else if (e.kind === "close") wanted.push(systemNode(e, `Review ended ${ago(e.ts)}`));
+    else if (e.kind === "close")
+      wanted.push(systemNode(e, `Review ended ${ago(e.ts)}`));
   }
   if (resolved.length) {
     if (!resolvedBox) {
@@ -1705,7 +1711,10 @@ function revealThread(id) {
   );
   if (!node) return;
   const thread = node.closest(".cq-thread");
-  node.scrollIntoView({ behavior: SCROLL, block: node === thread ? "center" : "nearest" });
+  node.scrollIntoView({
+    behavior: SCROLL,
+    block: node === thread ? "center" : "nearest",
+  });
   thread.classList.remove("grow");
   thread.classList.add("flash");
   setTimeout(() => thread.classList.remove("flash"), 1300);
@@ -2273,13 +2282,18 @@ function restoreView(view) {
 const sectionOf = (anchor) =>
   anchor.section ? document.getElementById(anchor.section) : null;
 
-// ---------- PROTOTYPE: pointing at an item ----------
-// Still the playground's rather than the product's: two gestures reach an item, and which
-// of them survives is not settled. A third — a rule in the margin raised by hovering —
-// was tried and cut: too strong for what it offered, and placed at the item's own left
-// edge, which is the page's margin only for an item the page happens to have left-aligned.
+// ---------- pointing at an item ----------
+// Two gestures reach an item, and they serve different moments rather than splitting one.
+// The chips are a correction — a reviewer who selected a card's words and meant the card
+// is offered the enclosing chain, unasked, beside the button they are already looking at,
+// so nobody has to know of them in advance. ⌥-click is direct aim: no selection, no
+// chrome, and the only route to an item whose words are all inside controls. Both end in
+// openOnItem, so they cannot come to write different anchors for the same intent. A
+// third — a rule in the margin raised by hovering — was tried and cut: too strong for
+// what it offered, and placed at the item's own left edge, which is the page's margin
+// only for an item the page happens to have left-aligned.
 //
-// What they all write is the anchor colloquy already has. A comment on an element is
+// What both write is the anchor colloquy already has. A comment on an element is
 // {section: <id>} with no quote — the shape a click on a diagram has made since the
 // beginning — so none of this is a new representation, a new event field, or a second
 // thing for a version to carry. What is missing is only the gesture, and how the panel
@@ -2389,9 +2403,9 @@ const NOTE = "cq-mark-note";
 const marked = new Map(); // thread id -> (Range | Element)[]: the pass's record of what it drew
 let pendingMarks = []; // the same record for the open composer's own passage
 let pendingOutline = null; // the element the open composer outlines, owned by nobody else
-// PROTOTYPE (element comments): the item a control under the pointer would comment on,
-// shown in the same outline before anything is committed. paintAnchors is the one thing
-// that marks the page, so this is state it reads rather than a second painter.
+// The item a control under the pointer would comment on, shown in the same outline
+// before anything is committed. paintAnchors is the one thing that marks the page, so
+// this is state it reads rather than a second painter.
 let previewItem = null;
 function previewOn(item) {
   if (previewItem === item) return;
@@ -2486,8 +2500,8 @@ function paintAnchors() {
   // never reads as a posted comment. An element a thread already outlines keeps the posted
   // colour: there is one outline to give, and the thread's is the clickable one.
   //
-  // PROTOTYPE (element comments): before the composer exists, the same outline answers
-  // "which of these am I about to comment on". A blind user offered `card`, `column` and
+  // Before the composer exists, the same outline answers "which of these am I about
+  // to comment on". A blind user offered `card`, `column` and
   // `board` had no way to tell them apart, because the outline only arrived after the
   // click — so the chain the chips exist to offer could not actually be chosen between.
   // What a control would take is the same fact as what the composer holds, one step
@@ -2662,7 +2676,7 @@ function placeComposer(left, top) {
     r.right <= box.right &&
     r.top >= box.top &&
     r.bottom <= box.bottom;
-  // PROTOTYPE (element comments): a passage and a thing want different rules here, because
+  // A passage and a thing want different rules here, because
   // they are read differently. Covering the tail of a quote is fine — the reviewer has read
   // it, and the mark still names where it starts. A card, a column, a metric is judged as
   // one object, so a box standing anywhere on it is a box between them and the thing they
@@ -2786,7 +2800,7 @@ function placeFab(left, top) {
   if (y !== box.top) place(fab, left, y);
 }
 let fabAnchor = null;
-// PROTOTYPE #1: the chips state everything else this gesture could be about — each item
+// The chips state everything else this gesture could be about — each item
 // enclosing the passage, innermost first. Whatever the button itself already carries is
 // dropped from them, so no level is offered twice. Capped, because a card inside a column
 // inside a board inside a section is already four and the reviewer is choosing rather than
@@ -2930,7 +2944,7 @@ document.addEventListener("mousedown", (ev) => {
 // own pictures, and every widget that declares it renders as one.
 const visualSel = () =>
   [...tagsDeclaring((e) => e["x-visual"]), "svg", "img", "figure"].join(",");
-// PROTOTYPE #2: while ⌥ is held the page shows what a click would take — the item under
+// While ⌥ is held the page shows what a click would take — the item under
 // the pointer wears the same outline a chip's hover paints, so the chord answers "which"
 // the way every other route does rather than asking the reviewer to click and find out.
 // `aiming` is the state and the class is a rendering of it; nothing reads the class back.
@@ -2958,7 +2972,7 @@ addEventListener("blur", () => setAiming(false));
 document.addEventListener("mousemove", () => aiming && previewOn(aimedItem()));
 document.addEventListener("click", (ev) => {
   if (inUi(ev.target)) return;
-  // PROTOTYPE #2: ⌥-click means the item under the pointer, whatever it holds. It costs
+  // ⌥-click means the item under the pointer, whatever it holds. It costs
   // the page no chrome and the reviewer no selection, and it reaches an item whose words
   // are all inside a control. What it costs is discoverability, which the cursor answers
   // as far as a modifier can: while the key is down the pointer says a click will aim.
@@ -3143,7 +3157,7 @@ const KEYS = [
     does: "Comment on the selection — or toggle the panel",
     run: commentKey,
   },
-  // PROTOTYPE (element comments) #2: no key of its own. Holding the key shows what it
+  // No key of its own. Holding the key shows what it
   // would take, so what the reference is still the only place for is that the key exists.
   { label: "⌥ click", does: "Comment on the item under the pointer, whole" },
   { key: "d", label: "d / u", does: "Half a page down / up", run: () => stepPage(0.5) },

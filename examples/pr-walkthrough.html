@@ -92,7 +92,7 @@ so the migration renames them once at deploy; mixed keys never coexist.</aside>
   addresses on one token share one.</li>
 </ul>
 <p id="test-run">Both suites run under the rate-limit marker:</p>
-<pre><code class="language-bash"># the integration half needs the migration applied first
+<pre id="test-cmd"><code class="language-bash"># the integration half needs the migration applied first
 cd gateway &amp;&amp; alembic upgrade head
 pytest tests/ -m ratelimit --maxfail=1</code></pre>
 </section>

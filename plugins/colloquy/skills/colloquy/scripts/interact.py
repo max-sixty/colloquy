@@ -2497,6 +2497,15 @@ COLUMN_SELECTORS = (
 COLUMN_FALLBACK = 780
 # Attribute widths only count as pixels on these elements.
 PIXEL_WIDTH_TAGS = {"img", "svg", "table", "canvas", "iframe", "video", "object"}
+
+# Blocks a reviewer predictably points at whole rather than quoting: a run of code,
+# a table, a figure — and the sections SKILL.md already holds to "give every section
+# an id". Widgets aren't listed because the registry's schemas already demand ids
+# wherever pointing at one matters.
+POINTABLE_TAGS = {"section", "article", "pre", "table", "figure"}
+# Where an aim that found no tighter id has escaped to: naming one of these is
+# naming most of the page.
+SECTIONING_TAGS = {"section", "article", "main", "body"}
 # The properties that overflow a column when pinned in pixels. max-width defines the
 # column instead, so it is read there and never counted here.
 OVERFLOW_PROPS = ("width", "min-width")
@@ -2534,7 +2543,7 @@ class _StructParser(HTMLParser):
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.stack = []  # (tag, lineno, cq_record | None)
+        self.stack = []  # (tag, lineno, cq_record | None, id | None)
         self.errors = []
         self.all_ids = []
         self.external_scripts = []  # (src, type)
@@ -2562,6 +2571,10 @@ class _StructParser(HTMLParser):
         # coloring the runtime honors on a plain <pre><code>, checked here because a
         # class it doesn't honor is a request that silently isn't answered.
         self.language_blocks = []
+        # {"tag", "line", "under"} per id-less occurrence of a pointable block,
+        # with the nearest open ancestor carrying an id — (tag, id) or None — so
+        # unpointable_blocks can judge where a reviewer's aim would land.
+        self.bare_blocks = []
         self._svg_depth = 0
 
     @property
@@ -2591,14 +2604,14 @@ class _StructParser(HTMLParser):
         return sorted({i for i in self.all_ids if i.startswith("cq-")})
 
     def _implicit_close(self, tag):
-        for _ in range(implicit_closes([t for t, _, _ in self.stack], tag)):
+        for _ in range(implicit_closes([t for t, *_ in self.stack], tag)):
             self.stack.pop()
 
     def _open_suggestion(self):
         """The innermost cq-suggestion still open and which of its slots we are
         in: (record, "cq-old" | "cq-new" | None), or (None, None) outside one."""
         slot = None
-        for tag, _, record in reversed(self.stack):
+        for tag, _, record, _ in reversed(self.stack):
             if tag in ("cq-old", "cq-new"):
                 slot = tag
             elif tag == "cq-suggestion":
@@ -2662,7 +2675,7 @@ class _StructParser(HTMLParser):
         self._harvest(tag, attrs_d)
         if tag == "svg":
             self._svg_depth += 1
-            self.stack.append((tag, self.getpos()[0], None))
+            self.stack.append((tag, self.getpos()[0], None, attrs_d.get("id")))
             return
         if self._svg_depth:  # don't tag-balance inside SVG
             return
@@ -2678,6 +2691,16 @@ class _StructParser(HTMLParser):
                     "parent": self.stack[-1][0] if self.stack else None,
                     "lang": lang.group(1),
                     "line": self.getpos()[0],
+                }
+            )
+        if tag in POINTABLE_TAGS and not attrs_d.get("id"):
+            self.bare_blocks.append(
+                {
+                    "tag": tag,
+                    "line": self.getpos()[0],
+                    "under": next(
+                        ((t, i) for t, _, _, i in reversed(self.stack) if i), None
+                    ),
                 }
             )
         if tag in VOID_TAGS:
@@ -2708,16 +2731,18 @@ class _StructParser(HTMLParser):
                     nested=enclosing is not None,
                 )
                 self.suggestions.append(record)
-        self.stack.append((tag, self.getpos()[0], record))
+        self.stack.append((tag, self.getpos()[0], record, attrs_d.get("id")))
 
     def handle_startendtag(self, tag, attrs):
-        # <foo/> — self-closing; still harvest but never pushed. For cq-* the
-        # slash is a trap: HTML ignores it, the element stays open in a browser
-        # and swallows the rest of its parent, so reject the form outright.
+        # <foo/> — self-closing; still harvest but never pushed. Outside SVG the
+        # slash is a trap on any non-void tag: HTML ignores it, the element stays
+        # open in a browser and swallows the rest of its parent, so from here on
+        # this parser's tree and the browser's would diverge. Reject the form
+        # outright rather than model a tree the reviewer's page won't have.
         self._harvest(tag, self._attributes(tag, attrs))
         if self._svg_depth:  # SVG has real self-closing syntax
             return
-        if tag.startswith("cq-"):
+        if tag not in VOID_TAGS:
             self.errors.append(
                 f"<{tag}/> at line {self.getpos()[0]} is self-closing: HTML ignores "
                 f"the slash and the element would swallow what follows — write "
@@ -2748,7 +2773,9 @@ class _StructParser(HTMLParser):
         for i in range(len(self.stack) - 1, -1, -1):
             if self.stack[i][0] == tag:
                 orphaned = [
-                    (t, ln) for t, ln, _ in self.stack[i + 1 :] if t not in OPTIONAL_END
+                    (t, ln)
+                    for t, ln, *_ in self.stack[i + 1 :]
+                    if t not in OPTIONAL_END
                 ]
                 if orphaned:
                     unclosed = ", ".join(f"<{t}> (line {ln})" for t, ln in orphaned)
@@ -4182,6 +4209,42 @@ def record_lag(html: str, events: list, registry: dict) -> list:
     return lag
 
 
+def unpointable_blocks(parser: _StructParser) -> list:
+    """Blocks a reviewer will aim at whole that no anchor can name. Advice, never a
+    gate, in the same register as record_lag: SKILL.md states the id rule, and this
+    is its feedback loop. The page that introduced item anchoring failed its own
+    review here — its code blocks carried no ids, so a comment aimed at one fell
+    through to the enclosing section and read as the gesture being broken rather
+    than the page being bare, and nothing anywhere said so.
+
+    A section or article is named outright; a block below one only where its aim
+    escapes to a sectioning element. The ancestor's tag stands in for tightness —
+    a figure around a table, a card around a pre — which no static read can
+    measure, so a page-wide <div id> also passes for aim enough and the advice
+    stays quiet. Undercounting is the right error for advice: a miss costs one
+    aim landing wide, noise costs the register its authority."""
+    lines = []
+    for block in parser.bare_blocks:
+        where = f"<{block['tag']}> (line {block['line']})"
+        under = block["under"]
+        if block["tag"] in ("section", "article"):
+            lines.append(
+                f"unpointable — {where} has no id, so no comment or reading "
+                f"position can hold to it"
+            )
+        elif under is None:
+            lines.append(
+                f"unpointable — {where} has no id, nor anything enclosing it, "
+                f"so no comment can name it"
+            )
+        elif under[0] in SECTIONING_TAGS:
+            lines.append(
+                f"unpointable — {where} has no id, so a comment aimed at it "
+                f"lands on the whole of #{under[1]}"
+            )
+    return lines
+
+
 def restatement_errors(
     cur, prev, was: dict, now: dict, events: list, prev_num: int, registry: dict
 ) -> list:
@@ -4326,7 +4389,7 @@ def structure_errors(parser: _StructParser) -> list:
     """A fed parser's structural complaints, plus the tags it was left holding
     open at the end of its input."""
     errors = list(parser.errors)
-    leftover = [(t, ln) for t, ln, _ in parser.stack if t not in OPTIONAL_END]
+    leftover = [(t, ln) for t, ln, *_ in parser.stack if t not in OPTIONAL_END]
     if leftover:
         errors.append(
             "unclosed tags: " + ", ".join(f"<{t}> (line {ln})" for t, ln in leftover)
@@ -4535,6 +4598,10 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     # version is the page that must read right without the log.
     for line in record_lag(html, events, registry or {}):
         print(f"  · record behind the log — {line}")
+    # Same register, different debt: a block the id rule missed, named while the
+    # author can still cheaply mint one.
+    for line in unpointable_blocks(parser):
+        print(f"  · {line}")
     # Render only what passed the static half: an unparsable page would drown
     # the browser's report in consequences of what the lint already named.
     return render_check(page_dir, selected) if render else 0

@@ -1706,6 +1706,7 @@ def test_check_rejects_widget_violations(page_dir):
         PAGE.replace(
             '<a href="https://example.test/jobs/backfill.py#L88"><code>jobs/backfill.py:88</code></a>',
             '<cq-metric id="bad-metric" value="1"/>'
+            "<figure/>"
             "<cq-bogus></cq-bogus>"
             '<cq-timeline id="bad-timeline">'
             '<cq-event id="stray-event" kind="medium">S</cq-event></cq-timeline>'
@@ -1716,7 +1717,9 @@ def test_check_rejects_widget_violations(page_dir):
     result = check(page_dir)
     assert result.exit_code == 1
     out = result.output
-    assert "self-closing" in out
+    # Both the widget and the plain <figure/>: the slash misleads a browser on
+    # any non-void tag, not only on the vocabulary's.
+    assert out.count("self-closing") == 2
     assert "unknown widget" in out
     assert "'medium' is not one of" in out
     assert "must be a direct child of <cq-options>" in out
@@ -2663,6 +2666,42 @@ def test_check_reports_record_lag_without_erroring(page_dir):
 
     result = CliRunner().invoke(interact.cli, ["review", "transcript", str(page_dir)])
     assert "record behind the log" in result.output  # CliRunner folds stderr in
+
+
+def test_check_advises_where_a_reviewers_aim_has_nothing_to_land_on(page_dir):
+    """A block a reviewer points at whole needs an id, or the aim falls through to
+    the enclosing section — the failure item anchoring's own page shipped. Advice
+    on a passing run, not a gate, and quiet where a tight wrapper (a figure around
+    a table) already gives the aim something to hold."""
+    blocks = (
+        "<pre><code>uv run backfill --check</code></pre>"
+        '<figure id="fig"><table><tr><td>1</td></tr></table></figure>'
+    )
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + blocks).replace(
+            "</main>", "<section><p>Unnamed aside.</p></section>\n</main>"
+        )
+    )
+    result = check(page_dir)
+    assert result.exit_code == 0, result.output
+    advice = [line for line in result.output.splitlines() if "unpointable" in line]
+    assert len(advice) == 2, result.output
+    assert any("<pre>" in line and "#plan" in line for line in advice)
+    assert any("<section>" in line for line in advice)
+    assert not any(
+        "<table>" in line for line in advice
+    )  # the figure's id is aim enough
+
+    # Ids minted, debt gone.
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace(
+            "<h2>Plan</h2>",
+            '<h2>Plan</h2><pre id="cmd"><code>uv run backfill --check</code></pre>',
+        )
+    )
+    result = check(page_dir)
+    assert result.exit_code == 0, result.output
+    assert "unpointable" not in result.output
 
 
 def test_an_accept_carries_its_thread_resolution(page_dir):
