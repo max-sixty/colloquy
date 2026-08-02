@@ -20,26 +20,36 @@
         "record": {"kind": "attribute", "attr": "chosen", "value": "options"}
       }
     },
-    "x-example": "<cq-options id=\"nav-gear\" choose>\n  <cq-option id=\"paper-maps\" effort=\"low\" risk=\"high\">\n    <strong>Paper maps</strong>\n    <dl class=\"facts\"><dt>Cost</dt><dd>£12</dd><dt>Battery</dt><dd>none needed</dd></dl>\n    <p>Print the route ahead of time; nothing to charge, nothing to drop.</p>\n  </cq-option>\n  <cq-option id=\"gps-unit\" effort=\"med\" risk=\"low\" recommended>\n    <strong>Dedicated GPS</strong>\n    <dl class=\"facts\"><dt>Cost</dt><dd>£240</dd><dt>Battery</dt><dd>a week</dd></dl>\n    <p>Offline maps, and a reversible choice — resellable if the season ends early.</p>\n  </cq-option>\n</cq-options>\n\n<p>Two of these are worth doing first — pick the ones to start with.</p>\n<cq-options id=\"first-jobs\" choose multiple>\n  <cq-option id=\"job-mounts\" for=\"sec-mounts\">Replace the mounts</cq-option>\n  <cq-option id=\"job-heater\" for=\"sec-heater\">Heat the bird bath</cq-option>\n  <cq-option id=\"job-camera\">Neither — the camera first</cq-option>\n</cq-options>"
+    "x-example": "<cq-options id=\"nav-gear\" choose>\n  <cq-option id=\"paper-maps\">\n    <cq-chip>effort: low</cq-chip><cq-chip>risk: high</cq-chip>\n    <strong>Paper maps</strong>\n    <dl class=\"facts\"><dt>Cost</dt><dd>£12</dd><dt>Battery</dt><dd>none needed</dd></dl>\n    <p>Print the route ahead of time; nothing to charge, nothing to drop.</p>\n  </cq-option>\n  <cq-option id=\"gps-unit\" recommended>\n    <cq-chip>effort: med</cq-chip><cq-chip>risk: low</cq-chip>\n    <strong>Dedicated GPS</strong>\n    <dl class=\"facts\"><dt>Cost</dt><dd>£240</dd><dt>Battery</dt><dd>a week</dd></dl>\n    <p>Offline maps, and a reversible choice — resellable if the season ends early.</p>\n  </cq-option>\n</cq-options>\n\n<p>Two of these are worth doing first — pick the ones to start with.</p>\n<cq-options id=\"first-jobs\" choose multiple>\n  <cq-option id=\"job-mounts\" for=\"sec-mounts\">Replace the mounts</cq-option>\n  <cq-option id=\"job-heater\" for=\"sec-heater\">Heat the bird bath</cq-option>\n  <cq-option id=\"job-camera\">Neither — the camera first</cq-option>\n</cq-options>"
   },
   "cq-option": {
-    "description": "One alternative in a decision, in any of the group's three forms: lead with a <strong> title and prose follows, which is a card; give a substantial option block content — paragraphs, valence-tagged bullets ('Good, because …'), a `<dl class=\"facts\">` straight after the title, which docks right as a rail at one fixed width so every option's scalars align down the group — and the whole group lays out as rows; or write a short label alone, which is a question row. `for` is the id of the block on the page this option is about — the section, diagram or figure that makes its case — and renders as a reference the reader can follow, so the alternatives can be the page itself rather than what the cards can hold. The label stays written here either way; `for` points, it never supplies words. `recommended` draws the accent ring (the author's take); `chosen` the green one (the reader's pick — the choose upgrade sets it live, and the next version carries it so the page reads right without the log). `effort`/`risk` — the cost and the danger of picking this option — render as chips. Rewriting what a picked option says needs `restated` on that option (see $restated in `page catalog`); the other options in the group are free to change.",
+    "description": "One alternative in a decision, in any of the group's three forms: lead with a <strong> title and prose follows, which is a card; give a substantial option block content — paragraphs, valence-tagged bullets ('Good, because …'), a `<dl class=\"facts\">` straight after the title, which docks right as a rail at one fixed width so every option's scalars align down the group — and the whole group lays out as rows; or write a short label alone, which is a question row. `for` is the id of the block on the page this option is about — the section, diagram or figure that makes its case — and renders as a reference the reader can follow, so the alternatives can be the page itself rather than what the cards can hold. The label stays written here either way; `for` points, it never supplies words. `recommended` draws the accent ring (the author's take); `chosen` the green one (the reader's pick — the choose upgrade sets it live, and the next version carries it so the page reads right without the log). Chips are `cq-chip` children written before the title — the band a scanning eye reads first. Rewriting what a picked option says needs `restated` on that option (see $restated in `page catalog`); the other options in the group are free to change.",
     "type": "object",
     "properties": {
       "id":          {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
       "for":         {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
-      "effort":      {"enum": ["low", "med", "high"]},
-      "risk":        {"enum": ["low", "med", "high"]},
       "recommended": {"type": "boolean"},
       "chosen":      {"type": "boolean"},
       "restated":    {"type": "boolean"}
     },
     "required": ["id"],
     "additionalProperties": false,
-    "x-parent": "cq-options",
+    "x-parent": ["cq-options"],
     "x-content": "prose",
     "x-refers": ["for"],
-    "x-says": {"effort": "before", "risk": "after"},
+    "x-upgrade": false
+  },
+  "cq-chip": {
+    "description": "One label in the band above an option's or a variant's title: what the decision turns on, in the words that fit it. `effort: low` and `risk: high` are worth starting from, since most decisions do turn on those two, but they are a suggestion and nothing more — `blast-radius: high`, `backward compat: no`, `cost: £240`, `migration: two tables` are the same slot, and a chip is as free in its answer as in its name: a scale of your own, a yes or a no, a quantity, a few words. Reach for the ones the options actually differ on, write them before the <strong> title (a cq-variant takes them the same way, being the same shape without the decision), and write the same ones on every option in the group, in the same order, so they read down it. They are the glance and not the comparison — two or three an eye takes in before it reads, where a `<dl class=\"facts\">` rail is the dimensions the options are argued on at whatever length that takes. An option can carry both, and only the rail costs a card its terseness: a `<dl>` is block content, so it stacks the group into rows, and chips never do. `tone` tints one chip — the layer's own vocabulary, `$tones.names`, which is `ok` green, `warn` amber, `danger` red — and is the author's judgement about this answer, not a property of the facet: `risk: high` is red because you say so, and the same word on another page may not be. Leave it off and the chip is neutral, which is what most of them should be; colour that lands on every chip has stopped pointing at anything. It is the same bargain `cq-metric` makes with `direction` — the theme knows the tints, the author knows which way is good.",
+    "type": "object",
+    "properties": {
+      "id":   {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "tone": {"type": "string"}
+    },
+    "additionalProperties": false,
+    "x-parent": ["cq-option", "cq-variant"],
+    "x-content": "prose",
+    "x-tone": "tone",
     "x-upgrade": false
   },
   "cq-milestones": {
@@ -64,7 +74,7 @@
     },
     "required": ["id", "status"],
     "additionalProperties": false,
-    "x-parent": "cq-milestones",
+    "x-parent": ["cq-milestones"],
     "x-content": "prose",
     "x-upgrade": true
   },
@@ -89,7 +99,7 @@
     },
     "required": ["id"],
     "additionalProperties": false,
-    "x-parent": "cq-timeline",
+    "x-parent": ["cq-timeline"],
     "x-content": "prose",
     "x-says": {"at": "before"},
     "x-upgrade": false
@@ -113,7 +123,7 @@
     },
     "required": ["id"],
     "additionalProperties": false,
-    "x-parent": "cq-compare",
+    "x-parent": ["cq-compare"],
     "x-content": "prose",
     "x-upgrade": false
   },
@@ -139,7 +149,7 @@
     },
     "required": ["id", "value"],
     "additionalProperties": false,
-    "x-parent": "cq-metrics",
+    "x-parent": ["cq-metrics"],
     "x-content": "prose",
     "x-says": {"value": "before", "delta": "after"},
     "x-upgrade": false
@@ -192,7 +202,7 @@
     },
     "required": ["at"],
     "additionalProperties": false,
-    "x-parent": "cq-code",
+    "x-parent": ["cq-code"],
     "x-content": "prose",
     "x-upgrade": false
   },
@@ -222,7 +232,7 @@
     "additionalProperties": false,
     "x-content": "none",
     "x-upgrade": true,
-    "x-example": "<h3>The option cards</h3>\n<p>Effort and risk now sit above the title, so a scanning eye reads cost before prose.</p>\n<cq-shot id=\"shot-cards\" alt=\"the decision page's option cards\" before=\"/media/0f2c91a4b7de3105.png\" after=\"/media/6b40ac7719ee5d82.png\"></cq-shot>"
+    "x-example": "<h3>The option cards</h3>\n<p>The chips now sit above the title, so a scanning eye reads cost before prose.</p>\n<cq-shot id=\"shot-cards\" alt=\"the decision page's option cards\" before=\"/media/0f2c91a4b7de3105.png\" after=\"/media/6b40ac7719ee5d82.png\"></cq-shot>"
   },
   "cq-board": {
     "description": "A kanban board the reviewer edits directly: cards move between columns or reorder within one — dragged by the grip, or by keyboard (the grip is a button: Enter grabs, arrows move, Enter drops) — and each completed move reaches the agent as a `move` action naming the card, target column, and position. Children are cq-column elements only. Write the board as you mean it and leave it alone afterwards: a recorded move carries onto every later version by itself, so re-emitting a card where you first put it does not undo the reviewer's move. Replay preserves the exact position, but the pending mark, version diff, and restatement gate compare a card's column only: a reorder within one column is deliberately not called out as a separate state change, because raw indexes do not compose when neighbouring cards move. A move rests on its card, so revising one they have moved is the card's `restated` (see $restated in `page catalog`), never the board's.",
@@ -252,7 +262,7 @@
     },
     "required": ["id", "label"],
     "additionalProperties": false,
-    "x-parent": "cq-board",
+    "x-parent": ["cq-board"],
     "x-content": "items",
     "x-upgrade": false,
     "x-says": {"label": "before"}
@@ -266,7 +276,7 @@
     },
     "required": ["id"],
     "additionalProperties": false,
-    "x-parent": "cq-column",
+    "x-parent": ["cq-column"],
     "x-content": "prose",
     "x-upgrade": false
   },
@@ -291,7 +301,7 @@
     },
     "required": ["id", "label"],
     "additionalProperties": false,
-    "x-parent": "cq-tabs",
+    "x-parent": ["cq-tabs"],
     "x-content": "prose",
     "x-upgrade": false
   },
@@ -326,7 +336,7 @@
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
     },
     "additionalProperties": false,
-    "x-parent": "cq-suggestion",
+    "x-parent": ["cq-suggestion"],
     "x-content": "prose",
     "x-upgrade": false,
     "x-retired-when": "accept"
@@ -338,7 +348,7 @@
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
     },
     "additionalProperties": false,
-    "x-parent": "cq-suggestion",
+    "x-parent": ["cq-suggestion"],
     "x-content": "prose",
     "x-upgrade": false,
     "x-retired-when": "reject"
@@ -377,7 +387,7 @@
     "x-says": {"label": "before"},
     "x-exhibit": true,
     "x-upgrade": false,
-    "x-example": "<cq-specimen id=\"spec-gear\" label=\"next season's kit\">\n  <cq-options>\n    <cq-option id=\"sp-paper\" effort=\"low\" risk=\"high\"><strong>Paper maps</strong> Nothing to charge.</cq-option>\n    <cq-option id=\"sp-gps\" effort=\"med\" risk=\"low\" recommended><strong>Dedicated GPS</strong> Offline maps, week-long battery.</cq-option>\n  </cq-options>\n</cq-specimen>"
+    "x-example": "<cq-specimen id=\"spec-gear\" label=\"next season's kit\">\n  <cq-options>\n    <cq-option id=\"sp-paper\"><cq-chip>effort: low</cq-chip><strong>Paper maps</strong> Nothing to charge.</cq-option>\n    <cq-option id=\"sp-gps\" recommended><cq-chip>effort: med</cq-chip><strong>Dedicated GPS</strong> Offline maps, week-long battery.</cq-option>\n  </cq-options>\n</cq-specimen>"
   },
   "$languages": {
     "description": "The languages this page's layer can color, and what a filename means. `names` is the whole vocabulary: what an author may declare, what the lint refuses a word outside, and what scripts/vendor-highlight.sh builds the tokenizer bundle from. It is a property of the page rather than of any widget, which is why it lives here and not under the schema of whichever tag happens to take a `language` — a widget declares that one of its attributes names a language (x-language) and the lint reads the list from here, so a second tag taking one costs a declaration and no new reader. `paths` is the half nobody writes: the one place a language is derived rather than declared, because a unified diff spans files and so has no attribute to carry one. An extension is the diff's own statement about what a file holds, which is a declaration like any other; an extension absent here leaves that file plain.",
@@ -414,6 +424,10 @@
     "when": "Only where a later version has to change what the reviewer decided about: an error you found in a draft they rewrote, a picked option whose prose was wrong. Write the new words, mark that element, and say why in the note — to the reviewer this reads as a decision undone, and the note is where a version explains itself. `version check` refuses a version that changes those words without it and a `restated` that retracts nothing, so it can be neither forgotten nor spent as a reflex; when it names the wrong element, the error says which one it wanted.",
     "once": "It belongs to the one version that does the rewriting. Publishing records the retraction in the log, so it holds for good — later versions leave the attribute off, and `version check` refuses one that repeats it.",
     "example": "<cq-draft id=\"note-cli\" restated>\nAdds --dry-run to every mutating command. It defaults on for `purge`.\n</cq-draft>"
+  },
+  "$tones": {
+    "description": "The semantic tints this layer paints, and the whole vocabulary an author may declare: what the lint refuses a word outside, and what the theme has a rule for. It is a property of the page rather than of any widget, which is why it lives here and not under the schema of whichever tag happens to take a `tone` — a widget declares that one of its attributes names one (x-tone) and the lint reads the list from here, so a second tag taking a tone costs a declaration and no new reader. The list is short on purpose: a page that can paint anything paints nothing, and three is what the palette already answers for. Which facts earn a tint is never the theme's to decide — `ok` on one page's chip and `danger` on another's may be the same word, because the author is the only one who knows whether the answer is good news.",
+    "names": ["ok", "warn", "danger"]
   },
   "$idioms": {
     "description": "Recurring shapes the theme styles directly — no registry entry, no JS. Plain semantic HTML gets the theme's voice for free; these classes cover what HTML lacks an element for.",

@@ -241,8 +241,7 @@ dd { margin: 0 0 8px 0; }
 .cq-diff-stat, .cq-shotcap, .cq-error, cq-metric, cq-specimen::before,
 cq-specimen > [data-cq-said="label"], cq-column::before,
 cq-column > [data-cq-said="label"], cq-tab::before,
-cq-option::before, cq-option::after,
-cq-option > [data-cq-said="effort"], cq-option > [data-cq-said="risk"] {
+cq-chip {
   font-family: var(--sans); }
 
 /* ---------- class idioms ---------- */
@@ -307,15 +306,18 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0;
  * stays as the same words for a page carrying no script at all
  * (docs/how-it-works.html renders the whole vocabulary that way) and stands down
  * where the runtime got there, asked by :has() and placed later in the cascade,
- * so the two are never both on. The word in front of a value stays a pseudo
- * either way ("effort", "specimen ·"): that one is the theme's word about the
- * page's, and only the page's is worth quoting.
+ * so the two are never both on. A word the theme puts in front of a value stays
+ * a pseudo either way ("specimen ·"): that one is the theme's word about the
+ * page's, and only the page's is worth quoting. There is one of those left. The
+ * other went with the attribute it named: the theme wrote "effort" in front of
+ * `effort` because it knew the name, and a decision's facets are the author's to
+ * name, so they are markup (cq-chip) rather than an attribute rendered into text.
  *
  * Every rule here names the attribute it styles, because data-cq-said is the wider
  * claim that these words are the page's — a widget's own label wears it bare
  * (relabel) — and a rule matching it bare styles whatever a widget says next. The
- * chosen-option mark is a direct child of cq-option and came out as an effort chip
- * pinned to the card's top corner. */
+ * chosen-option mark is a direct child of cq-option and came out as a chip band
+ * at the head of the card. */
 
 /* cq-options / cq-option: the theme is most of the widget — the module adds the
  * pick, the reference, and the box for words, and without it these rules still
@@ -329,52 +331,53 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0;
  * group whose options are bare labels is a question *about* the page rather
  * than a set of them, and reads as a list of compact rows, each naming the
  * block it is about (`for`). Every rule below that only makes sense for one
- * form says which — a card's chips are pinned to the corners its band
- * reserves, an argument row's cluster on its title line, a question row's
- * ride in its line — and none is an override of another.
+ * form says which — an argument row's `.facts` rail docks right, a question
+ * row's reference rides in its line — and none is an override of another.
  *
- * Chips read the attributes: effort top-left, risk top-right (tinted per value);
+ * The chip band is the one thing no form has to state, because inline-block in
+ * front of the title is already all three answers: a titled option's <strong> is
+ * a block, so the band lands on a line of its own above it, and a bare-label
+ * option has no block to push against, so it rides in the row's own line. What
+ * came before was two attributes pinned to a card's two corners, and every form
+ * paid for that placement — a 40px band reserved above the title, an
+ * anchor-positioned offset so the second chip cleared the first, an 11rem
+ * reservation in the row-form title. Every one of those numbers was room held
+ * for a fixed count of words the theme knew the length of. An author writes as
+ * many cq-chip as the decision has facets, so there is no count to lay out for
+ * and no width to reserve: they wrap along the band like the words they are.
  * `recommended` is the accent ring, or a row's outline. */
 cq-options { display: block; margin: 14px 0; }
 cq-option { display: block; position: relative; border: 1px solid var(--rule);
             border-radius: var(--r); padding: var(--sp-3); background: var(--card);
             font-size: 15px; }
 cq-option > strong { display: block; margin: 0 0 4px; font-size: 16px; }
-/* A chip's look is the same wherever it lands; where it lands is the form's business,
- * so a card pins its pair to the corners it reserved room for and a row lets them ride
- * in its line. */
-cq-option::before, cq-option::after,
-cq-option > [data-cq-said="effort"], cq-option > [data-cq-said="risk"] {
+/* A chip is an element, so nothing here renders it and nothing declares it words:
+ * it is the author's own markup, quotable and diffable like any other content.
+ * inline-block rather than block so the form decides where the band sits, and
+ * max-width bounds a long one against the card — the words are the author's, so
+ * there is no length the theme can assume. */
+cq-chip {
+    display: inline-block; max-width: 100%; margin: 0 6px 2px 0;
     font-size: var(--t-6); line-height: 1.6; padding: 0 8px; border-radius: 999px;
     background: var(--chip); color: var(--ink-2); }
-/* The card form in full — its grid, its chip corners, and the band that holds
- * them — scoped to groups whose every option is terse, so the argument form
- * below states its own placement rather than unsaying this one's. */
+/* The tint is the author's, per chip. The theme knows the three semantic pairs and
+ * nothing about which facet earns one — the pair this replaced tinted `risk` and not
+ * `effort`, which was the theme holding an opinion about a word, and the opinion went
+ * wrong the moment the author picked the facet. Same bargain cq-metric makes with
+ * `direction`. Untoned is the default and should stay the common case: a band where
+ * every chip is coloured points at nothing. */
+cq-chip[tone="ok"]     { background: var(--ok-tint);     color: var(--ok-ink); }
+cq-chip[tone="warn"]   { background: var(--warn-tint);   color: var(--warn-ink); }
+cq-chip[tone="danger"] { background: var(--danger-tint); color: var(--danger-ink); }
+/* The card form — the grid, scoped to groups whose every option is terse, so the
+ * argument form below states its own placement rather than unsaying this one's. */
 cq-options:has(> cq-option > strong):not(:has(> cq-option > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
     blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
     cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-timeline,
     cq-compare, cq-metrics, cq-tabs, cq-draft, cq-shot, cq-specimen))) {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
   gap: var(--sp-3);
-  & > cq-option[effort], & > cq-option[risk] { padding-top: 40px; }
-  & > cq-option::before, & > cq-option::after,
-  & > cq-option > [data-cq-said="effort"], & > cq-option > [data-cq-said="risk"] {
-      position: absolute; top: 12px; }
-  & > cq-option[effort]::before, & > cq-option > [data-cq-said="effort"] { left: 12px; }
-  & > cq-option[risk]::after, & > cq-option > [data-cq-said="risk"] { right: 12px; }
 }
-cq-option[effort]::before { content: "effort " attr(effort); }
-cq-option[risk]::after { content: "risk " attr(risk); }
-cq-option > [data-cq-said="effort"]::before { content: "effort "; }
-cq-option > [data-cq-said="risk"]::before { content: "risk "; }
-cq-option:has(> [data-cq-said="effort"])::before { content: none; }
-cq-option:has(> [data-cq-said="risk"])::after { content: none; }
-cq-option[risk="high"]::after, cq-option[risk="high"] > [data-cq-said="risk"]
-                              { background: var(--danger-tint); color: var(--danger-ink); }
-cq-option[risk="med"]::after, cq-option[risk="med"] > [data-cq-said="risk"]
-                              { background: var(--warn-tint); color: var(--warn-ink); }
-cq-option[risk="low"]::after, cq-option[risk="low"] > [data-cq-said="risk"]
-                              { background: var(--ok-tint); color: var(--ok-ink); }
 /* The argument form. An option carrying block content turns its group into
  * full-width rows, read down the page the way a decision record reads — which
  * is how pages stopped growing a comparison table and an "in detail" section
@@ -382,16 +385,11 @@ cq-option[risk="low"]::after, cq-option[risk="low"] > [data-cq-said="risk"]
  * paragraph is the request for room. The block list is the suggestion slots'
  * one, because it answers the same question asked of a different holder, and
  * a test pins every copy of it to the registry so a new block widget can't be
- * silently missing from one. Chips sit at the title line's right end — the
- * risk chip measures its own offset from the effort chip's edge (anchor
- * positioning; the fallback is the pair's shared 12px inset, so a lone risk
- * chip takes the corner), and every option scopes the anchor name, which is
- * what keeps a row holding only a risk chip from borrowing its neighbor's
- * effort chip: the scope that shields it is the neighbor's own. A `.facts`
- * list at the top of an option docks right at one fixed width, so scalars
- * align down the group like the column of the comparison table this form
- * folds back in. cq-compare is the same shape without the decision, and
- * follows it. */
+ * silently missing from one. A `.facts` list at the top of an option docks
+ * right at one width wherever the row can spare it, so scalars align down the
+ * group like the column of the comparison table this form folds back in, and
+ * stacks above the prose where it can't. cq-compare is the same shape without
+ * the decision, and follows it. */
 cq-options:has(> cq-option > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
     blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
     cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-timeline,
@@ -403,12 +401,6 @@ cq-compare:has(> cq-variant > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, 
   display: block;
   & > :is(cq-option, cq-variant) { display: flow-root; margin: 0 0 var(--sp-2); }
   & > :is(cq-option, cq-variant):last-child { margin-bottom: 0; }
-  & > cq-option { anchor-scope: --cq-effort; }
-  & > cq-option:is([effort], [risk]) > strong { padding-right: 11rem; }
-  & > cq-option[effort]::before, & > cq-option > [data-cq-said="effort"] {
-      position: absolute; right: 12px; top: 14px; anchor-name: --cq-effort; }
-  & > cq-option[risk]::after, & > cq-option > [data-cq-said="risk"] {
-      position: absolute; top: 14px; right: calc(anchor(--cq-effort left, 6px) + 6px); }
   /* The rail docks right where the row has the width to spare, and stacks above the prose
    * where it hasn't — asked of the row itself, because how much room it has is a fact
    * about the row and not about the window: the page gives 168px up to the review margin

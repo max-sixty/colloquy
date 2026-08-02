@@ -227,7 +227,7 @@ question.
 
 The rule has a second edge, and that one had every shipped widget: `content: attr(label)`
 paints glyphs into no text node, so a metric's headline number, a column's heading and an
-option's risk could be read and not selected — no `.cq-ui` anywhere near them. Hence
+option's chip band could be read and not selected — no `.cq-ui` anywhere near them. Hence
 `x-says` in the registry, and one runtime pass rendering what it names. Leaving it to each
 widget would be leaving it to be forgotten, which is how it was forgotten the first time.
 A widget writes its own only where the pass can't reach: one run of words at the element's

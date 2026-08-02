@@ -96,12 +96,15 @@ this file's `version check` and thread-markup validation, the passage reader
 entry is JSON Schema over the instance built from the element's attributes
 (values as strings, flag attributes as True). What JSON Schema has no
 vocabulary for rides in the custom keywords below:
-    x-parent    the tag this element must be a direct child of
+    x-parent    the tags this element may be a direct child of
     x-content   the content model: "prose" (flow content, widgets welcome),
                 "items" (element children only, no loose text), "data" (a text
                 body in the notation the description names), "none" (empty).
-                Children that declare this tag as x-parent are admissible under
-                any model — that is what x-parent means.
+                Children that name this tag in x-parent are admissible under
+                any model — that is what x-parent means. A list because one
+                element can belong to two holders: a chip is written in a
+                cq-option and in a cq-variant, which are the same shape either
+                side of the decision.
     x-says      attributes whose values are words the reader sees, mapped to the
                 edge they render at ("before" = first child, "after" = last).
                 The runtime renders them as real text there, because a reviewer
@@ -111,6 +114,11 @@ vocabulary for rides in the custom keywords below:
                 reader follows one, so `version check` holds each to an id the
                 version actually carries; a reply's fragment is exempt, having no
                 page to check against.
+    x-tone      the attribute whose value names one of $tones.names, the semantic
+                tints the theme paints. Declared rather than known by tag, so a
+                second widget taking a tone costs a line and no new reader — and
+                the list lives with the layer, since the palette is the page's
+                rather than any one widget's.
     x-language  the attribute whose value names a code language. The layer colors
                 what $languages.names holds, so a widget taking one declares which
                 attribute carries it and `version check` validates every such
@@ -337,7 +345,11 @@ EXTENSION_SCHEMA = {
         "x-example": {"type": "string"},
         "x-exhibit": {"type": "boolean"},
         "x-language": {"type": "string", "pattern": f"^{HTML_NAME}$"},
-        "x-parent": {"type": "string", "pattern": f"^{WIDGET_NAME}$"},
+        "x-parent": {
+            "type": "array",
+            "items": {"type": "string", "pattern": f"^{WIDGET_NAME}$"},
+            "minItems": 1,
+        },
         "x-refers": {
             "type": "array",
             "items": {"type": "string", "pattern": f"^{HTML_NAME}$"},
@@ -349,6 +361,7 @@ EXTENSION_SCHEMA = {
             "additionalProperties": {"enum": ["before", "after"]},
         },
         "x-state": STATE_SCHEMA,
+        "x-tone": {"type": "string", "pattern": f"^{HTML_NAME}$"},
         "x-upgrade": {"type": "boolean"},
         "x-verbatim": {"type": "boolean"},
         "x-visual": {"type": "boolean"},
@@ -3248,8 +3261,12 @@ def validate_registry(registry: dict, source) -> dict:
         kinds = registry["$events"]["kinds"]
         names = registry["$languages"]["names"]
         paths = registry["$languages"]["paths"]
+        tones = registry["$tones"]["names"]
     except (KeyError, TypeError):
-        sys.exit(f"{path}: registry must declare $events.kinds and $languages.names/paths")
+        sys.exit(
+            f"{path}: registry must declare $events.kinds, $languages.names/paths "
+            "and $tones.names"
+        )
     if (
         not isinstance(kinds, dict)
         or not all(
@@ -3288,6 +3305,16 @@ def validate_registry(registry: dict, source) -> dict:
         )
     ):
         sys.exit(f"{path}: $languages.paths must map extensions to declared languages")
+    # Shape, not just presence, because `tone_errors` asks a list for membership and a
+    # string answers the same question by substring: a layer declaring `"names": "ok"`
+    # would pass every one-letter tone and paint none of them, which is exactly the
+    # invisible failure the check exists to catch.
+    if (
+        not isinstance(tones, list)
+        or not all(isinstance(tone, str) for tone in tones)
+        or len(tones) != len(set(tones))
+    ):
+        sys.exit(f"{path}: $tones.names must be a unique list of strings")
     invalid_names = [
         tag
         for tag in registry
@@ -3324,15 +3351,17 @@ def validate_registry(registry: dict, source) -> dict:
                 )
 
     for tag, entry in widgets.items():
-        parent = entry.get("x-parent")
-        if parent and parent not in widgets:
-            sys.exit(f"{path}: <{tag}> x-parent names unknown widget <{parent}>")
+        if unknown := sorted(set(entry.get("x-parent", [])) - set(widgets)):
+            sys.exit(f"{path}: <{tag}> x-parent names unknown widgets {unknown}")
         properties = entry.get("properties", {})
         said = set(entry.get("x-says", {}))
         if unknown := sorted(said - set(properties)):
             sys.exit(f"{path}: <{tag}> x-says names undeclared attributes {unknown}")
         if unknown := sorted(set(entry.get("x-refers", [])) - set(properties)):
             sys.exit(f"{path}: <{tag}> x-refers names undeclared attributes {unknown}")
+        tone = entry.get("x-tone")
+        if tone and tone not in properties:
+            sys.exit(f"{path}: <{tag}> x-tone names undeclared attribute `{tone}`")
         language = entry.get("x-language")
         if language and language not in properties:
             sys.exit(f"{path}: <{tag}> x-language names undeclared attribute `{language}`")
@@ -3413,17 +3442,20 @@ def validate_registry(registry: dict, source) -> dict:
         retired = entry.get("x-retired-when")
         if retired is None:
             continue
-        parent_entry = widgets[parent]
-        parent_state = parent_entry.get("x-state", {})
-        if retired not in parent_state:
-            sys.exit(
-                f"{path}: <{tag}> x-retired-when `{retired}` is invalid: "
-                f"<{parent}> does not declare that x-state verb"
-            )
-        if parent_state[retired].get("unit", "widget") != "widget":
-            sys.exit(
-                f"{path}: <{tag}> x-retired-when `{retired}` must fold by widget"
-            )
+        # Every holder, not the first: a slot that retires on its parent's verb has
+        # to retire whichever parent it was written in, or it would be settled under
+        # one and undecidable under another.
+        for parent in entry["x-parent"]:
+            parent_state = widgets[parent].get("x-state", {})
+            if retired not in parent_state:
+                sys.exit(
+                    f"{path}: <{tag}> x-retired-when `{retired}` is invalid: "
+                    f"<{parent}> does not declare that x-state verb"
+                )
+            if parent_state[retired].get("unit", "widget") != "widget":
+                sys.exit(
+                    f"{path}: <{tag}> x-retired-when `{retired}` must fold by widget"
+                )
     return registry
 
 
@@ -3528,8 +3560,7 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
     for tag, entry in registry.items():
         if not tag.startswith("cq-"):
             continue
-        parent = entry.get("x-parent")
-        if parent:
+        for parent in entry.get("x-parent", []):
             children_of.setdefault(parent, set()).add(tag)
 
     for rec in cq_elements:
@@ -3551,10 +3582,11 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
         for err in sorted(Draft202012Validator(entry).iter_errors(instance), key=str):
             errors.append(f"{where}: {err.message}")
 
-        want_parent = entry.get("x-parent")
-        if want_parent and rec["parent"] != want_parent:
+        want_parents = entry.get("x-parent", [])
+        if want_parents and rec["parent"] not in want_parents:
             actual = f", found <{rec['parent']}>" if rec["parent"] else ""
-            errors.append(f"{where}: must be a direct child of <{want_parent}>{actual}")
+            wanted = " or ".join(f"<{p}>" for p in want_parents)
+            errors.append(f"{where}: must be a direct child of {wanted}{actual}")
         # Tags declaring this one as x-parent are admissible children under any
         # content model — that is what x-parent means. "data" forbids all others
         # (the body is text in a notation), "items" also forbids loose text,
@@ -3627,6 +3659,29 @@ def language_errors(blocks: list, cq_elements: list, registry: dict, known: list
             errors.append(
                 f'<{rec["tag"]} {attr}="{word}"> (line {rec["line"]}): not a language '
                 f"this page's layer speaks — known: {known}"
+            )
+    return errors
+
+
+def tone_errors(cq_elements: list, registry: dict) -> list:
+    """A tone the layer has no tint for, read out of $tones rather than the widget.
+
+    The same failure `language` has and the same reason for catching it here: a
+    misspelt tone paints nothing, and a chip that should have been red renders
+    neutral on a page that otherwise looks perfectly well. Nobody downstream can
+    see it — not the reviewer, who never knew it was meant to be red — so the one
+    party who can still fix it is whoever wrote the word, and this is where they
+    are told. A class would have been the same words with no one checking them.
+    """
+    known = registry["$tones"]["names"]
+    errors = []
+    for rec in cq_elements:
+        attr = (registry.get(rec["tag"]) or {}).get("x-tone")
+        word = rec["attrs"].get(attr) if attr else None
+        if word is not None and word not in known:
+            errors.append(
+                f'<{rec["tag"]} {attr}="{word}"> (line {rec["line"]}): not a tone this '
+                f"page's layer paints — known: {known}"
             )
     return errors
 
@@ -4046,6 +4101,7 @@ def fragment_errors(parser: _StructParser, registry: dict, known: list) -> list:
         structure_errors(parser)
         + widget_errors(parser.cq_elements, registry)
         + language_errors(parser.language_blocks, parser.cq_elements, registry, known)
+        + tone_errors(parser.cq_elements, registry)
     )
 
 
@@ -4117,6 +4173,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
                 registry["$languages"]["names"],
             )
         )
+        errors.extend(tone_errors(parser.cq_elements, registry))
         for tag, entry in registry.items():
             if not tag.startswith("cq-"):
                 continue

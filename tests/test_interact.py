@@ -48,10 +48,10 @@ PAGE = """<!doctype html>
   <h2>Plan</h2>
   <p>The cutoff lives in <a href="https://example.test/jobs/backfill.py#L88"><code>jobs/backfill.py:88</code></a>.</p>
   <cq-options>
-    <cq-option id="flag-first" effort="low" risk="med">
+    <cq-option id="flag-first"><cq-chip>effort: low</cq-chip><cq-chip>risk: med</cq-chip>
       <strong>Flag first</strong> Ship dark.
     </cq-option>
-    <cq-option id="backfill-first" effort="med" risk="low" recommended>
+    <cq-option id="backfill-first" recommended><cq-chip>effort: med</cq-chip><cq-chip>risk: low</cq-chip>
       <strong>Backfill first</strong> Verify, then flip.
     </cq-option>
   </cq-options>
@@ -1791,7 +1791,9 @@ def test_check_rejects_widget_violations(page_dir):
             '<a href="https://example.test/jobs/backfill.py#L88"><code>jobs/backfill.py:88</code></a>',
             '<cq-metric id="bad-metric" value="1"/>'
             "<cq-bogus></cq-bogus>"
-            '<cq-option id="stray" risk="medium"><strong>S</strong></cq-option>'
+            '<cq-timeline id="bad-timeline">'
+            '<cq-event id="stray-event" kind="medium">S</cq-event></cq-timeline>'
+            '<cq-option id="stray"><strong>S</strong></cq-option>'
             '<cq-diagram id="Bad_ID"><em>x</em></cq-diagram>',
         ).replace('<cq-option id="flag-first"', "<cq-option")
     )
@@ -1905,6 +1907,54 @@ def test_the_block_content_lists_agree_and_cover_the_vocabulary():
         f"block-level widgets missing from the theme's block-content lists: "
         f"{sorted(top_level - tag_sets[0])}"
     )
+
+
+def test_a_tone_the_layer_cannot_paint_is_refused_where_the_author_can_still_fix_it(page_dir):
+    """The same failure a misspelt language has, and caught for the same reason: a
+    tone nothing matches paints nothing, so the chip renders neutral on a page that
+    otherwise looks perfectly well. The reviewer cannot see it — they never knew it
+    was meant to be red — so the only party who can still fix it is whoever wrote
+    the word, and the lint is where they are told. This is the whole difference
+    between the attribute and a class, which nothing checks."""
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace(
+            '<cq-option id="flag-first">',
+            '<cq-option id="flag-first"><cq-chip tone="dangre">risk: high</cq-chip>',
+        )
+    )
+    result = check(page_dir)
+    assert result.exit_code == 1
+    assert "not a tone this page's layer paints" in result.output
+    assert "'ok', 'warn', 'danger'" in result.output.replace('"', "'")
+
+    # The list is the layer's, so a layer that adds one accepts it with no widget
+    # touched — which is the point of $tones over an enum on cq-chip.
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry["$tones"]["names"].append("dangre")
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+    assert check(page_dir).exit_code == 0
+
+
+def test_a_chip_is_admissible_in_both_its_holders(page_dir):
+    """x-parent is a list because one element can belong to two holders, and a chip
+    is written in a cq-option and in a cq-variant — the same shape either side of the
+    decision. Neither is special-cased anywhere: the nesting check reads the list."""
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace(
+            "<cq-options>",
+            '<cq-compare id="cmp"><cq-variant id="v-a"><cq-chip tone="ok">cheap</cq-chip>'
+            "<strong>A</strong> One.</cq-variant></cq-compare>\n  <cq-options>",
+        )
+    )
+    assert check(page_dir).exit_code == 0, check(page_dir).output
+
+    # And refused where neither holder is its parent, naming both.
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2><cq-chip>stray</cq-chip>")
+    )
+    result = check(page_dir)
+    assert result.exit_code == 1
+    assert "must be a direct child of <cq-option> or <cq-variant>" in result.output
 
 
 def test_a_layer_naming_no_languages_refuses_every_word_rather_than_none(page_dir):
@@ -2359,7 +2409,7 @@ def test_the_gate_asks_about_the_card_that_was_moved_and_not_the_board(page_dir)
 
 
 OPTIONS = """<cq-options id="g1" choose>
-  <cq-option id="o-shim"{a}><strong>Shim it</strong> {shim}</cq-option>
+  <cq-option id="o-shim"{a}>{chip}<strong>Shim it</strong> {shim}</cq-option>
   <cq-option id="o-stage"{b}><strong>Migrate in stages</strong> {stage}</cq-option>
 </cq-options>"""
 
@@ -2372,12 +2422,12 @@ def test_the_gate_reads_a_pick_the_same_way_it_reads_an_edit(page_dir):
     — the one thing every version does after a pick — says nothing, so it is
     invisible to the comparison.
 
-    `effort` and `risk` do say something (x-says renders them as text the reviewer
-    can select), so changing one on a picked option is changing what they picked.
+    A chip is content rather than a mark, so writing one onto a picked option is
+    changing what they picked and lands in the same comparison its prose does.
     The gate reads the version the way the anchor pass does, which is what keeps
-    that true without anything here knowing those two attributes exist."""
+    that true without anything here knowing a chip from a paragraph."""
     def write(version, **kw):
-        opts = OPTIONS.format(**{"a": "", "b": "", "shim": "Fastest to ship.",
+        opts = OPTIONS.format(**{"a": "", "b": "", "chip": "", "shim": "Fastest to ship.",
                                  "stage": "Table by table.", **kw})
         (page_dir / "versions" / f"v{version}.html").write_text(
             PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts)
@@ -2407,15 +2457,14 @@ def test_the_gate_reads_a_pick_the_same_way_it_reads_an_edit(page_dir):
     write(2, a=" chosen restated", shim="Fastest to ship, and we own the shim forever.")
     assert check(page_dir, version=2).exit_code == 0
 
-    # An x-says attribute is a word on the page: "low" becoming "high" on the
-    # option they picked reads to them as the option changing, and is caught the
-    # same way its prose is.
-    write(2, a=' chosen effort="high"')
+    # A chip is a word on the page: one appearing on the option they picked reads
+    # to them as the option changing, and is caught the same way its prose is.
+    write(2, a=" chosen", chip="<cq-chip>effort: high</cq-chip>")
     result = check(page_dir, version=2)
-    assert result.exit_code == 1, "an x-says attribute is words the reviewer read"
+    assert result.exit_code == 1, "a chip is words the reviewer read"
     assert "o-shim" in result.output
 
-    write(2, a=' chosen restated effort="high"')
+    write(2, a=" chosen restated", chip="<cq-chip>effort: high</cq-chip>")
     assert check(page_dir, version=2).exit_code == 0
 
 
@@ -2426,7 +2475,7 @@ def test_a_cleared_pick_rests_on_the_group_that_holds_it(page_dir):
     is why the group takes `restated` and a board, whose every move names a card,
     does not."""
     def write(version, shim="Fastest to ship.", attrs=""):
-        opts = OPTIONS.format(a="", b="", shim=shim, stage="Table by table.")
+        opts = OPTIONS.format(a="", b="", chip="", shim=shim, stage="Table by table.")
         (page_dir / "versions" / f"v{version}.html").write_text(
             PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts.replace(
                 '<cq-options id="g1" choose>', f'<cq-options id="g1" choose{attrs}>'))
@@ -2455,7 +2504,7 @@ def test_a_version_may_not_quietly_move_the_pick(page_dir):
     with no surviving folded action is exempt — that exemption is what keeps
     the retract-and-ask-again flow from deadlocking one version later."""
     def write(version, a="", b="", attrs="", shim="Fastest to ship."):
-        opts = OPTIONS.format(a=a, b=b, shim=shim, stage="Table by table.")
+        opts = OPTIONS.format(a=a, b=b, chip="", shim=shim, stage="Table by table.")
         (page_dir / "versions" / f"v{version}.html").write_text(
             PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts.replace(
                 '<cq-options id="g1" choose>', f'<cq-options id="g1" choose{attrs}>'))
@@ -2501,7 +2550,7 @@ def test_check_reports_record_lag_without_erroring(page_dir):
     run. `review transcript` says the same to stderr, where the debt stops being
     fixable."""
     def write(version, a=""):
-        opts = OPTIONS.format(a=a, b="", shim="Fastest to ship.", stage="Table by table.")
+        opts = OPTIONS.format(a=a, b="", chip="", shim="Fastest to ship.", stage="Table by table.")
         (page_dir / "versions" / f"v{version}.html").write_text(
             PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + opts)
         )
@@ -2898,7 +2947,7 @@ def test_retirement_verbs_fold_by_the_parent_widget(page_dir):
     assert "<cq-old> x-retired-when `accept` must fold by widget" in result.output
 
 
-@pytest.mark.parametrize("section", ["$events", "$languages"])
+@pytest.mark.parametrize("section", ["$events", "$languages", "$tones"])
 def test_init_requires_the_complete_registry_contract(page_dir, tmp_path, section):
     overlay = tmp_path / ".colloquy"
     overlay.mkdir(parents=True)
@@ -2908,7 +2957,24 @@ def test_init_requires_the_complete_registry_contract(page_dir, tmp_path, sectio
 
     result = CliRunner().invoke(interact.cli, ["page", "init", str(page_dir)])
     assert result.exit_code != 0
-    assert "$events.kinds and $languages.names/paths" in result.output
+    assert "$events.kinds, $languages.names/paths and $tones.names" in result.output
+
+
+@pytest.mark.parametrize("names", ["ok", ["ok", "ok"], ["ok", 1]])
+def test_init_requires_tones_to_be_a_list_membership_can_be_tested_against(
+    page_dir, tmp_path, names
+):
+    """Presence is not enough, because the tone check asks this list for membership.
+    A string answers by substring, so a layer declaring `"names": "ok"` would pass
+    `tone="o"` and paint nothing — the invisible failure the tone check exists to
+    catch, arriving through the very entry that declares the vocabulary."""
+    overlay = tmp_path / ".colloquy"
+    overlay.mkdir(parents=True)
+    (overlay / "registry.json").write_text(json.dumps({"$tones": {"names": names}}))
+
+    result = CliRunner().invoke(interact.cli, ["page", "init", str(page_dir)])
+    assert result.exit_code != 0
+    assert "$tones.names must be a unique list of strings" in result.output
 
 
 @pytest.mark.parametrize("field", [None, "restated"])
@@ -4507,8 +4573,8 @@ def test_a_comment_carries_the_neighbours_that_tell_two_copies_apart(page_dir):
     # Read out of the whole collapsed text and stopped by the fences around the option
     # row — the runtime writes controls between options, words this reading doesn't
     # hold. The runtime reads its side back the same way, and only a full match counts.
-    assert anchor["prefix"] == "med Backfill first"
-    assert anchor["suffix"] == ". low"  # the option's risk, said at its trailing edge
+    assert anchor["prefix"] == "risk: low Backfill first"  # the option's own chip band, then its title
+    assert anchor["suffix"] == "."  # the option's last words; the fence ends the reading
 
 
 def test_a_quote_closing_its_section_stores_the_next_sections_words(page_dir):
@@ -4707,13 +4773,24 @@ def test_an_unhonored_edit_outlives_a_republish(page_dir):
 def test_a_widgets_x_says_attribute_is_quotable_like_any_other_passage(page_dir):
     """renderSaid puts these words in the DOM, so the anchor pass can find them and this
     has to offer them — otherwise a metric's own number is the one thing on the page
-    Claude can't point at. Each lands at the edge the registry gives it: this option's
-    effort ("med") opens it and its risk ("low") closes it."""
+    Claude can't point at. Both edges the registry can give one are here: the option's
+    chip band opens the element, and the metric's delta closes it."""
+    (page_dir / "versions" / "v1.html").write_text(
+        PAGE.replace(
+            "  <cq-diagram id=\"flow\">",
+            '  <cq-metrics><cq-metric id="k-visits" value="312" delta="+41"'
+            ' direction="up-good">daily visits</cq-metric></cq-metrics>\n'
+            "  <cq-diagram id=\"flow\">",
+        )
+    )
     published(page_dir)
-    for quote in ("med Backfill first", "then flip. low"):
+    for quote, section in (
+        ("risk: low Backfill first", "backfill-first"),
+        ("daily visits +41", "k-visits"),
+    ):
         result = comment(page_dir, "--quote", quote, "--text", "x")
         assert result.exit_code == 0, result.output
-        assert json.loads(result.output)["anchor"]["section"] == "backfill-first"
+        assert json.loads(result.output)["anchor"]["section"] == section
 
 
 SUGGESTED = PAGE.replace("<cq-options>", SUGGESTION)

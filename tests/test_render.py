@@ -1774,21 +1774,21 @@ STACKED_OPTIONS_PAGE = """<!doctype html>
 <main>
 <h1 id="h">Clip storage</h1>
 <cq-options id="stacked" choose>
-  <cq-option id="st-sd" effort="low" risk="high">
+  <cq-option id="st-sd"><cq-chip>effort: low</cq-chip><cq-chip tone="danger">risk: high</cq-chip>
     <strong>SD card only</strong>
     <dl class="facts"><dt>Keeps</dt><dd>nine days</dd><dt>Retrieval</dt><dd>a ladder</dd></dl>
     <p>Clips stay on the camera's card and overwrite oldest-first.</p>
   </cq-option>
-  <cq-option id="st-pi" effort="med" risk="low" recommended>
+  <cq-option id="st-pi" recommended><cq-chip>effort: med</cq-chip><cq-chip>risk: low</cq-chip>
     <strong>Pi in the shed</strong>
     <dl class="facts"><dt>Keeps</dt><dd>a season</dd><dt>Retrieval</dt><dd>the couch</dd></dl>
     <p>A nightly pull over the garden wifi; the link is the weak span.</p>
   </cq-option>
 </cq-options>
 <cq-options id="terse">
-  <cq-option id="t-paper" effort="low" risk="high"><strong>Paper maps</strong> Nothing
+  <cq-option id="t-paper"><cq-chip>effort: low</cq-chip><cq-chip>risk: high</cq-chip><strong>Paper maps</strong> Nothing
   to charge.</cq-option>
-  <cq-option id="t-gps" effort="med" risk="low"><strong>GPS</strong> A week of
+  <cq-option id="t-gps"><cq-chip>£240</cq-chip><cq-chip>a week of battery</cq-chip><cq-chip>resellable if the season ends early</cq-chip><strong>GPS</strong> A week of
   battery.</cq-option>
 </cq-options>
 <cq-compare id="pair">
@@ -1811,10 +1811,14 @@ def test_substantial_options_stack_and_align_their_facts(browser, serve):
     page whose options held real argument grew a comparison table and an "in
     detail" section outside the widget it decides in. The rows keep the
     comparison inside the group: every option's `.facts` list docks right at one
-    fixed width, so scalars align down the page like that table's column, and the
-    chips join the title line (the risk chip measures its offset from the effort
-    chip's edge — anchor positioning — rather than guessing a width). A terse
-    group on the same page keeps the grid."""
+    fixed width, so scalars align down the page like that table's column. A terse
+    group on the same page keeps the grid.
+
+    The chip band is the one part no form places, and the reason is that its words
+    are the author's: an attribute pair the theme knew the names of could be
+    pinned to two corners and reserved room for, and `chips` can be any length at
+    all. So it goes in flow ahead of the title, where a card gives it the width it
+    has and it wraps inside that rather than over the card's edge."""
     page, errors = open_page(browser, serve(STACKED_OPTIONS_PAGE))
     assert errors == []
 
@@ -1830,18 +1834,50 @@ def test_substantial_options_stack_and_align_their_facts(browser, serve):
     assert abs(rails[0]["x"] - rails[1]["x"]) < 1, "rails align down the group"
 
     title = page.locator("#st-sd > strong").bounding_box()
-    effort = page.locator('#st-sd > [data-cq-said="effort"]').bounding_box()
-    risk = page.locator('#st-sd > [data-cq-said="risk"]').bounding_box()
-    for chip in (effort, risk):
-        # Within the title's own band — the corner placement (a 40px header strip
-        # above the title) sits ~26px higher and fails this.
-        assert abs(chip["y"] - title["y"]) < 8, "chips ride the title line"
-    assert risk["x"] + risk["width"] <= effort["x"], "the chip pair must not overlap"
+    chips = page.locator("#st-sd > cq-chip")
+    expect(chips).to_have_text(["effort: low", "risk: high"])
+    # `tone` is the author's judgement about one answer, so it lands on the chip that
+    # declares it and nowhere else — the arrangement this replaced tinted whichever chip
+    # happened to be called risk, which is the theme holding an opinion about a word.
+    tints = chips.evaluate_all(
+        "els => els.map(el => getComputedStyle(el).backgroundColor)"
+    )
+    wanted = page.evaluate(
+        """() => ['--chip', '--danger-tint'].map(name => {
+            const probe = document.createElement('div');
+            probe.style.backgroundColor = `var(${name})`;
+            document.body.append(probe);
+            const paint = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return paint;
+        })"""
+    )
+    assert tints == wanted, (
+        f"an untoned chip is neutral and a toned one takes the theme's own tint: "
+        f"{tints} vs {wanted}"
+    )
+    band = [chips.nth(i).bounding_box() for i in range(2)]
+    for chip in band:
+        assert chip["y"] + chip["height"] <= title["y"] + 1, "the chips read before the title"
+    assert abs(band[0]["x"] - title["x"]) < 1, "and start where the title does"
+    assert band[0]["x"] + band[0]["width"] <= band[1]["x"], "in the author's order, not overlapping"
 
     paper = page.locator("#t-paper").bounding_box()
     gps = page.locator("#t-gps").bounding_box()
     assert abs(paper["y"] - gps["y"]) < 1, "terse options keep the grid row"
     assert paper["x"] + paper["width"] <= gps["x"], "terse options sit side by side"
+
+    # More chips than fit on a line wrap along the band rather than over the card's edge.
+    # The pair this replaced could not: each was an absolutely-positioned box sized to
+    # room the theme had reserved by knowing both words in advance.
+    long_chips = page.locator("#t-gps > cq-chip")
+    expect(long_chips).to_have_count(3)
+    wrapped = [long_chips.nth(i).bounding_box() for i in range(3)]
+    assert wrapped[-1]["y"] > wrapped[0]["y"], "a band too wide for its card takes a second line"
+    for chip in wrapped:
+        assert chip["x"] + chip["width"] <= gps["x"] + gps["width"], (
+            "no chip the author wrote may cross the card's edge"
+        )
 
     # cq-compare is the same shape without the decision, and follows it.
     cedar = page.locator("#cv-cedar").bounding_box()
@@ -2089,8 +2125,8 @@ def test_a_pick_offered_can_be_pointed_at_too(browser, serve):
     # Where the theme puts it: one line along the card's own bottom edge, the same box
     # whichever word it carries, so a pick shifts nothing. Pinned because the mark now
     # declares itself the page speaking, and the marker it declares with is the one the
-    # theme's effort/risk chips are selected by — matched bare, the mark came out a pill
-    # in the card's top corner and every assertion here still passed.
+    # theme's chip band is selected by — matched bare, the mark came out a pill at the
+    # head of the card and every assertion here still passed.
     seat = """el => { const r = el.getBoundingClientRect();
                       const card = el.closest('cq-option').getBoundingClientRect();
                       return [Math.round(r.height), Math.round(card.bottom - r.bottom),
@@ -2236,7 +2272,7 @@ ASK_PAGE = """<!doctype html>
 <h1 id="h">Three jobs</h1>
 <cq-options id="jobs" choose multiple>
   <cq-option id="job-mounts" for="sec-mounts">Replace the <code>M8</code> mounts</cq-option>
-  <cq-option id="job-heater" for="sec-heater" risk="low">Heat the bird bath</cq-option>
+  <cq-option id="job-heater" for="sec-heater"><cq-chip tone="ok">reversible</cq-chip>Heat the bird bath</cq-option>
   <cq-option id="job-camera">Neither — the camera first</cq-option>
 </cq-options>
 <section id="sec-mounts"><h2>The mounts</h2><p id="mounts-p">Plastic, and one came
@@ -2296,10 +2332,13 @@ def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serv
     expect(page.locator("#job-heater .cq-pick")).to_have_text("your pick")
     assert page.locator("#job-heater .cq-pick").evaluate(hidden) != "0px"
     # The row's name, as the mark reports it back: what the author wrote, and not the
-    # word the mark itself just added to the line.
+    # word the mark itself just added to the line. A chip is in it — authored markup,
+    # the page's words about this option — and the mark's own "your pick" is not, which
+    # is the whole of the distinction: a question answered must not read its own answer
+    # back as part of what was asked, and nothing else the author wrote is the answer.
     assert (
         page.locator("#job-heater .cq-pick").get_attribute("aria-label")
-        == "your pick: Heat the bird bath"
+        == "your pick: reversible Heat the bird bath"
     )
     page.close()
 
@@ -2384,18 +2423,22 @@ def test_a_row_holds_its_mark_still_under_its_own_press(browser, serve):
 
 
 def test_a_chip_an_option_says_stands_with_the_rest_of_its_words(browser, serve):
-    """`x-says` renders an attribute the reader sees as text they can point at, at the
-    edge its pseudo-element occupied — and on a page carrying no script that edge is the
-    element's own words, because nothing else is in there. Once a module has injected
-    chrome the two part company, and appending put the page's words on the far side of
-    it: a row's risk chip landed past the pick mark that ends the line, where neither the
-    reader nor the file's reading of that same version has anything to its right."""
+    """A chip is the page's words and the apparatus after it is the module's, so the
+    reader — and the file's reading of that same version — find the chip inside the
+    row's own words rather than past the mark that ends the line.
+
+    The rule was written against an attribute rendered by `x-says`, where the edge a
+    pseudo-element would have taken stops being the element's own words the moment a
+    module injects chrome, and appending put the page's words on the far side of it.
+    A chip is authored markup now, written before the title, so it cannot land there by
+    construction — which is the stronger form of the same guarantee, and this holds the
+    outcome rather than the mechanism that used to threaten it."""
     page, errors = open_page(browser, serve(ASK_PAGE))
-    chip = page.locator('#job-heater > [data-cq-said="risk"]')
-    expect(chip).to_have_text("low")
+    chip = page.locator("#job-heater > cq-chip")
+    expect(chip).to_have_text("reversible")
     expect(page.locator("#job-heater > .cq-pick:last-child")).to_have_count(1)
     ref = page.locator("#job-heater .cq-ref").bounding_box()
-    assert chip.bounding_box()["x"] < ref["x"], "the chip stands past the row's apparatus"
+    assert chip.bounding_box()["x"] < ref["x"], "the chip stands before the row's apparatus"
     assert errors == []
     page.close()
 
@@ -4186,7 +4229,7 @@ FENCED_CAPTURE_PAGE = """<!doctype html>
 </cq-milestones>
 <p id="after-milestone">Ready next.</p>
 <cq-options id="fence-options">
-  <cq-option id="fence-option" effort="low">
+  <cq-option id="fence-option"><cq-chip>effort: low</cq-chip><cq-chip>risk: high</cq-chip>
     <strong>Classic feeder</strong> Easy to clean.
   </cq-option>
 </cq-options>
@@ -4206,7 +4249,9 @@ def test_browser_and_file_captures_stop_at_the_same_widget_fences(browser, serve
         ("#gate-milestone strong", "Build feeders", "gate-milestone"),
         ("#gate-milestone", "Two classic models.", "gate-milestone"),
         ("#after-milestone", "Ready next.", "after-milestone"),
-        ('#fence-option > [data-cq-said="effort"]', "low", "fence-option"),
+        # One chip out of a band of them: authored markup, so both readings hold it
+        # for the same reason they hold the title beside it.
+        ("#fence-option > cq-chip", "effort: low", "fence-option"),
     ]
 
     for index, (selector, quote, section) in enumerate(cases, 1):

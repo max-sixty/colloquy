@@ -183,13 +183,13 @@ an example decision never reads as one the page is asking you to make.</p>
 <figure>
 <cq-specimen id="spec-options-frame" label="cq-options">
 <cq-options id="spec-options">
-  <cq-option id="so-rewrite" effort="high" risk="med"><strong>Rewrite the
+  <cq-option id="so-rewrite"><cq-chip>effort: high</cq-chip><cq-chip>risk: med</cq-chip><strong>Rewrite the
   importer</strong> A clean slate on the new schema; the old importer keeps
   running until parity.</cq-option>
-  <cq-option id="so-shim" effort="low" risk="high"><strong>Shim the old
+  <cq-option id="so-shim"><cq-chip>effort: low</cq-chip><cq-chip>risk: high</cq-chip><strong>Shim the old
   schema</strong> Fastest to ship; every future field pays the translation
   tax.</cq-option>
-  <cq-option id="so-stage" effort="med" risk="low" recommended><strong>Migrate in
+  <cq-option id="so-stage" recommended><cq-chip>effort: med</cq-chip><cq-chip>risk: low</cq-chip><strong>Migrate in
   stages</strong> New fields land on the new schema while reads fall back,
   table by table.</cq-option>
 </cq-options>

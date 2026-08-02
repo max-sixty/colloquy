@@ -43,15 +43,15 @@ Enter — to decide; your pick reaches the agent directly.</p>
 <p id="transport-note">How the session id travels was decided before this page and the
 client change is merged, so it reads as one line — open it if you want the alternatives.</p>
 <cq-options id="cookie-transport" choose settled>
-  <cq-option id="opt-lax-cookie" effort="low" risk="low" recommended chosen>
+  <cq-option id="opt-lax-cookie" recommended chosen><cq-chip>effort: low</cq-chip><cq-chip tone="ok">risk: low</cq-chip>
     <strong>Host-only cookie, SameSite=Lax</strong> Set by the auth origin, sent on
     top-level navigations; nothing to store client-side and nothing for a script to read.
   </cq-option>
-  <cq-option id="opt-strict-cookie" effort="low" risk="med">
+  <cq-option id="opt-strict-cookie"><cq-chip>effort: low</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
     <strong>SameSite=Strict</strong> Tighter, but a session started by following a link
     from email arrives logged out — support saw this on the last trial.
   </cq-option>
-  <cq-option id="opt-bearer" effort="high" risk="med">
+  <cq-option id="opt-bearer"><cq-chip>effort: high</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
     <strong>Bearer header from local storage</strong> Works for the mobile client without
     a cookie jar; puts the id somewhere every script on the page can read.
   </cq-option>
@@ -61,7 +61,7 @@ client change is merged, so it reads as one line — open it if you want the alt
 <section id="options">
 <h2>Options</h2>
 <cq-options id="session-options" choose>
-  <cq-option id="opt-jwt" effort="low" risk="high">
+  <cq-option id="opt-jwt"><cq-chip>effort: low</cq-chip><cq-chip tone="danger">risk: high</cq-chip>
     <strong>Stateless JWT</strong>
     <dl class="facts">
       <dt>Revoke</dt><dd>build a denylist</dd>
@@ -73,7 +73,7 @@ client change is merged, so it reads as one line — open it if you want the alt
     (replication, expiry) still attached, and the account-takeover response
     waiting on them.</p>
   </cq-option>
-  <cq-option id="opt-redis" effort="med" risk="low" recommended>
+  <cq-option id="opt-redis" recommended><cq-chip>effort: med</cq-chip><cq-chip tone="ok">risk: low</cq-chip>
     <strong>Redis, cookie fallback</strong>
     <dl class="facts">
       <dt>Revoke</dt><dd>delete the key</dd>
@@ -85,7 +85,7 @@ client change is merged, so it reads as one line — open it if you want the alt
     log everyone out. Revocation is a delete — which is the shape support's
     "log out all devices" needs.</p>
   </cq-option>
-  <cq-option id="opt-db" effort="low" risk="med">
+  <cq-option id="opt-db"><cq-chip>effort: low</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
     <strong>Postgres table</strong>
     <dl class="facts">
       <dt>Revoke</dt><dd>delete the row</dd>
@@ -113,9 +113,9 @@ graph LR
 <p id="cookie-pair-note">The recommendation rides two cookies with different
 jobs:</p>
 <cq-compare id="cookie-pair">
-  <cq-variant id="var-session-cookie"><strong>Session cookie</strong> An opaque
+  <cq-variant id="var-session-cookie"><cq-chip>revocable</cq-chip><cq-chip tone="ok">nothing readable in it</cq-chip><strong>Session cookie</strong> An opaque
   id; the store says everything else.</cq-variant>
-  <cq-variant id="var-fallback-cookie"><strong>Fallback cookie</strong> A signed
+  <cq-variant id="var-fallback-cookie"><cq-chip tone="warn">outlives a revocation</cq-chip><cq-chip>survives a Redis blip</cq-chip><strong>Fallback cookie</strong> A signed
   snapshot; outlives a blip, never a revocation.</cq-variant>
 </cq-compare>
 <p id="fallback-intro">One revision is waiting on you below: accept or reject it with
@@ -553,15 +553,15 @@ view alone: switching isn't a comment and doesn't reach the agent.</p>
     <p id="bath-status">The basin is level and holding water; the open question
     is how to keep it liquid through January. Click an option to decide.</p>
     <cq-options id="bath-heat" choose>
-      <cq-option id="heat-immersion" effort="low" risk="med">
+      <cq-option id="heat-immersion"><cq-chip>£18</cq-chip><cq-chip>a cord across the lawn</cq-chip><cq-chip tone="ok">liquid all winter</cq-chip>
         <strong>Immersion heater</strong> Drops into the basin; needs a cord run
         across the lawn.
       </cq-option>
-      <cq-option id="heat-solar" effort="med" risk="low" recommended>
+      <cq-option id="heat-solar" recommended><cq-chip>£70</cq-chip><cq-chip>swap the basin</cq-chip><cq-chip tone="ok">liquid but the hardest frosts</cq-chip>
         <strong>Solar basin</strong> Replace the basin with the heated model;
         no cord, reversible.
       </cq-option>
-      <cq-option id="heat-none" effort="low" risk="high">
+      <cq-option id="heat-none"><cq-chip>£0</cq-chip><cq-chip>nothing to install</cq-chip><cq-chip tone="danger">liquid on thaw days</cq-chip>
         <strong>Let it freeze</strong> Refill on thaw days only.
       </cq-option>
     </cq-options>

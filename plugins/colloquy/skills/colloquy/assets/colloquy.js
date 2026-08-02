@@ -554,8 +554,9 @@ async function upgradeWidgets() {
   const response = await fetch("/registry.json");
   if (!response.ok) throw new Error(`colloquy: registry failed to load (${response.status})`);
   registry = await response.json();
-  if (!registry.$events?.kinds || !registry.$languages?.names || !registry.$languages?.paths)
-    throw new Error("colloquy: registry lacks $events or $languages");
+  if (!registry.$events?.kinds || !registry.$languages?.names ||
+      !registry.$languages?.paths || !registry.$tones?.names)
+    throw new Error("colloquy: registry lacks $events, $languages or $tones");
   rememberPassageParts();
   await Promise.all(
     Object.entries(registry)
@@ -579,7 +580,7 @@ async function upgradeWidgets() {
 }
 
 // Words a widget says through an attribute — a metric's number, an event's time, an
-// option's effort — rendered as text the reviewer can reach. The theme renders the same
+// option's chip band — rendered as text the reviewer can reach. The theme renders the same
 // words with `content: attr()`, and a pseudo-element's glyphs are in no text node: no
 // selection can cover them, so no comment can be anchored on them, and the page shows
 // text you can read and can't point at. Not the widget author's to remember, either: the
