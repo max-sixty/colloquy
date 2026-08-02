@@ -6,7 +6,8 @@
 # `version export` copies it. Both need Playwright, and declaring it in the script's
 # PEP 723 header would put its wheel behind every `server run`, `review wait`, and
 # `version publish`, so it is supplied here on exactly the invocations that launch
-# Chrome.
+# Chrome. It sits outside the script's lock as a result, so these two runs pin
+# everything else and take whatever Playwright resolves.
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 script=$root/skills/colloquy/scripts/interact.py
 

@@ -302,6 +302,9 @@ def test_claude_and_codex_load_the_same_plugin_payload():
         "hooks/scripts/review-guard.py",
         "skills/colloquy/SKILL.md",
         "skills/colloquy/scripts/interact.py",
+        # The lock only pins what it ships beside; an install that loses it
+        # resolves fresh and looks identical from the outside.
+        "skills/colloquy/scripts/interact.py.lock",
     ]:
         assert (PLUGIN_ROOT / relative).is_file()
     assert not [path for path in PLUGIN_ROOT.rglob("*") if path.is_symlink()]

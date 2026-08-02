@@ -5,8 +5,10 @@
 # ///
 """Serve and mediate an interactive colloquy page.
 
-A `uv` script: the PEP 723 header above declares the dependencies, and `uv` is
-the one prerequisite for the whole plugin — no venv to create, no build step.
+A `uv` script: the PEP 723 header above declares the dependencies and
+`interact.py.lock` beside it pins them, so every install runs the same versions;
+editing the header re-resolves the lock on the next run. `uv` is the one
+prerequisite for the whole plugin — no venv to create, no build step.
 Run it with `uv run interact.py <group> <command> …`, or as
 `colloquy <group> <command> …` through the plugin's `bin/colloquy` launcher.
 Claude Code puts that launcher on PATH; Codex resolves it from the active skill.
