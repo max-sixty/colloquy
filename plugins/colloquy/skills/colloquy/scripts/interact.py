@@ -4295,6 +4295,64 @@ UNREACHABLE_WORDS = """() => {
 }"""
 
 
+# Content set outside the column it belongs to. The sideways-scroll reading is
+# the same question asked of the window, and the window is the wider of the two:
+# the gate renders at 1200px against a 720px column, so 200px of margin on each
+# side absorbs a spill that scrolls nothing. What is out there is the review
+# margin, where a suggestion's controls hang, and the reviewer's own window is
+# free to be narrower than this one — so a page that passed here scrolls
+# sideways on the machine it was written for.
+#
+# The static lint asks about the column too (_column_width), and asks it of the
+# stylesheet, because that is all a linter has: a width the author pinned in
+# pixels, against a number parsed out of a max-width. This is the same column
+# with a layout engine behind it, so it is measured rather than parsed, and it
+# catches what no declaration states — a vw width, an unbreakable table, a
+# widget that came out wider than its content.
+#
+# Two kinds of element answer for their own width and not to this, and both say
+# so in their computed style. The margin has legitimate residents — a
+# suggestion's controls, the hidden line the paint pass writes — and every one of
+# them is placed there absolutely. And a scroll container answers for what it
+# holds: a box inside one runs on past the clip and is drawn only as far as its
+# container reaches, so a wide table's own rows would otherwise be reported as
+# spilling out of the table that is containing them. What is left is the flow,
+# which the column is the whole width of. A spill is reported once, at the
+# outermost element that has it, because everything inside one inherits its box
+# and would name the same fault a dozen times over.
+PAST_THE_COLUMN = """() => {
+    const main = document.querySelector('main');
+    if (!main) return [];
+    const style = getComputedStyle(main), box = main.getBoundingClientRect();
+    const left = box.left + parseFloat(style.paddingLeft);
+    const right = box.right - parseFloat(style.paddingRight);
+    const at = el => `<${el.tagName.toLowerCase()}${el.id ? ' id=' + el.id : ''}>`;
+    const answeredFor = (el) => {
+        if (getComputedStyle(el).position === 'absolute') return true;
+        for (let a = el.parentElement; a && a !== main; a = a.parentElement) {
+            const s = getComputedStyle(a);
+            if (s.position === 'absolute') return true;
+            if (s.overflowX !== 'visible' || s.overflowY !== 'visible') return true;
+        }
+        return false;
+    };
+    const over = new Map();
+    for (const el of main.querySelectorAll('*')) {
+        if (!el.checkVisibility() || answeredFor(el)) continue;
+        const b = el.getBoundingClientRect();
+        if (b.width < 1) continue;
+        const past = Math.round(Math.max(b.right - right, left - b.left));
+        if (past > 1) over.set(el, past);
+    }
+    const found = [];
+    for (const [el, past] of over) {
+        if ([...over.keys()].some(other => other !== el && other.contains(el))) continue;
+        found.push(`${at(el)} is set ${past}px past the column, out in the review margin`);
+    }
+    return [...new Set(found)];
+}"""
+
+
 # A version whose markup asserts a state the log replays over — `chosen` moved
 # to another option, a card re-authored into a column the reviewer dragged it
 # out of. Replay resolves it in the reviewer's favor, so what needs reporting is
@@ -4425,8 +4483,9 @@ def render_version(browser, url: str) -> list:
     """Everything wrong with a served version that only a browser can see: a
     console or page error, a request that 404s, a fail-soft error box, an upgrade
     module that never defines its declared element, a widget upgraded into a box
-    of no usable size, the page scrolling sideways, words the reviewer can read
-    and can't select, words drawn on top of other words — each
+    of no usable size, the page scrolling sideways, content set past the column
+    and out into the review margin, words the reviewer can read and can't
+    select, words drawn on top of other words — each
     in both color schemes, because the dark theme is real CSS nobody otherwise
     renders — plus, in one scheme, a version that authors widget state the log
     replays over (replay isn't CSS) and, on paper, words the page drops that it
@@ -4493,6 +4552,7 @@ def render_version(browser, url: str) -> list:
                           h: Math.round(el.getBoundingClientRect().height) }))
             .filter(box => box.w < 40 || box.h < 10)""")
         overflow = page.evaluate("document.body.scrollWidth - document.body.clientWidth")
+        spills = page.evaluate(PAST_THE_COLUMN)
         unreachable = page.evaluate(UNREACHABLE_WORDS)
         covered = page.evaluate(COVERED_WORDS)
         # Replay is scheme-blind, so one scheme's reading covers both. The wait
@@ -4546,6 +4606,7 @@ def render_version(browser, url: str) -> list:
             found.append(f"[{scheme}] widgets rendered with no usable size: {json.dumps(tiny)}")
         if overflow > 0:
             found.append(f"[{scheme}] the page scrolls sideways by {overflow}px")
+        found += [f"[{scheme}] {s}" for s in spills]
         found += [f"[{scheme}] {w}" for w in unreachable]
         found += [f"[{scheme}] {c}" for c in covered]
         found += [f"[{scheme}] {c}" for c in conflicts]
@@ -4619,7 +4680,8 @@ def render_check(page_dir: Path, version: int) -> int:
         return 1
     print(
         f"✓ {name}: renders clean in Chrome, light and dark — no console errors, "
-        "every widget takes space, no words on top of other words, no sideways scroll"
+        "every widget takes space, no words on top of other words, nothing past "
+        "the column, no sideways scroll"
     )
     return 0
 

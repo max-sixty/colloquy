@@ -441,6 +441,14 @@
       "description": "An ordered procedure with numbered markers.",
       "example": "<ol class=\"steps\">\n  <li>Backfill the new store.</li>\n  <li>Verify counts, then flip reads.</li>\n</ol>"
     },
+    "table": {
+      "description": "Rows of one shape, compared column by column: ceilings per plan, runs per configuration. Columns take the width of what they hold, and a table wider than the measure wraps its cells or, failing that, scrolls inside itself — so nothing in one needs a width. `<th scope=\"row\">` names a row in the page's own voice; a bare `<th>` is a column heading, set in small caps as one. A `<caption>` above the rows says what the columns mean where the section's heading doesn't. Reach for cq-metrics when the numbers are a handful of headline figures rather than a grid, and cq-options when the rows are alternatives the reader picks between.",
+      "example": "<table id=\"tiers\">\n  <caption>Ceilings per plan, and what each is counted against.</caption>\n  <thead><tr><th>Plan</th><th class=\"num\">A minute</th><th>Counted against</th></tr></thead>\n  <tbody>\n    <tr><th scope=\"row\">Free</th><td class=\"num\">60</td><td>the token</td></tr>\n    <tr><th scope=\"row\">Team</th><td class=\"num\">600</td><td>the token</td></tr>\n  </tbody>\n</table>"
+    },
+    "td.num": {
+      "description": "A cell holding a quantity, right-aligned so a column of them lines up on its last digit — the comparison a column of figures is there for. Say it on the column's heading cell too, or the heading hangs left of its own figures. Nothing is guessed from the text: \"60\" and \"60 sessions\" are the same shape and different things.",
+      "example": "<tr><th scope=\"row\">Enterprise</th><td class=\"num\">6,000</td><td class=\"num\">12,000</td></tr>"
+    },
     "details": {
       "description": "Evidence: a claim as the <summary>, its backing collapsed beneath. Native disclosure; find-in-page reaches the collapsed content.",
       "example": "<details>\n  <summary>The parser drops the slash on self-closed custom tags</summary>\n  <pre><code>document.querySelector(\"cq-metric\").textContent\n// → \"rest of the paragraph\"</code></pre>\n</details>"

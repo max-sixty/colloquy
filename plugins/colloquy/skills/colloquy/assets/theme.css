@@ -12,9 +12,9 @@
  * Three voices, because the page already has three kinds of words and the norms
  * turn on telling them apart. What the page *says* is set in a text serif: prose
  * a reviewer reads closely and points at. What the page *labels* — an eyebrow, a
- * column heading, a chip, a table's header, a metric's caption — is apparatus,
- * set in the UI sans at small sizes with tracking, so it reads as machinery
- * around the argument rather than as part of it. What the page *shows* is mono:
+ * column heading, a chip, the headings across a table, a metric's caption — is
+ * apparatus, set in the UI sans at small sizes with tracking, so it reads as
+ * machinery around the argument rather than as part of it. What it *shows* is mono:
  * code, diffs, trees, timestamps. The runtime's own chrome takes the same sans
  * (.cq-ui reads --sans), which is what finally makes "this is not the document"
  * a difference you can see rather than a claim resting on size and color. It
@@ -159,12 +159,50 @@ blockquote { margin: 18px 0; padding: 2px 18px; border-left: 2px solid var(--rul
 figure { margin: 22px 0; }
 figcaption { font-size: var(--t-6); color: var(--muted); margin-top: 8px; }
 img, svg, video { max-width: 100%; height: auto; }
-table { width: 100%; border-collapse: collapse; font-size: var(--t-5); margin: 18px 0;
-        font-variant-numeric: tabular-nums; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule);
+/* A table's columns hold what is in them, and the space between two of them is
+ * one gutter wide. `width: 100%` bought the opposite: the browser's auto layout
+ * spreads leftover width across every column, so a four-column survey on the
+ * 720px measure ran 149/122/267/182 over content 95px and 52px wide, and the eye
+ * crossed 124px of nothing to get from an attribute to its values.
+ *
+ * display:block is what buys it back, and a wide table's answer with it. The
+ * grid inside a block box shrink-wraps, so a table takes the measure only when
+ * its content asks for it, wraps its cells when the content asks for more, and
+ * scrolls inside itself — like pre, like cq-board — when even the wrapping
+ * can't fit. Nothing narrower does all three: overflow on a table box is
+ * ignored outright, and a table that spills lands in the review margin where a
+ * suggestion's controls hang, having scrolled the page by nothing the render
+ * gate can see at its own viewport width.
+ *
+ * Two things the display change could have cost, both measured rather than
+ * assumed, and neither charged: Chrome's accessibility tree keeps table,
+ * rowgroup, row, columnheader and cell through it, with or without an explicit
+ * role, and a long table still breaks across printed pages, since a page box
+ * fragments an overflow block rather than clipping it. What paper does lose is
+ * a table too wide to wrap, which it loses either way — the same trade pre and
+ * cq-board already make, and the reason not to write a print rule undoing this
+ * one. */
+table { display: block; overflow-x: auto; border-collapse: collapse;
+        font-size: var(--t-5); margin: 18px 0; font-variant-numeric: tabular-nums; }
+caption { text-align: left; font-size: var(--t-6); color: var(--muted);
+          margin-bottom: 6px; }
+th, td { text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--rule);
          vertical-align: top; }
-th { font-size: var(--t-6); text-transform: uppercase; letter-spacing: .06em;
-     color: var(--muted); font-weight: 600; }
+/* The padding is a gutter, and the columns at the two ends have no neighbour to
+   keep away from: 10px of it there set every table's first word 10px right of
+   the prose above it, and stopped the last column short of the same edge. */
+tr > :first-child { padding-left: 0; }
+tr > :last-child { padding-right: 0; }
+/* Which kind of header a th is, asked of the author's own word for it rather
+   than of where it sits: a header row written without a <thead> is still column
+   headings, and `scope="row"` is what a row's name needs said anyway. Each rule
+   says which kind it is for, so neither resets the other — a row's name is the
+   page's words in the page's face, and shouting it in 11.5px small caps is what
+   one rule for both did. */
+th:not([scope="row"]) { font-size: var(--t-6); text-transform: uppercase;
+     letter-spacing: .06em; color: var(--muted); font-weight: 600;
+     border-bottom-color: var(--border-2); }
+th[scope="row"] { font-weight: 600; }
 details { background: var(--field); border: 1px solid var(--rule);
           border-radius: var(--r); padding: 8px 14px; margin: 18px 0; }
 summary { cursor: pointer; font-weight: 600; font-size: var(--t-5); }
@@ -191,7 +229,8 @@ dd { margin: 0 0 8px 0; }
  * Δ). Those wear cq-ui, which already answers in the same face — so the rule was
  * inert, and it said the wrong thing where anyone read it: that the runtime's own
  * chrome is the page pointing at its content. This list is the page's words. */
-.eyebrow, .tag, figcaption, th, .facts dt, .cq-chips span, .cq-tree-badge,
+.eyebrow, .tag, figcaption, caption, th:not([scope="row"]), .facts dt,
+.cq-chips span, .cq-tree-badge,
 .cq-diff-stat, .cq-shotcap, .cq-error, cq-metric, cq-specimen::before,
 cq-specimen > [data-cq-said="label"], cq-column::before,
 cq-column > [data-cq-said="label"], cq-tab::before,
@@ -219,6 +258,12 @@ cq-option > [data-cq-said="effort"], cq-option > [data-cq-said="risk"] {
 .facts dt { color: var(--muted); font-weight: 400; font-size: var(--t-5);
             padding-top: 1px; }
 .facts dd { margin: 0; }
+/* A column of quantities lines up on its last digit — the comparison a table of
+   numbers is there for, and one tabular figures alone don't make. Said per cell,
+   heading included, because which column holds quantities is the author's to
+   declare: "60" and "60 sessions" are one shape and two different things, and a
+   pass that read the text would be guessing at the difference. */
+th.num, td.num { text-align: right; }
 ol.steps { list-style: none; counter-reset: step; padding-left: 0; }
 ol.steps > li { counter-increment: step; position: relative; padding-left: 34px;
                 margin: 10px 0; }

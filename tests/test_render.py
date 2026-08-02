@@ -509,6 +509,89 @@ def test_example_renders(browser, serve, example):
     assert interact.render_version(browser, serve(example.read_text())) == []
 
 
+# Every cell one unbreakable token, so no amount of wrapping gets this table
+# inside the column and the third of the theme's three cases is the one on trial.
+WIDE_TABLE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wide</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Sessions</h1>
+<p id="p">One row, and more of it than the measure holds.</p>
+<table id="sessions">
+<thead><tr>{heads}</tr></thead>
+<tbody><tr>{cells}</tr></tbody>
+</table>
+</main>
+</body>
+</html>
+""".format(
+    heads="".join(f"<th>heading_number_{i}</th>" for i in range(8)),
+    cells="".join(f"<td>value_number_{i}</td>" for i in range(8)),
+)
+
+# A block wider than the column and narrower than the window: 70% of 1200px is
+# 840px against a 720px column, so it stands 120px out in the review margin with
+# the body not scrolling by a pixel. In vw rather than px because the static lint
+# counts pixels and would have caught it before a browser ever saw it.
+SPILLING_PAGE = LONG_PAGE.replace(
+    "</main>", "<div id='too-wide' style='width: 70vw'>Wide.</div>\n</main>"
+)
+
+
+def test_a_table_too_wide_to_wrap_scrolls_inside_the_column(browser, serve):
+    """The theme's answer for a table with more in it than the column holds. Its
+    columns hold what is in them, so it takes the measure only when it needs to
+    and wraps its cells past that; when even wrapping can't fit it scrolls inside
+    itself — like pre, like cq-board — rather than out into the review margin
+    where a suggestion's controls hang. `width: 100%` had no third case: the
+    table spilled, and at this viewport the window is wide enough that nothing
+    scrolled to say so."""
+    url = serve(WIDE_TABLE_PAGE)
+    page, errors = open_page(browser, url)
+    measured = page.locator("#sessions").evaluate(
+        """(t) => {
+        const main = t.closest('main'), pad = parseFloat(getComputedStyle(main).paddingRight);
+        const column = main.getBoundingClientRect().right - pad;
+        return { past: Math.round(t.getBoundingClientRect().right - column),
+                 scrolls: Math.round(t.scrollWidth - t.clientWidth),
+                 sideways: document.body.scrollWidth - document.body.clientWidth };
+    }"""
+    )
+    # Where the width went, then that there was width to go anywhere: a table
+    # narrow enough to fit satisfies the first of these while proving nothing,
+    # and it is the second that says this one was never such a table.
+    assert measured["past"] <= 0
+    assert measured["scrolls"] > 0, "this table fits, so it proves nothing"
+    assert measured["sideways"] == 0
+    assert errors == []
+    page.close()
+    assert interact.render_version(browser, url) == []
+
+
+def test_the_render_gate_reports_content_set_past_the_column(browser, serve):
+    """The reading neither of the gate's older ones can give. The window is the
+    wider of the two boxes — 1200px against a 720px column — so content can stand
+    out in the review margin with the body still not scrolling sideways, and the
+    static lint reads pinned pixels, which a vw width is not. The failure names
+    the element and how far out it is, because "something overflows" sends its
+    reader back to the browser to find out what."""
+    failures = interact.render_version(browser, serve(SPILLING_PAGE))
+
+    assert [
+        f for f in failures
+        if "<div id=too-wide> is set" in f and "px past the column" in f
+    ]
+    assert not [f for f in failures if "scrolls sideways" in f], (
+        "the window absorbed it, which is what leaves this reading the only one that sees it"
+    )
+
+
 # Two sets, because pointing at a control and pressing it are different questions.
 #
 # What must hold still is everything a reviewer aims at, however the widget that built
@@ -2387,6 +2470,51 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
 
     assert [(e["widget"], e["detail"]) for e in actions] == [("rp-live", {"options": ["rp-stage"]})]
     assert page.locator("#rp-quoted cq-option[chosen]").count() == 0
+    page.close()
+
+
+TABLE_REPLY = """The ceilings, unchanged:
+
+| Plan | A minute | Burst | Counted against |
+| --- | --- | --- | --- |
+| Free | 60 | 120 | the token |
+| Enterprise | 6,000 | 12,000 | the token, per environment |
+
+Taken from https://example.com/gateway/limits/reference/by-plan/current/table
+"""
+
+
+def test_a_table_in_a_reply_keeps_its_figures_whole(browser, serve):
+    """A reply is Markdown, so it can hold a table, and the panel is 360px wide.
+    Prose there breaks anywhere — the thing a reply overflows on is a URL no wrap
+    can help — and a table caught the same rule: "12,000" came out as "12,0" over
+    "00", in the column of figures the table was written to compare. Both halves
+    are asserted together, since turning the breaking off everywhere reads the
+    same in a cell and is the actual regression to fear."""
+    url = serve(REPLY_HOST_PAGE)
+    d = serve.page_dir
+    interact.append_event(d, {"kind": "comment", "id": "c-ask", "author": "user",
+                              "version": 1, "text": "What are the ceilings?"})
+    interact.append_event(d, {"kind": "reply", "author": "claude", "parent": "c-ask",
+                              "version": 1, "text": TABLE_REPLY})
+    page, errors = open_page(browser, url)
+    page.get_by_role("button", name="Comments", exact=False).click()
+    page.wait_for_selector(".cq-msg-body table")
+
+    # One client rect is one line: the figure is drawn as a single run, the URL
+    # in the same reply as several.
+    lines = """(el) => { const r = document.createRange();
+                         r.selectNodeContents(el); return r.getClientRects().length; }"""
+    assert page.get_by_role("cell", name="12,000").evaluate(lines) == 1
+    assert page.locator(".cq-msg.claude .cq-msg-body a").evaluate(lines) > 1
+    # And the room the cells stopped giving up went where the theme puts it.
+    assert page.locator(".cq-msg.claude .cq-msg-body table").evaluate(
+        "(t) => t.scrollWidth - t.clientWidth"
+    ) > 0
+    assert page.locator(".cq-msg.claude .cq-msg-body").evaluate(
+        "(b) => b.scrollWidth - b.clientWidth"
+    ) == 0
+    assert errors == []
     page.close()
 
 

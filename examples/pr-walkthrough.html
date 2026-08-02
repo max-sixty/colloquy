@@ -13,8 +13,8 @@
 <p class="eyebrow">pr walkthrough</p>
 <h1>Per-token rate limits</h1>
 <p class="lede" id="pr-lede">Moves rate limiting from per-IP to per-token, so one office
-NAT can't exhaust the budget for every client behind it. Three files, one new table,
-no behavior change for untokened requests.</p>
+NAT can't exhaust the budget for every client behind it. Three files, one new bucket
+table, no behavior change for untokened requests.</p>
 
 <section id="shape">
 <h2>Shape of the change</h2>
@@ -29,6 +29,25 @@ gateway/
 <a href="https://github.com/example/gateway/blob/main/gateway/limits.py#L41"><code>gateway/limits.py:41</code></a>:
 the bucket key changes from the remote address to the token id when one is present.
 Everything else is plumbing that key through.</p>
+</section>
+
+<section id="limits">
+<h2>The ceilings themselves</h2>
+<p id="p-limits">None of these numbers move. What moves is what they are counted
+against: a plan's ceiling used to be spent by every client behind one address, and is
+now spent per token.</p>
+<table id="tiers">
+<caption>Ceilings per plan, and what each is counted against after this change.</caption>
+<thead>
+<tr><th>Plan</th><th class="num">A minute</th><th class="num">Burst</th><th>Counted against</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">Free</th><td class="num">60</td><td class="num">120</td><td>the token</td></tr>
+<tr><th scope="row">Team</th><td class="num">600</td><td class="num">1,200</td><td>the token</td></tr>
+<tr><th scope="row">Enterprise</th><td class="num">6,000</td><td class="num">12,000</td><td>the token, per environment</td></tr>
+<tr><th scope="row">Untokened</th><td class="num">60</td><td class="num">60</td><td>the remote address, as before</td></tr>
+</tbody>
+</table>
 </section>
 
 <section id="core">

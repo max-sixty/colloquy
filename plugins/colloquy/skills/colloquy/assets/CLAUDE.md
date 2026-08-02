@@ -306,8 +306,8 @@ write.
 ## Three voices, because the page has three kinds of words
 
 What the page *says* is prose a reviewer reads closely and points at. What it *labels* —
-an eyebrow, a column heading, a chip, a table header, a metric's caption — is apparatus,
-the page pointing at its own content. What it *shows* is evidence: code, diffs, trees,
+an eyebrow, a column heading, a chip, the headings across a table, a metric's caption —
+is apparatus, the page pointing at its own content. What it *shows* is evidence: code, diffs, trees,
 timestamps. The norms here already turn on that distinction; until the theme had more
 than one face, nothing on screen carried it. Document and chrome were the same system
 sans, so "this is not the document" rested on size and colour alone — and those are the

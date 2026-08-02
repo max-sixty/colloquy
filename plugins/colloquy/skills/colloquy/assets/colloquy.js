@@ -871,6 +871,12 @@ style.textContent = `
     .cq-msg-body > :first-child { margin-top: 0; }
     .cq-msg-body > :last-child { margin-bottom: 0; }
     .cq-msg-body :is(p, ul, ol, pre, blockquote, table, hr) { margin: 6px 0; }
+    /* Prose here breaks anywhere, because the thing a reply overflows on is a URL
+       no wrap can help. A table is the one block in a reply with somewhere else to
+       put the width — the theme makes it scroll inside itself — so breaking its
+       cells to save that room spends the alignment the table was written for:
+       "12,000" arrived as "12,0" over "00", in a column of figures to compare. */
+    .cq-msg-body :is(th, td) { overflow-wrap: normal; }
     .cq-msg-body :is(h1, h2, h3, h4, h5, h6) { margin: 8px 0 4px; font-size: var(--t-5); }
     .cq-msg-body li { margin: 2px 0; }
     .cq-msg-body pre { padding: 8px 10px; }
