@@ -573,6 +573,9 @@ async function upgradeWidgets() {
   // Importing defined the elements and ran their connectedCallbacks; async ones
   // registered their work via settle(). Wait it out so geometry is final.
   await Promise.allSettled(settling);
+  // After the wait, because the box a widget scrolls is a box its module built: run this
+  // with the rest of the upgrade and a diff's pre and a code block's are half there.
+  reachScrollers(document.body);
 }
 
 // Words a widget says through an attribute — a metric's number, an event's time, an
@@ -623,6 +626,26 @@ function renderSaid(root) {
         const own = [...el.childNodes].filter((n) => !(n.nodeType === 1 && n.dataset.cqGen));
         el.insertBefore(span, (edge === "before" ? own[0] : own.at(-1)?.nextSibling) ?? null);
       }
+  }
+}
+
+// Anything a mouse can scroll, a keyboard can reach. A `pre` too wide for the column
+// scrolls, and a reviewer working from the keyboard had no way at all to the half of the
+// line off the right of it — which is a phone's every code block, since the column there
+// is 372px and a line of code is not. Asked of the computed overflow rather than of a list
+// of tags, so a widget that scrolls is covered by scrolling and the twelfth one needs no
+// entry, and it reaches the runtime's own boxes on the same terms as the page's. Asked of
+// the content first, because a box holding a control of its own is already reachable
+// (cq-board, through its grips) and a tab stop over the whole board would stand between
+// the reviewer and the card they were tabbing to.
+const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
+function reachScrollers(root) {
+  for (const el of root.querySelectorAll("*")) {
+    if (el.tabIndex >= 0) continue;
+    const style = getComputedStyle(el);
+    if (!/^(auto|scroll)$/.test(style.overflowX) && !/^(auto|scroll)$/.test(style.overflowY))
+      continue;
+    if (!el.querySelector(FOCUSABLE)) el.tabIndex = 0;
   }
 }
 
@@ -753,8 +776,13 @@ style.textContent = `
      level. It becomes a skip-link-style control on focus: a reader who hears the count
      can enter its first thread, then j/k through the rest. user-select keeps it out of
      a selection, so the runtime's own words never enter a captured quote. */
+  /* nowrap completes the hiding: a box one pixel wide is a box every word overflows, and
+     the page says a run with nothing else to break on may break anywhere it likes — so
+     the line laid itself out a character to the row, down the document and through the
+     paragraphs under it. Nothing showed, since the clip holds; the render gate reads
+     where words are rather than whether they showed, and said so. */
   .cq-mark-note { position: absolute; width: 1px; height: 1px; padding: 0; border: 0;
-    overflow: hidden; clip-path: inset(50%); user-select: none; }
+    overflow: hidden; clip-path: inset(50%); user-select: none; white-space: nowrap; }
   .cq-mark-note:focus-visible { position: fixed; z-index: 9050; top: 48px; left: 8px;
     width: auto; height: auto; padding: 6px 10px; overflow: visible; clip-path: none;
     border: 1px solid var(--accent); border-radius: var(--r); background: var(--card);
@@ -856,7 +884,7 @@ style.textContent = `
     .cq-quote.detached { border-left-style: dashed; border-left-color: var(--border-2); color: var(--muted-2); cursor: default; }
     /* Out of the picture, still in the accessibility tree — see the composer's quote in
        paintAnchors for the one thing that wears this and why. */
-    .cq-unseen { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); }
+    .cq-unseen { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .cq-msg { margin: 8px 0; }
     .cq-msg-head { display: flex; gap: 6px; align-items: baseline; }
     .cq-msg-head b { font-size: 12.5px; }
@@ -915,7 +943,7 @@ style.textContent = `
       border-radius: var(--r); opacity: 0; transition: opacity .25s, right .18s ease; pointer-events: none; }
     .cq-toast.show { opacity: .95; }
     .cq-toast.clickable { pointer-events: auto; cursor: pointer; }
-    .cq-live { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .cq-live { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .cq-help { position: fixed; z-index: 9300; top: 50%; left: 50%; transform: translate(-50%, -50%);
       width: min(420px, calc(100vw - 32px)); max-height: 80vh; overflow-y: auto; display: none;
       background: var(--card); border: 1px solid var(--border-2); border-radius: var(--r);
@@ -1366,6 +1394,7 @@ function msgNode(m) {
       // fenced block is a <pre><code class="language-…"> like any the page holds.
       if (m.markup) body.insertAdjacentHTML("beforeend", m.markup);
       renderSaid(body);
+      reachScrollers(body);
       // Not settle()d: that queue holds the page's geometry still for the first anchor
       // pass, and a message colors in the panel, where no anchor is captured and nothing
       // waits. Each block already fails soft to its own plain source.

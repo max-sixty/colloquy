@@ -989,17 +989,88 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
     page.close()
 
 
+# A run with nothing to break on, in the three places a page puts one: a metric's headline,
+# where the box is a fixed 138px and the value is whatever the number turned out to be;
+# ordinary prose, which is where a page about code keeps its paths; and a tree, whose module
+# writes the name and its badges with no whitespace between them at all.
+UNBREAKABLE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>unbreakable</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Nothing to break on</h1>
+<cq-metrics id="numbers">
+  <cq-metric id="m-token" value="a_very_long_unbroken_identifier">Bucket key</cq-metric>
+</cq-metrics>
+<p id="p-token">The one it fails on is
+gateway_middleware_authentication_token_bucket_refill_strategy.py, every time.</p>
+<cq-tree id="tree">
+gateway/
+  middleware/
+    authentication/
+      token_bucket_refill_strategy.py    +6 -2
+</cq-tree>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_run_with_nothing_to_break_on_stays_inside_the_box_holding_it(browser, serve):
+    """Text that cannot wrap does not stop at the edge of its box; it paints straight on
+    over whatever the layout put beside it, and nothing about the boxes says so — every
+    rect is exactly where it should be. A twelve-character metric value ran 287px out of a
+    138px card, and a phone's 372px column is narrower than half the paths this product's
+    prose is made of.
+
+    Told it may break a word, the browser will also break one that was never meant to come
+    apart: the tree's module spaces its badges by margin and writes no whitespace between
+    them, so a line is one word to the breaker, and it split a two-character badge down the
+    middle and drew half the pill on each line. Read at a phone's width, where the column
+    has the least to give and each of the three is at its worst."""
+    page, errors = open_page(browser, serve(UNBREAKABLE_PAGE))
+    page.set_viewport_size({"width": 420, "height": 900})
+    inside = """(id) => {
+                  const el = document.getElementById(id);
+                  const inner = el.querySelector("[data-cq-said='value']") ?? el;
+                  const range = document.createRange();
+                  range.selectNodeContents(inner);
+                  const style = getComputedStyle(el);
+                  return range.getBoundingClientRect().right -
+                         (el.getBoundingClientRect().right - parseFloat(style.paddingRight));
+                }"""
+    assert page.evaluate(inside, "m-token") <= 0, "a metric's value paints outside its card"
+    assert page.evaluate(inside, "p-token") <= 0, "a path in prose paints outside the column"
+    torn = """() => [...document.querySelectorAll('.cq-tree-badge')]
+                      .map((b) => b.getClientRects().length)"""
+    assert page.evaluate(torn) == [1, 1], "a badge is one pill, and it was drawn as two"
+    assert errors == []
+    page.close()
+
+
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
 @pytest.mark.parametrize("color_scheme", ["light", "dark"])
+@pytest.mark.parametrize("width", [1200, 420])
 def test_examples_have_no_serious_wcag_a_or_aa_violations(
-    browser, serve, example, color_scheme
+    browser, serve, example, color_scheme, width
 ):
     """Axe covers semantic failures the render gate cannot see: an unnamed control,
     an invalid role relationship, or a contrast failure can occupy a perfectly good
     box and still shut a reviewer out. Keep the scope to WCAG A/AA and actionable
     serious/critical findings; layout and accessibility-tree snapshots belong to
-    specific regressions, not a corpus baseline that changes with every restyle."""
+    specific regressions, not a corpus baseline that changes with every restyle.
+
+    A phone's width because what a box does there is a different question and not a
+    smaller one: the column is 372px, so a block that had room at a desk starts
+    scrolling, and a scrolling box with no way into it from the keyboard is a reviewer
+    reading half of every line of code. Nothing at 1200 says a word about it."""
     page, errors = open_page(browser, serve(example.read_text()))
+    page.set_viewport_size({"width": width, "height": 900})
     page.emulate_media(color_scheme=color_scheme)
     result = Axe().run(
         page,

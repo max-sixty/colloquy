@@ -339,6 +339,26 @@ above is what says so — it named the sign-off button the day `--t-5` went from
 14px and 110px stopped covering "✓ Looks good". Re-measure and restate the number; don't
 derive it.
 
+## The page may break a word, so anything that must not come apart says so
+
+The subject here is code, so the prose carries paths, identifiers and shas, and there is no
+column width at which one of them cannot be longer. Text that cannot wrap does not stop at
+the edge of its box — it paints straight on over whatever the layout put beside it, and
+every rect stays exactly where it should be, so nothing about the boxes says a word. A
+twelve-character metric value ran 287px out of a 138px card. `overflow-wrap: break-word` on
+`body` is the answer, and it is inherited, which is what makes it one decision rather than
+a thing each new widget has to remember.
+
+What it costs is that the browser will also break a run that was never meant to come apart,
+so those say `white-space: nowrap`. Two kinds have needed it. A chip is one shape, and
+`cq-tree` writes its name and badges with no whitespace between them at all — a line is one
+word to the breaker, which split a two-character badge down the middle and drew half the
+pill on each line. And a visually-hidden box is a box one pixel wide, which every word
+overflows: the line announcing a passage's comments laid itself out a character to the row,
+down the document and through the paragraphs under it. Nothing showed, because the clip
+holds. `render_version` reads where words are rather than whether they showed, and that is
+what found it.
+
 ## A widget's form follows its content, and each form states its own rules
 
 `cq-options` renders as a grid of cards or as a list of rows, and nothing declares which:

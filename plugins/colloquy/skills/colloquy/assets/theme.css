@@ -94,8 +94,15 @@
 
 /* ---------- elements ---------- */
 
+/* A run with nothing to break on breaks anyway rather than painting outside the box that
+ * was holding it — this page's subject is code, so its prose carries paths, identifiers
+ * and shas, and there is no width at which one of them can't be longer. It reaches
+ * everything by inheritance and does nothing anywhere a line already can't wrap, so the
+ * widgets that scroll instead (cq-board, cq-diff, pre) are untouched; a metric's headline
+ * was the one with no width to spare at all, and a twelve-character value ran 287px out
+ * of a 138px card and across whatever the grid had put beside it. */
 body { margin: 0; background: var(--paper); color: var(--ink);
-       font: var(--t-4)/1.6 var(--serif); }
+       font: var(--t-4)/1.6 var(--serif); overflow-wrap: break-word; }
 /* Positioned so it is the containing block for anything a widget hangs in the
  * page margin (cq-suggestion's controls): `left: 100%` then means the column's
  * right edge, and `anchor()` reaches the anchor names declared inside it.
@@ -950,8 +957,12 @@ cq-tree ul { list-style: none; margin: 0; padding-left: 0; }
 cq-tree ul ul { padding-left: 18px; border-left: 1px solid var(--rule); margin-left: 5px; }
 cq-tree li { margin: 3px 0; }
 cq-tree .cq-tree-dir { font-weight: 600; }
+/* nowrap because the module appends name and badges with no whitespace between them and
+ * spaces them by margin, so a line is one word to the breaker: told it may break inside
+ * one, it split a two-character badge down the middle and drew half the pill on each
+ * line. The name is what breaks now, which is the one of the three that can. */
 cq-tree .cq-tree-badge { font-size: var(--t-6); padding: 0 6px; margin-left: 6px;
-                         border-radius: 999px; }
+                         border-radius: 999px; white-space: nowrap; }
 cq-tree .cq-tree-badge.add { background: var(--ok-tint); color: var(--ok-ink); }
 cq-tree .cq-tree-badge.del { background: var(--danger-tint); color: var(--danger-ink); }
 
@@ -1012,7 +1023,7 @@ cq-code cq-note { display: block; }
    disturb. */
 cq-draft { display: block; border: 1px dashed var(--border-2); border-radius: 6px;
            padding: 10px 14px; margin: 12px 0; background: var(--card); }
-.cq-draft-body, .cq-draft-edit.cq-ui { white-space: pre-wrap; overflow-wrap: break-word; }
+.cq-draft-body, .cq-draft-edit.cq-ui { white-space: pre-wrap; }
 .cq-draft-pencil { opacity: .45; }
 cq-draft:hover .cq-draft-pencil, cq-draft:focus-within .cq-draft-pencil { opacity: 1; }
 .cq-draft-edit.cq-ui { display: block; width: 100%; padding: 0; border: 0; background: none;
@@ -1041,8 +1052,7 @@ cq-draft:hover .cq-draft-pencil, cq-draft:focus-within .cq-draft-pencil { opacit
 .cq-draft-revisions > li { margin: 8px 0; padding-left: 3px; }
 .cq-draft-revision-head { display: flex; align-items: center; justify-content: space-between;
                           gap: 8px; margin-bottom: 3px; }
-.cq-draft-delta, .cq-draft-snapshot { white-space: pre-wrap; overflow-wrap: break-word;
-                                     color: var(--ink-2); }
+.cq-draft-delta, .cq-draft-snapshot { white-space: pre-wrap; color: var(--ink-2); }
 .cq-draft-delta del { background: var(--del-tint); color: var(--danger-ink); }
 .cq-draft-delta ins { background: var(--add-tint); color: var(--ok-ink);
                       text-decoration: none; }
