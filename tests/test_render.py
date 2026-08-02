@@ -437,6 +437,40 @@ def panel_settled(page, open=True):
     page.wait_for_function("() => document.body.getAnimations().length === 0")
 
 
+def resized(page, width, height):
+    """Resize the window, and wait for the page to have handled it.
+
+    `set_viewport_size` returns once the browser is the new size, which is a fact about
+    the browser and not about the page: the runtime's own resize listener may not have
+    run yet, so syncLayout's layout — the margin, the covering sheet, and with it which
+    region a half-page key moves — can still be the old window's. A test that reads
+    layout on that frame reads the width it just left, and only on a machine loaded
+    enough to fit the read in first, which is the shape of every wait this suite has
+    had to learn (`tests/CLAUDE.md`, "A wait consumes a fact the system states").
+
+    The fact the page states here is the event reaching its listeners. The runtime
+    registered its own when it loaded, so one added now runs after it on the same
+    event, and a count of those is the page saying it has caught up. What syncLayout
+    then wrote is a separate question, and a test whose subject is the new layout still
+    waits for the piece of it that it is about.
+
+    A window already the size asked for fires nothing, so waiting on it would hang out
+    a whole timeout rather than return at once. The sweep that walks each example at
+    both a desk's width and a phone's asks for the first of those on a page opened at
+    it."""
+    if page.viewport_size == {"width": width, "height": height}:
+        return
+    page.evaluate("""() => {
+        if (window.cqResizes === undefined) {
+            window.cqResizes = 0;
+            addEventListener("resize", () => window.cqResizes++);
+        }
+        window.cqResizesWas = window.cqResizes;
+    }""")
+    page.set_viewport_size({"width": width, "height": height})
+    page.wait_for_function("() => window.cqResizes > window.cqResizesWas")
+
+
 CUSTOM_WIDGET_PAGE = """<!doctype html>
 <html lang="en">
 <head>
@@ -974,7 +1008,7 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
     states_a_width = ("() => ['select', '.cq-comments', '.cq-signoff', '.cq-accept-all']"
                       ".map((s) => document.querySelector('.cq-banner ' + s).offsetWidth)")
     wide = page.evaluate(states_a_width)
-    page.set_viewport_size({"width": 900, "height": 900})
+    resized(page, 900, 900)
     # Out of room, and something has visibly given: no spacer left, and the chip showing
     # less than it holds. Without both, a window that still had slack would assert nothing.
     page.wait_for_function(
@@ -1034,7 +1068,7 @@ def test_a_run_with_nothing_to_break_on_stays_inside_the_box_holding_it(browser,
     middle and drew half the pill on each line. Read at a phone's width, where the column
     has the least to give and each of the three is at its worst."""
     page, errors = open_page(browser, serve(UNBREAKABLE_PAGE))
-    page.set_viewport_size({"width": 420, "height": 900})
+    resized(page, 420, 900)
     inside = """(id) => {
                   const el = document.getElementById(id);
                   const inner = el.querySelector("[data-cq-said='value']") ?? el;
@@ -1070,7 +1104,7 @@ def test_examples_have_no_serious_wcag_a_or_aa_violations(
     scrolling, and a scrolling box with no way into it from the keyboard is a reviewer
     reading half of every line of code. Nothing at 1200 says a word about it."""
     page, errors = open_page(browser, serve(example.read_text()))
-    page.set_viewport_size({"width": width, "height": 900})
+    resized(page, width, 900)
     page.emulate_media(color_scheme=color_scheme)
     result = Axe().run(
         page,
@@ -1471,7 +1505,7 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
     page, _ = open_page(
         browser, serve(LONG_PAGE, comments=12, anchored=[("p40", "Paragraph 40.")])
     )
-    page.set_viewport_size({"width": 500, "height": 600})
+    resized(page, 500, 600)
 
     # A reading position first, so surviving the sheet is observable.
     page.mouse.move(120, 300)
@@ -1532,11 +1566,11 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
     # The resize path: narrowing onto an open panel locks, widening unlocks.
     page.locator("button[aria-expanded]").click()
     panel_settled(page)
-    page.set_viewport_size({"width": 1000, "height": 600})
+    resized(page, 1000, 600)
     page.wait_for_function(
         "() => getComputedStyle(document.body).overflowY !== 'hidden' && document.body.style.marginRight !== ''"
     )
-    page.set_viewport_size({"width": 500, "height": 600})
+    resized(page, 500, 600)
     page.wait_for_function(
         "() => getComputedStyle(document.body).overflowY === 'hidden' && document.body.style.marginRight === ''"
     )
@@ -1550,7 +1584,7 @@ def test_covering_panel_keeps_toasts_on_screen_and_clear_of_the_footer(browser, 
     its persistent composer even when that composer grows under a live toast,
     then returns beside it at the first width where the panel stops covering."""
     page, _ = open_page(browser, serve(LONG_PAGE))
-    page.set_viewport_size({"width": 320, "height": 600})
+    resized(page, 320, 600)
     page.locator("button[aria-expanded]").click()
     page.locator(".cq-general textarea").fill("The unsent comment stays here.")
 
@@ -1590,7 +1624,7 @@ def test_covering_panel_keeps_toasts_on_screen_and_clear_of_the_footer(browser, 
         f"the toast covered the panel's persistent composer: {narrow}"
     )
 
-    page.set_viewport_size({"width": 721, "height": 600})
+    resized(page, 721, 600)
     page.wait_for_function("""() => {
         const toast = document.querySelector(".cq-toast").getBoundingClientRect();
         const panel = document.querySelector(".cq-panel").getBoundingClientRect();
@@ -1609,7 +1643,7 @@ def test_covering_panel_keeps_toasts_on_screen_and_clear_of_the_footer(browser, 
         f"the wide toast no longer sits in its original bottom corner: {wide}"
     )
 
-    page.set_viewport_size({"width": 320, "height": 600})
+    resized(page, 320, 600)
     page.wait_for_function("""() => {
         const toast = document.querySelector(".cq-toast").getBoundingClientRect();
         const footer = document.querySelector(".cq-general").getBoundingClientRect();
@@ -2785,7 +2819,7 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     # the same box in flow where the row was hoisted to, so it reads as a control
     # line under the block holding the change and never as the one before's.
     page.get_by_role("button", name="Close comments").click()
-    page.set_viewport_size({"width": 820, "height": 900})
+    resized(page, 820, 900)
     page.wait_for_function(
         "() => [...document.querySelectorAll('.cq-sug-actions')]"
         ".every(r => r.classList.contains('cq-docked'))"
@@ -6493,7 +6527,7 @@ def test_the_half_page_keys_move_the_region_the_reader_is_scrolling(browser, ser
     assert threads_now == threads_was, "the panel took a key aimed at the document"
     assert page_now > page_was, "the document did not move for a key of its own"
 
-    page.set_viewport_size({"width": 500, "height": 600})
+    resized(page, 500, 600)
     panel_settled(page)
     (page_was, threads_was), (page_now, threads_now) = press_d()
     assert page_now == page_was, (
