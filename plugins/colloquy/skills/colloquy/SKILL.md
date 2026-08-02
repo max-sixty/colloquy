@@ -259,8 +259,8 @@ your turn. The reply ending each round carries the page's URL again: the reviewe
 the page from the turn in front of them. While `review wait` runs, the banner names the
 current agent as listening; it exits — re-invoking you — when the user comments,
 replies, resolves, approves, or edits an interactive widget (a drag on a `cq-board`
-arrives as an `action` event), printing the new events as JSON. It also exits to
-report a waiting page nobody has ever opened (see "Where the page is served"). `review wait` delivers
+arrives as an `action` event), printing the new events as JSON. It waits as long as the
+reviewer takes. `review wait` delivers
 everything no previous `review wait` has delivered, including events posted while you
 were working, so comments never get lost between rounds. Reading the log with
 `review events` doesn't count as delivery. User comments exist only through the
@@ -416,12 +416,12 @@ printed whether the reviewer's browser is here or on the machine they SSH'd from
 
 That address is a route the session demonstrated, which the reviewer's browser may not
 share: a jump host or NAT between them and this machine leaves it unroutable from where
-they sit, and they can't report a page they never got. The server stamps every keyed
-request, so `review wait` notices the page nobody has ever opened and exits after ten
-minutes saying so; relay that in your reply, and if the URL doesn't load for the
-reviewer, `colloquy server stop` and re-run with `--host NAME`, where NAME is a hostname
-they reach this machine by — it goes in the URL as given, and the server binds every
-interface so the name need not resolve to a local address. A machine on an overlay
+they sit. Only their browser can see that, so the report comes from them. Silence on
+this side looks the same whether they haven't looked yet or can't reach the page at all.
+When they say the URL doesn't load, `colloquy server stop` and re-run with
+`--host NAME`, where NAME is a hostname they reach this machine by — it goes in the URL
+as given, and the server binds every interface so the name need not resolve to a local
+address. A machine on an overlay
 network (a tailnet) has that network as an interface, so its name there reaches a
 reviewer with no route otherwise; failing everything, `version export` hands over the
 page as a file.

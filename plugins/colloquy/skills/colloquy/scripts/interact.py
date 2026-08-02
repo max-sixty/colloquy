@@ -43,10 +43,6 @@ A page directory holds:
                          it working with "handoff": true until the agent's own
                          `review state` lands
     heartbeat.json       watcher liveness, bumped by `review wait` while it runs
-    contact.json         proof a keyed request has ever arrived, stamped by the page's
-                         server on each one (a preview server never stamps). Its
-                         absence is what lets `review wait` say nobody has ever
-                         opened the page
     cursor.json          seq of the last event delivered to the agent, written by
                          `review wait` on exit
     server.json          {"port", "pid", "url"} for the running server
@@ -248,10 +244,6 @@ HEARTBEAT_FRESH_SECS = 8
 # claim the page before it closes. The claim itself is the ownership record:
 # manual servers have none and therefore remain up until `server stop`.
 ORPHAN_GRACE_SECS = 1
-# How long `review wait` waits over a page no keyed request has ever reached
-# before telling Claude so. Long enough that "the reviewer is opening it now"
-# has passed, short enough to land within the round it describes.
-UNOPENED_REPORT_SECS = 600
 # The browser's event kinds, and per kind the fields something downstream reads.
 # POST /api/event is the one door they come through, so this is where the shape is
 # checked; every reader indexes the fields rather than asking whether they arrived.
@@ -377,7 +369,6 @@ PAGE_STATE_FILES = (
     "comments.jsonl",
     "status.json",
     "heartbeat.json",
-    "contact.json",
     "cursor.json",
     "server.json",
     "access.json",
@@ -830,13 +821,7 @@ class Handler(BaseHTTPRequestHandler):
         request set out of it. One arrival is enough: the runtime's own fetches are
         relative and carry no query, and a reader who reloads or bookmarks the bare
         address is the same reader. So nothing has to thread the key through the
-        page, and `colloquy.js` never learns there is one.
-
-        A keyed request is also the one proof that somebody the URL was handed to
-        can reach this server, so it stamps contact.json — which is how
-        `review wait` can say nobody ever opened the page. Only somebody: a
-        stranger probing the port proves routing, not the reviewer, and a preview
-        server's fetches are the machine's own Chrome, so neither stamps."""
+        page, and `colloquy.js` never learns there is one."""
         if secrets.compare_digest(parse_qs(urlsplit(self.path).query).get("t", [""])[0], self.token):
             self.set_cookie = True
         else:
@@ -845,8 +830,6 @@ class Handler(BaseHTTPRequestHandler):
                 jar[self.cookie].value, self.token
             ):
                 return False
-        if self.preview_upto is None:
-            write_json(self.page_dir / "contact.json", {"t": time.time()})
         return True
 
     def end_headers(self):
@@ -1762,9 +1745,19 @@ def revive_server(page_dir: Path) -> bool:
 
 
 def cmd_wait(page_dir: Path) -> int:
+    """Hold until the reviewer speaks, and deliver what they said.
+
+    A wait ends on them, or on the page's server being down with no restart to
+    make. It puts no clock on how long a reviewer takes, because there is no such
+    measurement to take from this side of the wire: a page whose address their
+    browser can't route to and a page they simply haven't opened yet look
+    identical at every length, so a deadline over it announces the first while
+    describing the second — and the second is the ordinary case. Only their
+    browser can tell them apart, and the reviewer holds the URL from the turn
+    that handed it over, so the report comes from them; SKILL.md's "Where the
+    page is served" carries the recourse."""
     claim_page(page_dir)
     cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
-    waiting_since = None
     server_check_at = 0.0
     revived = False
     try:
@@ -1816,35 +1809,6 @@ def cmd_wait(page_dir: Path) -> int:
                         file=sys.stderr,
                         flush=True,
                     )
-            # A handover that never landed: the reviewer can't report a page they
-            # never got, so the one route the session has demonstrated — this
-            # terminal — carries the fact. The clock runs only while the observed
-            # status is "waiting", because one wait spans working stretches too
-            # and the reviewer's ten minutes start at the handover, not at the
-            # watch. contact.json's absence means no keyed request ever, this
-            # serve or any before it. Exiting is what reaches Claude (a
-            # background task speaks on exit), and each fresh wait re-arms the
-            # clock, so an unanswered report repeats rather than floods.
-            if (read_json(page_dir / "status.json") or {"state": "idle"})["state"] != "waiting":
-                waiting_since = None
-            elif waiting_since is None:
-                waiting_since = time.monotonic()
-            if (
-                waiting_since is not None
-                and time.monotonic() - waiting_since >= UNOPENED_REPORT_SECS
-                and not (page_dir / "contact.json").exists()
-            ):
-                print(
-                    f"nobody has opened the page: {UNOPENED_REPORT_SECS // 60} minutes "
-                    "waiting and no request carrying its key has ever reached its "
-                    "server. Say so in your reply, with the recourse: if the URL "
-                    "doesn't load for the reviewer, re-serve on a hostname they reach "
-                    "this machine by (`colloquy server stop <page>`, then `colloquy "
-                    "server run <page> --host NAME`), or hand over a file via "
-                    "`colloquy version export`. Then restart `review wait`.",
-                    file=sys.stderr,
-                )
-                return 2
             time.sleep(1)
     finally:
         (page_dir / "heartbeat.json").unlink(missing_ok=True)

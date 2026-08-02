@@ -1017,7 +1017,6 @@ def test_customize_continues_when_the_project_root_is_the_page(
         "comments.jsonl",
         "status.json",
         "heartbeat.json",
-        "contact.json",
         "cursor.json",
         "server.json",
         "access.json",
@@ -3468,23 +3467,6 @@ def test_the_key_arrives_in_the_query_and_stays_in_the_cookie(server, page_dir):
         assert polled.status == 200
 
 
-def test_only_a_keyed_reader_stamps_contact(server, page_dir):
-    """contact.json is `review wait`'s evidence that somebody holding the link has
-    reached the page, so what writes it must mean exactly that: the render gate's
-    preview fetches are the machine's own Chrome, and a stranger probing the port
-    proves routing rather than the reviewer. Neither counts."""
-    with interact.preview_server(page_dir, 1) as preview_url:
-        status, _ = fetch(preview_url, token=None)  # the preview key is in its URL
-        assert status == 200
-    assert not (page_dir / "contact.json").exists()
-
-    assert fetch(f"{server}/api/state", token=None)[0] == 403
-    assert not (page_dir / "contact.json").exists()
-
-    assert fetch(f"{server}/api/state")[0] == 200
-    assert (page_dir / "contact.json").exists()
-
-
 def test_a_page_is_reached_where_the_ssh_session_reached_this_machine(page_dir, monkeypatch):
     """SSH_CONNECTION is "client_ip client_port server_ip server_port" — the third
     field is the address that carried the session, so it is a route the reviewer has
@@ -3656,41 +3638,24 @@ def test_wait_leaves_a_closed_review_down(page_dir):
     assert interact.running_server(page_dir) is None
 
 
-def test_wait_reports_a_page_nobody_has_opened(page_dir, monkeypatch, capsys):
-    """A handover that never landed is silent in both directions — the reviewer
-    can't report a page they never got — so `review wait` says it in the terminal,
-    the one route the session has demonstrated, naming the recourse (`--host`).
-    The clock runs only while the page is waiting on the reviewer: a wait spans
-    working stretches, whose minutes are the agent's rather than the reviewer's.
-    And any keyed request ever stands the report down: from there an unread page
-    is a reviewer who hasn't looked, which is not the terminal's news to break."""
+def test_wait_holds_a_page_nobody_has_opened(page_dir, capsys):
+    """Nothing the server can observe tells a page the reviewer hasn't opened yet
+    from one they can't reach, so the wait doesn't guess between them: over a page
+    no request has ever touched it holds for the reviewer exactly as it would for
+    one reading, and reports nothing of its own."""
     interact.write_json(page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"})
     interact.cmd_status(page_dir, "waiting", "")
-    monkeypatch.setattr(interact, "UNOPENED_REPORT_SECS", 0)
-
-    assert interact.cmd_wait(page_dir) == 2
-    assert "--host" in capsys.readouterr().err
-
-    interact.cmd_status(page_dir, "working", "writing v2")
     threading.Timer(
         0.2,
         lambda: interact.append_event(
             page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "hi"}
         ),
     ).start()
-    assert interact.cmd_wait(page_dir) == 0
-    assert "nobody has opened" not in capsys.readouterr().err
 
-    interact.cmd_status(page_dir, "waiting", "")
-    interact.write_json(page_dir / "contact.json", {"t": 0})
-    threading.Timer(
-        0.2,
-        lambda: interact.append_event(
-            page_dir, {"kind": "comment", "id": "c2", "author": "user", "text": "again"}
-        ),
-    ).start()
     assert interact.cmd_wait(page_dir) == 0
-    assert "nobody has opened" not in capsys.readouterr().err
+    printed = capsys.readouterr()
+    assert [json.loads(line)["id"] for line in printed.out.splitlines()] == ["c1"]
+    assert printed.err == ""
 
 
 @pytest.fixture
