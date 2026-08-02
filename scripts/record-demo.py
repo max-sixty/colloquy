@@ -22,7 +22,6 @@ import io
 import json
 import shutil
 import subprocess
-import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -32,14 +31,6 @@ from playwright.sync_api import Page, sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 COLLOQUY = ROOT / "plugins" / "colloquy" / "bin" / "colloquy"
-# A staging directory of this recording's own. A fixed one under the repo was
-# shared by every concurrent run, and two recordings sharing a page directory
-# drive one page: `server run` finds the other's server.json and serves that
-# page rather than starting, both read one event log, and whichever finishes
-# first deletes the directory out from under the other. That last one is how it
-# surfaced — `page init` vendoring a widget into a path that stopped existing
-# between the write and the rename.
-PAGE_DIR = Path(tempfile.mkdtemp(prefix="colloquy-demo-"))
 DEFAULT_OUTPUT = ROOT / "docs" / "demo.gif"
 GIF_SIZE = (1120, 700)
 # The size docs/index.html states on the <img>, so a reshoot needs no edit there.
@@ -158,12 +149,14 @@ def run_colloquy(*args: str) -> None:
         )
 
 
-def stop_server() -> None:
-    """Bring this recording's server down. Silent and best-effort because it runs
-    in the teardown: a cleanup that failed loudly there would be reporting over
-    the failure it is cleaning up after."""
+def stop_server(page_dir: Path) -> None:
+    """Bring a recording's server down. Silent and best-effort because both
+    callers are clearing something away rather than doing the work: in the
+    teardown a cleanup that failed loudly would be reporting over the failure it
+    is cleaning up after, and on a leftover there is nothing to say about a
+    server that had already gone."""
     subprocess.run(
-        [str(COLLOQUY), "server", "stop", str(PAGE_DIR)],
+        [str(COLLOQUY), "server", "stop", str(page_dir)],
         check=False,
         text=True,
         stdout=subprocess.DEVNULL,
@@ -171,7 +164,7 @@ def stop_server() -> None:
     )
 
 
-def wait_for_server(server: subprocess.Popen[str]) -> str:
+def wait_for_server(server: subprocess.Popen[str], page_dir: Path) -> str:
     """The page's URL, once it answers on it. Probed the way the browser about to
     open it will: the key rides in the query, and a jar carries it through the
     redirect to the latest version, which drops one.
@@ -183,7 +176,7 @@ def wait_for_server(server: subprocess.Popen[str]) -> str:
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         try:
-            info = json.loads((PAGE_DIR / "server.json").read_text())
+            info = json.loads((page_dir / "server.json").read_text())
             opener = urllib.request.build_opener(
                 urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
             )
@@ -197,12 +190,12 @@ def wait_for_server(server: subprocess.Popen[str]) -> str:
                     f"{out}{err}".rstrip()
                 ) from None
             time.sleep(0.05)
-    raise RuntimeError(f"the demo server never answered for {PAGE_DIR}")
+    raise RuntimeError(f"the demo server never answered for {page_dir}")
 
 
-def wait_for_comment() -> str:
+def wait_for_comment(page_dir: Path) -> str:
     deadline = time.monotonic() + 10
-    log = PAGE_DIR / "comments.jsonl"
+    log = page_dir / "comments.jsonl"
     while time.monotonic() < deadline:
         events = [
             json.loads(line) for line in log.read_text().splitlines() if line.strip()
@@ -241,16 +234,16 @@ def select_text(page: Page, selector: str, text: str) -> None:
     page.dispatch_event("body", "mouseup")
 
 
-def start_waiter() -> subprocess.Popen[str]:
+def start_waiter(page_dir: Path) -> subprocess.Popen[str]:
     return subprocess.Popen(
-        [str(COLLOQUY), "review", "wait", str(PAGE_DIR)],
+        [str(COLLOQUY), "review", "wait", str(page_dir)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
 
 
-def receive(waiter: subprocess.Popen[str]) -> list[dict]:
+def receive(waiter: subprocess.Popen[str], page_dir: Path) -> list[dict]:
     """Read one complete wait result and acknowledge exactly what entered this driver.
 
     Every way a wait ends without reviewer events is one it has already explained
@@ -264,12 +257,12 @@ def receive(waiter: subprocess.Popen[str]) -> list[dict]:
             f"the demo waiter exited {waiter.returncode} with no reviewer events\n"
             f"{stderr}".rstrip()
         )
-    run_colloquy("review", "ack", str(PAGE_DIR), str(events[-1]["seq"]))
+    run_colloquy("review", "ack", str(page_dir), str(events[-1]["seq"]))
     return events
 
 
 def record(
-    page: Page, waiters: list[subprocess.Popen[str]]
+    page: Page, waiters: list[subprocess.Popen[str]], page_dir: Path
 ) -> tuple[list[Image.Image], list[int]]:
     frames: list[Image.Image] = []
     durations: list[int] = []
@@ -302,12 +295,12 @@ def record(
     page.wait_for_selector(".cq-thread")
     shot(1500)
 
-    comment_id = wait_for_comment()
-    receive(waiters[0])
+    comment_id = wait_for_comment(page_dir)
+    receive(waiters[0], page_dir)
     run_colloquy(
         "review",
         "state",
-        str(PAGE_DIR),
+        str(page_dir),
         "working",
         "answering the backfill question",
     )
@@ -319,24 +312,24 @@ def record(
     run_colloquy(
         "review",
         "reply",
-        str(PAGE_DIR),
+        str(page_dir),
         "--to",
         comment_id,
         "--text",
         "Yes. The fixed rate limit keeps the backfill online.",
     )
-    (PAGE_DIR / "versions" / "v2.html").write_text(demo_page(2), encoding="utf-8")
+    (page_dir / "versions" / "v2.html").write_text(demo_page(2), encoding="utf-8")
     run_colloquy(
         "version",
         "publish",
-        str(PAGE_DIR),
+        str(page_dir),
         "--version",
         "2",
         "--text",
         "Backfill stays online; rehearsal progress is now 3 of 4",
     )
-    run_colloquy("review", "state", str(PAGE_DIR), "waiting")
-    waiters.append(start_waiter())
+    run_colloquy("review", "state", str(page_dir), "waiting")
+    waiters.append(start_waiter(page_dir))
     page.wait_for_url("**/v2.html", timeout=15_000)
     page.wait_for_function(
         "() => document.body.dataset.cqUpgraded === '1'"
@@ -367,12 +360,16 @@ def record(
         "() => document.querySelector('.cq-toast').classList.contains('show')"
     )
     shot(2400)
-    receive(waiters[-1])
+    receive(waiters[-1], page_dir)
     return frames, durations
 
 
 def shoot_stills(
-    browser, url: str, waiters: list[subprocess.Popen[str]], into: Path
+    browser,
+    url: str,
+    waiters: list[subprocess.Popen[str]],
+    page_dir: Path,
+    into: Path,
 ) -> None:
     """The landing page's two session stills, off the scene `record` has just left,
     written beside the GIF rather than to a path of their own.
@@ -400,14 +397,14 @@ def shoot_stills(
     started, so no reviewer event remains to make this fresh waiter return immediately.
     State the scene, then start that waiter: its heartbeat is the proof the browser
     renders."""
-    run_colloquy("review", "state", str(PAGE_DIR), "waiting")
-    waiters.append(start_waiter())
+    run_colloquy("review", "state", str(page_dir), "waiting")
+    waiters.append(start_waiter(page_dir))
     # The reviewer's board move has to have landed in each shot, or it shows a page
     # mid-replay — the same wait `version export` takes for the same reason. Counted
     # once: neither shot posts anything, so the log is the same for both.
     actions = sum(
         json.loads(line)["kind"] == "action"
-        for line in (PAGE_DIR / "comments.jsonl").read_text().splitlines()
+        for line in (page_dir / "comments.jsonl").read_text().splitlines()
         if line.strip()
     )
 
@@ -444,7 +441,6 @@ def write_gif(frames: list[Image.Image], durations: list[int], output: Path) -> 
     palette_frames = [
         frame.quantize(colors=192, method=Image.Quantize.MEDIANCUT) for frame in frames
     ]
-    output.parent.mkdir(parents=True, exist_ok=True)
     palette_frames[0].save(
         output,
         save_all=True,
@@ -472,38 +468,65 @@ def main() -> None:
     args = parser.parse_args()
     output = args.output.resolve()
 
+    # The page is staged beside the recording it produces, so `--output` keeps two
+    # runs apart without a second thing to keep unique. A fixed directory under the
+    # repo was shared by every concurrent run, and two recordings sharing a page
+    # directory drive one page: `server run` finds the other's server.json and
+    # serves that page rather than starting, both read one event log, and whichever
+    # finishes first deletes the directory out from under the other. That last one
+    # is how it surfaced — `page init` vendoring a widget into a path that stopped
+    # existing between the write and the rename. Two runs recording to one output
+    # are already one recording run twice, over a GIF and two stills with fixed
+    # names, so nothing is left for staging to disambiguate.
+    page_dir = output.parent / "demo-recording"
+    # Only a recording killed outright leaves one of these, since the teardown
+    # below covers every other exit — but `page init` re-vendors an existing page
+    # rather than refusing it, so the next recording would replay the last one's
+    # events off a log it never wrote. The stop is for that run's server, which
+    # outlived it holding this page's port. Anything else on the path is somebody
+    # else's, and `--output` puts this one wherever they asked, so say so rather
+    # than delete it.
+    if page_dir.exists():
+        if not (page_dir / "registry.json").is_file():
+            raise SystemExit(
+                f"{page_dir} is not a staged page; move it or record elsewhere"
+            )
+        stop_server(page_dir)
+        shutil.rmtree(page_dir)
+    # Makes the output directory too, so `--output` into somewhere new works and
+    # `write_gif` has a directory to write into.
+    page_dir.mkdir(parents=True)
+
     # Two scopes because there are two things to give back and they start at
     # different moments: the staging directory exists from here on, the processes
-    # only once the server is up. Staging inside the outer one is what makes a
-    # `page init` that fails cost nothing on disk — there is no next run to sweep
-    # up after it now that each recording stages somewhere of its own.
+    # only once the server is up.
     try:
-        run_colloquy("page", "init", str(PAGE_DIR))
-        (PAGE_DIR / "versions" / "v1.html").write_text(demo_page(1), encoding="utf-8")
+        run_colloquy("page", "init", str(page_dir))
+        (page_dir / "versions" / "v1.html").write_text(demo_page(1), encoding="utf-8")
         run_colloquy(
             "version",
             "publish",
-            str(PAGE_DIR),
+            str(page_dir),
             "--version",
             "1",
             "--text",
             "Migration rehearsal started; 2 of 4 checks complete",
         )
-        run_colloquy("review", "state", str(PAGE_DIR), "waiting")
+        run_colloquy("review", "state", str(page_dir), "waiting")
         # Piped rather than discarded, so `wait_for_server` has the server's own
         # account of a start that didn't take. Nothing drains these while it
         # serves, which is safe only because the handler logs nothing: the URL is
         # the one line it writes.
         server = subprocess.Popen(
-            [str(COLLOQUY), "server", "run", str(PAGE_DIR)],
+            [str(COLLOQUY), "server", "run", str(page_dir)],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
         waiters: list[subprocess.Popen[str]] = []
         try:
-            url = wait_for_server(server)
-            waiters.append(start_waiter())
+            url = wait_for_server(server, page_dir)
+            waiters.append(start_waiter(page_dir))
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(channel="chrome")
                 context = browser.new_context(
@@ -513,26 +536,26 @@ def main() -> None:
                 )
                 page = context.new_page()
                 page.goto(url)
-                frames, durations = record(page, waiters)
+                frames, durations = record(page, waiters, page_dir)
                 # The GIF is written before the stills are shot, so a still that
                 # can't be staged costs only itself. The other order lost a good
                 # recording to a timeout in the shot after it.
                 write_gif(frames, durations, output)
-                shoot_stills(browser, url, waiters, output.parent)
+                shoot_stills(browser, url, waiters, page_dir, output.parent)
                 browser.close()
         finally:
             for waiter in waiters:
                 if waiter.poll() is None:
                     waiter.terminate()
                     waiter.wait(timeout=5)
-            stop_server()
+            stop_server(page_dir)
             try:
                 server.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 server.terminate()
                 server.wait(timeout=5)
     finally:
-        shutil.rmtree(PAGE_DIR)
+        shutil.rmtree(page_dir)
     try:
         shown = output.relative_to(ROOT)
     except ValueError:
