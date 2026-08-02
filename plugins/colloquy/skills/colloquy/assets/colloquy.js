@@ -75,6 +75,9 @@
  * box clear of the open panel. Two scroll regions side by side, each scrollbar drawn
  * inside its own region — a viewport-scrolled document would paint its scrollbar over
  * the panel, stacked on the panel's own. Reading position goes through pageScroller.
+ * The browser's own scroll keys are left alone (Space, arrows, Home/End, PageUp/Down);
+ * d and u are the runtime's, stepping half a page through whichever of the two regions
+ * the reader's own scrolling moves, and carrying a destination so repeats add up.
  *
  * Keyboard: two scopes, matching the DOM's own. One dispatcher drives a table of
  * global single-key shortcuts (KEYS — also the source of the "?" overlay, so help
@@ -1011,6 +1014,11 @@ let latestVersion = null;
 let versions = [];
 let agentMsgCount = -1;
 let panelOpen = false;
+// Whether the panel stands over the page rather than beside it. That is the same fact as
+// which region the reader's own scrolling moves, so syncLayout — the layout's one writer
+// — writes it, and the half-page keys read it rather than re-deriving the breakpoint or
+// asking the overflow it set.
+let panelCovers = false;
 let pendingAnchor = null;
 
 // The fold answers where state stands; this answers how it got there. Widgets receive
@@ -1095,14 +1103,14 @@ function syncLayout() {
   // rewraps every line. Both are carried as motion rather than as a jump — the
   // transition granted to body at the end of the restore — because an eye can follow
   // a sentence that slides and cannot find one that teleports.
-  const covering = panelOpen && innerWidth <= PANEL_W * 2;
-  document.body.style.marginRight = panelOpen && !covering ? PANEL_W + "px" : "";
-  document.body.style.overflowY = covering ? "hidden" : "";
+  panelCovers = panelOpen && innerWidth <= PANEL_W * 2;
+  document.body.style.marginRight = panelOpen && !panelCovers ? PANEL_W + "px" : "";
+  document.body.style.overflowY = panelCovers ? "hidden" : "";
   // The toast lives in the same corner as the panel's Send button. Beside a wide
   // panel it steps left; over a covering sheet it stays inside the viewport and
   // rises above the whole composer, including a textarea grown by an unsent draft.
-  toastEl.style.right = (panelOpen && !covering ? PANEL_W + 18 : 18) + "px";
-  toastEl.style.bottom = (covering ? generalRow.offsetHeight + 18 : 18) + "px";
+  toastEl.style.right = (panelOpen && !panelCovers ? PANEL_W + 18 : 18) + "px";
+  toastEl.style.bottom = (panelCovers ? generalRow.offsetHeight + 18 : 18) + "px";
 }
 function setPanel(open) {
   panelOpen = open;
@@ -2617,11 +2625,13 @@ function replyTo(n) {
 
 const KEYS = [
   { key: "c", label: "c", does: "Comment on the selection — or toggle the panel", run: commentKey },
+  { key: "d", label: "d / u", does: "Half a page down / up", run: () => stepPage(0.5) },
+  { key: "u", run: () => stepPage(-0.5) },
   { key: "j", label: "j / k", does: "Next / previous open thread", run: () => stepThread(1) },
   { key: "k", run: () => stepThread(-1) },
   { label: "Enter", does: "On a focused thread: write a reply" },
   { key: "g", label: "g 1–9", does: "Reply to the nth open thread", run: () => setLeader(true) },
-  { key: "d", label: "d", does: "Highlight changes since the previous version",
+  { key: "v", label: "v", does: "Highlight changes since the previous version",
     run: () => diffBase && diffBtn.onclick() },
   { key: "[", label: "[ / ]", does: "Older / newer version", run: () => stepVersion(-1) },
   { key: "]", run: () => stepVersion(1) },
@@ -2717,6 +2727,39 @@ threadsBox.addEventListener("keydown", (ev) => {
     ta.focus();
   }
 });
+
+// d and u step the reader half a page down and up — less's pair, and half a page rather
+// than a whole one so the lines they were reading are still on screen to read on from.
+// The browser's own keys are left to the browser (Space, Home/End, PageUp/Down all reach
+// it untouched, and a test pins that); these are the runtime's.
+//
+// They move the region the reader's own scrolling moves, which under a covering sheet is
+// its thread list rather than the page behind it — the rule syncLayout already states
+// for the wheel, and a key is no different. Scrolling a page nobody can see reads to the
+// reviewer as the key doing nothing, and then the document is somewhere else when the
+// sheet closes.
+//
+// The destination is carried rather than measured afresh, because scrollBy measures from
+// where the glide has got to and not from where it is going: two presses 40ms apart move
+// 461px of a 900px page, so the half the reader believes they passed is still ahead of
+// them, with nothing on screen to say it was skipped. scrollend hands the destination
+// back whenever the region comes to rest, whoever moved it, so a press only ever extends
+// a move still in flight and one made after the reader took the page somewhere themselves
+// starts from where they left it. It is clamped, so pressing on at the foot of the page
+// banks no debt for u to press back through.
+let scrollGoal = null;
+for (const region of [pageScroller, threadsBox])
+  region.addEventListener("scrollend", () => (scrollGoal = null));
+function stepPage(fraction) {
+  const box = panelCovers ? threadsBox : pageScroller;
+  const from = scrollGoal?.box === box ? scrollGoal.top : box.scrollTop;
+  const top = Math.max(
+    0,
+    Math.min(box.scrollHeight - box.clientHeight, from + fraction * box.clientHeight),
+  );
+  scrollGoal = { box, top };
+  box.scrollTo({ top, behavior: SCROLL });
+}
 
 // [ and ] step versions with the picker's own pin semantics.
 function stepVersion(dir) {

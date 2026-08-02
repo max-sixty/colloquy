@@ -188,9 +188,10 @@ rearrangement.
 ## Assume the browser it already assumes
 
 The runtime requires ES modules, custom elements, `field-sizing`, `color-mix`, `:has()`,
-`@scope`, anchor positioning, `caretPositionFromPoint`, `Intl.Segmenter`, and the highlight
-registry. Guarding one of those while assuming the rest buys nothing and reads as if the
-others were checked. Add a feature guard only where there is a real fallback to take.
+`@scope`, anchor positioning, `caretPositionFromPoint`, `Intl.Segmenter`, `scrollend`, and
+the highlight registry. Guarding one of those while assuming the rest buys nothing and
+reads as if the others were checked. Add a feature guard only where there is a real
+fallback to take.
 
 A stale entry is the same mistake as a stray guard, so cut one the moment nothing uses it.
 And the list promises support, not uniform rendering: `::highlight()` takes a narrow,

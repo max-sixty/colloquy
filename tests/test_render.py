@@ -48,6 +48,7 @@ import pytest
 from axe_playwright_python.sync_playwright import Axe
 from click.testing import CliRunner
 from conftest import interact
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import expect
 
 EXAMPLES = sorted((Path(__file__).parent.parent / "examples").glob("*.html"))
@@ -6037,6 +6038,144 @@ def test_global_shortcuts_leave_browser_navigation_keys_alone(browser, serve):
         "observe the runtime dispatcher"
     )
     assert observed == dict.fromkeys(keys[:-1], False)
+    assert errors == []
+    page.close()
+
+
+def test_repeated_half_page_keys_add_up(browser, serve):
+    """The runtime's own pair, beside the browser's above: d and u step half a page, and
+    a reader who presses twice inside one glide has to land a whole one. scrollBy
+    measures from where the glide has got to rather than from where it is going, so two
+    presses covered 461px of a 900px page and the half in between went past unread —
+    with nothing on screen to say it had been skipped. The destination is carried
+    instead, and clamped, so pressing on at the foot banks no debt for u to press back
+    through.
+
+    The second press is timed against the first glide rather than fired after it. An
+    overlap that merely happens to occur is one that stops occurring on a loaded
+    machine, and this test would then sail past the bug it exists for."""
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    half = page.evaluate("() => document.body.clientHeight / 2")
+    assert page.evaluate(
+        "() => document.body.scrollHeight > document.body.clientHeight * 3"
+    ), "the page is too short for these steps to be told apart"
+    page.evaluate("""() => {
+        window.cqScrollEnds = 0;
+        document.body.addEventListener('scrollend', () => window.cqScrollEnds++);
+    }""")
+
+    def landed(act):
+        """Where the scroller came to rest after `act`. A scroll states its own end, so
+        that is what this waits on: a duration would be a guess, and stillness sampled
+        before the glide starts reads exactly like stillness after it.
+
+        Not moving at all is one of the outcomes under test — a destination run past the
+        foot spends a press paying itself back — and a scroll that never happens states
+        no end, so the wait is bounded and hands the position to the assertion instead.
+        A press that moves nothing then reads as the wrong number, which says what
+        happened; thirty seconds of silence and a timeout do not."""
+        ends = page.evaluate("() => window.cqScrollEnds")
+        act()
+        try:
+            page.wait_for_function("n => window.cqScrollEnds > n", arg=ends, timeout=5000)
+        except PlaywrightTimeout:
+            pass
+        return page.evaluate("() => document.body.scrollTop")
+
+    page.keyboard.press("d")
+    # Early in the glide, so the second press cannot arrive after the first has landed
+    # however slow the round trip turns out to be.
+    page.wait_for_function(
+        "h => document.body.scrollTop > 0 && document.body.scrollTop < h / 2", arg=half
+    )
+    assert landed(lambda: page.keyboard.press("d")) == pytest.approx(half * 2, abs=1), (
+        "the second press measured from the glide in flight, so the two together moved "
+        "less than the page they promised"
+    )
+    assert landed(lambda: page.keyboard.press("u")) == pytest.approx(half, abs=1)
+
+    foot = landed(
+        lambda: page.evaluate("() => document.body.scrollTop = document.body.scrollHeight")
+    )
+    for _ in range(4):
+        page.keyboard.press("d")  # nothing left to move, and nothing banked either
+    assert landed(lambda: page.keyboard.press("u")) == pytest.approx(foot - half, abs=1), (
+        "presses at the foot of the page ran the destination past it, and u spent "
+        "itself paying that back"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_the_half_page_keys_move_the_region_the_reader_is_scrolling(browser, serve):
+    """Two scroll regions, so d has to pick the one the reader is looking at. Beside the
+    page the panel is a column of its own and the keys are the document's. Under the
+    breakpoint the sheet covers the page and the page hands scrolling over with it — one
+    gesture moves one region, and while the sheet is up that region is its thread list.
+    A key is no different from a wheel there: a page scrolling behind the sheet shows
+    the reviewer nothing, so the key reads as dead, and the document is somewhere else
+    when the sheet closes."""
+    page, errors = open_page(browser, serve(LONG_PAGE, comments=12))
+    page.get_by_role("button", name="Comments", exact=False).click()
+    panel_settled(page)
+    assert page.evaluate(
+        "() => { const t = document.querySelector('.cq-threads');"
+        " return t.scrollHeight > t.clientHeight; }"
+    ), "the thread list does not overflow, so it could not be seen to scroll below"
+
+    page.evaluate("""() => {
+        window.cqScrollEnds = 0;
+        for (const box of [document.body, document.querySelector('.cq-threads')])
+            box.addEventListener('scrollend', () => window.cqScrollEnds++);
+    }""")
+
+    def offsets():
+        return page.evaluate(
+            "() => [document.body.scrollTop,"
+            " document.querySelector('.cq-threads').scrollTop]"
+        )
+
+    def press_d():
+        """Both offsets before and after a d that has come to rest. It waits on
+        whichever region answers, so the wrong one answering is two numbers to compare
+        rather than half a minute of silence and a timeout — and on the glide's end
+        rather than its first frame, since a document still moving when the sheet
+        arrives would carry the rest of that move into the phase below."""
+        was = offsets()
+        page.evaluate("() => window.cqScrollEnds = 0")
+        page.keyboard.press("d")
+        page.wait_for_function("() => window.cqScrollEnds > 0")
+        return was, offsets()
+
+    (page_was, threads_was), (page_now, threads_now) = press_d()
+    assert threads_now == threads_was, "the panel took a key aimed at the document"
+    assert page_now > page_was, "the document did not move for a key of its own"
+
+    page.set_viewport_size({"width": 500, "height": 600})
+    panel_settled(page)
+    (page_was, threads_was), (page_now, threads_now) = press_d()
+    assert page_now == page_was, (
+        "the page moved behind the covering sheet, where the reviewer cannot see it"
+    )
+    assert threads_now > threads_was, "the sheet did not move for the key it now owns"
+    assert errors == []
+    page.close()
+
+
+def test_the_version_diff_answers_v(browser, serve):
+    """d went to the half-page step, so the diff took v — beside [ and ], the other two
+    keys about which version this is. Pressed rather than read off the table: a key
+    bound to nothing looks the same in the ? overlay as one that works."""
+    url = serve(LONG_PAGE)
+    _publish(
+        serve.page_dir,
+        2,
+        LONG_PAGE.replace("Paragraph 3.", "Paragraph three."),
+        "reworded a paragraph",
+    )
+    page, errors = open_page(browser, url.replace("v1.html", "v2.html"))
+    page.keyboard.press("v")
+    expect(page.locator("#p3")).to_have_class(re.compile(r"cq-ins-block"))
     assert errors == []
     page.close()
 
