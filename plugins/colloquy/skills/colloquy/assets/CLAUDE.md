@@ -233,7 +233,12 @@ widget would be leaving it to be forgotten, which is how it was forgotten the fi
 A widget writes its own only where the pass can't reach: one run of words at the element's
 first or last child is all a pseudo-element could ever have been, so a chip row placed
 after a title (`cq-milestone`) or a heading that doubles as a list's accessible name
-(`cq-column`) is a module's job. Same contract either way — generated, so the diff looks
+(`cq-column`) is a module's job. Where the pass writes is the same question as what it
+writes, and appending got it wrong: a pseudo-element's box is the element's first or last,
+which on a page carrying no script is the edge of the element's own words and stops being
+so the moment a module injects chrome. An option's risk chip landed past the pick mark
+that ends its row — outside the apparatus, on a side the file's reading of that same
+version has nothing on. The page's words go at the edge of the page's words. Same contract either way — generated, so the diff looks
 away; no chrome marker, so the anchor pass doesn't — and `data-cq-said` beyond that only
 where something else reads it: the theme keys the column heading's look on it, the chip
 row has a class of its own.
@@ -356,10 +361,20 @@ of them.
 
 "True of both" is a claim about what the declaration does in each form, and a general
 selector is no evidence for it. `.cq-ref` set `margin-left: auto`, which is nothing at
-all inside a card laid out in flow and the whole of the row form's alignment in flex — so
-a rule that read as the reference's look was the row's placement of its mark, and the
-marks' column rested on an attribute (`for`) the form does not require. Rows naming no
-block hung each mark wherever their label happened to end.
+all inside a card laid out in flow and was the whole of the row form's alignment while
+rows were flex — so a rule that read as the reference's look was the row's placement of
+its mark, and the marks' column rested on an attribute (`for`) the form does not require.
+Rows naming no block hung each mark wherever their label happened to end.
+
+Flex was the wrong layout to be reasoning about, and the auto margin only the first thing
+it cost. A row is a run of the author's prose with the module's apparatus after it, and
+flex lays out items: every stretch of the label became one, so an inline `<code>`
+mid-label wore the row's own gap either side of it and lost the space that was written
+there, since a flex item's edge whitespace is trimmed. The words get a box of their own,
+and the markup stays the author's, which between them leave one candidate — the anonymous
+cell a table puts around them. The layout is then stated around that box rather than
+through it, and the fix to the mark's column falls out: the apparatus takes the cells
+after it and claims none of the row's width.
 
 The module is where this stops. It sees the difference exactly once (`for` renders a
 reference) and never asks which form it is in, because a second reading of "am I rows?"

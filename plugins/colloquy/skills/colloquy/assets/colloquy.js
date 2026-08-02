@@ -613,7 +613,14 @@ function renderSaid(root) {
         span.dataset.cqSaid = attr;
         span.dataset.cqGen = "1";
         span.textContent = text;
-        el[edge === "before" ? "prepend" : "append"](span);
+        // At the edge of the element's own words rather than of the element, which are the
+        // same place on a page carrying no script and not once a module has injected
+        // chrome of its own. These are the page speaking, so they belong beside the page's
+        // other words: an option's risk chip landed past the pick mark that ends a compact
+        // row — outside the apparatus the row runs to its line's end, and on the far side
+        // of it from where the file's reading of that same version has it.
+        const own = [...el.childNodes].filter((n) => !(n.nodeType === 1 && n.dataset.cqGen));
+        el.insertBefore(span, (edge === "before" ? own[0] : own.at(-1)?.nextSibling) ?? null);
       }
   }
 }

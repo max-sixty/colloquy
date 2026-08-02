@@ -1618,6 +1618,23 @@ def test_substantial_options_stack_and_align_their_facts(browser, serve):
     page.close()
 
 
+def test_a_row_too_narrow_to_dock_a_rail_stacks_it_instead(browser, serve):
+    """The rail is a comparison column, and it is worth its 10rem only while what it
+    stands beside is still an argument. Out of a row narrower than about 30rem it is not:
+    the case gets three or four words to the line and the row reads as a rail with some
+    text jammed down its left. So the row is asked, and not the window — how much width a
+    row has is a fact about the row, and a page gives 168px up to the review margin the
+    moment it carries a change to decide, which no viewport query knows about."""
+    page = browser.new_page(viewport={"width": 460, "height": 900}, color_scheme="light")
+    page.goto(serve(STACKED_OPTIONS_PAGE), wait_until="networkidle")
+    rail = page.locator("#st-sd > dl.facts").bounding_box()
+    prose = page.locator("#st-sd > p").bounding_box()
+    card = page.locator("#st-sd").bounding_box()
+    assert rail["width"] > card["width"] * 0.8, "the rail still docks in a row this narrow"
+    assert rail["y"] + rail["height"] <= prose["y"], "the case has to clear the rail"
+    page.close()
+
+
 def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     """A settled decision reads as one line and the cards behind it stop spending
     the page's height — but they are hidden, not gone, so everything that used to
@@ -1970,6 +1987,8 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
 
 # The other form of a question, on one page beside the first: options that are bare
 # labels, naming the blocks of the page they are about, and a group taking more than one.
+# One label runs into inline markup and one row carries a chip, because both are things a
+# row lays out beside its own apparatus and neither is anything a card would notice.
 ASK_PAGE = """<!doctype html>
 <html lang="en">
 <head>
@@ -1982,8 +2001,8 @@ ASK_PAGE = """<!doctype html>
 <main>
 <h1 id="h">Three jobs</h1>
 <cq-options id="jobs" choose multiple>
-  <cq-option id="job-mounts" for="sec-mounts">Replace the mounts</cq-option>
-  <cq-option id="job-heater" for="sec-heater">Heat the bird bath</cq-option>
+  <cq-option id="job-mounts" for="sec-mounts">Replace the <code>M8</code> mounts</cq-option>
+  <cq-option id="job-heater" for="sec-heater" risk="low">Heat the bird bath</cq-option>
   <cq-option id="job-camera">Neither — the camera first</cq-option>
 </cq-options>
 <section id="sec-mounts"><h2>The mounts</h2><p id="mounts-p">Plastic, and one came
@@ -2054,26 +2073,95 @@ def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serv
 def test_every_row_hangs_its_mark_at_the_same_column(browser, serve):
     """A row's dot is both the list's statement that it takes a pick and the target of
     the press that makes one, and it says the first of those by standing in a column
-    with the others. What put it there was the `for` reference's auto margin, so the
-    column was a fact about `for` rather than about the form: a row with no block to
-    name parked its mark wherever its label ended. `#jobs` mixes the two, which is where
-    it reads worst — two rows lined up and the third hanging mid-sentence — and a group
-    of rows naming nothing is what the shipped examples haven't got, which is why the
-    form shipped this way.
+    with the others. Twice it did not. Laid out as flex items the row's free space had to
+    be handed to whichever part of the apparatus came first, so the column was a fact
+    about the `for` reference and a row with no block to name parked its mark wherever
+    its label ended. And a chip an option says (`risk`) went in last of all, past the
+    mark that ends the line. `#jobs` carries both against rows that carry neither, which
+    is where either reads worst — rows lined up and one hanging mid-sentence — and a
+    group of rows naming nothing is what the shipped examples haven't got, which is why
+    the form shipped the first way.
 
     Each mark is read against the end of its own row rather than against its
     neighbours', so the column and its place are one reading: the rows are all one
     width, and a mark that is not at its line's end is not in the column either."""
     page, errors = open_page(browser, serve(ASK_PAGE))
     ends = """() => [...document.querySelectorAll('#jobs > cq-option')].map(o => {
+                const style = getComputedStyle(o);
+                const inset = parseFloat(style.paddingRight) + parseFloat(style.borderSpacing);
                 const m = o.querySelector('.cq-pick').getBoundingClientRect();
-                return m.right - (o.getBoundingClientRect().right -
-                                  parseFloat(getComputedStyle(o).paddingRight));
+                return m.right - (o.getBoundingClientRect().right - inset);
               })"""
     assert page.evaluate(ends) == [0, 0, 0], (
-        "a row's mark hangs where its label happened to end, so the group offers the "
-        "reader no column of dots to aim down"
+        "a row's mark hangs where its label happened to end, or behind something the row "
+        "said after it, so the group offers the reader no column of dots to aim down"
     )
+    assert errors == []
+    page.close()
+
+
+def test_a_row_label_keeps_the_spacing_it_was_written_with(browser, serve):
+    """A row is a line of prose with apparatus after it, and the prose is the author's:
+    what it says between two words is a space, and the page owes them that space and no
+    other. Laid out as flex items it owed them whatever the row's own `gap` was, because
+    every stretch of a label became an item of its own and a flex item's edge whitespace
+    is trimmed — `Replace the <code>M8</code> mounts` came out with 8px either side of
+    the code and without the space that was written there, and zeroing the gap took the
+    space away without giving it back. So the room between the last word and the code it
+    runs into is read against the space itself: that the space is on the screen at all,
+    and that nothing else is standing in for it."""
+    page, errors = open_page(browser, serve(ASK_PAGE))
+    room = """() => {
+                const code = document.querySelector('#job-mounts code');
+                const text = code.previousSibling;   // "Replace the "
+                const range = (from, to) => {
+                  const r = document.createRange();
+                  r.setStart(text, from); r.setEnd(text, to);
+                  return r.getBoundingClientRect();
+                };
+                const word = range(0, text.data.length - 1);
+                const space = range(text.data.length - 1, text.data.length);
+                return [space.width, code.getBoundingClientRect().left - word.right];
+              }"""
+    space, gap = page.evaluate(room)
+    assert space > 1, "the space the label was written with is not on the screen"
+    assert abs(gap - space) < 0.5, f"{gap}px of room where the label asked for {space}px"
+    assert errors == []
+    page.close()
+
+
+def test_a_row_holds_its_mark_still_under_its_own_press(browser, serve):
+    """The mark is what the press is aimed at, so it is the last thing on the page that
+    may move when the press lands — and the word it gains is exactly what would move it.
+    The room for that word is held from the start, which is what keeps the § reference
+    beside it still; the dot inside had no such guarantee, because it was centred in a
+    box whose height was the word's, so a mark that gained one lifted its own dot 3.4px
+    out from under the pointer that had just pressed it. Out of flow, over the row's own
+    height, the dot stands where it stood."""
+    page, errors = open_page(browser, serve(ASK_PAGE))
+    mark = page.locator("#job-heater .cq-pick")
+    box = "el => JSON.stringify(el.getBoundingClientRect())"
+    before = mark.evaluate(box)
+    page.locator("#job-heater").click()
+    expect(mark).to_have_text("your pick")
+    assert mark.evaluate(box) == before, "the press moved the mark it landed on"
+    assert errors == []
+    page.close()
+
+
+def test_a_chip_an_option_says_stands_with_the_rest_of_its_words(browser, serve):
+    """`x-says` renders an attribute the reader sees as text they can point at, at the
+    edge its pseudo-element occupied — and on a page carrying no script that edge is the
+    element's own words, because nothing else is in there. Once a module has injected
+    chrome the two part company, and appending put the page's words on the far side of
+    it: a row's risk chip landed past the pick mark that ends the line, where neither the
+    reader nor the file's reading of that same version has anything to its right."""
+    page, errors = open_page(browser, serve(ASK_PAGE))
+    chip = page.locator('#job-heater > [data-cq-said="risk"]')
+    expect(chip).to_have_text("low")
+    expect(page.locator("#job-heater > .cq-pick:last-child")).to_have_count(1)
+    ref = page.locator("#job-heater .cq-ref").bounding_box()
+    assert chip.bounding_box()["x"] < ref["x"], "the chip stands past the row's apparatus"
     assert errors == []
     page.close()
 
@@ -2167,14 +2255,23 @@ def test_the_box_is_offered_only_where_something_can_answer_it(browser, serve):
     The collapse is the same rule at a different scale. A settled group's box goes
     behind the disclosure with its options, because the question is retired until the
     reader opens it again — and `display: flex` on the class would otherwise outrank
-    the hidden attribute and leave a box floating under a collapsed group."""
+    the hidden attribute and leave a box floating under a collapsed group.
+
+    What the options go behind is `hidden="until-found"`, which is find-in-page's to
+    reopen and so collapses the box with content-visibility rather than by removing it.
+    That is containment, and containment passes over a table box without a word — a
+    question row states its layout as a table, so a settled group of them stayed on
+    screen under a shut disclosure, reading as one that had never collapsed."""
     page, errors = open_page(browser, serve(SETTLED_ASK_PAGE))
     assert errors == []
 
     box = page.locator("#jobs .cq-say")
+    rows = page.locator("#jobs > cq-option")
     expect(box).to_be_hidden()
+    assert rows.evaluate_all("els => els.map(e => e.getBoundingClientRect().height)") == [0, 0, 0]
     page.locator("#jobs .cq-settled").click()
     expect(box).to_be_visible()
+    assert all(rows.evaluate_all("els => els.map(e => e.getBoundingClientRect().height > 0)"))
 
     # The copy medium: the same DOM with the affordance never handed to it.
     page.evaluate("() => document.documentElement.classList.add('cq-copy')")

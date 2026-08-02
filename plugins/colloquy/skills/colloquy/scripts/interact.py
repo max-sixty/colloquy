@@ -2725,17 +2725,14 @@ class _PassageParser(HTMLParser):
             "block": tb if tb else self._fresh(),
             "tail": [],
         }
-        # Each x-says value at the edge its pseudo-element occupied. renderSaid prepends,
-        # so the last "before" attribute in registry order ends up first in the DOM.
+        # Each x-says value at the edge of the element's own words, in registry order,
+        # which is where renderSaid puts it and where a pseudo-element stood before it.
         head = []
         for attr, edge in (entry.get("x-says") or {}).items():
             value = attrs_d.get(attr)
             if value is None:
                 continue
-            if edge == "before":
-                head.insert(0, value)
-            else:
-                frame["tail"].append(value)
+            (head if edge == "before" else frame["tail"]).append(value)
         if frame["fenced"]:
             self._fence()
         if retired_by and frame["id"]:

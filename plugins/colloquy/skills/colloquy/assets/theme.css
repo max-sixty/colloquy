@@ -357,9 +357,19 @@ cq-compare:has(> cq-variant > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, 
       position: absolute; right: 12px; top: 14px; anchor-name: --cq-effort; }
   & > cq-option[risk]::after, & > cq-option > [data-cq-said="risk"] {
       position: absolute; top: 14px; right: calc(anchor(--cq-effort left, 6px) + 6px); }
-  & > :is(cq-option, cq-variant) > .facts { float: right; clear: right;
-      display: block; width: 10rem; margin: 0 0 var(--sp-2) var(--sp-3);
-      font-size: var(--t-5); }
+  /* The rail docks right where the row has the width to spare, and stacks above the prose
+   * where it hasn't — asked of the row itself, because how much room it has is a fact
+   * about the row and not about the window: the page gives 168px up to the review margin
+   * the moment a change wants deciding, and a viewport wide enough to dock in was still
+   * one of those. A 10rem rail out of a narrower row leaves the argument three words to
+   * the line, so the rail wins the row and the case it was docked beside loses it. */
+  & > :is(cq-option, cq-variant) { container-type: inline-size; }
+  & > :is(cq-option, cq-variant) > .facts { display: block; font-size: var(--t-5);
+      margin: 0 0 var(--sp-2); }
+  @container (min-width: 30rem) {
+    & > :is(cq-option, cq-variant) > .facts { float: right; clear: right; width: 10rem;
+        margin: 0 0 var(--sp-2) var(--sp-3); }
+  }
   & > :is(cq-option, cq-variant) > .facts dt { color: var(--muted);
       font-size: var(--t-6); text-transform: uppercase; letter-spacing: .05em;
       font-weight: 400; margin-top: 6px; padding: 0; }
@@ -420,6 +430,13 @@ cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-off
  * picked row's mark is wider than an open one's by the word it says, so the labels came
  * out ragged and the eye had nothing straight to run down.
  *
+ * A table, because a row is a run of prose with apparatus after it, and the anonymous cell
+ * a table puts around that run is the only box the words can have while the markup stays
+ * the author's. Laid out as flex items they had none: every stretch of a label was an item
+ * of its own, so an inline <code> mid-label came out with the row's own 8px gap either
+ * side of it and without the space that was written there — a flex item's edge whitespace
+ * is trimmed, and the gap had been standing in for it on every label that was one run.
+ *
  * An open mark shows its dot and not its word. "choose" on every row of a list is the
  * affordance stated once per line where the dots have already said it together, and it
  * is what a card needs precisely because a card has no dots beside it to say it. What a
@@ -427,8 +444,8 @@ cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-off
  * pick sits, which is what a reviewer points at — and the two media already agree here,
  * since paper drops an offer that says nothing and keeps one that does. */
 cq-options:not(:has(> cq-option > strong)) > cq-option {
-                     display: flex; align-items: baseline; gap: var(--sp-2);
-                     padding: 5px 8px; border: 0; border-radius: 6px;
+                     display: table; width: 100%; border-spacing: var(--sp-2) 0;
+                     padding: 5px 0; border: 0; border-radius: 6px;
                      background: none; box-shadow: none; }
 cq-options:not(:has(> cq-option > strong)) > cq-option[recommended] {
                      background: color-mix(in srgb, var(--accent) 8%, transparent); }
@@ -438,25 +455,31 @@ cq-options[choose]:not(:has(> cq-option > strong)) > cq-option:hover {
                      background: var(--chip); }
 cq-options[choose]:not(:has(> cq-option > strong)) > cq-option[chosen]:hover {
                      background: var(--ok-tint); }
-/* In flow at the line's end, so the room the word will need is reserved before it needs
- * it: an open mark is a dot, a picked one is a dot and up to "your pick" beside it, and
- * a mark that took that room at the moment it was pressed dragged the § reference beside
- * it 54px to the left, mid-gesture. Reversed, so the dot is the item pinned to
- * the line's end and the word grows leftward into room already held — an open row looks
- * exactly as it did, and nothing on it moves when the pick lands. The width is measured
+/* The apparatus takes a cell each and claims none of the row's free width, so what is
+ * left over goes to the words and the mark ends every row at the same column, whether or
+ * not a reference stands beside it. Which is what a row of flex items could not say: the
+ * free space had to be handed to whichever part came first, so the column rested on an
+ * attribute (`for`) the form does not require, and a row naming no block parked its mark
+ * wherever its label happened to end. */
+cq-options:not(:has(> cq-option > strong)) > cq-option > :is(.cq-ref, .cq-pick) {
+                     display: table-cell; width: 0; white-space: nowrap; }
+/* The mark holds the room its word will need before it needs it: an open mark is a dot, a
+ * picked one is a dot and up to "your pick" beside it, and a mark that took that room at
+ * the moment it was pressed dragged the § reference beside it 54px to the left,
+ * mid-gesture. So the dot hangs at the cell's end, out of flow, over padding that reserves
+ * it (its own 11px and the 6px between it and the word), and the word grows leftward into
+ * room already held. Out of flow rather than last in it, because the word is what decides
+ * a line box's height and an open mark hasn't got one: centred on the row, the dot stands
+ * where it stood whether or not the word is there to say so. Both widths are measured
  * ("your pick" at --t-6) rather than derived, and the press test is what says so the day
- * it stops covering. */
-cq-options:not(:has(> cq-option > strong)) > cq-option .cq-pick {
-                     flex-direction: row-reverse; min-width: 66px; }
+ * they stop covering. */
+cq-options:not(:has(> cq-option > strong)) > cq-option > .cq-pick {
+                     position: relative; box-sizing: border-box; min-width: 66px;
+                     padding-right: 17px; text-align: right; }
+cq-options:not(:has(> cq-option > strong)) > cq-option > .cq-pick::before {
+                     position: absolute; right: 0; top: 0; bottom: 0; margin: auto 0; }
 cq-options:not(:has(> cq-option > strong)) > cq-option .cq-pick:not([data-cq-said]) {
-                     font-size: 0; gap: 0; }
-/* Whichever part of the apparatus comes first takes the line's free space, and the rest
- * follow behind it. The auto margin used to sit on the reference alone, which made the
- * marks' column a fact about `for`: a row naming no block parked its mark wherever its
- * label ended. Said of the pair rather than of either, since which one opens the run is
- * the row's business. */
-cq-options:not(:has(> cq-option > strong)) > cq-option
-    > :is(.cq-ref, .cq-pick):not(:is(.cq-ref, .cq-pick) ~ *) { margin-left: auto; }
+                     font-size: 0; }
 /* The block a row is about (`for`). It points; it never supplies the row's words, so it
  * reads as what it is — an id, written the way the comment panel writes an element
  * anchor — and rides at the line's end with the mark, out of the way of what the row
@@ -521,9 +544,13 @@ cq-options[open] > .cq-settled::before { content: "▾"; }
     cq-options[settled].cq-rendered:not([open]) { display: block; }
     /* until-found keeps the card's own box in flow, and a card is bordered,
      * padded, and (stacked) margined — zero it all, or the collapse leaves a
-     * stack of empty boxes behind. */
-    cq-options[settled] > cq-option[hidden] { padding: 0; border: 0; box-shadow: none;
-                                              margin: 0; }
+     * stack of empty boxes behind. A block, because the content-visibility that
+     * until-found collapses the box with is containment, and containment passes
+     * over a table box without a word: a question row states its layout as a table
+     * and stayed on screen under a closed disclosure, reading as a group that had
+     * not collapsed at all. */
+    cq-options[settled] > cq-option[hidden] { display: block; padding: 0; border: 0;
+                                              box-shadow: none; margin: 0; }
     /* The boolean-hidden fallback (no until-found support) hides here, because the
      * display:block above outranks the UA's [hidden] rule. */
     cq-options[settled] > cq-option[hidden]:not([hidden="until-found"]) { display: none; }
