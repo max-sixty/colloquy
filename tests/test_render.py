@@ -2025,6 +2025,33 @@ def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serv
     page.close()
 
 
+def test_every_row_hangs_its_mark_at_the_same_column(browser, serve):
+    """A row's dot is both the list's statement that it takes a pick and the target of
+    the press that makes one, and it says the first of those by standing in a column
+    with the others. What put it there was the `for` reference's auto margin, so the
+    column was a fact about `for` rather than about the form: a row with no block to
+    name parked its mark wherever its label ended. `#jobs` mixes the two, which is where
+    it reads worst — two rows lined up and the third hanging mid-sentence — and a group
+    of rows naming nothing is what the shipped examples haven't got, which is why the
+    form shipped this way.
+
+    Each mark is read against the end of its own row rather than against its
+    neighbours', so the column and its place are one reading: the rows are all one
+    width, and a mark that is not at its line's end is not in the column either."""
+    page, errors = open_page(browser, serve(ASK_PAGE))
+    ends = """() => [...document.querySelectorAll('#jobs > cq-option')].map(o => {
+                const m = o.querySelector('.cq-pick').getBoundingClientRect();
+                return m.right - (o.getBoundingClientRect().right -
+                                  parseFloat(getComputedStyle(o).paddingRight));
+              })"""
+    assert page.evaluate(ends) == [0, 0, 0], (
+        "a row's mark hangs where its label happened to end, so the group offers the "
+        "reader no column of dots to aim down"
+    )
+    assert errors == []
+    page.close()
+
+
 def test_a_pick_states_the_whole_set(browser, serve):
     """`multiple` is the difference between "which of these" and "which one", and the
     action is the same shape either way: every picked option, absolutely, so replay is

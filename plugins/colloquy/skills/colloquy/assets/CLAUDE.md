@@ -353,6 +353,13 @@ that only make sense for one form say which form — the reset never fires, beca
 nothing to reset — and a rule stays general only where it is true of both, which is most
 of them.
 
+"True of both" is a claim about what the declaration does in each form, and a general
+selector is no evidence for it. `.cq-ref` set `margin-left: auto`, which is nothing at
+all inside a card laid out in flow and the whole of the row form's alignment in flex — so
+a rule that read as the reference's look was the row's placement of its mark, and the
+marks' column rested on an attribute (`for`) the form does not require. Rows naming no
+block hung each mark wherever their label happened to end.
+
 The module is where this stops. It sees the difference exactly once (`for` renders a
 reference) and never asks which form it is in, because a second reading of "am I rows?"
 in a second language is two predicates to keep in step.

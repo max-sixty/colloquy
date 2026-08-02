@@ -385,18 +385,21 @@ cq-options[choose]:has(> cq-option > strong) > cq-option[recommended]:hover {
                          box-shadow: 0 0 0 1px var(--accent), 0 3px 10px rgba(0, 0, 0, .14); }
 cq-options[choose]:has(> cq-option > strong) > cq-option[chosen]:hover {
                          box-shadow: 0 0 0 1px var(--ok), 0 3px 10px rgba(0, 0, 0, .14); }
-/* The mark the upgrade injects: the keyboard path and the state in one element,
- * a caption on the card's own left edge rather than a control pinned to a corner.
- * Its box is identical in both states, so a pick shifts nothing; the strip below
- * the content is the room it needs. On screen every card in a choose group
- * reserves it, because the pick can land on any of them; on paper it can land
+/* The mark the upgrade injects: the keyboard path and the state in one element. Its box
+ * is identical in both states, so a pick shifts nothing; where it hangs, and what holds
+ * the room it needs, are each form's own business.
+ *
+ * On a card, a caption on its own left edge rather than a control pinned to a corner,
+ * standing in the strip below the content. On screen every card in a choose group
+ * reserves that strip, because the pick can land on any of them; on paper it can land
  * nowhere, so the room is reserved where the mark shows. */
 cq-options:has(> cq-option > strong) > cq-option[chosen] { padding-bottom: 32px; }
 @media screen {
   cq-options[choose]:has(> cq-option > strong) > cq-option { padding-bottom: 32px; }
 }
-cq-option .cq-pick { position: absolute; left: var(--sp-3); bottom: 9px;
-                     display: inline-flex; align-items: center; gap: 6px;
+cq-options:has(> cq-option > strong) > cq-option .cq-pick {
+                     position: absolute; left: var(--sp-3); bottom: 9px; }
+cq-option .cq-pick { display: inline-flex; align-items: center; gap: 6px;
                      font: inherit; font-size: var(--t-6); line-height: 1.5;
                      color: var(--muted); }
 cq-option .cq-pick::before { content: ""; width: 11px; height: 11px; flex: none;
@@ -444,14 +447,22 @@ cq-options[choose]:not(:has(> cq-option > strong)) > cq-option[chosen]:hover {
  * ("your pick" at --t-6) rather than derived, and the press test is what says so the day
  * it stops covering. */
 cq-options:not(:has(> cq-option > strong)) > cq-option .cq-pick {
-                     position: static; flex-direction: row-reverse; min-width: 66px; }
+                     flex-direction: row-reverse; min-width: 66px; }
 cq-options:not(:has(> cq-option > strong)) > cq-option .cq-pick:not([data-cq-said]) {
                      font-size: 0; gap: 0; }
+/* Whichever part of the apparatus comes first takes the line's free space, and the rest
+ * follow behind it. The auto margin used to sit on the reference alone, which made the
+ * marks' column a fact about `for`: a row naming no block parked its mark wherever its
+ * label ended. Said of the pair rather than of either, since which one opens the run is
+ * the row's business. */
+cq-options:not(:has(> cq-option > strong)) > cq-option
+    > :is(.cq-ref, .cq-pick):not(:is(.cq-ref, .cq-pick) ~ *) { margin-left: auto; }
 /* The block a row is about (`for`). It points; it never supplies the row's words, so it
  * reads as what it is — an id, written the way the comment panel writes an element
- * anchor — and sits at the line's end, out of the way of what the row says. */
+ * anchor — and rides at the line's end with the mark, out of the way of what the row
+ * says. */
 .cq-ref { font-size: var(--t-6); color: var(--muted); text-decoration: none;
-          white-space: nowrap; margin-left: auto; }
+          white-space: nowrap; }
 .cq-ref:hover { color: var(--accent); text-decoration: underline; }
 /* The box for words a choose group carries: an answer the options don't cover goes
  * here rather than sending the reader hunting for a passage to select. Withheld
