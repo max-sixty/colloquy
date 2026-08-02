@@ -418,6 +418,20 @@ genuinely needs it. Widgets never register keys with a dispatcher: focus-scoped 
 belong to the focused control, and the global table (`KEYS`) is also the source of the `?`
 overlay, so help can't drift from behaviour.
 
+## The key line promises exactly one press
+
+The key line renders what a key will do right now, and a promise about the next press is
+only worth making if the press does that and nothing else. The failure that named this:
+the draft editor's Escape called its own close without consuming the event, so the
+runtime's ladder ran behind it — the edit closed *and* the panel did, two actions under a
+line that promised one, and under the old regime the second action was merely invisible
+rather than absent. Hence the invariant `keyHint`'s contract states: a control that
+declares its own Esc row consumes Escape (`preventDefault`), and one that doesn't declare
+gets the ladder's chip, which is then the whole truth. What a control declares is also
+what it does because the declaration is the only copy: one rows constant per module feeds
+`keyHelp`, `keyHint`, and any announce() built from it, and the suite presses Escape on
+each declaring control and asserts exactly the declared effect.
+
 ## A widget's chrome outlives its handlers
 
 `cq-shot` flips between two screenshots with a radio group and one `:has(:checked)` rule,

@@ -31,10 +31,21 @@ import {
   toast,
   announce,
   keyHelp,
+  keyHint,
   pageScroller,
   REDUCED,
   SCROLL,
 } from "/colloquy.js";
+
+// The grip's keys in each of its two states. The one pair of declarations feeds the
+// "?" overlay, the key line (keyHint, re-declared at each state change), and the
+// grab announcement, so none of the three can drift from the handler beside them.
+const GRIP_KEYS = [["Enter", "grab the card"]];
+const GRABBED_KEYS = [
+  ["arrows", "move"],
+  ["Enter", "drop"],
+  ["Esc", "cancel the move"],
+];
 
 customElements.define(
   "cq-board",
@@ -48,11 +59,7 @@ customElements.define(
       // A quoted board is an exhibit: no grips, no sortable, no grip keys in
       // the "?" overlay — it stays the static board the theme renders anyway.
       if (quoted(this)) return;
-      keyHelp("On a card grip", [
-        ["Enter", "grab, then drop, the card"],
-        ["arrows", "move the grabbed card"],
-        ["Esc", "cancel the move"],
-      ]);
+      keyHelp("On a card grip", [...GRIP_KEYS, ...GRABBED_KEYS]);
       // Own cards only (:scope-deep would double-wire a nested board's cards).
       for (const card of this.querySelectorAll(":scope > cq-column > cq-card"))
         this.#grip(card);
@@ -151,6 +158,7 @@ customElements.define(
     #grip(card) {
       const grip = offer("button", "cq-grip", "⠿");
       grip.title = "Drag to move — or Enter, then arrows"; // the name is #names'
+      keyHint(grip, GRIP_KEYS);
       grip.addEventListener("keydown", (ev) => this.#key(ev, card, grip));
       // Leaving the grip drops the grab: restore the origin. Arrow moves reparent
       // the grip (which blurs it) and synchronously refocus, so by the time this
@@ -175,8 +183,12 @@ customElements.define(
         this.#grabbed = { card, grip, from, index: this.#cards(from).indexOf(card) };
         this.classList.add("cq-dragging");
         card.classList.add("cq-lift");
+        keyHint(grip, GRABBED_KEYS);
+        // Speech gets key names, not chip spellings: a reader renders "Esc" literally.
         announce(
-          `${this.#title(card)} grabbed — arrows move, Enter drops, Escape cancels`,
+          `${this.#title(card)} grabbed — ${GRABBED_KEYS.map(
+            ([k, w]) => `${{ Esc: "Escape" }[k] ?? k} ${w}`,
+          ).join(", ")}`,
         );
         return;
       }
@@ -225,8 +237,9 @@ customElements.define(
     }
 
     #drop() {
-      const { card, from, index } = this.#grabbed;
+      const { card, grip, from, index } = this.#grabbed;
       this.#release();
+      keyHint(grip, GRIP_KEYS);
       const to = card.parentElement;
       if (to === from && this.#cards(to).indexOf(card) === index) return;
       this.#send(card, from, index, to);
@@ -235,6 +248,7 @@ customElements.define(
     #cancel(refocus = false) {
       const { card, grip, from, index } = this.#grabbed;
       this.#release();
+      keyHint(grip, GRIP_KEYS);
       this.#place(card, from, index);
       if (refocus) grip.focus({ preventScroll: true }); // Esc keeps focus; blur means it left
       announce(`${this.#title(card)} — move cancelled`);

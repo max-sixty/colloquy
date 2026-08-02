@@ -11,7 +11,14 @@
  * a Δ count, so a change can't hide behind an inactive tab. Unupgraded,
  * panels stack as labeled sections; authored content is never replaced, so
  * there is no failSoft. */
-import { once, keyHelp, offer, relabel, HIDDEN } from "/colloquy.js";
+import { once, keyHelp, keyHint, offer, relabel, HIDDEN } from "/colloquy.js";
+
+// One declaration for the strip's keys: the "?" overlay's section and the key
+// line's rows while a tab has focus (keyHint on the strip covers every button).
+const TAB_KEYS = [
+  ["←/→", "previous / next tab"],
+  ["Home/End", "first / last tab"],
+];
 
 const TAB_KEY = "cq-tabs:";
 
@@ -25,10 +32,7 @@ customElements.define(
       // Own panels only (a nested cq-tabs wires its own).
       const panels = [...this.querySelectorAll(":scope > cq-tab")];
       if (!panels.length) return;
-      keyHelp("On a tab", [
-        ["←/→", "previous / next tab"],
-        ["Home/End", "first / last tab"],
-      ]);
+      keyHelp("On a tab", TAB_KEYS);
       // The strip is a thing to work, and its tabs ride inside it, so paper drops the
       // whole row and puts each panel's label back on the panel. What a tab says is not
       // the strip's word though — it is the panel's name, and once the strip exists it
@@ -42,6 +46,7 @@ customElements.define(
       // is what makes a drag across the name possible at all.
       const strip = offer("div", "cq-tabstrip");
       strip.setAttribute("role", "tablist");
+      keyHint(strip, TAB_KEYS);
       for (const panel of panels) {
         const btn = offer("button", "cq-tab-btn");
         btn.setAttribute("role", "tab");

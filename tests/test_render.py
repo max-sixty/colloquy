@@ -2004,8 +2004,9 @@ def test_an_arrival_interrupts_nothing_the_reviewer_holds(browser, serve):
 
 def test_resolving_an_early_thread_renumbers_the_rest_in_place(browser, serve):
     """A thread can move, not just appear: resolving the first one sends it to the
-    resolved disclosure and renumbers every thread after it — the corner badge and the
-    reply box's own address together, on nodes that are kept rather than remade. The
+    resolved disclosure and renumbers every thread after it — the reply box's armed
+    chip and its placeholder address together, on nodes that are kept rather than
+    remade. The
     disclosure itself is kept too, so the reviewer's open toggle survives the next
     resolution instead of snapping shut on every arrival, which is what the rebuild
     did."""
@@ -2023,6 +2024,9 @@ def test_resolving_an_early_thread_renumbers_the_rest_in_place(browser, serve):
 
     page.locator(f'.cq-thread[data-id="{c1}"] .cq-resolve').click()
     page.wait_for_function(ROUND_TRIP)
+    # The resolved node took the pressed button with it; focus lands on the thread
+    # that now holds its place rather than falling to body.
+    expect(page.locator(f'.cq-thread[data-id="{c2}"]')).to_be_focused()
     expect(page.locator(".cq-details summary")).to_have_text("Resolved (1)")
     expect(page.locator(f'.cq-details .cq-thread[data-id="{c1}"]')).to_have_count(1)
     expect(page.locator(f'.cq-thread[data-id="{c1}"] textarea')).to_have_count(0)
@@ -4538,10 +4542,10 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
 
 def test_the_leader_key_addresses_reply_boxes(browser, serve):
     """A reply box's send shortcut is focus-scoped, so only the focused box claims it:
-    unfocused, the placeholder carries the box's own address — g plus the number its
-    thread wears in the corner — and that sequence reaches the box from anywhere
-    outside a typing context. Inside one, g and digits are just letters; a non-digit
-    after g disarms the leader and keeps its ordinary meaning."""
+    unfocused, the placeholder carries the box's own address — g plus the digit the
+    armed window paints on the box as a chip — and that sequence reaches the box from
+    anywhere outside a typing context. Inside one, g and digits are just letters; a
+    non-digit after g disarms the leader and keeps its ordinary meaning."""
     url = serve(NOTED_PAGE)
     d = serve.page_dir
 
@@ -4569,7 +4573,7 @@ def test_the_leader_key_addresses_reply_boxes(browser, serve):
     ta2 = page.locator(f'.cq-thread[data-id="{c2}"] textarea')
     expect(ta2).to_be_focused()
     # The focused box claims the send keys; an unfocused one its own address, which
-    # its thread also wears as the corner badge.
+    # the armed window paints on the box as a chip.
     expect(ta2).to_have_attribute("placeholder", re.compile(r"Reply · (⌘⏎|Ctrl\+⏎)$"))
     ta1 = page.locator(f'.cq-thread[data-id="{c1}"] textarea')
     expect(ta1).to_have_attribute("placeholder", "Reply · g 1")
@@ -4579,6 +4583,17 @@ def test_the_leader_key_addresses_reply_boxes(browser, serve):
     page.keyboard.press("Escape")
     expect(page.locator(f'.cq-thread[data-id="{c2}"]')).to_be_focused()
     page.keyboard.press("3")
+    expect(page.locator(f'.cq-thread[data-id="{c2}"]')).to_be_focused()
+
+    # The chip is the armed window's paint, worn on the box the digit lands in:
+    # hidden at rest (the placeholder speaks the standing address), visible while
+    # armed, gone when Esc takes the window down.
+    chip1 = page.locator(f'.cq-thread[data-id="{c1}"] .cq-thread-num')
+    expect(chip1).to_be_hidden()
+    page.keyboard.press("g")
+    expect(chip1).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(chip1).to_be_hidden()
     expect(page.locator(f'.cq-thread[data-id="{c2}"]')).to_be_focused()
 
     # A non-digit disarms the leader and keeps its ordinary meaning: g j is a thread step.
@@ -4593,6 +4608,116 @@ def test_the_leader_key_addresses_reply_boxes(browser, serve):
     page.keyboard.type("g1")
     expect(ta3).to_have_value("g1")
     expect(ta3).to_be_focused()
+    assert errors == []
+    page.close()
+
+
+def test_the_key_line_says_what_a_press_will_do(browser, serve):
+    """The key line renders the same scene() escapeKey() runs, so what Esc promises
+    is what Esc then does, rung by rung: general box → the list → the panel closed.
+    And the armed chord is on screen with the panel closed — where the old corner
+    badges, display:none inside it, said nothing at all."""
+    url = serve(NOTED_PAGE)
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "comment",
+            "author": "user",
+            "version": 1,
+            "text": "One thread.",
+            "anchor": {"quote": "first passage"},
+        },
+    )
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => document.querySelectorAll('.cq-thread').length === 1")
+    line = page.locator(".cq-keyline")
+
+    # Page scope: the standing verbs, thread rows only over threads, and no esc
+    # chip — there is nothing to back out of.
+    expect(line).to_contain_text("comment")
+    expect(line).to_contain_text("threads")
+    expect(line).to_contain_text("keys")
+    expect(line).not_to_contain_text("esc")
+
+    # Armed with the panel closed: the pending chord and its way out are on screen.
+    page.keyboard.press("g")
+    expect(line).to_contain_text("1–9")
+    expect(line).to_contain_text("reply to thread")
+    expect(line).to_contain_text("cancel")
+    page.keyboard.press("Escape")
+    expect(line).not_to_contain_text("reply to thread")
+
+    # c opens the panel into the general box: the line says send, and where Esc goes.
+    page.keyboard.press("c")
+    expect(line).to_contain_text("send")
+    expect(line).to_contain_text("back to list")
+    # A send key on an empty box is answered, not swallowed — silence reads as a
+    # send that happened.
+    page.keyboard.press("ControlOrMeta+Enter")
+    expect(page.locator(".cq-toast")).to_contain_text("Nothing to send")
+    page.keyboard.press("Escape")
+    expect(page.locator(".cq-threads")).to_be_focused()
+    expect(line).to_contain_text("close comments")
+    page.keyboard.press("Escape")
+    expect(page.locator(".cq-panel")).to_be_hidden()
+    expect(line).not_to_contain_text("close comments")
+    # Focus doesn't fall to body: it lands on the control that reopens the panel.
+    expect(page.locator(".cq-comments")).to_be_focused()
+    assert errors == []
+    page.close()
+
+
+def test_escape_on_a_declaring_control_does_exactly_what_it_says(browser, serve):
+    """keyHint's contract: a control that declares its own Esc row consumes the
+    press, so one press is one action. The draft editor's Esc used to be two — the
+    edit cancelled and the runtime's ladder closed the panel behind it — and the
+    cancel discarded the reviewer's words against the never-lose-text norm. Now the
+    editor closes keeping the edit, the panel stands, and a grabbed card's Esc
+    cancels the move and nothing else."""
+    html = BOARD_PAGE.replace(
+        "</main>", '<cq-draft id="plan">Ship it.</cq-draft></main>'
+    )
+    url = serve(html)
+    interact.append_event(
+        serve.page_dir,
+        {"kind": "comment", "author": "user", "version": 1, "text": "A thread."},
+    )
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => document.querySelectorAll('.cq-thread').length === 1")
+    page.keyboard.press("c")  # panel open, so the old second action would show
+    expect(page.locator(".cq-panel")).to_be_visible()
+
+    page.locator("cq-draft .cq-draft-pencil").click()
+    ta = page.locator("cq-draft textarea")
+    expect(ta).to_be_focused()
+    ta.fill("Ship it — but louder.")
+    page.keyboard.press("Escape")
+    expect(ta).to_have_count(0)  # the editor closed…
+    expect(page.locator(".cq-panel")).to_be_visible()  # …and only the editor
+    # The edit was set aside, not discarded: reopening resumes it.
+    page.locator("cq-draft .cq-draft-pencil").click()
+    expect(page.locator("cq-draft textarea")).to_have_value("Ship it — but louder.")
+    page.keyboard.press("Escape")
+
+    # A grabbed card: Esc cancels the move, and the panel it would have closed stands.
+    grip = page.locator("#card-heater .cq-grip")
+    grip.focus()
+    page.keyboard.press("Enter")
+    expect(page.locator(".cq-keyline")).to_contain_text("cancel the move")
+    # The contract's flip side: the leader refuses to arm over a control that has
+    # claimed Escape, or one press would have two owners — the grip consuming it,
+    # the chord promising its cancel.
+    page.keyboard.press("g")
+    expect(page.locator(".cq-keyline")).not_to_contain_text("reply to thread")
+    expect(page.locator(".cq-keyline")).to_contain_text("cancel the move")
+    page.keyboard.press("Escape")
+    # The grab is over (an uncancelled one would also leave the card in Todo),
+    # the line is back to the resting grip, and the panel the ladder would have
+    # closed stands.
+    expect(page.locator(".cq-lift")).to_have_count(0)
+    expect(page.locator(".cq-keyline")).to_contain_text("grab the card")
+    expect(page.locator("#col-todo #card-heater")).to_have_count(1)
+    expect(page.locator(".cq-panel")).to_be_visible()
     assert errors == []
     page.close()
 
@@ -7890,6 +8015,11 @@ def test_the_help_overlay_answers_to_one_owner(browser, serve):
     expect(
         page.locator(".cq-help", has_text="a project widget using the same heading")
     ).to_be_visible()
+    # Help is a scope: the table stands down behind it, so c must not work the
+    # panel under the sheet.
+    page.keyboard.press("c")
+    expect(page.locator(".cq-panel")).to_be_hidden()
+    expect(page.locator(".cq-help")).to_be_visible()
     page.keyboard.press("Escape")
     expect(page.locator(".cq-help")).to_be_hidden()
     page.keyboard.press("?")

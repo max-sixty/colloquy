@@ -75,11 +75,22 @@ import {
   sendAction,
   toast,
   keyHelp,
+  keyHint,
+  SEND_KEYS,
   saveDraft,
   loadDraft,
   alignText,
   watchActions,
 } from "/colloquy.js";
+
+// The edit box's keys — one declaration for the "?" overlay and the key line. Esc
+// sets the edit aside rather than discarding it (never lose user text: Cancel is
+// the only discard), and the handler consumes the press, because a declared Esc
+// row promises one action and the runtime's ladder must not add a second.
+const EDIT_KEYS = [
+  [SEND_KEYS, "save"],
+  ["Esc", "close — edit kept"],
+];
 
 // The store key for a draft's unsent edit. The page's port is its own origin, so
 // the id alone is unambiguous — the same scoping every composer draft relies on.
@@ -172,8 +183,7 @@ customElements.define(
 
       keyHelp("On a draft", [
         ["dblclick or ✎", "edit the text in place"],
-        ["⌘/Ctrl+Enter", "save the edit"],
-        ["Esc", "cancel the edit"],
+        ...EDIT_KEYS,
       ]);
 
       this.#pencil = this.#button("✎", () => this.#open());
@@ -342,14 +352,21 @@ customElements.define(
         return;
       }
       const ta = offer("textarea", "cq-draft-edit");
-      ta.value = seed ?? this.#body.textContent;
+      // A set-aside edit outranks the authored text here too: reopening resumes it.
+      ta.value = seed ?? loadEdit(this.id) ?? this.#body.textContent;
       ta.setAttribute("aria-label", `Edit ${this.id}`);
       ta.addEventListener("input", () => saveEdit(this.id, ta.value));
-      // Cmd/Ctrl+Enter saves, Escape cancels — the composer's bindings.
+      // Cmd/Ctrl+Enter saves; Escape sets the edit aside — the composer's bindings,
+      // and consumed, or the runtime's ladder would add a second action (closing
+      // the panel) to the one EDIT_KEYS promises.
       ta.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) this.#commit();
-        else if (e.key === "Escape") this.#close(true);
+        else if (e.key === "Escape") {
+          e.preventDefault();
+          this.#close(false);
+        }
       });
+      keyHint(ta, EDIT_KEYS);
       this.#row.append(
         this.#button("Cancel", () => this.#close(true)),
         this.#button("Save", () => this.#commit(), "primary"),
@@ -358,8 +375,10 @@ customElements.define(
       this.#body.after(ta);
       ta.focus();
       // Only the pointer names a place; the pencil and a recovered draft leave the
-      // caret where focus put it, at the start of the text.
-      if (at) ta.setSelectionRange(at[0], at[1]);
+      // caret where focus put it, at the start of the text. The range was measured
+      // in the body's text, so it names a word only in a box holding that text — a
+      // resumed edit opens with different words at those offsets.
+      if (at && ta.value === this.#body.textContent) ta.setSelectionRange(at[0], at[1]);
     }
 
     #close(discard) {

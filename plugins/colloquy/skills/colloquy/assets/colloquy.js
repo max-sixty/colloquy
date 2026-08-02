@@ -89,13 +89,25 @@
  * IME) and anything a focused control already consumed (defaultPrevented), which is
  * how a widget's own keys shadow the table. Focus-scoped keys belong to the focused
  * control itself — panel threads here, grips and pick buttons in widget modules —
- * with no registration: the only keyboard exports widgets need are announce() (the
- * live region) and keyHelp() (rows for the overlay). One sequence exists: g arms a
- * short leader window in which a digit addresses the nth open thread's reply box —
- * the address each thread wears as a corner badge and its box's placeholder speaks —
- * and any other key disarms the window and keeps its ordinary meaning. Escape alone
+ * with no registration: the keyboard exports widgets need are announce() (the live
+ * region), keyHelp() (reference rows for the overlay), and keyHint() (what keys mean
+ * on a control right now). One sequence exists: g arms a short leader window in
+ * which a digit addresses the nth open thread's reply box — the address each box
+ * wears as a chip while the window is armed and its placeholder speaks always — and
+ * any other key disarms the window and keeps its ordinary meaning. Escape alone
  * crosses into typing context, backing out one layer per press without ever eating
  * text.
+ *
+ * What a key would do right now is state the reviewer can read, not recall: scene()
+ * derives the current scope from the state that already exists (the leader, the
+ * overlay, the composer, focus, the panel) and is the one definition of Escape's
+ * ladder — escapeKey() runs the rung scene() returns, and the key line (one quiet
+ * fixed line, bottom left) renders the same object, so what Esc promises and what it
+ * does cannot drift. The line is aria-hidden: it is the eye's copy of facts spoken
+ * elsewhere — placeholders speak each box's address, announce() speaks the leader
+ * arming, the "?" overlay speaks the whole reference. A control that shows its own
+ * esc row in the line must consume Escape (preventDefault), or the line would
+ * promise one action over a press that performs two.
  *
  * A message arrives as logged and renders here, in the same vendored layer that owns
  * the panel's styles — the two version together, and no wire vocabulary exists beyond
@@ -524,6 +536,35 @@ export function keyHelp(title, rows) {
   helpSections.set(key, { title, rows });
 }
 
+// What keys mean on this control right now — the key line renders these rows while
+// focus is inside `el` (innermost declaring ancestor wins), instead of the scope's
+// own. keyHelp answers "what could I do here"; this answers "what will this press
+// do", so a control whose keys change with its state re-declares on each change (a
+// grip on grab and on drop) and the call repaints the line itself — a grab is Enter
+// on an already-focused grip, so no focus event would. Two rules keep the promise
+// honest: a rows entry whose key cell reads "esc" (any case) replaces the ladder's
+// esc chip, and a control declaring one must consume Escape (preventDefault) — the
+// line would otherwise promise one action over a press that performs two. Pass null
+// to withdraw.
+const hintRows = new WeakMap();
+export function keyHint(el, rows) {
+  if (rows) hintRows.set(el, rows);
+  else hintRows.delete(el);
+  paintLine();
+}
+function hintFor(node) {
+  for (let a = node; a; a = a.parentElement) {
+    const rows = hintRows.get(a);
+    if (rows) return rows;
+  }
+  return null;
+}
+// Whether the focused control has claimed Escape for itself — the declared half of
+// keyHint's contract, read wherever the runtime must not promise a second meaning
+// for the same press.
+const claimsEsc = (node) =>
+  Boolean(hintFor(node)?.some(([key]) => key.toLowerCase() === "esc"));
+
 // How a widget collapses content it may need to show again (cq-tabs' inactive
 // panels, a settled cq-options' cards): hidden="until-found", so find-in-page
 // and fragment navigation still reach it — `beforematch` fires and the widget
@@ -912,6 +953,8 @@ style.textContent = `
     /* contain: reaching the end of the thread list must not start scrolling the page
        behind it — one wheel gesture moves one region. */
     .cq-threads { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px; }
+    /* An Escape rung lands here (general box → the list), so the rung is visible. */
+    .cq-threads:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
     .cq-empty { color: var(--muted); padding: 18px 4px; }
     .cq-thread { position: relative; border: 1px solid var(--rule); border-radius: var(--r); padding: 10px; margin-bottom: 12px; }
     .cq-thread.flash { animation: cq-runtime-4f3c2a8d-flash 1.2s ease-out; }
@@ -919,14 +962,18 @@ style.textContent = `
        jump: nothing above it moves, and the newcomer settles rather than appears. */
     .cq-thread.grow, .cq-msg.grow { animation: cq-runtime-4f3c2a8d-grow .32s cubic-bezier(.2,.7,.3,1); }
     .cq-thread:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    /* The g leader's address badge; .cq-leader-armed renders the armed window. Empty
-       is unaddressed (a thread past the ninth), and hides rather than draws a blank
-       ring — renderThreads writes the number, it doesn't add or drop the element. */
-    .cq-thread-num { position: absolute; top: -8px; left: -8px; width: 17px; height: 17px;
-      border: 1px solid var(--rule); border-radius: 50%; background: var(--card);
-      color: var(--muted); font-size: 11px; line-height: 15px; text-align: center; }
-    .cq-thread-num:empty { display: none; }
-    .cq-leader-armed .cq-thread-num { border-color: var(--accent); color: var(--accent); }
+    /* The g leader's address chip, worn on the reply box it addresses — where the
+       digit lands, not the thread's corner — and painted only while the window is
+       armed: the placeholder speaks the address at all times, so the chip is the
+       armed moment's paint rather than a standing second copy of the fact. Empty is
+       unaddressed (a thread past the ninth); renderThreads writes the number, it
+       doesn't add or drop the element. Top-anchored: field-sizing grows the box
+       downward, and the chip must not ride the growth. */
+    .cq-compose { position: relative; }
+    .cq-thread-num { display: none; position: absolute; top: -8px; left: -8px; width: 17px;
+      height: 17px; border: 1px solid var(--accent); border-radius: 50%; background: var(--card);
+      color: var(--accent); font-size: 11px; line-height: 15px; text-align: center; z-index: 1; }
+    .cq-leader-armed .cq-thread-num:not(:empty) { display: block; }
     .cq-quote { margin: 0 0 8px; padding: 2px 8px; border-left: 3px solid var(--quote-bar); color: var(--muted); font-style: italic; cursor: pointer; overflow-wrap: anywhere; }
     .cq-quote:hover { color: var(--ink-2); }
     .cq-quote.detached { border-left-style: dashed; border-left-color: var(--border-2); color: var(--muted-2); cursor: default; }
@@ -1003,8 +1050,22 @@ style.textContent = `
     .cq-help table { width: 100%; border-collapse: collapse; }
     .cq-help td { padding: 3px 0; vertical-align: baseline; }
     .cq-help td:first-child { width: 84px; white-space: nowrap; }
-    .cq-help kbd { font-family: ui-monospace, monospace; font-size: 12px; background: var(--chip);
+    .cq-help kbd, .cq-keyline kbd { font-family: ui-monospace, monospace; font-size: 12px; background: var(--chip);
       border: 1px solid var(--border-2); border-radius: 4px; padding: 1px 6px; }
+    /* The key line: what a key does right now, rendered from the same scene() that
+       runs Escape (see the module docstring). Floating chrome nothing presses
+       (pointer-events none) and the eye's copy of facts spoken elsewhere
+       (aria-hidden), so it owes the press sweep nothing; syncLayout lifts it over a
+       covering sheet the way it lifts the toast, and body reserves its height so
+       the document's last lines never end under it. */
+    .cq-keyline { position: fixed; left: 18px; bottom: 14px; z-index: 9000; pointer-events: none;
+      display: flex; gap: 12px; align-items: baseline; max-width: calc(100vw - 36px);
+      overflow: hidden; color: var(--muted); font-size: 12px; white-space: nowrap;
+      background: var(--card); border: 1px solid var(--rule); border-radius: var(--r);
+      padding: 5px 10px; }
+    .cq-keyline:empty { display: none; }
+    .cq-keyline .cq-key { display: inline-flex; gap: 5px; align-items: baseline; }
+    .cq-keyline kbd.armed { border-color: var(--accent); color: var(--accent); }
   }
 `;
 document.head.appendChild(style);
@@ -1086,6 +1147,9 @@ const closeBtn = Object.assign(el("button", "cq-btn", "×"), {
 closeBtn.setAttribute("aria-label", "Close comments");
 panelHead.append(el("span", "", "Comments"), closeBtn);
 const threadsBox = el("div", "cq-threads");
+// An Escape rung: backing out of the general box lands on the list (visible ring,
+// j/k walk on from it) rather than on nothing. -1 keeps it out of the Tab order.
+threadsBox.tabIndex = -1;
 const generalRow = el("div", "cq-general");
 const generalInput = document.createElement("textarea");
 const generalSend = el("button", "cq-btn primary", "Send");
@@ -1131,15 +1195,36 @@ const helpEl = el("div", "cq-ui cq-help");
 helpEl.setAttribute("role", "dialog");
 helpEl.setAttribute("aria-label", "Keyboard reference");
 helpEl.tabIndex = -1; // focused on open, so the dialog isn't silent to a screen reader
+// The key line — scene()'s rendering; aria-hidden per the module docstring (the
+// eye's copy of facts spoken by placeholders, announce() and the "?" overlay).
+const keylineEl = el("div", "cq-ui cq-keyline");
+keylineEl.setAttribute("aria-hidden", "true");
 
 // The one scope root for the chrome's private rules: they match nothing outside
 // this container. A div, not a cq-* element — the render gate reads a cq-* ancestor
 // as "inside a widget", and the runtime's layer is inside none.
 const chromeRoot = el("div", "cq-chrome");
-chromeRoot.append(banner, panel, fab, fabChain, composer, toastEl, liveEl, helpEl);
+chromeRoot.append(
+  banner,
+  panel,
+  fab,
+  fabChain,
+  composer,
+  toastEl,
+  liveEl,
+  helpEl,
+  keylineEl,
+);
 document.body.append(chromeRoot);
 const basePaddingTop = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
 document.body.style.paddingTop = basePaddingTop + 42 + "px";
+// The banner's reservation at the other edge: the key line stands for the page's
+// life, so the document's last lines get room rather than ending under it. The
+// amount is measured off the rendered line in syncLayout rather than stated here —
+// a number alone stops being true silently, which is the press-sweep norm's whole
+// subject.
+const basePaddingBottom =
+  parseFloat(getComputedStyle(document.body).paddingBottom) || 0;
 
 // ---------- state ----------
 let events = [];
@@ -1246,8 +1331,17 @@ function syncLayout() {
   // rises above the whole composer, including a textarea grown by an unsent draft.
   toastEl.style.right = (panelOpen && !panelCovers ? PANEL_W + 18 : 18) + "px";
   toastEl.style.bottom = (panelCovers ? generalRow.offsetHeight + 18 : 18) + "px";
+  // The key line takes the toast's lift over a covering sheet, or the sheet's own
+  // composer stands on the words saying what Esc will do to it.
+  keylineEl.style.bottom = (panelCovers ? generalRow.offsetHeight + 14 : 14) + "px";
+  document.body.style.paddingBottom =
+    basePaddingBottom + keylineEl.offsetHeight + 20 + "px";
 }
 function setPanel(open) {
+  // Closing while focus is inside would drop it on body, the reviewer's place
+  // lost silently; it lands on the one control that reopens what just closed.
+  if (!open && panel.contains(document.activeElement))
+    toggleBtn.focus({ preventScroll: true });
   panelOpen = open;
   panel.classList.toggle("open", open);
   toggleBtn.setAttribute("aria-expanded", String(open));
@@ -1259,11 +1353,15 @@ function setPanel(open) {
     renderPanel();
     syncGeneral(); // a restored draft has to reach the Send button's disabled state
   }
+  paintLine();
 }
 toggleBtn.onclick = () => setPanel(!panelOpen);
 addEventListener("resize", syncLayout);
-// field-sizing and every other rendered-size change feed the one geometry writer.
-new ResizeObserver(syncLayout).observe(generalRow);
+// field-sizing and every other rendered-size change feed the one geometry writer —
+// the key line included, whose height sets the body's bottom reservation.
+const layoutSizes = new ResizeObserver(syncLayout);
+layoutSizes.observe(generalRow);
+layoutSizes.observe(keylineEl);
 
 let toastTimer = 0;
 function showToast(msg, onClick) {
@@ -1310,7 +1408,9 @@ async function post(event) {
 // stylesheet's job (field-sizing), not this file's.
 // Returns a sync() the caller runs after setting .value programmatically, so the send
 // button agrees with what's in the box.
-const SEND_KEYS = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+export const SEND_KEYS = /Mac|iPhone|iPad/.test(
+  navigator.platform || navigator.userAgent,
+)
   ? "⌘⏎"
   : "Ctrl+⏎";
 function wireInput(ta, { hint, address, save, send, sendBtn }) {
@@ -1342,7 +1442,11 @@ function wireInput(ta, { hint, address, save, send, sendBtn }) {
   };
   paint();
   const submit = async () => {
-    if (sending || !ta.value.trim()) return;
+    if (sending) return;
+    // A send key on an empty box answered with silence reads as a send that
+    // happened — the blind drive believed exactly that. Say the nothing out loud
+    // (the toast announces too).
+    if (!ta.value.trim()) return showToast("Nothing to send — the box is empty");
     sending = true;
     sync();
     try {
@@ -1496,7 +1600,7 @@ function anchorLabel(anchor) {
 // The thread's address under the g leader: 1–9 by open order, 0 past the ninth. One
 // writer, renderThreads, because the number is the list's and not the thread's —
 // resolving an early thread renumbers every one after it without touching their nodes.
-// The corner badge and the reply box's placeholder are both renderings of this map,
+// The reply box's armed chip and its placeholder are both renderings of this map,
 // repainted after every reconcile; nothing reads either back.
 const threadAddress = new Map();
 
@@ -1570,16 +1674,6 @@ function threadNode(t, grow) {
   div.tabIndex = -1; // j/k focus target; Enter (threadsBox keydown) drops into its reply box
   div.dataset.id = t.root.id;
   if (grow) div.classList.add("grow");
-  if (!t.resolved) {
-    // The thread's address under the g leader, worn as a corner badge. The reply
-    // box's placeholder speaks the same address ("Reply · g 2"), which is what a
-    // screen reader hears — the badge is the eye's copy, so it stays out of the tree.
-    // Present on every open thread and written by renderThreads, because the number
-    // is positional: it changes without this node changing.
-    const badge = el("span", "cq-thread-num");
-    badge.setAttribute("aria-hidden", "true");
-    div.append(badge);
-  }
   const label = anchorLabel(t.root.anchor);
   if (label) {
     const quote = el("blockquote", "cq-quote", label);
@@ -1589,6 +1683,15 @@ function threadNode(t, grow) {
   t.msgs.forEach((m) => div.append(msgNode(m)));
   if (!t.resolved) {
     const row = el("div", "cq-compose");
+    // The box's address under the g leader, worn on the box the digit lands in and
+    // painted only while the window is armed. The placeholder speaks the same
+    // address at all times ("Reply · g 2"), which is what a screen reader hears —
+    // the chip is the armed moment's copy for the eye, so it stays out of the tree.
+    // Written by renderThreads, because the number is positional: it changes
+    // without this node changing.
+    const badge = el("span", "cq-thread-num");
+    badge.setAttribute("aria-hidden", "true");
+    row.append(badge);
     const input = document.createElement("textarea");
     const draftCtx = "reply:" + t.root.id;
     input.value = loadDraft(draftCtx);
@@ -1622,7 +1725,16 @@ function threadNode(t, grow) {
     div.cqSync(); // a restored reply draft enables its Reply button
     const actions = el("div", "cq-thread-actions");
     const resolve = el("button", "cq-resolve", "✓ Resolve");
-    resolve.onclick = () => post({ kind: "resolve", parent: t.root.id });
+    // Resolving rebuilds this node into the disclosure and takes focus with it —
+    // the blind drive fell to body here. Land where j would have gone: the thread
+    // that now holds this one's place, else the previous, else the list.
+    resolve.onclick = async () => {
+      const open = [...threadsBox.querySelectorAll(":scope > .cq-thread")];
+      const at = open.indexOf(div);
+      await post({ kind: "resolve", parent: t.root.id });
+      const kept = [...threadsBox.querySelectorAll(":scope > .cq-thread")];
+      (kept[at] ?? kept[at - 1] ?? threadsBox).focus({ preventScroll: true });
+    };
     actions.append(el("span"), resolve);
     div.append(row, actions);
   }
@@ -1673,16 +1785,17 @@ function renderThreads() {
   }
   setChildren(threadsBox, wanted);
 
-  // The badge and the reply placeholder both speak the thread's address, repainted
+  // The chip and the reply placeholder both speak the thread's address, repainted
   // after ordering because resolving an early thread renumbers everything after it.
   for (const div of threadsBox.querySelectorAll(":scope > .cq-thread")) {
     const num = threadAddress.get(div.dataset.id);
     const worn = num ? String(num) : "";
-    const badge = div.querySelector(":scope > .cq-thread-num");
+    const badge = div.querySelector(".cq-compose > .cq-thread-num");
     if (badge.textContent !== worn) badge.textContent = worn;
     div.cqSync();
   }
   toggleBtn.textContent = `Comments (${open.length})`;
+  paintLine(); // the key line's j/k and g rows stand only over threads (threadAddress)
 }
 
 // A kept node may still be moved by a later reconcile, and reinsertion restarts CSS
@@ -3032,6 +3145,7 @@ const syncComposer = wireInput(composerInput, {
 function syncSuggestMode() {
   composerSend.textContent = suggestCheck.checked ? "Suggest" : "Comment";
   syncComposer();
+  paintLine(); // the line's send row says which of the two the box will do
 }
 suggestCheck.onchange = () => {
   // Entering suggestion mode seeds the box with the passage to edit in place.
@@ -3055,6 +3169,7 @@ function showComposer(open) {
   // The reader's own selection is gone by now — focusing a textarea drops it — so this
   // mark is the only thing left pointing at the passage being quoted.
   paintAnchors();
+  paintLine();
 }
 
 // The quote suggestion mode auto-seeded, so reopening on a new anchor can tell
@@ -3126,18 +3241,33 @@ endReviewBtn.onclick = () => post({ kind: "close", version: VNUM });
 // One table drives both the dispatcher and the "?" overlay, so help can't drift
 // from behavior. Rows without a key are display-only — focus-scoped (the thread's
 // Enter, ⌘⏎) or dispatched before the table (Esc, the one key that crosses typing
-// contexts); rows without `does` ride the previous row's label (k under "j / k").
+// contexts); rows without `does` ride the previous row's label (k under "j / k");
+// `line` is the row's word in the key line, and `when` gates the row whole — the
+// line row and the press alike, so a key the line wouldn't show keeps its native
+// meaning instead of half-working (j over no threads used to open an empty panel).
 // The leader: g arms a short window in which a digit is an address — the nth open
-// thread's reply box, in the order j/k walk and the corner badges show. While armed
-// the badges brighten (the class is a rendering of leaderTimer, never read back). A
-// digit consumes the window; any other key disarms it and keeps its ordinary meaning,
-// so a mistyped g costs nothing; Esc and the timeout disarm too.
+// thread's reply box, in the order j/k walk. While armed each addressable box wears
+// its digit as a chip and the key line shows the pending chord (both renderings of
+// leaderTimer, never read back), so the armed window is visible wherever the
+// reviewer is looking, panel open or closed. A digit consumes the window; any other
+// key disarms it and keeps its ordinary meaning, so a mistyped g costs nothing; Esc,
+// the timeout, and focus entering a box disarm too.
 const LEADER_MS = 1500;
 let leaderTimer = null;
 function setLeader(on) {
+  // Armed over a control that has claimed Escape (a grabbed grip), one press would
+  // have two owners — the control consumes the key while the chord promises its
+  // cancel — so the leader refuses to arm there at all, the drift scene() exists
+  // to make impossible.
+  if (on && claimsEsc(document.activeElement)) return;
+  const was = Boolean(leaderTimer);
   if (leaderTimer) clearTimeout(leaderTimer);
   leaderTimer = on ? setTimeout(() => setLeader(false), LEADER_MS) : null;
   panel.classList.toggle("cq-leader-armed", on);
+  // The chips are the eye's copy; the arming itself is spoken, or the mode change
+  // is silent to exactly the reviewer who can't see them.
+  if (on && !was) announce("Reply to thread — press 1 to 9, Escape cancels");
+  paintLine();
 }
 // What a digit does with the window: stepThread-to-nth and its Enter in one press.
 function replyTo(n) {
@@ -3155,17 +3285,28 @@ const KEYS = [
     key: "c",
     label: "c",
     does: "Comment on the selection — or toggle the panel",
+    line: "comment",
     run: commentKey,
   },
   // No key of its own. Holding the key shows what it
   // would take, so what the reference is still the only place for is that the key exists.
   { label: "⌥ click", does: "Comment on the item under the pointer, whole" },
+  // The selection c acts on has a keyboard author, and it is the browser's: caret
+  // browsing. Unnamed, the keyboard story ended at "the selection" and quietly
+  // assumed a mouse — the blind drive's finding. Display-only, like ⌥ click: the
+  // key is the browser's to own, this row only says it exists.
+  {
+    label: "F7",
+    does: "Caret browsing (the browser's): select text by keyboard, then c",
+  },
   { key: "d", label: "d / u", does: "Half a page down / up", run: () => stepPage(0.5) },
   { key: "u", run: () => stepPage(-0.5) },
   {
     key: "j",
     label: "j / k",
     does: "Next / previous open thread",
+    line: "threads",
+    when: () => threadAddress.size > 0,
     run: () => stepThread(1),
   },
   { key: "k", run: () => stepThread(-1) },
@@ -3174,6 +3315,8 @@ const KEYS = [
     key: "g",
     label: "g 1–9",
     does: "Reply to the nth open thread",
+    line: "reply",
+    when: () => threadAddress.size > 0,
     run: () => setLeader(true),
   },
   {
@@ -3189,7 +3332,7 @@ const KEYS = [
     run: () => stepVersion(-1),
   },
   { key: "]", run: () => stepVersion(1) },
-  { key: "?", label: "?", does: "This key reference", run: toggleHelp },
+  { key: "?", label: "?", does: "This key reference", line: "keys", run: toggleHelp },
   {
     label: "Esc",
     does: "Back out one layer: an armed g, help, composer, reply, panel",
@@ -3223,27 +3366,149 @@ document.addEventListener("keydown", (ev) => {
     // Any other key disarms and falls through to its ordinary meaning: g j is a
     // thread step, and g g re-arms.
   }
+  // Help is a scope: while the overlay is up the table stands down — ? toggles it,
+  // Esc (above) closes it. A focused control's own keys stay its own, here as
+  // everywhere; the overlay holds focus on open, so reaching one takes a deliberate
+  // Tab out.
+  if (helpOpen && ev.key !== "?") return;
   const bound = KEYS.find((b) => b.key === ev.key);
-  if (!bound) return;
+  if (!bound || (bound.when && !bound.when())) return;
   ev.preventDefault();
   bound.run();
 });
 
-// Escape's ladder, top layer first. Backing out of a reply returns focus to its
-// thread, so Esc then Enter round-trips; drafts are kept at every rung.
+// A focus move is the one scope change no state writer sees, so it repaints the
+// line itself; focus entering a box, or a control that claims Escape, also disarms
+// the leader — a digit typed in a box is text, and a chip left blooming would
+// promise a cancel the control would consume.
+document.addEventListener("focusin", () => {
+  const active = document.activeElement;
+  if (leaderTimer && (editable(active) || claimsEsc(active))) setLeader(false);
+  paintLine();
+});
+document.addEventListener("focusout", () => paintLine());
+
+// Escape runs the rung scene() returns — the ladder's one definition, shared with
+// the key line, so what Esc promises and what it does cannot drift.
 function escapeKey() {
-  if (leaderTimer) setLeader(false);
-  else if (helpOpen) showHelp(false);
-  else if (composerOpen) {
-    hideComposer();
-    showFab(null);
-  } else if (editable(document.activeElement)) {
-    if (!panel.contains(document.activeElement)) return; // an authored input keeps its Escape
-    const thread = document.activeElement.closest(".cq-thread");
-    document.activeElement.blur();
-    thread?.focus();
-  } else if (panelOpen) setPanel(false);
+  scene().esc?.out();
 }
+
+// The current keyboard scope, top layer first: what the next press can do (rows),
+// and what Escape backs out of (esc — null where Escape deliberately does nothing:
+// an authored input outside the panel keeps its own Escape, and a widget control
+// that claims the key consumes it before the dispatcher looks). Backing out of a
+// reply returns focus to its thread, so Esc then Enter round-trips; out of the
+// general box, to the list, so j/k walk on from where the backing-out started;
+// drafts are kept at every rung.
+function scene() {
+  const active = document.activeElement;
+  if (leaderTimer)
+    return {
+      chord: "g",
+      rows: [["1–9", "reply to thread"]],
+      esc: { says: "cancel", out: () => setLeader(false) },
+    };
+  if (helpOpen)
+    return { rows: [], esc: { says: "close help", out: () => showHelp(false) } };
+  if (composerOpen)
+    return {
+      rows:
+        active === composerInput
+          ? [[SEND_KEYS, suggestCheck.checked ? "suggest" : "comment"]]
+          : [],
+      esc: {
+        says: "close — draft kept",
+        out: () => {
+          hideComposer();
+          showFab(null);
+        },
+      },
+    };
+  if (editable(active)) {
+    if (!panel.contains(active)) return { rows: [], esc: null };
+    const thread = active.closest(".cq-thread");
+    return {
+      rows: [[SEND_KEYS, "send"]],
+      esc: thread
+        ? {
+            says: "back to thread",
+            out: () => {
+              active.blur();
+              thread.focus();
+            },
+          }
+        : {
+            says: "back to list",
+            out: () => {
+              active.blur();
+              threadsBox.focus();
+            },
+          },
+    };
+  }
+  // The thread div itself, j/k's target — not a control inside it, whose Enter is
+  // its own press and must not be promised as "reply"; nor a resolved thread,
+  // which has no reply box for Enter to reach. The j/k row is the KEYS entry's
+  // own, not a restatement free to drift from it.
+  if (active?.classList?.contains("cq-thread")) {
+    const jk = KEYS.find((b) => b.key === "j");
+    return {
+      rows: [
+        ...(active.querySelector(":scope > .cq-compose") ? [["Enter", "reply"]] : []),
+        [jk.label, jk.line],
+      ],
+      esc: { says: "close comments", out: () => setPanel(false) },
+    };
+  }
+  return {
+    rows: KEYS.filter((b) => b.line && (!b.when || b.when())).map((b) => [
+      b.label,
+      b.line,
+    ]),
+    esc: panelOpen ? { says: "close comments", out: () => setPanel(false) } : null,
+  };
+}
+
+// The key line's paint, coalesced to a frame: a focus move is a focusout then a
+// focusin, and painting between them would flash the scope of nowhere.
+let linePending = false;
+function paintLine() {
+  if (linePending) return;
+  linePending = true;
+  requestAnimationFrame(() => {
+    linePending = false;
+    renderLine();
+  });
+}
+function renderLine() {
+  const s = scene();
+  // A focused control's own declaration outranks the scope's rows. Under a chord or
+  // the overlay the scope's promise takes the line instead: the leader refuses to
+  // arm over a control that claims Escape, so the chord's cancel is true, and other
+  // control keys keep their meaning without the line narrating them.
+  const hinted = s.chord || helpOpen ? null : hintFor(document.activeElement);
+  const rows = hinted ?? s.rows;
+  keylineEl.textContent = "";
+  const chip = (key, word, armed) => {
+    const span = el("span", "cq-key");
+    const kbd = document.createElement("kbd");
+    if (armed) kbd.className = "armed";
+    // One spelling in this position, whatever the declaration wrote: the overlay
+    // says "Esc" in its own voice, the line says "esc" in its.
+    kbd.textContent = key === "Esc" ? "esc" : key;
+    span.append(kbd);
+    if (word) span.append(el("span", "", word));
+    keylineEl.append(span);
+  };
+  if (s.chord) chip(s.chord, "", true);
+  for (const [key, word] of rows) chip(key, word);
+  // A hint's own Esc row outranks the ladder's chip: the control consumes the
+  // press, so the rung is not what this press would do.
+  if (s.esc && !rows.some(([key]) => key.toLowerCase() === "esc"))
+    chip("esc", s.esc.says);
+}
+paintLine();
 
 // c goes where commenting happens: a live selection gets the composer (what the
 // floating button does), an element click's pending 💬 gets that, and otherwise
@@ -3353,6 +3618,7 @@ function showHelp(open) {
   }
   helpEl.classList.toggle("open", open);
   if (open) helpEl.focus({ preventScroll: true });
+  paintLine();
 }
 function toggleHelp() {
   showHelp(!helpOpen);
@@ -3508,6 +3774,8 @@ async function applyDiff(baseVersion) {
 function setDiff(on) {
   diffOn = on;
   diffBtn.classList.toggle("on", on);
+  diffBtn.setAttribute("aria-pressed", String(on)); // the class is the eye's copy
+
   if (!on) {
     for (const b of diffMarked) b.classList.remove("cq-ins-block");
     diffMarked.length = 0;
