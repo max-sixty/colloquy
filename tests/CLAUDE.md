@@ -32,6 +32,23 @@ press two seconds for a trip that takes ten milliseconds.
 `wait_for_load_state("networkidle")` is not the wait either: with no navigation to answer
 for, it returns at once.
 
+A file the test writes is the same trip the other way round, and `expect`'s own timeout is
+the hold in disguise. A declared status, a bumped heartbeat, an appended event: none of
+them announce themselves, so the page learns of each when its next poll asks, and an
+assertion made straight after the write spends a whole poll interval of whatever budget
+`expect` was given — 1.8 to 2.3 of the default five, measured, and every time, because
+each assertion returns just after a poll lands. `told(page)` is that wait watched instead:
+a poll counted out after the write went looking for it, and its answer is the page being
+told.
+
+Two tests went red on this, on the runs where a machine was busy enough to eat the
+remainder. Being that machine on purpose found seven more standing on the same margin: an
+init script that wraps `fetch` and resolves each `/api/state` answer 3.5 seconds late,
+switched on once the page is up, since a request permanently in flight is a page that
+never reaches networkidle and so never finishes loading at all. Do that before believing a
+suite is clear of this. The tests that go red under load are only the two with the least
+room, and fixing those two hands the next loaded run a different victim.
+
 ## A wait consumes a fact the system states
 
 A page that has not started moving is as still as one that finished, so a wait that

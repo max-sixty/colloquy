@@ -603,6 +603,8 @@ WATCH_TRAFFIC = """
   window.__cqSends = 0;  // events posted
   window.__cqAcked = 0;  // posts the server has answered
   window.__cqRead = 0;   // answered posts the newest state the page has read accounts for
+  window.__cqAsked = 0;  // state the page has gone out for
+  window.__cqHeard = 0;  // ... and been given
   const inner = window.fetch;
   window.fetch = function (...args) {
     const url = String(args[0] ?? "");
@@ -610,17 +612,40 @@ WATCH_TRAFFIC = """
     const polling = url.includes("/api/state");
     const asOf = window.__cqAcked;
     if (posting) window.__cqSends++;
+    if (polling) window.__cqAsked++;
     const res = inner.apply(this, args);
     const over = () => {
       if (posting) window.__cqAcked++;
-      // Two polls can be in flight at once — a post's own and the timer's — so the
-      // freshest reading stands rather than the last one to arrive.
-      if (polling) window.__cqRead = Math.max(window.__cqRead, asOf);
+      if (polling) {
+        window.__cqHeard++;
+        // Two polls can be in flight at once — a post's own and the timer's — so the
+        // freshest reading stands rather than the last one to arrive.
+        window.__cqRead = Math.max(window.__cqRead, asOf);
+      }
     };
     res.then(over, over);  // over either way: a post the server refuses is over too
     return res;
   };
 """
+
+
+# The other direction of the same trip. Nothing a test writes into the page directory
+# announces itself — a declared status, a bumped heartbeat, an appended event all reach
+# the page when its next poll asks — so an assertion made straight after the write is
+# waiting out the poll interval on whatever budget expect() happens to carry. Timed, that
+# wait takes 1.8 to 2.3 of the default five seconds, and it takes them every time: an
+# assertion returns just after a poll lands, leaving the next one a whole interval away.
+# The remainder is all a loaded machine has to overrun, and a busy one did: holding each
+# poll's answer back by 3.5 seconds reproduces, to the character, the failure a full-suite
+# run reported for the banner test below.
+#
+# So the wait is the trip again, watched rather than timed. A poll counted out after the
+# write is one that went looking for it, and its answer is the page being told; the
+# expect that follows only has to read what arrived.
+def told(page):
+    """Wait for a poll that goes out from here on to come back."""
+    asked = page.evaluate("() => window.__cqAsked")
+    page.wait_for_function("(out) => window.__cqHeard > out", arg=asked)
 
 
 def displaced(before, boxes):
@@ -2692,10 +2717,12 @@ def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, 
     one has to settle it without the click that settled the tab that sent it. Where
     the two disagree, the later entry in the log is what both end on."""
     url = serve(SUGGESTION_PAGE)
-    first, first_errors = open_page(browser, url)
-    second, second_errors = open_page(browser, url)
+    first, first_errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
+    second, second_errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
 
+    # A tab that did not click has only its own poll to learn from.
     first.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
+    told(second)
     expect(second.locator("#sug-refill cq-old")).to_be_hidden()
     expect(second.locator("#sug-refill cq-new")).to_be_visible()
     expect(second.locator("[data-cq-for='sug-refill']")).to_be_hidden()  # nothing left to decide
@@ -2705,15 +2732,19 @@ def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, 
     # shows both buttons, so the reviewer can decide the other way there. Two
     # decisions on one change, and the log's order — not either tab's belief —
     # settles it for both once the cut-off one catches up.
-    third, third_errors = open_page(browser, url)
+    third, third_errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
     third.route("**/api/state", lambda route: route.abort())
     first.locator("[data-cq-for='sug-thistle'] .cq-sug-accept").click()
     # In the log before the reject is clicked, so which one is later is this test's
     # to decide rather than the network's.
+    told(second)
     expect(second.get_by_role("button", name="Accept all (1)")).to_be_visible()
     third.locator("[data-cq-for='sug-thistle'] .cq-sug-reject").click()
     third.unroute("**/api/state")
+    # The reject went out over a live channel, so every tab has to read it back —
+    # the cut-off one included, which is where it stops being its own local click.
     for tab in (first, second, third):
+        told(tab)
         expect(tab.locator("#sug-thistle cq-new")).to_be_hidden()
     assert first_errors == [] and second_errors == []
     assert set(third_errors) <= {"Failed to load resource: net::ERR_FAILED"}, (
@@ -3316,7 +3347,7 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
     c1 = comment({"quote": "first passage"}, "Sharpen this.")
     c2 = comment({"quote": "two separate remarks"}, "Second thought.")
     comment({"section": "fig"}, "The figure too.")
-    page, errors = open_page(browser, url)
+    page, errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     # Two threads on one block count up, and leave one line rather than two.
     assert "2 comments" in page.locator("#p1").aria_snapshot(), (
@@ -3342,6 +3373,7 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
 
     # Once the first thread resolves, the same control enters the next one.
     interact.append_event(d, {"kind": "resolve", "author": "user", "parent": c1})
+    told(page)
     expect(note).to_have_text("1 comment")
     note.press("Enter")
     expect(page.locator(f'.cq-thread[data-id="{c2}"]')).to_be_focused()
@@ -3390,12 +3422,14 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
 
     # A resolved thread takes its line with it: the pass owns what it wrote.
     interact.append_event(d, {"kind": "resolve", "author": "user", "parent": c4})
+    told(page)
     expect(page.locator("#p2 .cq-mark-note")).to_have_count(0)
     assert "1 comment" in page.locator("#p1").aria_snapshot()
 
     # A passage crossing two blocks says so in both: a reader landing on either block
     # hears about the comment, the way the paint reaches both.
     comment({"quote": "to land in it. A short second"}, "Crosses the boundary.")
+    told(page)
     expect(page.locator("#p2 .cq-mark-note")).to_have_count(1)
     assert "2 comments" in page.locator("#p1").aria_snapshot()
     assert "1 comment" in page.locator("#p2").aria_snapshot()
@@ -3506,7 +3540,7 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
     the quote is the only record there is, and it comes back: dashed and muted, the same
     detached treatment the panel gives a thread this version dropped."""
     url = serve(INLINE_PAGE)
-    page, errors = open_page(browser, url)
+    page, errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
 
     page.locator("#p").click(click_count=3)
     page.locator(".cq-fab").click()
@@ -3526,6 +3560,7 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
         )
     )
     interact.append_event(d, {"kind": "note", "author": "claude", "version": 2, "text": "two"})
+    told(page)
     expect(page.locator(".cq-latest-chip")).to_be_visible()
     page.get_by_role("button", name="New version available", exact=False).click()
     page.wait_for_url("**/v2.html", timeout=15000)
@@ -4274,7 +4309,7 @@ def test_code_is_colored_without_a_word_moving(browser, serve):
     the color of its own ink. The quote below is written the way `review comment` writes
     one — against the file — and spans a token boundary on its way back."""
     url = serve(CODE_PAGE)
-    page, errors = open_page(browser, url)
+    page, errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
     page.wait_for_function("() => document.querySelector('cq-code.cq-rendered') !== null")
 
     roles = page.evaluate("""() => {
@@ -4314,14 +4349,14 @@ def test_code_is_colored_without_a_word_moving(browser, serve):
                          "suffix": ""}},
     )
     page.get_by_role("button", name="Comments", exact=False).click()
+    # Posted to the server rather than through the page, so the page hears about it
+    # when its next poll asks.
+    told(page)
     expect(page.locator(".cq-thread")).to_have_count(1)
     expect(page.locator(".cq-panel .cq-quote.detached")).to_have_count(0)
     # The mark is a painted range, so what it covers is read back off CSS.highlights
-    # rather than off the DOM. Waited for, not read: the thread arrives on a poll.
-    page.wait_for_function(
-        "() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0",
-        timeout=5000,
-    )
+    # rather than off the DOM.
+    page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
     marked = page.evaluate("""() => [...CSS.highlights.get('cq-mark').values()]
                                      .map(r => r.toString()).join("")""")
     assert marked == "alembic upgrade head", f"the mark landed on {marked!r}"
@@ -5414,7 +5449,7 @@ def test_a_foreign_edit_waits_for_a_live_draft_and_replays_in_order(browser, ser
     when the box closes. An unrelated board move proves the poll saw the same
     batch while the editor was open, without making the test depend on time.
     """
-    page, errors = open_page(browser, serve(JOURNEY_V1))
+    page, errors = open_page(browser, serve(JOURNEY_V1), init_script=WATCH_TRAFFIC)
     draft = page.locator("#draft-ops")
     draft.locator(".cq-draft-body").dblclick()
     editor = draft.locator("textarea")
@@ -5445,14 +5480,14 @@ def test_a_foreign_edit_waits_for_a_live_draft_and_replays_in_order(browser, ser
         },
     )
 
-    expect(page.locator("#col-done #card-x")).to_have_count(1, timeout=10000)
+    told(page)
+    expect(page.locator("#col-done #card-x")).to_have_count(1)
     expect(editor).to_have_value("Local unsent words.")
     expect(draft.locator(".cq-draft-history")).to_have_count(0)
 
     page.keyboard.press("Escape")
-    expect(draft.locator(".cq-draft-body")).to_have_text(
-        "Foreign committed words.", timeout=10000
-    )
+    told(page)
+    expect(draft.locator(".cq-draft-body")).to_have_text("Foreign committed words.")
     expect(draft.locator(".cq-draft-history > summary")).to_have_text("Changes · 2 edits")
     expect(page.locator("body")).to_have_attribute("data-cq-applied", "3")
     assert errors == []
@@ -5689,7 +5724,7 @@ def test_a_draft_explains_its_change_and_restores_history_as_an_edit(browser, se
     and walks back by posting another ordinary edit. A second tab proves restore is
     durable replay rather than local history state; copy mode proves the generated
     controls do not survive without their handlers."""
-    page, errors = open_page(browser, serve(JOURNEY_V1))
+    page, errors = open_page(browser, serve(JOURNEY_V1), init_script=WATCH_TRAFFIC)
     draft = page.locator("#draft-ops")
     edits = [
         "Run the migration before deploying. It takes one minute.",
@@ -5699,6 +5734,7 @@ def test_a_draft_explains_its_change_and_restores_history_as_an_edit(browser, se
         draft.locator(".cq-draft-body").dblclick()
         draft.locator("textarea").fill(text)
         draft.get_by_role("button", name="Save").click()
+        page.wait_for_function(ROUND_TRIP)  # the history is drawn from the log, not the box
         expect(draft.locator(".cq-draft-history > summary")).to_have_text(
             f"Changes · {index} {'edit' if index == 1 else 'edits'}"
         )
@@ -5726,6 +5762,7 @@ def test_a_draft_explains_its_change_and_restores_history_as_an_edit(browser, se
 
     draft.get_by_role("button", name="Restore edit 1 · v1").focus()
     page.keyboard.press("Enter")
+    page.wait_for_function(ROUND_TRIP)
     expect(draft.locator(".cq-draft-body")).to_have_text(edits[0])
     expect(draft.locator(".cq-draft-history > summary")).to_have_text("Changes · 3 edits")
     expect(draft.locator(".cq-draft-history > summary")).to_be_focused()
@@ -6276,10 +6313,12 @@ def test_overlapping_polls_never_move_the_log_backwards(browser, serve):
         });
       };
     """
+    # The traffic watcher goes on outermost, so what it counts as answered is what the
+    # page was handed — the held poll included, which is the whole subject here.
     page, errors = open_page(
         browser,
         serve(JOURNEY_V1),
-        init_script=delay_second_state,
+        init_script=delay_second_state + WATCH_TRAFFIC,
     )
     page.get_by_role("button", name=re.compile("^Comments")).click()
     page.locator(".cq-general textarea").fill("Starts the slow poll")
@@ -6296,10 +6335,13 @@ def test_overlapping_polls_never_move_the_log_backwards(browser, serve):
             "text": "Newest snapshot stays rendered",
         },
     )
-    expect(page.locator(".cq-thread", has_text="Newest snapshot stays rendered")).to_have_count(
-        1, timeout=5000
-    )
+    # A later poll overtakes the held one and renders the newest log.
+    told(page)
+    expect(page.locator(".cq-thread", has_text="Newest snapshot stays rendered")).to_have_count(1)
+    # Then the stale answer arrives. One more poll after it is what proves the page
+    # handled it and kept the thread, rather than being asked before it ever landed.
     page.wait_for_function("() => window.cqDelayedPollReleased === true")
+    told(page)
     expect(page.locator(".cq-thread", has_text="Newest snapshot stays rendered")).to_have_count(1)
     assert errors == []
     page.close()
@@ -6343,29 +6385,36 @@ def dead_pid():
 
 
 @contextmanager
-def live_watcher(page_dir):
-    """Bump heartbeat.json for the duration of the block, as `review wait` does."""
+def live_watcher(page_dir, page):
+    """Bump heartbeat.json for the duration of the block, as `review wait` does.
+
+    Both ends wait for the poll that carries them, so the assertions on either side
+    read a page that has already been told a watcher arrived or left. The first beat
+    is written here rather than in the thread, so that wait cannot outrun it."""
     stop = threading.Event()
 
     def pump():
-        while True:
+        while not stop.wait(0.5):
             interact.write_json(page_dir / "heartbeat.json", {"t": time.time()})
-            if stop.wait(0.5):
-                return
 
+    interact.write_json(page_dir / "heartbeat.json", {"t": time.time()})
     threading.Thread(target=pump, daemon=True).start()
+    told(page)
     try:
         yield
     finally:
         stop.set()
         (page_dir / "heartbeat.json").unlink(missing_ok=True)
+    # Outside the finally: a block that raised has its own failure to report, and
+    # nothing after it to wait for.
+    told(page)
 
 
 def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, dead_pid):
     """The banner may claim no more than the page directory can prove. A watch that
     has stopped must read differently from a watch with nothing to report, because
     otherwise the reviewer's only way to tell them apart is to ask."""
-    page, _ = open_page(browser, serve(LONG_PAGE, comments=1))
+    page, _ = open_page(browser, serve(LONG_PAGE, comments=1), init_script=WATCH_TRAFFIC)
     d = tmp_path / "page"
     text, dot = page.locator(".cq-status-text"), page.locator(".cq-dot")
 
@@ -6379,13 +6428,14 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
             {"id": "s", "pid": session_pid or os.getpid(), "agent": agent, "ts": "t"},
         )
         interact.write_json(d / "status.json", status)
+        told(page)
 
     declare("working", "revising the plan")
     expect(text).to_have_text(re.compile(r"^Claude is working — revising the plan \(.+\)$"))
     expect(dot).to_have_class(re.compile(r"\bworking\b"))
 
     declare("waiting")
-    with live_watcher(d):
+    with live_watcher(d, page):
         expect(text).to_have_text("Claude is listening — select text to comment")
         expect(dot).to_have_class(re.compile(r"\blistening\b"))
 
@@ -6597,7 +6647,7 @@ def test_a_reply_toast_keeps_its_originating_agent(browser, serve):
         d / "session.json",
         {"id": "claude", "pid": os.getpid(), "agent": "Claude", "ts": "t"},
     )
-    page, errors = open_page(browser, url)
+    page, errors = open_page(browser, url, init_script=WATCH_TRAFFIC)
     expect(page.locator("button[aria-expanded]")).to_have_text("Comments (1)")
 
     interact.append_event(
@@ -6610,10 +6660,8 @@ def test_a_reply_toast_keeps_its_originating_agent(browser, serve):
             "text": "this one does",
         },
     )
-    expect(page.locator(".cq-toast")).to_have_text(
-        "Codex replied — open Comments",
-        timeout=5000,
-    )
+    told(page)
+    expect(page.locator(".cq-toast")).to_have_text("Codex replied — open Comments")
     assert errors == []
     page.close()
 
