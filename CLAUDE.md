@@ -223,9 +223,12 @@ of it without teaching any of them a widget by name.
   ways one passes vacuously, are in `tests/CLAUDE.md`.
 - **Measure before optimising and before assuming.** The cost claims in this codebase came
   from timing the real thing on `examples/gallery.html`, not from reasoning.
-- **Merge locally.** The project isn't at the stage of PRs: a finished branch lands with
-  `wt merge`, a direct squash merge to main. That holds for background jobs too, whose
-  harness default is to push and open a draft PR.
+- **Merge locally.** The project isn't at the stage of PRs: landing is `wt merge`, a
+  direct squash merge to main, never a PR — background jobs, whose harness default is a
+  draft PR, included. That settles the form of a landing, not whether one was asked for:
+  a job once read "merge locally" as standing permission, and unreviewed work landed on
+  the strength of it. A finished branch waits for the user's go-ahead unless the task
+  said to land.
 - **A session loads each host's cached copy, not the checkout.** Both repo-root
   marketplaces point at `plugins/colloquy/`, and both hosts install from GitHub main, so a
   payload change reaches a session only once pushed, and reaches the next session rather
