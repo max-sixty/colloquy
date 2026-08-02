@@ -56,3 +56,26 @@
   more thing to keep in step. The server is where Slack keeps drafts and the one place
   these cannot go: here the server is the agent, and an unsent draft would be words the
   reviewer has not decided to say, sitting where the next `review wait` can read them.
+
+- (2026-08-02) Probably rename to `leaf`, taking `leaf.page` with it. Not settled.
+  `/colloquy` comes late in Claude Code's completion menu, and the rule behind that is
+  three keys: the length of the displayed name ascending, then use count descending
+  between names of equal length, then registration order. A plugin skill displays as
+  `plugin:skill`, so this one ranks as `/colloquy:colloquy` at seventeen characters —
+  alone in its length bucket, which is why reaching for it has never moved it and
+  can't. Keystrokes come from being the only command on a two-letter prefix rather
+  than from being short: `/le` reaches leaf in three, and `/ap` would reach a
+  seven-letter `apostil` in the same three. `leaf` names the gesture as well as the
+  object, since to leaf through a document is to move over its pages looking for a
+  line.
+
+  What to weigh before committing: `leaf` is a term of art in this territory — a leaf
+  node ends a tree, and a versioned document is one — and its live trademarks run from
+  Nissan to a candy company. That it is taken on npm, PyPI and crates.io separates it
+  from nothing, since every candidate is. `gloss` is the alternative whose meaning is
+  what the product does and whose collisions all sit outside this field, at the cost
+  of `gloss over` meaning to skim. The rename is avoidable too: setting the skill's
+  `name:` to `cq` is one frontmatter line, keeps `/coll` working, and takes the
+  unclaimed `/cq` at three keystrokes — at the price of Codex's `$colloquy`, if that
+  host reads the same field, which is unchecked. `colloquy.dev` and `colloquy.page`
+  are both free either way.
