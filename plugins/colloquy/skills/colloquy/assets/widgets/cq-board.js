@@ -131,9 +131,11 @@ customElements.define(
       }
     }
 
-    // A board inside a Claude reply detaches on every panel rebuild; no blur
-    // fires for a detached grip, so drop a live grab here or it wedges the
-    // .cq-dragging gate open — freezing action replay and version-follow.
+    // A board inside a Claude reply detaches when its thread's node is rebuilt —
+    // resolving is the occasion the reconciled panel leaves, its cached body
+    // re-adopted into the new node — and no blur fires for a detached grip, so
+    // drop a live grab here or it wedges the .cq-dragging gate open — freezing
+    // action replay and version-follow.
     disconnectedCallback() {
       if (this.#grabbed) this.#cancel();
     }

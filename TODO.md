@@ -51,9 +51,9 @@
   happened, so every tab renders one copy and a cleared draft arrives as "sent" rather
   than as words going missing — a value diff cannot tell those apart. What it costs is
   an index from a draft's context to the box showing it, which nothing needs today: each
-  box closes over its own context where it is built, and the panel rebuilds its reply
-  boxes on every render, so the index has to be built in that same pass or it is one
-  more thing to keep in step. The server is where Slack keeps drafts and the one place
+  box closes over its own context where it is built, and the reconciled panel keeps
+  that box for its thread's life, so the index would be one more store to hold in step
+  with the list. The server is where Slack keeps drafts and the one place
   these cannot go: here the server is the agent, and an unsent draft would be words the
   reviewer has not decided to say, sitting where the next `review wait` can read them.
 

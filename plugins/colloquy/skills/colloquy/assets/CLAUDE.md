@@ -188,10 +188,17 @@ rearrangement.
 ## Assume the browser it already assumes
 
 The runtime requires ES modules, custom elements, `field-sizing`, `color-mix`, `:has()`,
-`@scope`, anchor positioning, `caretPositionFromPoint`, `Intl.Segmenter`, `scrollend`, and
-the highlight registry. Guarding one of those while assuming the rest buys nothing and
-reads as if the others were checked. Add a feature guard only where there is a real
-fallback to take.
+`@scope`, anchor positioning, `caretPositionFromPoint`, `Intl.Segmenter`, `scrollend`,
+scroll anchoring, and the highlight registry. Guarding one of those while assuming the rest
+buys nothing and reads as if the others were checked. Add a feature guard only where there
+is a real fallback to take.
+
+Scroll anchoring is the one nothing in the code names, so it is the one a reader can't find
+by grepping. The panel reconciles rather than rebuilds, so a message arriving above the fold
+grows the list over the reader's head and the browser's own anchoring is what holds the
+thread in front of them still. That is why the test pins that thread's box and not the
+scroll offset: the offset is the browser's to adjust, and asking it to stay put would be
+asserting the implementation rather than the fact the reviewer cares about.
 
 A stale entry is the same mistake as a stray guard, so cut one the moment nothing uses it.
 And the list promises support, not uniform rendering: `::highlight()` takes a narrow,

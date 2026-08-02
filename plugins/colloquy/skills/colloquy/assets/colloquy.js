@@ -64,13 +64,16 @@
  * its content is the stylesheet's job: `field-sizing: content` on the one text-box rule,
  * which a widget's own box opts into by wearing `cq-ui`. No script measures a textarea,
  * so none can leave one momentarily too small for its own text — the shape of bug that
- * flashes a scrollbar per keystroke. A poll that re-renders the thread list restores
- * scroll offset, focus, and the caret, so an arriving reply never interrupts one being
- * typed. A composer open on a selection keeps that passage marked in the page until it
- * closes, because focusing the box drops the browser's own selection — and that mark is
- * what says which passage the box is on, so the box only quotes the passage back when
- * this version no longer has one to mark. Whether the box is up is state the stylesheet
- * renders, never state read back off the stylesheet.
+ * flashes a scrollbar per keystroke. The thread list is reconciled, never rebuilt: a
+ * poll adds what arrived and touches nothing the reviewer already holds, so scroll,
+ * focus and caret keep themselves because the nodes holding them survive. News moves
+ * nothing; a send reveals the message it just landed — the panel scrolls to it and
+ * flashes its thread, the same answer a click on a page mark gets — and ends in the
+ * composer it was sent from. A composer open on a selection keeps that passage marked
+ * in the page until it closes, because focusing the box drops the browser's own
+ * selection — and that mark is what says which passage the box is on, so the box only
+ * quotes the passage back when this version no longer has one to mark. Whether the box
+ * is up is state the stylesheet renders, never state read back off the stylesheet.
  *
  * Scrolling: the document scrolls body, not the viewport, and body's margin keeps its
  * box clear of the open panel. Two scroll regions side by side, each scrollbar drawn
@@ -841,6 +844,9 @@ style.textContent = `
   @keyframes cq-runtime-4f3c2a8d-flash {
     0% { background: var(--hi-tint); } 100% { background: var(--card); }
   }
+  @keyframes cq-runtime-4f3c2a8d-grow {
+    0% { opacity: 0; transform: translateY(-6px) scale(.985); }
+  }
   /* Everything below is private to the chrome, scoped to the runtime's own container:
      no widget or page class can match a rule here, whatever it is named. (cq-tabs once
      marked itself cq-live — this block's name for the visually-hidden live region —
@@ -909,11 +915,17 @@ style.textContent = `
     .cq-empty { color: var(--muted); padding: 18px 4px; }
     .cq-thread { position: relative; border: 1px solid var(--rule); border-radius: var(--r); padding: 10px; margin-bottom: 12px; }
     .cq-thread.flash { animation: cq-runtime-4f3c2a8d-flash 1.2s ease-out; }
+    /* An arrival the reconcile added while the reviewer was watching. Motion, not a
+       jump: nothing above it moves, and the newcomer settles rather than appears. */
+    .cq-thread.grow, .cq-msg.grow { animation: cq-runtime-4f3c2a8d-grow .32s cubic-bezier(.2,.7,.3,1); }
     .cq-thread:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    /* The g leader's address badge; .cq-leader-armed renders the armed window. */
+    /* The g leader's address badge; .cq-leader-armed renders the armed window. Empty
+       is unaddressed (a thread past the ninth), and hides rather than draws a blank
+       ring — renderThreads writes the number, it doesn't add or drop the element. */
     .cq-thread-num { position: absolute; top: -8px; left: -8px; width: 17px; height: 17px;
       border: 1px solid var(--rule); border-radius: 50%; background: var(--card);
       color: var(--muted); font-size: 11px; line-height: 15px; text-align: center; }
+    .cq-thread-num:empty { display: none; }
     .cq-leader-armed .cq-thread-num { border-color: var(--accent); color: var(--accent); }
     .cq-quote { margin: 0 0 8px; padding: 2px 8px; border-left: 3px solid var(--quote-bar); color: var(--muted); font-style: italic; cursor: pointer; overflow-wrap: anywhere; }
     .cq-quote:hover { color: var(--ink-2); }
@@ -1270,6 +1282,10 @@ function showToast(msg, onClick) {
   }, 4000);
 }
 
+// Returns the event the server minted — the id is the sender's only handle on the
+// thread or message it just created, which is what revealThread is handed — or null
+// when the send failed. The poll is awaited before returning, so by the time a caller
+// holds the minted event the panel has already rendered it.
 async function post(event) {
   try {
     const res = await fetch("/api/event", {
@@ -1278,11 +1294,12 @@ async function post(event) {
       body: JSON.stringify(event),
     });
     if (!res.ok) throw new Error(await res.text());
+    const { event: minted } = await res.json();
     await poll();
-    return true;
+    return minted;
   } catch {
     showToast("Couldn't send — server offline?");
-    return false;
+    return null;
   }
 }
 
@@ -1302,10 +1319,12 @@ function wireInput(ta, { hint, address, save, send, sendBtn }) {
   // out. The send shortcut is focus-scoped, so only the focused box may claim it —
   // unfocused, the placeholder carries the box's own address instead (the leader
   // sequence that reaches it), where the box has one. hint is a function where the
-  // label changes under a live box (the composer's suggest mode).
+  // label changes under a live box (the composer's suggest mode); address is always
+  // one, because a thread's number renumbers as earlier threads resolve while its box
+  // stands.
   const label = () => (typeof hint === "function" ? hint() : hint);
   const paint = () => {
-    const suffix = document.activeElement === ta ? SEND_KEYS : address;
+    const suffix = document.activeElement === ta ? SEND_KEYS : address?.();
     ta.placeholder = suffix ? `${label()} · ${suffix}` : label();
   };
   ta.addEventListener("focus", paint);
@@ -1410,12 +1429,14 @@ const loadMarked = () =>
     renderMarkdown = (text) => md.parse(text);
   }));
 
-// Bodies are cached per event id and re-adopted across thread rebuilds: the log is
-// append-only so a body's text never changes, and reusing the node keeps a widget
-// in a reply (a rendered diagram) from re-upgrading on every poll.
+// Bodies are cached per event id and re-adopted when a thread node is rebuilt — which
+// the reconcile leaves one occasion for, a thread resolving: the log is append-only so
+// a body's text never changes, and re-adopting the node keeps a widget in a reply
+// (a rendered diagram) from re-upgrading across that rebuild.
 const msgBodies = new Map();
 function msgNode(m) {
   const div = el("div", `cq-msg ${m.author}`);
+  div.dataset.mid = m.id; // the reconcile's key, and revealThread's address for it
   const head = el("div", "cq-msg-head");
   head.append(
     el("b", "", m.author === "claude" ? m.agent || "Agent" : "You"),
@@ -1472,15 +1493,90 @@ function anchorLabel(anchor) {
   return `§ ${says ? `${itemWord(item)} · ${says}` : anchor.section}`;
 }
 
-function threadNode(t, syncs, num) {
+// The thread's address under the g leader: 1–9 by open order, 0 past the ninth. One
+// writer, renderThreads, because the number is the list's and not the thread's —
+// resolving an early thread renumbers every one after it without touching their nodes.
+// The corner badge and the reply box's placeholder are both renderings of this map,
+// repainted after every reconcile; nothing reads either back.
+const threadAddress = new Map();
+
+// The reconcile's one mover, shared by the list and the resolved disclosure: make
+// `parent`'s children `nodes`, in that order, touching nothing already in its place.
+// Not touching it matters beyond economy: reinserting a node restarts its CSS
+// animations, drops any focus and caret inside it, and swaps it out from under a
+// pressed pointer, which swallows the click. Stale nodes go first for the same
+// reason — with one removed mid-list, everything after it is exactly one place
+// forward, so the walk keeps those where they stand instead of reinserting each.
+function setChildren(parent, nodes) {
+  const keep = new Set(nodes);
+  for (const child of [...parent.children]) if (!keep.has(child)) child.remove();
+  let cursor = parent.firstChild;
+  for (const node of nodes) {
+    if (node === cursor) cursor = cursor.nextSibling;
+    else parent.insertBefore(node, cursor);
+  }
+}
+
+const emptyNote = el(
+  "div",
+  "cq-empty",
+  "No comments yet. Select any text on the page to comment on it, or use the box below.",
+);
+
+// A terminal event's row, keyed like everything else in the list so its clock can
+// refresh in place.
+function systemNode(e, text) {
+  let div = threadsBox.querySelector(`:scope > .cq-system[data-id="${e.id}"]`);
+  if (!div) {
+    div = el("div", "cq-system");
+    div.dataset.id = e.id;
+  }
+  if (div.textContent !== text) div.textContent = text;
+  return div;
+}
+
+// The resolved disclosure, one <details> for the page's life: the reviewer's
+// open/closed toggle is the browser's state, and it survives arrivals only if the
+// element does — the rebuild this replaced snapped it shut on every one.
+let resolvedBox = null;
+
+// A thread's node is found where it already stands — the open list or the resolved
+// disclosure — and kept: the log is append-only, so a kept node only ever gains
+// messages and refreshes its clocks. Resolving is the one transition that reshapes a
+// node (the reply box, the actions and the badge all go) and so the one that rebuilds
+// it; msgBodies carries the rendered bodies across. `grow` animates what this call
+// creates, for arrivals into a list the reviewer is already looking at.
+function threadNode(t, grow) {
+  const existing = threadsBox.querySelector(`.cq-thread[data-id="${t.root.id}"]`);
+  const existingResolved = existing && !existing.querySelector(":scope > .cq-compose");
+  if (existing && existingResolved === t.resolved) {
+    const compose = existing.querySelector(":scope > .cq-compose");
+    for (const m of t.msgs) {
+      let msg = existing.querySelector(`:scope > .cq-msg[data-mid="${m.id}"]`);
+      if (!msg) {
+        msg = msgNode(m);
+        if (grow) msg.classList.add("grow");
+        existing.insertBefore(msg, compose);
+      }
+      // The head's clock, not any <time> a reply's own markup might carry.
+      const time = msg.querySelector(":scope > .cq-msg-head time");
+      const when = ago(m.ts);
+      if (time.textContent !== when) time.textContent = when;
+    }
+    return existing;
+  }
+
   const div = el("div", "cq-thread");
-  div.tabIndex = -1; // j/k focus target; Enter (below) drops into its reply box
+  div.tabIndex = -1; // j/k focus target; Enter (threadsBox keydown) drops into its reply box
   div.dataset.id = t.root.id;
-  if (num) {
+  if (grow) div.classList.add("grow");
+  if (!t.resolved) {
     // The thread's address under the g leader, worn as a corner badge. The reply
     // box's placeholder speaks the same address ("Reply · g 2"), which is what a
     // screen reader hears — the badge is the eye's copy, so it stays out of the tree.
-    const badge = el("span", "cq-thread-num", String(num));
+    // Present on every open thread and written by renderThreads, because the number
+    // is positional: it changes without this node changing.
+    const badge = el("span", "cq-thread-num");
     badge.setAttribute("aria-hidden", "true");
     div.append(badge);
   }
@@ -1498,22 +1594,27 @@ function threadNode(t, syncs, num) {
     input.value = loadDraft(draftCtx);
     const send = el("button", "cq-btn", "Reply");
     row.append(input, send);
-    syncs.push(
-      wireInput(input, {
-        hint: "Reply",
-        address: num ? `g ${num}` : "",
-        sendBtn: send,
-        save: (v) => saveDraft(draftCtx, v),
-        send: async (text) => {
-          if (await post({ kind: "reply", parent: t.root.id, version: VNUM, text })) {
-            // post() polls, which has already rebuilt this thread — `input` is detached
-            // and its replacement was seeded from the draft. Clear it and render again.
-            saveDraft(draftCtx, "");
-            renderPanel();
-          }
-        },
-      }),
-    );
+    div.cqSync = wireInput(input, {
+      hint: "Reply",
+      address: () => {
+        const num = threadAddress.get(t.root.id);
+        return num ? `g ${num}` : "";
+      },
+      sendBtn: send,
+      save: (v) => saveDraft(draftCtx, v),
+      send: async (text) => {
+        const sent = await post({ kind: "reply", parent: t.root.id, version: VNUM, text });
+        if (!sent) return;
+        // post() polled, so the reconcile has already appended the message — and kept
+        // this very box, which empties for the next thought and holds focus whichever
+        // control sent it.
+        saveDraft(draftCtx, "");
+        input.value = "";
+        revealThread(sent.id);
+        input.focus({ preventScroll: true });
+      },
+    });
+    div.cqSync(); // a restored reply draft enables its Reply button
     const actions = el("div", "cq-thread-actions");
     const resolve = el("button", "cq-resolve", "✓ Resolve");
     resolve.onclick = () => post({ kind: "resolve", parent: t.root.id });
@@ -1523,68 +1624,91 @@ function threadNode(t, syncs, num) {
   return div;
 }
 
+// The DOM is the one record of what's rendered, reconciled against the log: nodes the
+// list already holds are kept, and only what the log changed is added, moved, or
+// dropped. The rebuild this replaced destroyed every node on every render and then
+// hand-restored the reader's place — scroll offset, focused thread, caret — and what
+// no restore could give back was identity: nothing could animate, one send route kept
+// focus and the other dropped it, and a reviewer's own comment landed below the fold
+// of a list put back exactly where it was. Nodes surviving is what deleted all of it.
 function renderThreads() {
-  // Every node is rebuilt, so remember where the reader was: the panel's scroll
-  // offset, and the focused thread — with the caret, when they were mid-way through
-  // typing a reply in it. Otherwise a reply arriving mid-sentence yanks the panel to
-  // the top and drops the cursor, and a poll steals a j/k walk's place.
-  const scrollTop = threadsBox.scrollTop;
-  const active = document.activeElement;
-  const focusedId = active?.closest?.(".cq-thread")?.dataset.id ?? null;
-  const caret =
-    focusedId && active.tagName === "TEXTAREA"
-      ? [active.selectionStart, active.selectionEnd]
-      : null;
-
-  threadsBox.textContent = "";
-  const syncs = [];
   const threads = buildThreads();
   const open = threads.filter((t) => !t.resolved);
   const resolved = threads.filter((t) => t.resolved);
-  if (!threads.length)
-    threadsBox.append(
-      el(
-        "div",
-        "cq-empty",
-        "No comments yet. Select any text on the page to comment on it, or use the box below.",
-      ),
-    );
+  // Newcomers settle in (`grow`) only when the reviewer already has the list in front
+  // of them: the first populated render is the page loading, not news arriving, and a
+  // node animated while the panel is closed would replay the moment it opens.
+  const grow =
+    panelOpen && !REDUCED && Boolean(threadsBox.querySelector(":scope > .cq-thread"));
+
+  const wanted = [];
+  if (!threads.length) wanted.push(emptyNote);
+  threadAddress.clear();
   // The first nine open threads are addressable (g 1–9), in the order j/k walk;
   // past nine, digits stop and j/k still reach everything.
-  open.forEach((t, i) => threadsBox.append(threadNode(t, syncs, i < 9 ? i + 1 : 0)));
+  open.forEach((t, i) => {
+    threadAddress.set(t.root.id, i < 9 ? i + 1 : 0);
+    wanted.push(threadNode(t, grow));
+  });
   for (const e of events) {
-    if (e.kind === "done")
-      threadsBox.append(el("div", "cq-system", `✓ Approved ${ago(e.ts)}`));
-    else if (e.kind === "close")
-      threadsBox.append(el("div", "cq-system", `Review ended ${ago(e.ts)}`));
+    if (e.kind === "done") wanted.push(systemNode(e, `✓ Approved ${ago(e.ts)}`));
+    else if (e.kind === "close") wanted.push(systemNode(e, `Review ended ${ago(e.ts)}`));
   }
   if (resolved.length) {
-    const details = el("details", "cq-details");
-    details.append(el("summary", "", `Resolved (${resolved.length})`));
-    resolved.forEach((t) => details.append(threadNode(t, syncs)));
-    threadsBox.append(details);
+    if (!resolvedBox) {
+      resolvedBox = el("details", "cq-details");
+      resolvedBox.append(el("summary"));
+    }
+    const summary = resolvedBox.firstChild;
+    const said = `Resolved (${resolved.length})`;
+    if (summary.textContent !== said) summary.textContent = said;
+    setChildren(resolvedBox, [summary, ...resolved.map((t) => threadNode(t, false))]);
+    wanted.push(resolvedBox);
   }
-  syncs.forEach((sync) => sync()); // a restored reply draft enables its Reply button
-  toggleBtn.textContent = `Comments (${open.length})`;
+  setChildren(threadsBox, wanted);
 
-  if (focusedId) {
-    const div = threadsBox.querySelector(`.cq-thread[data-id="${focusedId}"]`);
-    if (caret) {
-      const ta = div?.querySelector("textarea");
-      if (ta) {
-        ta.focus();
-        ta.setSelectionRange(caret[0], caret[1]);
-      }
-    } else div?.focus({ preventScroll: true });
+  // The badge and the reply placeholder both speak the thread's address, repainted
+  // after ordering because resolving an early thread renumbers everything after it.
+  for (const div of threadsBox.querySelectorAll(":scope > .cq-thread")) {
+    const num = threadAddress.get(div.dataset.id);
+    const worn = num ? String(num) : "";
+    const badge = div.querySelector(":scope > .cq-thread-num");
+    if (badge.textContent !== worn) badge.textContent = worn;
+    div.cqSync();
   }
-  threadsBox.scrollTop = scrollTop; // after focus(), which scrolls the panel itself
+  toggleBtn.textContent = `Comments (${open.length})`;
 }
 
+// A kept node may still be moved by a later reconcile, and reinsertion restarts CSS
+// animations — so the class comes off the moment its animation has run. A node grown
+// while its list was off-screen never ran one; the panelOpen gate above is what keeps
+// that replay from greeting the panel's next open.
+threadsBox.addEventListener("animationend", (ev) => ev.target.classList.remove("grow"));
+
 // The panel and the page marks are two views of the same threads, and the paint pass
-// reports back to the list renderThreads just built — always render them as a pair.
+// reports back to the list renderThreads just reconciled — always render them as a pair.
 function renderPanel() {
   renderThreads();
   paintAnchors();
+}
+
+// One answer to "show me that thread", whoever asks: a click on a mark out on the page
+// and a send that just landed both come here, with a thread's id or a message's. The
+// panel scrolls its own list — moving the page to a thread's passage is scrollToThread,
+// a different question — and flashes the thread. The flash takes over from a running
+// grow explicitly: both classes bind the element's one animation declaration, and the
+// send's confirmation is the one the gesture asked for.
+function revealThread(id) {
+  setPanel(true);
+  const node = threadsBox.querySelector(
+    `.cq-thread[data-id="${id}"], .cq-msg[data-mid="${id}"]`,
+  );
+  if (!node) return;
+  const thread = node.closest(".cq-thread");
+  node.scrollIntoView({ behavior: SCROLL, block: node === thread ? "center" : "nearest" });
+  thread.classList.remove("grow");
+  thread.classList.add("flash");
+  setTimeout(() => thread.classList.remove("flash"), 1300);
 }
 
 // ---------- passages ----------
@@ -2845,16 +2969,7 @@ document.addEventListener("click", (ev) => {
     return openOnItem(item, { left: ev.clientX + 6, top: ev.clientY - 40 });
   }
   const threadId = markAt(ev.clientX, ev.clientY);
-  if (threadId) {
-    setPanel(true);
-    const thread = threadsBox.querySelector(`.cq-thread[data-id="${threadId}"]`);
-    if (thread) {
-      thread.scrollIntoView({ behavior: SCROLL, block: "center" });
-      thread.classList.add("flash");
-      setTimeout(() => thread.classList.remove("flash"), 1300);
-    }
-    return;
-  }
+  if (threadId) return revealThread(threadId);
   if (ev.target.closest?.("a")) return;
   const sel = visualSel();
   let visual = ev.target.closest?.(sel);
@@ -2885,10 +3000,15 @@ const syncComposer = wireInput(composerInput, {
   send: async (text) => {
     const event = { kind: "comment", version: VNUM, anchor: pendingAnchor, text };
     if (suggestCheck.checked) event.suggestion = true;
-    if (await post(event)) {
-      closeComposer();
-      setPanel(true);
-    }
+    const sent = await post(event);
+    if (!sent) return;
+    closeComposer();
+    revealThread(sent.id);
+    // The composer this was sent from is gone with the send; the thread it became
+    // carries the same conversation, so its reply box is where typing continues.
+    threadsBox
+      .querySelector(`.cq-thread[data-id="${sent.id}"] textarea`)
+      ?.focus({ preventScroll: true });
   },
 });
 // The composer's suggest-mode rendering — button label and placeholder — derived
@@ -2976,10 +3096,12 @@ const syncGeneral = wireInput(generalInput, {
   sendBtn: generalSend,
   save: (v) => saveDraft("general", v),
   send: async (text) => {
-    if (await post({ kind: "comment", version: VNUM, text })) {
-      generalInput.value = "";
-      saveDraft("general", "");
-    }
+    const sent = await post({ kind: "comment", version: VNUM, text });
+    if (!sent) return;
+    generalInput.value = "";
+    saveDraft("general", "");
+    revealThread(sent.id);
+    generalInput.focus({ preventScroll: true }); // both send routes end where typing was
   },
 });
 

@@ -1783,6 +1783,203 @@ def test_covering_panel_keeps_toasts_on_screen_and_clear_of_the_footer(browser, 
     page.close()
 
 
+# The thread list is reconciled, not rebuilt, and the tests below are its faces: a
+# send is a gesture and reveals what it made; an arrival is news and moves nothing; a
+# resolution moves a thread without remaking its neighbours; and all of it holds
+# because the nodes survive the poll instead of being replaced by lookalikes. The old
+# rebuild passed a lookalike test easily — same markup, fresh nodes — which is why
+# these pin identity (a probed element) and geometry (a held thread's own box), not
+# appearance.
+
+
+def in_threads_scrollport(page, selector):
+    """Whether the node is fully inside the panel list's scrollport — waited for,
+    because the reveal scrolls smoothly and only the arrival is the fact."""
+    page.wait_for_function(
+        """(sel) => {
+            const box = document.querySelector('.cq-threads');
+            const node = document.querySelector(sel);
+            if (!node) return false;
+            const b = box.getBoundingClientRect(), n = node.getBoundingClientRect();
+            return n.top >= b.top && n.bottom <= b.bottom;
+        }""",
+        arg=selector,
+    )
+
+
+def test_a_sent_comment_is_revealed_in_the_panel(browser, serve):
+    """A send is the one gesture that produces a thread, so it gets the same answer a
+    click on a page mark does: the panel scrolls the new thread into its scrollport.
+    On a list long enough to scroll, the old rebuild appended the comment below the
+    fold and put the scroll back where it was — the reviewer's own words landed out of
+    sight, silently. Both send routes then end in the composer the words left, where
+    the rebuild sent a button click's focus somewhere else than ⌘⏎'s."""
+    page, errors = open_page(browser, serve(LONG_PAGE, comments=12), init_script=WATCH_TRAFFIC)
+    page.locator("button[aria-expanded]").click()
+    panel_settled(page)
+    assert page.evaluate(
+        "() => { const t = document.querySelector('.cq-threads');"
+        "        return t.scrollTop === 0 && t.scrollHeight > t.clientHeight; }"
+    ), "this list starts revealed or doesn't scroll, so it proves nothing"
+
+    box = page.locator(".cq-general textarea")
+    box.fill("Where did my words go?")
+    page.locator(".cq-general button").click()  # the route that used to drop focus
+    page.wait_for_function(ROUND_TRIP)
+    sent = interact.read_events(serve.page_dir)[-1]
+    assert (sent["kind"], sent["text"]) == ("comment", "Where did my words go?")
+    in_threads_scrollport(page, f'.cq-thread[data-id="{sent["id"]}"]')
+    assert page.evaluate("() => document.querySelector('.cq-threads').scrollTop") > 0, (
+        "the new thread was in view without scrolling, so the reveal proved nothing"
+    )
+    expect(box).to_be_focused()
+    expect(box).to_have_value("")
+
+    box.fill("And the second thought lands the same way.")
+    page.keyboard.press("ControlOrMeta+Enter")  # the other route, same destination
+    page.wait_for_function(ROUND_TRIP)
+    second = interact.read_events(serve.page_dir)[-1]
+    in_threads_scrollport(page, f'.cq-thread[data-id="{second["id"]}"]')
+    expect(box).to_be_focused()
+    assert errors == []
+    page.close()
+
+
+def test_an_arriving_reply_leaves_the_list_where_the_reader_put_it(browser, serve):
+    """News has no gesture behind it, so it may move nothing the reader is looking at.
+    The hard case is a reply landing in a thread above the fold: the list grows over
+    the reader's head, and what must hold still is the thread in front of them — their
+    place as a box on screen, not as a scrollTop the browser's own scroll anchoring is
+    free to adjust. The old rebuild restored the offset and let the content slide under
+    it."""
+    page, errors = open_page(browser, serve(LONG_PAGE, comments=12), init_script=WATCH_TRAFFIC)
+    page.locator("button[aria-expanded]").click()
+    panel_settled(page)
+    held = page.evaluate("""() => {
+        const box = document.querySelector('.cq-threads');
+        box.scrollTop = 400;
+        const b = box.getBoundingClientRect();
+        window.__held = [...box.querySelectorAll(':scope > .cq-thread')]
+            .find(n => n.getBoundingClientRect().top >= b.top);
+        return { top: window.__held.getBoundingClientRect().top,
+                 scrolled: box.scrollTop > 0 };
+    }""")
+    assert held["scrolled"], "the list doesn't scroll, so nothing here can move"
+
+    first = next(e for e in interact.read_events(serve.page_dir) if e["kind"] == "comment")
+    reply = interact.append_event(
+        serve.page_dir,
+        {"kind": "reply", "author": "claude", "agent": "Claude", "version": 1,
+         "parent": first["id"], "text": "News, not a gesture."},
+    )
+    told(page)
+    expect(page.locator(f'.cq-msg[data-mid="{reply["id"]}"]')).to_have_count(1)
+    after = page.evaluate(
+        "() => ({ connected: window.__held.isConnected,"
+        "          top: window.__held.getBoundingClientRect().top })"
+    )
+    assert after["connected"], "the held thread was replaced, so its box says nothing"
+    assert abs(after["top"] - held["top"]) < 1, (
+        f"the arriving reply moved the thread the reader was on: {held} -> {after}"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_an_arrival_interrupts_nothing_the_reviewer_holds(browser, serve):
+    """The nodes themselves survive the poll: the thread being typed in is the same
+    element afterwards, still focused, caret where the typing left it — even when the
+    arrival lands inside that very thread, right above the reply box. The rebuild
+    could only approximate this by saving and restoring focus and caret by hand, and
+    the two send routes proved the restore had holes."""
+    page, errors = open_page(browser, serve(LONG_PAGE, comments=3), init_script=WATCH_TRAFFIC)
+    page.locator("button[aria-expanded]").click()
+    panel_settled(page)
+    ta = page.locator(".cq-threads > .cq-thread").first.locator("textarea")
+    ta.click()
+    ta.type("half a thought")
+    page.evaluate("""() => {
+        document.activeElement.setSelectionRange(4, 4);
+        window.__probe = document.activeElement.closest('.cq-thread');
+    }""")
+
+    first = next(e for e in interact.read_events(serve.page_dir) if e["kind"] == "comment")
+    reply = interact.append_event(
+        serve.page_dir,
+        {"kind": "reply", "author": "claude", "agent": "Claude", "version": 1,
+         "parent": first["id"], "text": "Landing right above the box being typed in."},
+    )
+    told(page)
+    expect(page.locator(f'.cq-msg[data-mid="{reply["id"]}"]')).to_have_count(1)
+    assert page.evaluate("""() => {
+        const ta = document.activeElement;
+        return ta.tagName === 'TEXTAREA'
+            && ta.closest('.cq-thread') === window.__probe
+            && window.__probe === document.querySelector('.cq-threads > .cq-thread')
+            && ta.value === 'half a thought'
+            && ta.selectionStart === 4 && ta.selectionEnd === 4;
+    }"""), "the poll replaced or disturbed the node the reviewer was typing into"
+    assert errors == []
+    page.close()
+
+
+def test_resolving_an_early_thread_renumbers_the_rest_in_place(browser, serve):
+    """A thread can move, not just appear: resolving the first one sends it to the
+    resolved disclosure and renumbers every thread after it — the corner badge and the
+    reply box's own address together, on nodes that are kept rather than remade. The
+    disclosure itself is kept too, so the reviewer's open toggle survives the next
+    resolution instead of snapping shut on every arrival, which is what the rebuild
+    did."""
+    page, errors = open_page(browser, serve(LONG_PAGE, comments=3), init_script=WATCH_TRAFFIC)
+    page.locator("button[aria-expanded]").click()
+    panel_settled(page)
+    c1, c2, c3 = [e["id"] for e in interact.read_events(serve.page_dir) if e["kind"] == "comment"]
+    expect(page.locator(f'.cq-thread[data-id="{c2}"] .cq-thread-num')).to_have_text("2")
+    page.evaluate(
+        """(id) => { window.__second = document.querySelector(`.cq-thread[data-id="${id}"]`); }""",
+        c2,
+    )
+
+    page.locator(f'.cq-thread[data-id="{c1}"] .cq-resolve').click()
+    page.wait_for_function(ROUND_TRIP)
+    expect(page.locator(".cq-details summary")).to_have_text("Resolved (1)")
+    expect(page.locator(f'.cq-details .cq-thread[data-id="{c1}"]')).to_have_count(1)
+    expect(page.locator(f'.cq-thread[data-id="{c1}"] textarea')).to_have_count(0)
+    expect(page.locator(".cq-comments")).to_have_text("Comments (2)")
+    # The survivors renumber without being remade: same node, new address, and the
+    # address its placeholder speaks moved with the badge.
+    expect(page.locator(f'.cq-thread[data-id="{c2}"] .cq-thread-num')).to_have_text("1")
+    expect(page.locator(f'.cq-thread[data-id="{c2}"] textarea')).to_have_attribute(
+        "placeholder", "Reply · g 1"
+    )
+    assert page.evaluate(
+        """(id) => window.__second === document.querySelector(`.cq-thread[data-id="${id}"]`)""",
+        c2,
+    ), "renumbering rebuilt the surviving thread"
+
+    page.locator(".cq-details summary").click()
+    expect(page.locator(".cq-details[open]")).to_have_count(1)
+    # A thread leaving mid-list puts every survivor one place forward. Standing still
+    # there is the reconcile's own duty, not the browser's: a survivor reinserted at
+    # its new place is the same element and passes any identity probe, but reinsertion
+    # drops the caret typing in it.
+    ta3 = page.locator(f'.cq-thread[data-id="{c3}"] textarea')
+    ta3.click()
+    ta3.type("held mid-sentence")
+    page.evaluate("() => document.activeElement.setSelectionRange(4, 4)")
+    interact.append_event(serve.page_dir, {"kind": "resolve", "author": "user", "parent": c2})
+    told(page)
+    expect(page.locator(".cq-details summary")).to_have_text("Resolved (2)")
+    expect(page.locator(".cq-details[open]")).to_have_count(1)
+    expect(ta3).to_be_focused()
+    assert page.evaluate(
+        "() => document.activeElement.value === 'held mid-sentence'"
+        "   && document.activeElement.selectionStart === 4"
+    ), "the thread after the one that resolved was reinserted under the typing"
+    assert errors == []
+    page.close()
+
+
 def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
     """The chrome's private rules live in one @scope block rooted at the runtime's
     own container, so whatever name a widget or a page coins, it matches none of
