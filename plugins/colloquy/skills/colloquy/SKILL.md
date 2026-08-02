@@ -244,17 +244,39 @@ and the comment layer left behind.
   content: real project content in an example gets read as a live proposal.
 - **Show the destination, not the journey.** Explain the concept as it stands — total
   cut-over. Don't spend content on what was considered before or how you got here.
-- **Retire a decision once it's settled**, which is the same rule applied across
-  versions: a choice that's been made and acted on has turned into the journey, and a
-  page that keeps rendering four options at full height after one of them shipped is
-  spending its best space on a question nobody is still asking. Mark the group
-  `settled` and it collapses to one line naming the pick, with every card still there
-  behind a disclosure — no id is dropped, so the anchors riding them and `version check`
-  both hold, and the reader can open it, disagree, and pick again. Settling is a
-  later moment than honoring: a decision stays live while you're applying it, and
-  settles once nothing is revisiting it, which is usually a version or two on. The
-  same instinct applies without the widget — a section that has served its purpose
-  belongs behind a `<details>`, not left at full height.
+
+## Keeping the page current
+
+A page shows where its topic stands now, with what came before still on it. That is
+"Show the destination, not the journey" over time: the journey grows as the work does, so
+v1's destination — four options laid out for a decision — is the journey by v4, once the
+decision has been made and applied. Leaving it at full height in the order it was written
+turns the page into the record of the investigation, and the reviewer has to work the
+present out of that.
+
+Each version is therefore a rewrite toward the present. The body carries what is live —
+the question in front of the reviewer and what they need to answer it — and the lede says
+what the page is asking now. A section the topic has moved past goes to a `Settled`
+section at the foot: `<h2>Settled</h2>`, and under it one `<details>` per retirement, its
+`<summary>` naming the question and what closed it (the option picked, or the section that
+superseded it). Nothing is deleted. What retires moves intact, ids and all, so the anchors
+hold and `version check` passes, and a reviewer who wants the argument behind a settled
+question opens it and finds what they read before.
+
+A `cq-options` group has the same move built in. `settled` collapses it to one line naming
+the pick, with every option behind a disclosure; the reader can open it, disagree, and
+pick again. Reach for it where a decision retires inside a section that stays live; a
+section retiring whole takes its decided groups with it, marked the same way. A group
+nobody picked in has no pick to collapse to, so it retires with its section unmarked.
+
+Retiring is not revising. The words don't change, so it is neither a `cq-suggestion` nor
+grounds for `restated` — relocating a group the reviewer picked in is a version agreeing
+with them.
+
+Time it by what is still moving rather than by what is finished. A decision stays live
+while you are applying it and settles once nothing is revisiting it, usually a version or
+two on, and a section the reviewer is still commenting in stays in the body until that
+thread closes.
 
 ## The review loop
 
@@ -324,9 +346,9 @@ For each acknowledged batch:
      page replays every recorded action onto every later version, so their edit
      survives a republish whether or not your markup mentions it. Write the next
      version as the document should now read and leave their widget alone. What
-     the markup still owes them is the record — mark every picked option `chosen`
-     (and `settled` once the decision has stopped being live), replace an accepted
-     suggestion with its `cq-new` markup and a rejected one with its `cq-old`,
+     the markup still owes them is the record — mark every picked option `chosen`,
+     replace an accepted suggestion with its `cq-new` markup and a rejected one with
+     its `cq-old`,
      keeping the old id where the passage survives — so the page reads right to
      someone who never saw the log. `version check` says where the record is behind
      ("record behind the log", advice on a passing run), and until a version
@@ -522,7 +544,7 @@ they want to be addressed — and beyond those:
   not asserted bare.
 - **Excess pruned.** No paragraph restates another; nothing explains what the reader
   already knows. If a version has been patched several times, rewrite the section clean
-  rather than layering another note. A decision already made and acted on is excess at
-  full height: mark its `cq-options` group `settled`.
+  rather than layering another note. Anything the topic has moved past is excess at full
+  height — "Keeping the page current" says where it goes.
 - **Diagrams read.** Each diagram earns its place and says something the prose doesn't.
 - **References clickable.** Tickets, PRs, and URLs are real links.
