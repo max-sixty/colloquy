@@ -1018,6 +1018,189 @@ def test_a_press_leaves_its_neighbours_where_they_were(browser, serve, example):
     page.close()
 
 
+def aim_targets(page_dir):
+    """Everything an ⌥-press can land on that something is waiting to answer.
+
+    Every control however its widget built one, and every element of the vocabulary,
+    whose handlers sit on the widget rather than on a control — an option is picked by
+    clicking its prose. The vocabulary is read from the page's own registry rather than
+    listed, so the twelfth widget is swept by existing. Prose has no handler at all, so
+    one press into it proves what fifty would."""
+    tags = ", ".join(
+        t for t in interact.load_registry(page_dir) if not t.startswith("$")
+    )
+    return f":is({PRESS}, {tags}):not(.cq-chrome *)"
+
+
+# Where in a target to aim, asked of the rendered page rather than assumed: near its
+# leading corner, since the middle of a container is usually one of its children, and only
+# where the point is really the target's — an element under the banner or clipped to
+# nothing is somewhere no aim can land, which is a skip rather than a failure.
+AIM_POINT = """(el) => {
+  const r = el.getBoundingClientRect();
+  const spots = [[r.left + Math.min(8, r.width / 2), r.top + Math.min(8, r.height / 2)],
+                 [r.left + r.width / 2, r.top + r.height / 2]];
+  for (const [x, y] of spots) {
+    const at = document.elementFromPoint(x, y);
+    if (at && (at === el || el.contains(at))) return [x, y];
+  }
+  return null;
+}"""
+# The promise itself, read where the reviewer reads it. The item a click would take wears
+# the outline the composer's own passage wears, so the same query answers before the press
+# and after it, and the two answers agreeing is the promise being kept.
+OUTLINED = """() => document.querySelector(".cq-mark-el.cq-pending")?.id ?? null"""
+# Where focus ended up, which is the effect a press has that leaves no mark in the markup:
+# `offer` gives every press it builds a tabindex, so a press the page received lands on
+# the control, where the aim's own leaves focus to the composer it opened.
+FOCUS_IN_PAGE = """() => {
+  const at = document.activeElement;
+  return !!at && at !== document.body && !at.closest(".cq-chrome");
+}"""
+# The page as against the layer over it, which is where an effect nobody asked for shows.
+# Read as markup because a widget acting states itself there however it renders — an
+# attribute picked, a panel hidden, an editor opened — and a sweep that knew which to look
+# for would be a sweep that stops at the widgets it was taught.
+#
+# Except for an emptied class attribute, which is the outline coming off an element that
+# had no class of its own: DOMTokenList leaves `class=""` behind, and that is a residue of
+# the runtime's paint rather than anything the page says.
+PAGE_MARKUP = """() => [...document.body.children]
+    .filter((n) => !n.classList.contains("cq-chrome"))
+    .map((n) => n.outerHTML).join("").replaceAll(' class=""', "")"""
+
+
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
+def test_an_aimed_press_does_only_what_the_outline_promised(browser, serve, example):
+    """⌥-click takes the item under the pointer, and that is the whole of what it does.
+
+    Holding ⌥ outlines what a click would take, which is a promise about the next press.
+    The runtime used to read that press on the way back up, after every handler out on the
+    page had already had it, so the press kept the promise and did something else besides:
+    ⌥-clicking an option card opened the composer *and* picked the option, sending Claude a
+    decision the reviewer never made, while ⌥-clicking a tab's name aimed at the widget and
+    switched the panel under it. Neither shows in the composer, which opens either way.
+
+    So both halves are asserted together — the composer opens on the item that was
+    outlined, and the page is exactly as it was, in its markup and in where its focus sits
+    — over the corpus rather than over a case, because every widget that takes a press had
+    this and none of them was ever told."""
+    url = serve(example.read_text())
+    page, errors = open_page(browser, url)
+    targets = aim_targets(serve.page_dir)
+    total = page.locator(targets).count()
+    pressed = aimed = 0
+    for i in range(total):
+        # A control inside a fold or behind an unopened tab is nowhere a reviewer can aim,
+        # which is the press sweep's reading of the same question, and a point the banner
+        # or a neighbour covers is not this target's press at all.
+        target = page.locator(targets).nth(i)
+        if not target.is_visible():
+            continue
+        target.scroll_into_view_if_needed()
+        point = target.evaluate(AIM_POINT)
+        if not point:
+            continue
+        label = target.evaluate(NAMED)
+        before = page.evaluate(PAGE_MARKUP)
+        page.mouse.move(*point)
+        page.keyboard.down("Alt")
+        promised = page.evaluate(OUTLINED)
+        page.mouse.click(*point)
+        page.keyboard.up("Alt")
+        composer = page.locator(".cq-composer")
+        if promised is None:
+            # Nothing outlined is nothing to aim at — no item encloses this point — and an
+            # armed press then acts on nothing rather than falling back to the page. A
+            # suggestion's ✓ Accept is where that matters: its row hangs in the page's own
+            # column, outside the element it decides, so nothing is above it to aim at and
+            # a press let through would send Claude a decision.
+            expect(composer).to_be_hidden()
+        else:
+            expect(composer).to_be_visible()
+            assert page.evaluate(OUTLINED) == promised, (
+                f"⌥-clicking {label} in {example.name} outlined {promised} and commented "
+                f"on {page.evaluate(OUTLINED)}"
+            )
+            # Put the composer away before reading the page back: its own passage wears
+            # the outline, which is the one mark an aim is supposed to leave.
+            page.keyboard.press("Escape")
+            expect(composer).to_be_hidden()
+            aimed += 1
+        assert page.evaluate(PAGE_MARKUP) == before, (
+            f"⌥-clicking {label} in {example.name} changed the page, so a press the aim "
+            "had taken reached a widget as well"
+        )
+        assert not page.evaluate(FOCUS_IN_PAGE), (
+            f"⌥-clicking {label} in {example.name} left the focus on the page, so the "
+            "press reached the control under it"
+        )
+        pressed += 1
+    assert pressed, f"{example.name} pressed nothing, so it asserts nothing"
+    # And that the outline is still painted at all: a preview that stopped appearing would
+    # leave every press above asserting only that nothing happened, which is the shape of
+    # vacuous pass this sweep is most exposed to.
+    assert aimed, f"{example.name} outlined nothing, so no press was held to a promise"
+    # The other half of "did nothing else", and the half the markup cannot show: a widget
+    # that acts tells Claude so, and a decision the reviewer never made is worse in the log
+    # than on the page. The wait is the page's own sends coming back, so a stray one is in
+    # the log to be read rather than still in flight.
+    page.wait_for_function(ROUND_TRIP)
+    assert [
+        e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"
+    ] == []
+    assert errors == []
+    page.close()
+
+
+def test_a_key_still_reaches_its_control_after_an_aimed_press(browser, serve):
+    """The aim holds its claim until the next press starts, and a key is not one.
+
+    `offer` supplies the keys a span doesn't come with by calling click(), so a control
+    worked from the keyboard sends a click with no press behind it. Taken for the aim's
+    own, it goes nowhere at all: the reviewer presses Enter on a pick mark and nothing is
+    picked, on a page where the last thing they did with the mouse was aim."""
+    page, errors = open_page(browser, serve(REPLAYED_PAGE))
+    heading = page.locator("#t")
+    heading.hover()
+    page.keyboard.down("Alt")
+    heading.click()
+    page.keyboard.up("Alt")
+    composer = page.locator(".cq-composer")
+    expect(composer).to_be_visible()  # the press was the aim's, so its claim now stands
+    page.keyboard.press("Escape")
+    expect(composer).to_be_hidden()
+
+    page.locator("#opt-shim .cq-pick").focus()
+    page.keyboard.press("Enter")
+    expect(page.locator("#approach > cq-option[chosen]")).to_have_count(1)
+    page.wait_for_function(ROUND_TRIP)
+    assert [
+        e["action"] for e in interact.read_events(serve.page_dir) if "action" in e
+    ] == ["choose"]
+    assert errors == []
+    page.close()
+
+
+def test_the_chrome_keeps_its_presses_while_the_page_is_armed(browser, serve):
+    """What ⌥ arms is the page, and the line around it is the chrome's container.
+
+    An aim that reached in there would take the panel, the composer and the banner away
+    from a reviewer who happens to be holding the key — and there is nothing in the layer
+    to aim at anyway, since an anchor names an element of the page."""
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    comments = page.locator(".cq-comments")
+    comments.hover()
+    page.keyboard.down("Alt")
+    comments.click()
+    page.keyboard.up("Alt")
+    panel_settled(page)
+    expect(page.locator(".cq-panel")).to_be_visible()
+    expect(page.locator(".cq-composer")).to_be_hidden()
+    assert errors == []
+    page.close()
+
+
 def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
     """The other half of the same rule, for the changes nobody asked for.
 
