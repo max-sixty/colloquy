@@ -85,6 +85,7 @@ def test_demo_recording_drives_the_browser_journey(tmp_path):
         [ROOT / "scripts" / "record-demo.sh", "--output", output],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert recorded.returncode == 0, (
