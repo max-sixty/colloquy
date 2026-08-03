@@ -5857,6 +5857,143 @@ def test_the_composer_opens_where_the_button_stood(browser, serve):
     page.close()
 
 
+def test_a_drag_released_mid_word_selects_whole_words(browser, serve):
+    """A drag stops where the hand stopped: four glyphs into "paragraph", four short
+    of the end of "carrying". The reader meant the words, and the quote the capture
+    would otherwise store — "graph carr" — reads as a typo in the panel and in every
+    reply that quotes it back. So the pointer path grows a selection out to word
+    boundaries, outward only: an end resting in space or against punctuation is
+    already where the reader put it, so "it," gains its 't' and not its comma, and a
+    word split across inline markup — here by splitText, which also leaves the empty
+    text node that puts two EDGEs flush in the indexed reading — still grows whole.
+
+    What the pointer path must not do is here too. A keyboard selection is never
+    grown — shift-arrow is the reader being precise — so the key release that raises
+    the button leaves a mid-word selection exactly as made, and so does the right
+    button, whose release precedes the context menu Copy lives in. A right-to-left
+    drag keeps its direction, asked of boundary points rather than node order because
+    a selection ending on the element holding its own start both precedes and
+    contains it. And machine-placed words never glue to the author's, on either
+    side of the declaration line: an undeclared generated span is a fenced cell in
+    the reading, and a declared label — a specimen's, rendered flush before its
+    words inside a list item, where both share the one block — is the seam itself.
+
+    The reads await one queued step first, the same tick the mouseup handler defers
+    its own work behind, so each one sees the selection after the snap rather than
+    racing it."""
+    page, errors = open_page(
+        browser,
+        serve(
+            INLINE_PAGE.replace(
+                '<p id="p">',
+                '<ul><li><cq-specimen id="spec" label="mono">glyphs set close'
+                '</cq-specimen></li></ul>\n<p id="p">',
+            )
+        ),
+    )
+    page.locator("#p").scroll_into_view_if_needed()
+    # The point one pixel inside a character's own box, so a press there puts the
+    # boundary at the character's left edge — mid-word when the character is.
+    mid = """(args) => {
+        const walk = document.createTreeWalker(
+            document.querySelector(args.root), NodeFilter.SHOW_TEXT);
+        for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+            const at = n.data.indexOf(args.word);
+            if (at < 0) continue;
+            const r = document.createRange();
+            r.setStart(n, at + args.into);
+            r.setEnd(n, at + args.into + 1);
+            const box = r.getBoundingClientRect();
+            return {x: box.left + 1, y: box.top + box.height / 2};
+        }
+    }"""
+    settled = (
+        "async () => { await new Promise(r => setTimeout(r, 0));"
+        " return getSelection().toString(); }"
+    )
+
+    def spot(root, word, into):
+        return page.evaluate(mid, {"root": root, "word": word, "into": into})
+
+    def drag(start, end):
+        page.mouse.move(start["x"], start["y"])
+        page.mouse.down()
+        page.mouse.move(end["x"], end["y"], steps=8)
+        page.mouse.up()
+
+    drag(spot("#p", "paragraph", 4), spot("#p", "carrying", 4))
+    assert page.evaluate(settled) == "paragraph carrying"
+    expect(page.locator(".cq-fab")).to_be_visible()
+
+    drag(spot("#p", "inside", 2), spot("#p", "it,", 1))
+    assert page.evaluate(settled) == "inside it"
+
+    # The same words dragged right to left: snapped the same, and still facing
+    # backward, or the shift-click that extends it next extends the wrong end. The
+    # click first is the reader's own move — a press inside the standing selection
+    # would drag its text, not start a new one.
+    page.locator("#t").click()
+    drag(spot("#p", "it,", 1), spot("#p", "inside", 2))
+    assert page.evaluate(settled) == "inside it"
+    assert page.evaluate(
+        "() => { const s = getSelection();"
+        " return s.anchorNode === s.focusNode ? s.anchorOffset > s.focusOffset"
+        " : Boolean(s.anchorNode.compareDocumentPosition(s.focusNode)"
+        " & Node.DOCUMENT_POSITION_PRECEDING); }"
+    ), "a right-to-left drag came out of the snap facing forward"
+
+    page.evaluate("""() => {
+        const n = document.querySelector('#p').firstChild;
+        const at = n.data.indexOf('paragraph') + 2;
+        getSelection().setBaseAndExtent(n, at, n, at + 5);
+    }""")
+    page.keyboard.press("Shift")
+    assert page.evaluate(settled) == "ragra"
+    where = spot("#p", "paragraph", 4)
+    page.mouse.click(where["x"], where["y"], button="right")
+    assert page.evaluate(settled) == "ragra"
+
+    forward_kept = page.evaluate("""async () => {
+        const p = document.querySelector('#p2');
+        const at = p.firstChild.data.indexOf('neighbouring') + 3;
+        getSelection().setBaseAndExtent(p.firstChild, at, p, p.childNodes.length);
+        document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+        await new Promise(r => setTimeout(r, 0));
+        const s = getSelection();
+        const r = s.getRangeAt(0);
+        return s.anchorNode === r.startContainer && s.anchorOffset === r.startOffset;
+    }""")
+    assert forward_kept, "a forward selection ending on an element came out backward"
+
+    page.evaluate("""() => {
+        const n = document.querySelector('#p').firstChild;
+        const at = n.data.indexOf('paragraph') + 4;
+        n.splitText(at);
+        n.splitText(at); // at the new node's own end, so the second piece is empty
+    }""")
+    drag(spot("#p", "graph", 1), spot("#p", "carrying", 4))
+    assert page.evaluate(settled) == "paragraph carrying"
+
+    page.evaluate("""() => {
+        const p2 = document.querySelector('#p2');
+        const rest = p2.firstChild.splitText(p2.firstChild.data.indexOf(' between'));
+        const span = document.createElement('span');
+        span.setAttribute('data-cq-gen', '');
+        span.textContent = 'flagged';
+        p2.insertBefore(span, rest); // flush: the page now reads "boundaryflagged"
+    }""")
+    drag(spot("#p2", "flagged", 3), spot("#p2", "them", 1))
+    assert page.evaluate(settled) == "flagged between them"
+
+    # The declared label: rendered by the real pass, flush before the specimen's own
+    # words, unfenced because the registry models it — so the reading holds
+    # "monoglyphs", and only the seam keeps a drag into "glyphs" from taking "mono".
+    drag(spot("cq-specimen", "glyphs", 3), spot("cq-specimen", "close", 3))
+    assert page.evaluate(settled) == "glyphs set close"
+    assert errors == []
+    page.close()
+
+
 def test_a_quote_finds_its_passage_whatever_its_whitespace(browser, serve):
     """The same passage gets written down several ways. The page holds it with the
     author's line wraps; a selection renders it with a break where two blocks abut and

@@ -1213,16 +1213,7 @@ keylineEl.setAttribute("aria-hidden", "true");
 // this container. A div, not a cq-* element — the render gate reads a cq-* ancestor
 // as "inside a widget", and the runtime's layer is inside none.
 const chromeRoot = el("div", "cq-chrome");
-chromeRoot.append(
-  banner,
-  panel,
-  fab,
-  composer,
-  toastEl,
-  liveEl,
-  helpEl,
-  keylineEl,
-);
+chromeRoot.append(banner, panel, fab, composer, toastEl, liveEl, helpEl, keylineEl);
 document.body.append(chromeRoot);
 const basePaddingTop = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
 document.body.style.paddingTop = basePaddingTop + 42 + "px";
@@ -2838,11 +2829,7 @@ function placeComposer(left, top) {
   const box = composer.getBoundingClientRect();
   const column = document.querySelector("main")?.getBoundingClientRect();
   if (rects.length && column && column.right + 8 + box.width <= rightEdge())
-    return placeClear(
-      composer,
-      column.right + 8,
-      Math.min(...rects.map((r) => r.top)),
-    );
+    return placeClear(composer, column.right + 8, Math.min(...rects.map((r) => r.top)));
   // Vertically only: the document never scrolls sideways and body's margin keeps it clear
   // of the panel, so off-screen means scrolled past, and a mark scrolled past is not one
   // this box is standing on.
@@ -3003,6 +2990,97 @@ const pageSelection = () => {
   const sel = getSelection();
   return sel && !sel.isCollapsed && !inUi(sel.anchorNode) ? sel : null;
 };
+// A drag stops where the hand stopped, not where the reader aimed: a release two glyphs
+// short of a word's end meant the word, and the capture would store the fragment as if
+// the fragment were the point. So the pointer path grows a selection outward — never
+// inward — until each end sits on a boundary of the same word units the runtime already
+// reads sequences by (textUnits), and only where the end fell strictly inside a
+// word-like unit. An end resting on a boundary, in space, or against punctuation stays
+// exactly where the reader put it, and keyboard selections never come here at all:
+// shift-arrow is the reader being precise, and precision is not a thing to correct.
+//
+// One end, because the two are the same question asked at two places, and the words are
+// read in the indexed text every other reading of the page uses. That is what keeps a
+// snap from claiming what the capture would refuse: a word never continues across a
+// fence, and never across a block seam, which is where the collapse writes the space the
+// markup doesn't hold. One seam is snapping's own, past what the collapse knows: where
+// machine-placed words (data-cq-gen) stand flush against the author's — a chip row is
+// written with no space after the title it follows — the two runs read as one word, and
+// growing across that seam would hand a selection of the chip the title too.
+function snapOut(reading, at, back) {
+  const { raw, origin, fences } = reading;
+  const behind = fences.filter((f) => f <= at).at(-1) ?? 0;
+  const ahead = fences.find((f) => f >= at) ?? raw.length;
+  const spoke = (o) => o.node.parentElement.closest("[data-cq-gen]");
+  // An EDGE's neighbours are the nearest characters, not the nearest cells: an empty
+  // text node is an empty segment, which puts two EDGEs flush, and every reader of
+  // `origin` steps over its nulls.
+  const joined = (i) => {
+    if (origin[i] !== null) return true;
+    let a = i - 1;
+    while (origin[a] === null) a--;
+    let b = i + 1;
+    while (b < origin.length && origin[b] === null) b++;
+    const prev = origin[a];
+    const next = origin[b];
+    if (!prev || !next) return false;
+    return blockOf(prev.node) === blockOf(next.node) && spoke(prev) === spoke(next);
+  };
+  const inRun = (i) => !/\s/.test(raw[i]) && joined(i);
+  let lo = at;
+  while (lo > behind && inRun(lo - 1)) lo--;
+  let hi = at;
+  while (hi < ahead && inRun(hi)) hi++;
+  let run = "";
+  let boundary = 0; // the end's own index within `run`
+  const from = []; // from[i] = the raw index run[i] came from; an EDGE holds no character
+  for (let i = lo; i < hi; i++) {
+    if (origin[i] === null) continue;
+    if (i < at) boundary++;
+    from.push(i);
+    run += raw[i];
+  }
+  const word = textUnits.segment(run).containing(boundary);
+  if (!word || word.index >= boundary || !word.isWordLike) return at;
+  return back ? from[word.index] : from[word.index + word.segment.length - 1] + 1;
+}
+// An end the snap didn't move keeps the boundary the browser gave it: a drag out into
+// chrome ends past the last quotable character, and rewriting that end from the reading
+// would pull the visible selection off words the reader chose to cover. The gesture's
+// direction survives too, or the shift-click that next extends the selection would
+// extend it from the wrong end.
+function snapSelection() {
+  if (!anchoringReady) return;
+  const sel = pageSelection();
+  if (!sel) return;
+  const range = sel.getRangeAt(0);
+  const segments = segmentsIn(range);
+  if (!segments.length) return;
+  const reading = pageText();
+  const first = segments[0];
+  const last = segments.at(-1);
+  const start = reading.positions.get(first.node) + first.start;
+  const stop = reading.positions.get(last.node) + last.end;
+  const lo = snapOut(reading, start, true);
+  const hi = snapOut(reading, stop, false);
+  if (lo === start && hi === stop) return;
+  const head =
+    lo === start
+      ? [range.startContainer, range.startOffset]
+      : [reading.origin[lo].node, reading.origin[lo].offset];
+  const tail =
+    hi === stop
+      ? [range.endContainer, range.endOffset]
+      : [reading.origin[hi - 1].node, reading.origin[hi - 1].offset + 1];
+  // Backward means the anchor sits past the range's start — asked of boundary points,
+  // because node order misreads containment: a focus on the element holding the anchor's
+  // text node both precedes and contains it.
+  const probe = document.createRange();
+  probe.setStart(sel.anchorNode, sel.anchorOffset);
+  const backward = probe.compareBoundaryPoints(Range.START_TO_START, range) > 0;
+  if (backward) sel.setBaseAndExtent(...tail, ...head);
+  else sel.setBaseAndExtent(...head, ...tail);
+}
 // What the button is on, decided here alone. The selection is read fresh; a visual find —
 // a clicked diagram or image, which has no text to select — comes in from the click that
 // found it, and a qualifying selection outranks it. The last branch is why order between
@@ -3027,10 +3105,17 @@ function updateFab(visual) {
 // can't re-decide the button out from under an open draft. A drag that ends on a widget's
 // control is the opposite case: the user was selecting that control's label, and a
 // tab's name runs to within a few pixels of the strip button's padding, so the mouseup
-// lands on chrome while the selection is the page's.
+// lands on chrome while the selection is the page's. The snap runs in the same queued
+// step that raises the button, so the button lands beside the selection as snapped and
+// the capture reads the one the reader is looking at — and only for the primary
+// button, because a right button's release precedes its context menu, and growing the
+// selection there rewrites what Copy was aimed at.
 document.addEventListener("mouseup", (ev) => {
   if (inUi(ev.target) && !pageSelection()) return;
-  setTimeout(updateFab);
+  setTimeout(() => {
+    if (ev.button === 0) snapSelection();
+    updateFab();
+  });
 });
 // Selections made from the keyboard (shift-arrows, ⌘A) deserve the same button. Typing in
 // a box never does, whatever is selected elsewhere.
@@ -3141,8 +3226,7 @@ function claimPress(ev) {
   // under way when the key goes down keeps the events it is waiting for, and one that
   // ends after the aim's own press can still be ended.
   if (ev.type === "pointerdown") {
-    aimedPress =
-      ev.altKey && !inChrome(ev.target) ? { item: itemAt(ev.target) } : null;
+    aimedPress = ev.altKey && !inChrome(ev.target) ? { item: itemAt(ev.target) } : null;
     if (aimedPress) standDown(ev.target);
   }
   if (!aimedPress) return;
