@@ -1758,10 +1758,19 @@ function threadNode(t, grow) {
     // Resolving rebuilds this node into the disclosure and takes focus with it —
     // the blind drive fell to body here. Land where j would have gone: the thread
     // that now holds this one's place, else the previous, else the list.
+    // Disabled for the flight (acceptAllBtn's shape): the r key repeats while
+    // held, and every repeat before the poll replaces this node would post the
+    // same resolve again. Re-enabled for the one path that keeps the node — a
+    // send that failed, where the press must stay pressable.
     resolve.onclick = async () => {
       const open = [...threadsBox.querySelectorAll(":scope > .cq-thread")];
       const at = open.indexOf(div);
-      await post({ kind: "resolve", parent: t.root.id });
+      resolve.disabled = true;
+      try {
+        await post({ kind: "resolve", parent: t.root.id });
+      } finally {
+        resolve.disabled = false;
+      }
       const kept = [...threadsBox.querySelectorAll(":scope > .cq-thread")];
       (kept[at] ?? kept[at - 1] ?? threadsBox).focus({ preventScroll: true });
     };
@@ -3443,6 +3452,13 @@ function replyTo(n) {
 // inside run instead is a liveness no surface can see.
 const live = (b) => !b.when || b.when();
 const hasThreads = () => threadAddress.size > 0;
+// The focused thread, one predicate: the row the key line paints and the press the
+// dispatcher takes ask the same question, so they cannot disagree about which
+// thread "the focused thread" is.
+const focusedThread = () => {
+  const active = document.activeElement;
+  return active?.classList?.contains("cq-thread") ? active : null;
+};
 const canStepVersions = () => versions.length > 1 && versions.includes(VNUM);
 // A label naming a range counts what is there rather than promising nine: at
 // most nine open threads are addressable, fewer when fewer are open.
@@ -3480,6 +3496,21 @@ const KEYS = [
   },
   { key: "k", when: hasThreads, run: () => stepThread(-1) },
   { label: "Enter", does: "On a focused thread: write a reply", when: hasThreads },
+  // Live is the capability (threads exist), like Enter's row above; the words carry
+  // the scope, so nothing advertises a press the run below would refuse. It resolves
+  // through the thread's own button, so keyboard and mouse are one behaviour — the
+  // focus landing (the thread that takes this one's place) included — and a resolved
+  // or unfocused thread offers no button to find, which is the row's own wording.
+  {
+    key: "r",
+    label: "r",
+    does: "On a focused thread: resolve it",
+    when: hasThreads,
+    run: () =>
+      focusedThread()
+        ?.querySelector(":scope > .cq-thread-actions > .cq-resolve")
+        ?.click(),
+  },
   {
     key: "g",
     label: () => `g ${digits()}`,
@@ -3620,14 +3651,22 @@ function scene() {
   }
   // The thread div itself, j/k's target — not a control inside it, whose Enter is
   // its own press and must not be promised as "reply"; nor a resolved thread,
-  // which has no reply box for Enter to reach. The j/k row is the KEYS entry's
-  // own, not a restatement free to drift from it — liveness included, since a
+  // which has no reply box for Enter to reach and no Resolve for r to press, and
+  // the compose row is that fact. The j/k and r rows are the KEYS entries' own,
+  // not restatements free to drift from them — j/k's liveness included, since a
   // resolved thread stays focusable after the last open one is gone.
-  if (active?.classList?.contains("cq-thread")) {
+  const thread = focusedThread();
+  if (thread) {
     const jk = KEYS.find((b) => b.key === "j");
+    const rk = KEYS.find((b) => b.key === "r");
     return {
       rows: [
-        ...(active.querySelector(":scope > .cq-compose") ? [["Enter", "reply"]] : []),
+        ...(thread.querySelector(":scope > .cq-compose")
+          ? [
+              ["Enter", "reply"],
+              [keyLabel(rk), "resolve"],
+            ]
+          : []),
         ...(live(jk) ? [[keyLabel(jk), jk.line]] : []),
       ],
       esc: { says: "close comments", out: () => setPanel(false) },

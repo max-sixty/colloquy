@@ -5095,6 +5095,63 @@ def test_a_key_on_screen_is_a_key_that_works(browser, serve):
     page.close()
 
 
+def test_the_resolve_key_resolves_the_focused_thread(browser, serve):
+    """r resolves the thread j/k landed on, through the button's own press, so
+    focus lands where the button already sends it — on the thread that takes the
+    resolved one's place. The promise is scoped the way it is worded: the key
+    line offers resolve only over an open focused thread, the overlay row
+    carries the scope in its words, and on a focused resolved thread the press
+    acts on nothing — a run that reached for "the first open thread" instead of
+    the focused one would resolve a thread the user never aimed at."""
+    url = serve(NOTED_PAGE)
+    d = serve.page_dir
+
+    def comment(text):
+        return interact.append_event(
+            d, {"kind": "comment", "author": "user", "version": 1, "text": text}
+        )["id"]
+
+    c1 = comment("First thought.")
+    c2 = comment("Second thought.")
+    page, errors = open_page(browser, url)
+    page.wait_for_function("() => document.querySelectorAll('.cq-thread').length === 2")
+    line = page.locator(".cq-keyline")
+
+    # At page scope nothing promises r — its target is the focused thread, and
+    # none is — while the overlay teaches the capability, scope in its words.
+    expect(line).not_to_contain_text("resolve")
+    page.keyboard.press("?")
+    expect(page.locator(".cq-help")).to_contain_text("On a focused thread: resolve it")
+    page.keyboard.press("Escape")
+
+    # j lands on the first thread and the line offers resolve; r takes it, and
+    # focus lands on the thread now holding the resolved one's place, so j/k
+    # and a second r walk on from there.
+    page.keyboard.press("j")
+    expect(page.locator(f'.cq-thread[data-id="{c1}"]')).to_be_focused()
+    expect(line).to_contain_text("resolve")
+    page.keyboard.press("r")
+    expect(page.locator(".cq-details summary")).to_have_text("Resolved (1)")
+    expect(page.locator(f'.cq-thread[data-id="{c2}"]')).to_be_focused()
+    expect(line).to_contain_text("resolve")
+
+    # A focused resolved thread promises nothing, and the press acts on nothing.
+    page.locator(".cq-details summary").click()
+    resolved = page.locator(f'.cq-details .cq-thread[data-id="{c1}"]')
+    resolved.click()
+    expect(resolved).to_be_focused()
+    expect(line).not_to_contain_text("resolve")
+    page.keyboard.press("r")
+    # The absence is read after a poll the test forces, so a resolve the press
+    # had wrongly posted would have landed by now.
+    comment("Third thought.")
+    told(page)
+    expect(page.locator(".cq-details summary")).to_have_text("Resolved (1)")
+    expect(page.locator(f'.cq-threads > .cq-thread[data-id="{c2}"]')).to_have_count(1)
+    assert errors == []
+    page.close()
+
+
 def test_escape_on_a_declaring_control_does_exactly_what_it_says(browser, serve):
     """keyHint's contract: a control that declares its own Esc row consumes the
     press, so one press is one action. The draft editor's Esc used to be two — the

@@ -7,7 +7,9 @@
   And how do widgets join — a board's grips, a group's pick marks, a draft's ✎
   have no addresses today; if they get them, the registry should declare it (an
   `x-` key the leader dispatches on), not modules registering keys, per the
-  never-closed widget list.
+  never-closed widget list. Bare `r` resolves the focused thread now, so a verb
+  vocabulary should keep the bare keys' meanings — `g r 1` reading "reply" would
+  give one letter two verbs.
 - (2026-07-30) A reader can't walk a page's open questions from the keyboard, and the
   design for it is agreed but unbuilt. `x-awaits` on a registry entry says an instance
   of this tag is a standing request to the reader; unanswered then needs no new
