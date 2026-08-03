@@ -5008,6 +5008,54 @@ def test_the_key_line_says_what_a_press_will_do(browser, serve):
     expect(line).not_to_contain_text("close comments")
     # Focus doesn't fall to body: it lands on the control that reopens the panel.
     expect(page.locator(".cq-comments")).to_be_focused()
+
+    # The fast rung: j reopens onto a thread, and Esc from it is one press out.
+    # Every rung earns a press here because Esc is the only keyboard collapse.
+    page.keyboard.press("j")
+    expect(page.locator(".cq-thread")).to_be_focused()
+    expect(line).to_contain_text("close comments")
+    page.keyboard.press("Escape")
+    expect(page.locator(".cq-panel")).to_be_hidden()
+    assert errors == []
+    page.close()
+
+
+def test_c_reaches_the_general_box_while_the_panel_stands_open(browser, serve):
+    """c goes to the general box from any state. It doubled as the panel's
+    collapse once, which left the box with no shortcut exactly while the panel
+    stood open: the press that promised "comment" answered "close".
+    Collapse is the ladder's — Esc from the list closes the panel, the rung the
+    key-line test walks — so both stay reachable without one key meaning two
+    things."""
+    page, errors = open_page(browser, serve(NOTED_PAGE))
+    page.keyboard.press("c")  # closed: opens the panel into the box
+    expect(page.locator(".cq-general textarea")).to_be_focused()
+    page.keyboard.press("Escape")  # back out to the list, focus outside any box
+    expect(page.locator(".cq-threads")).to_be_focused()
+    page.keyboard.press("c")  # open: still the box, never the collapse
+    expect(page.locator(".cq-general textarea")).to_be_focused()
+    expect(page.locator(".cq-panel")).to_have_class(re.compile("open"))
+    assert errors == []
+    page.close()
+
+
+def test_escape_backs_out_from_a_control_nothing_is_typed_into(browser, serve):
+    """Letters stand down on any editable — a select's letters jump its options —
+    but the ladder asks what the press would take from the control, and only
+    typed text has an Escape of its own. The version chooser swallowed the rung,
+    so the panel could not be closed by key right after the user worked it; the
+    authored slider is the same fact past the first fix's two-item denylist."""
+    html = NOTED_PAGE.replace("</main>", '<input id="zoom" type="range"></main>')
+    page, errors = open_page(browser, serve(html))
+    # The mouse opens between rounds because c is shadowed on the very controls
+    # under test: their letters are the control's own.
+    for control in (".cq-banner select", "#zoom"):
+        page.get_by_role("button", name=re.compile("^Comments")).click()
+        expect(page.locator(".cq-panel")).to_be_visible()
+        page.locator(control).focus()
+        expect(page.locator(".cq-keyline")).to_contain_text("close comments")
+        page.keyboard.press("Escape")
+        expect(page.locator(".cq-panel")).to_be_hidden()
     assert errors == []
     page.close()
 

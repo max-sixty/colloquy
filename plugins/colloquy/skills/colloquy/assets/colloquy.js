@@ -1135,7 +1135,7 @@ if (VNUM !== null)
   );
 const toggleBtn = el("button", "cq-btn cq-comments", "Comments");
 toggleBtn.title =
-  "Show or hide the comment panel (c toggles, Esc closes, ? lists all keys)";
+  "Show or hide the comment panel (c comments, Esc closes, ? lists all keys)";
 toggleBtn.setAttribute("aria-expanded", "false");
 const approveBtn = el("button", "cq-btn primary cq-signoff", "✓ Looks good");
 approveBtn.title = "Approve this work; the page stays open for follow-up";
@@ -3469,7 +3469,7 @@ const KEYS = [
   {
     key: "c",
     label: "c",
-    does: "Comment on the selection — or toggle the panel",
+    does: "Comment on the selection or the raised 💬 — or the page as a whole",
     line: "comment",
     run: commentKey,
   },
@@ -3537,7 +3537,7 @@ const KEYS = [
   { key: "?", label: "?", does: "This key reference", line: "keys", run: toggleHelp },
   {
     label: "Esc",
-    does: "Back out one layer: an armed g, help, composer, reply, panel",
+    does: "Back out one layer: an armed g, help, composer, a box you are typing in, panel",
   },
   { label: SEND_KEYS, does: "Send, in the focused composer" },
 ];
@@ -3552,6 +3552,32 @@ const editable = (node) =>
     node.tagName === "INPUT" ||
     node.tagName === "SELECT" ||
     node.isContentEditable);
+// The subset of editable that words are typed into. editable() answers "is a
+// letter a keystroke here" — a select's letters jump its options — while the
+// Escape ladder asks what the press would take from the control, and only typed
+// text has an Escape of its own (an IME cancelling, a search box clearing, a
+// date's picker). The platform's set of text-entry types, stated whole: a
+// denylist named the two controls to hand and left a slider swallowing the rung
+// the same way the version chooser had. A bare or unknown type resolves to
+// "text", so the default lands on the typed side.
+const TYPED_TYPES = new Set([
+  "text",
+  "search",
+  "url",
+  "tel",
+  "email",
+  "password",
+  "number",
+  "date",
+  "time",
+  "datetime-local",
+  "month",
+  "week",
+]);
+const typedInto = (node) =>
+  node.tagName === "TEXTAREA" ||
+  node.isContentEditable ||
+  (node.tagName === "INPUT" && TYPED_TYPES.has(node.type));
 document.addEventListener("keydown", (ev) => {
   if (ev.isComposing || ev.defaultPrevented) return;
   if (ev.key === "Escape") return escapeKey();
@@ -3598,11 +3624,11 @@ function escapeKey() {
 
 // The current keyboard scope, top layer first: what the next press can do (rows),
 // and what Escape backs out of (esc — null where Escape deliberately does nothing:
-// an authored input outside the panel keeps its own Escape, and a widget control
-// that claims the key consumes it before the dispatcher looks). Backing out of a
-// reply returns focus to its thread, so Esc then Enter round-trips; out of the
-// general box, to the list, so j/k walk on from where the backing-out started;
-// drafts are kept at every rung.
+// a box words are typed into outside the panel keeps its own Escape, and a widget
+// control that claims the key consumes it before the dispatcher looks). Backing
+// out of a reply returns focus to its thread, so Esc then Enter round-trips; out
+// of the general box, to the list, so j/k walk on from where the backing-out
+// started; drafts are kept at every rung.
 function scene() {
   const active = document.activeElement;
   if (leaderTimer)
@@ -3628,7 +3654,19 @@ function scene() {
       },
     };
   if (editable(active)) {
-    if (!panel.contains(active)) return { rows: [], esc: null };
+    // The rows stand down on every editable — the dispatcher's letters do too —
+    // but the rung stands down only where the press would take something from
+    // the control. A select or a radio has no Escape of its own, and swallowing
+    // the rung there left the panel unclosable by key while focus sat on the
+    // banner's own version chooser.
+    if (!panel.contains(active))
+      return {
+        rows: [],
+        esc:
+          !typedInto(active) && panelOpen
+            ? { says: "close comments", out: () => setPanel(false) }
+            : null,
+      };
     const thread = active.closest(".cq-thread");
     return {
       rows: [[SEND_KEYS, "send"]],
@@ -3720,12 +3758,14 @@ paintLine();
 
 // c goes where commenting happens: a live selection gets the composer (what the
 // floating button does), an element click's pending 💬 gets that, and otherwise
-// the panel toggles — focusing the general box on open.
+// the general box, the panel opening to hold it. Never the panel's collapse: c
+// doubled as the toggle once, so with the panel standing open the one key that
+// promised "comment" answered "close", and no shortcut reached the box.
+// Backing out is the ladder's (Esc), which already closes the panel rung by rung.
 function commentKey() {
   if (!anchoringReady && pageSelection()) return;
   updateFab(); // the selection may be newer than the mouseup that last placed the button
   if (fabAnchor) return fab.onclick();
-  if (panelOpen) return setPanel(false);
   setPanel(true);
   generalInput.focus();
 }
