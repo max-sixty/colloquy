@@ -419,12 +419,15 @@ cq-compare:has(> cq-variant > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, 
       font-weight: 400; margin-top: 6px; padding: 0; }
   & > :is(cq-option, cq-variant) > .facts dd { margin: 0; }
 }
-/* With `choose`, the group takes the reader's pick by click: hover lifts a card
- * and warms its mark, and the pick wears the ok ring. `chosen` reads after
- * `recommended`, so the reader's pick wins the border. */
+/* With `choose`, the group takes the reader's pick by click. `chosen` reads after
+ * `recommended`, so the reader's pick wins whichever of the two the form paints it in.
+ * What follows is a card standing on its own — which is a card in a settled group, or
+ * any card on paper. A card in a live group is a cell of one control, and the block
+ * further down restates its status, its hover and its mark in those terms. */
 /* The rings: a card states its status as a border it already has, so both live with
  * the card form. A row has no border to color and says the same two things with a
- * wash (below). */
+ * wash (below), and a card taking a pick has no border either once the group takes it
+ * over, so the joined form restates both as rails (further below). */
 cq-options:has(> cq-option > strong) > cq-option[recommended] { border-color: var(--accent);
                          box-shadow: 0 0 0 1px var(--accent); }
 cq-options:has(> cq-option > strong) > cq-option[chosen] { border-color: var(--ok);
@@ -432,16 +435,20 @@ cq-options:has(> cq-option > strong) > cq-option[chosen] { border-color: var(--o
 cq-options[choose] > cq-option { cursor: pointer;
                          transition: box-shadow .12s ease, transform .12s ease; }
 /* Every option lifts on hover, the pick included — clicking it clears it, so it
- * has to keep looking clickable. A ring a card already wears layers under the lift. */
+ * has to keep looking clickable. A ring a card already wears layers under the lift.
+ * The joined form answers the same requirement without the lift, because a cell that rose
+ * would pull away from the hairlines holding the group together. */
 cq-options[choose]:has(> cq-option > strong) > cq-option:hover { transform: translateY(-1px);
                          box-shadow: 0 3px 10px rgba(0, 0, 0, .14); }
 cq-options[choose]:has(> cq-option > strong) > cq-option[recommended]:hover {
                          box-shadow: 0 0 0 1px var(--accent), 0 3px 10px rgba(0, 0, 0, .14); }
 cq-options[choose]:has(> cq-option > strong) > cq-option[chosen]:hover {
                          box-shadow: 0 0 0 1px var(--ok), 0 3px 10px rgba(0, 0, 0, .14); }
-/* The mark the upgrade injects: the keyboard path and the state in one element. Its box
- * is identical in both states, so a pick shifts nothing; where it hangs, and what holds
- * the room it needs, are each form's own business.
+/* The mark the upgrade injects: the keyboard path and the state in one element. It is
+ * silent until there is a pick to state, so its box is not the same in both states — the
+ * room is what stays the same, held on every card whether or not one is picked, and the
+ * word grows into space already reserved. Where it hangs, and what holds that room, are
+ * each form's own business.
  *
  * On a card, a caption on its own left edge rather than a control pinned to a corner,
  * standing in the strip below the content. On screen every card in a choose group
@@ -461,13 +468,104 @@ cq-option .cq-pick::before { content: ""; width: 11px; height: 11px; flex: none;
                      display: grid; place-items: center; box-sizing: border-box;
                      font-size: 8px; line-height: 1; color: var(--card); }
 cq-option .cq-pick[role="button"] { cursor: pointer; }
-cq-options[choose] > cq-option:not([chosen]):hover .cq-pick { color: var(--ink-2); }
+/* An offer says nothing, so it is not written — in either form. A picked mark's word is
+ * the page's only statement of where the pick sits, which paper keeps and a reviewer can
+ * quote; "choose" states nothing a reader could disagree with, and a card carrying it on
+ * every member says the same nothing two to five times. The card form used to argue it
+ * needed the word precisely because it had no column of dots to say it, and a choose group
+ * has one — a weak one, spread down a tall card. Strengthen the column; don't caption it.
+ * The room the word will need is held either way (each form's own rules below), so the
+ * mark grows into space already reserved and a pick moves nothing. */
+cq-option .cq-pick:not([data-cq-said]) { font-size: 0; gap: 0; }
+/* Warming the ring under the pointer, wherever the ring is drawn — a row, and a card in a
+ * settled group. A live card group draws none, so this reaches nothing there and the cell's
+ * own hover is the answer instead. */
 cq-options[choose] > cq-option:not([chosen]):hover .cq-pick::before { border-color: var(--muted); }
 cq-option[chosen] .cq-pick { color: var(--ok-ink); }
 cq-option[chosen] .cq-pick::before { content: "✓"; border-color: var(--ok);
                      background: var(--ok); }
 cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px;
                      border-radius: 4px; }
+/* A card group under `choose` is one control, not a set of cards standing near each other.
+ * Deleting the offer word left the question of what says a decision is waiting, and the
+ * answer is the group rather than another thing drawn on every member: a group offers and
+ * its members are what is offered, so writing the offer onto each of them was the mistake a
+ * dot repeats more quietly than a word did. Cells of one width sharing edges, divided by a
+ * hairline instead of a gap, is what a segmented control is made of and all it is made of —
+ * repetition at one size says "these are alternatives" before a word is read, and it says
+ * it once. The shape appears only where `choose` does, so its presence is the offer.
+ *
+ * Both card forms, because the question is the group's rather than the layout's: the terse
+ * grid's columns and the argument form's rows become cells of the same control, and neither
+ * states its own answer to "is this answerable". Which is why this sets `display: grid` for
+ * a form the theme otherwise lays out as blocks — one column, no template stated, so the
+ * grid form keeps its own `auto-fit` tracks and the argument form keeps one row per option.
+ *
+ * The live page only, which is the same reason twice. On paper nothing can be picked, and
+ * an exported copy has had its scripts dropped, so a group drawn as a control in either
+ * would be offering what the medium cannot take. Both get the page without the offer by
+ * never being handed it rather than by undoing it — the bargain the box for words already
+ * makes — so the cards come apart again and wear the rings they print. Not `settled` either, for the same reason in a different medium: a retired decision
+ * is a line the reviewer opens, and drawing the group as a control around it would put one
+ * box inside another and offer a question nobody is asking. Opened, its cards come back as
+ * cards — with their rings, since the ring and the container are the same decision made
+ * twice and a group that isn't joined has to say the offer itself. */
+@media screen {
+ html:not(.cq-copy) {
+  cq-options[choose]:not([settled]):has(> cq-option > strong) {
+    display: grid; gap: 1px; background: var(--card);
+    border: 1px solid var(--border-2); border-radius: var(--r); overflow: hidden;
+    /* The hairline is the cell's own outer shadow rather than the gap showing a colour
+     * behind it. A grid whose last row is short has grid area with no cell in it, and a
+     * colour behind would fill that area solid — three options in two columns, which is one
+     * narrow window away on every page here. Drawn by the cells, only the cells draw it, and
+     * the group's clip takes the overhang at its edges.
+     *
+     * Both statuses then move inside, since a cell has no border of its own left to colour:
+     * each is a rail on the leading edge, paint within the box it belongs to, which is what
+     * holding still asks for anyway. Held in `--rail` and `--fill` so a state names its
+     * colour and the composite is written once — the alternative is every state restating
+     * the hairline beside its own rail, and the day one of them forgets, a cell loses the
+     * line that made the group one thing. */
+    & > cq-option { --rail: transparent; --fill: var(--card);
+                     margin: 0; border: 0; border-radius: 0; background: var(--fill);
+                     box-shadow: 0 0 0 1px var(--rule), inset 3px 0 0 var(--rail); }
+    /* Hover deepens whatever the cell is filled with, rather than lifting it: a cell that
+     * rose would pull away from the hairlines that are the whole of what joins the group.
+     * One rule for every state, the pick included — clicking that one clears it, so it has
+     * to keep answering the pointer. Toward the ink rather than toward black, so the same
+     * declaration deepens on paper-white and lightens on the dark palette.
+     *
+     * The fill is not in the group's transition, and that is the choose block above rather
+     * than an omission here: the tokens themselves change when the reader's system flips to
+     * dark, so a transitioned background animates every cell of every group from one palette
+     * to the other — a page repainting itself over a tenth of a second for a change nobody
+     * on it made. It is also how the contrast sweep found this, by reading a cell mid-flip
+     * and getting a grey that belongs to neither palette. */
+    & > cq-option:hover { transform: none;
+                     background: color-mix(in srgb, var(--fill) 92%, var(--ink)); }
+    & > cq-option[recommended] { --rail: var(--accent); }
+    & > cq-option[chosen] { --rail: var(--ok); --fill: var(--ok-tint); }
+    /* The box for words is the group's own child, so joining the group takes it inside the
+     * border too — and butted against the last cell with the same hairline, it reads as one
+     * more option rather than as the way past them. It is apparatus, so it wears the tint
+     * apparatus wears here and sits as the control's footer, which is what it is: the answer
+     * for a reader whom none of the cells above fits. */
+    & > .cq-say { margin-top: 0; padding: 10px 12px; background: var(--field);
+                     box-shadow: 0 0 0 1px var(--rule); }
+    /* The mark keeps its box and stops drawing. The room stays reserved, so a pick still
+     * moves nothing; the ring is the weaker of two ways to say the same thing now that the
+     * group's shape says it, and one mechanism per guarantee means the weaker one goes. That
+     * leaves nothing for a focus ring to sit around, so it sits around the cell — which is
+     * what the press acts on, and what a reader arriving by keyboard has actually landed on.
+     * Inset, because the group clips its edges. */
+    & > cq-option .cq-pick:not([data-cq-said])::before { visibility: hidden; }
+    & > cq-option:has(> .cq-pick:focus-visible) { outline: 2px solid var(--accent);
+                     outline-offset: -2px; }
+    & > cq-option > .cq-pick:focus-visible { outline: none; }
+  }
+ }
+}
 /* The row form: a list, so it reads like one. Every row opens at the same column with
  * what the reader is choosing between, and the apparatus — the block it is about, the
  * mark — runs to the line's end. Leading with the mark cost exactly that alignment: a
@@ -481,12 +579,12 @@ cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-off
  * side of it and without the space that was written there — a flex item's edge whitespace
  * is trimmed, and the gap had been standing in for it on every label that was one run.
  *
- * An open mark shows its dot and not its word. "choose" on every row of a list is the
- * affordance stated once per line where the dots have already said it together, and it
- * is what a card needs precisely because a card has no dots beside it to say it. What a
- * *picked* mark says stays, in both forms: it is the page's only statement of where the
- * pick sits, which is what a reviewer points at — and the two media already agree here,
- * since paper drops an offer that says nothing and keeps one that does. */
+ * An open mark shows its dot and not its word, which is now every form's rule rather than
+ * this one's. The row form got there first and then argued the wrong reason for keeping the
+ * word on a card — that a card has no dots beside it to say it — when a choose group has
+ * two to five cards and every one carries a mark. The column was there; it was weak, spread
+ * down a tall card, and the answer to that is to strengthen it. What the card form does
+ * instead of a dot is above: the group takes the offer, once. */
 cq-options:not(:has(> cq-option > strong)) > cq-option {
                      display: table; width: 100%; border-spacing: var(--sp-2) 0;
                      padding: 5px 0; border: 0; border-radius: 6px;
@@ -522,8 +620,6 @@ cq-options:not(:has(> cq-option > strong)) > cq-option > .cq-pick {
                      padding-right: 17px; text-align: right; }
 cq-options:not(:has(> cq-option > strong)) > cq-option > .cq-pick::before {
                      position: absolute; right: 0; top: 0; bottom: 0; margin: auto 0; }
-cq-options:not(:has(> cq-option > strong)) > cq-option .cq-pick:not([data-cq-said]) {
-                     font-size: 0; }
 /* The block a row is about (`for`). It points; it never supplies the row's words, so it
  * reads as what it is — an id, written the way the comment panel writes an element
  * anchor — and rides at the line's end with the mark, out of the way of what the row

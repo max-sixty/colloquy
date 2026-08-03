@@ -135,6 +135,23 @@ silently rather than failing — which is the vacuous pass, wearing the same gre
 real one. Pin the count across reloads, and check a new gate by putting each bug back and
 watching it fail; a gate that has only ever passed has been tested for nothing.
 
+## An assertion that nothing moved must straddle the change that could move it
+
+A geometry assertion is worth only as much as the transition it is measured across, and the
+transition that comes to hand is often the one that cannot move whatever the rule says. Room
+reserved for a pick mark is the case. Moving a pick from one card to another gives the strip
+back exactly as fast as it takes it, and in the grid form the row stands as tall as its
+tallest cell either way — so "the card is the same box after the pick as before it" held
+perfectly with the reservation deleted, and a gate written to catch that deletion passed with
+the bug in. Clearing the pick first is what makes the room actually go missing: the
+assertion has to run from a group holding no answer to one holding an answer, not from one
+answer to another.
+
+So before writing "nothing moved", ask what would move if the rule were gone, and put the
+test where that is. It is the same question `page.emulate_media` and the loaded machine ask
+in their own registers, and it is the one the bug-back check above answers for you when the
+measurement is too clever to reason about.
+
 ## A captured stream nothing reads is a failure that names nothing
 
 `check=True` over `capture_output=True` raises a `CalledProcessError` naming the command

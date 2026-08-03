@@ -2785,19 +2785,24 @@ def test_a_pick_offered_can_be_pointed_at_too(browser, serve):
     mark = page.locator("#opt-lax .cq-pick")
     expect(mark).to_have_text("chosen")
 
-    # Where the theme puts it: one line along the card's own bottom edge, the same box
-    # whichever word it carries, so a pick shifts nothing. Pinned because the mark now
-    # declares itself the page speaking, and the marker it declares with is the one the
-    # theme's chip band is selected by — matched bare, the mark came out a pill at the
-    # head of the card and every assertion here still passed.
+    # Where the theme puts it: one line along the card's own bottom edge, in the same
+    # place whichever word it carries. Pinned because the mark now declares itself the
+    # page speaking, and the marker it declares with is the one the theme's chip band is
+    # selected by — matched bare, the mark came out a pill at the head of the card and
+    # every assertion here still passed.
+    #
+    # The same place, not the same box. An offer says nothing, so the mark on a card
+    # nobody has picked is a held space and the picked one grows a word into it. What the
+    # matching box used to stand for — that a pick shifts nothing — is asked of the card
+    # itself further down, which is the fact rather than a proxy that happened to imply it.
     seat = """el => { const r = el.getBoundingClientRect();
                       const card = el.closest('cq-option').getBoundingClientRect();
-                      return [Math.round(r.height), Math.round(card.bottom - r.bottom),
+                      return [Math.round(card.bottom - r.bottom),
                               Math.round(r.left - card.left)]; }"""
     assert mark.evaluate(seat) == page.locator("#opt-strict .cq-pick").evaluate(seat)
-    height, up, over = mark.evaluate(seat)
-    assert height < 24 and up < 16 and over < 20, (
-        f"the mark is not a one-line caption on the card's bottom-left: {mark.evaluate(seat)}"
+    up, over = mark.evaluate(seat)
+    assert mark.bounding_box()["height"] < 24 and up < 16 and over < 20, (
+        f"the mark is not a one-line caption on the card's bottom-left: {[up, over]}"
     )
 
     box = mark.bounding_box()
@@ -2818,8 +2823,32 @@ def test_a_pick_offered_can_be_pointed_at_too(browser, serve):
     # Still a control: clicking the card that holds the pick clears it, and the keyboard
     # reaches the mark and works it the way the <button> did.
     page.evaluate("() => getSelection().removeAllRanges()")
-    page.locator("#opt-strict").click()
+    strict = page.locator("#opt-strict")
+    strict.click()
     expect(page.locator("#opt-strict[chosen]")).to_have_count(1)
+
+    # And the card it lands on is the same box after the pick as before it: the room a
+    # picked mark's word needs is held on every card in the group, so the word grows into
+    # space already reserved. That is the fact the matching mark boxes above used to stand
+    # in for, and the one the reviewer feels — a card that resized under the pointer takes
+    # the next gesture's aim with it.
+    #
+    # Measured across an empty group rather than across a swap. Moving the pick from one
+    # card to another gives the strip back exactly as fast as it takes it, and in the grid
+    # form the row is as tall as its tallest cell either way, so a swap holds still whether
+    # or not anything is reserved — which is a test that passes with the reservation
+    # deleted. Clearing the pick first is what makes the room actually go missing.
+    box = """el => { const r = el.getBoundingClientRect();
+                     return [Math.round(r.width), Math.round(r.height)]; }"""
+    strict.click()  # clicking the pick clears it, so now the group holds no answer
+    expect(page.locator("#transport > cq-option[chosen]")).to_have_count(0)
+    empty = strict.evaluate(box)
+    strict.click()
+    expect(page.locator("#opt-strict[chosen]")).to_have_count(1)
+    assert strict.evaluate(box) == empty, (
+        f"answering the group resized the card it was answered on: {empty} -> "
+        f"{strict.evaluate(box)}"
+    )
     page.locator("#opt-bearer .cq-pick").focus()
     page.keyboard.press("Enter")
     expect(page.locator("#opt-bearer[chosen]")).to_have_count(1)
@@ -2851,6 +2880,88 @@ def test_a_pick_offered_can_be_pointed_at_too(browser, serve):
     assert page.evaluate(
         "() => [...document.querySelectorAll('.cq-ins-block')].map(e => e.id)"
     ) == ["opt-strict"], "the diff read a pick mark as text the base version lacked"
+    assert errors == []
+    page.close()
+
+
+def test_a_card_group_taking_a_pick_reads_as_one_control(browser, serve):
+    """The offer is the group's, made once, rather than a word written on every member.
+
+    A card group under `choose` draws the border and its options become cells inside it,
+    sharing hairlines: a set of alternatives at one size is what says a decision is
+    waiting, so no option has to caption itself "choose". What the theme deletes is only
+    the offer — a picked mark still says where the pick sits, which is the page's only
+    statement of that and the one paper keeps.
+
+    Pinned because the rules making the group one control are ranked against the ones
+    making each option a card, and losing that race leaves a page that looks exactly as it
+    did while saying nothing about being answerable — which reads as a feature nobody
+    wired up rather than as a fault. The mark is measured against its own ring for the
+    same reason: "no word" is the claim, and a mark exactly as wide as the dot it draws
+    is the only way to make it without naming a font size."""
+    page, errors = open_page(browser, serve(REPLAYED_PAGE))
+    edge = """el => { const s = getComputedStyle(el);
+                      return s.borderTopStyle === 'none' ? 0 : parseFloat(s.borderTopWidth); }"""
+    assert page.locator("#approach").evaluate(edge) > 0, (
+        "the group draws no edge of its own, so nothing says the set is one thing"
+    )
+    assert page.locator("#opt-shim").evaluate(edge) == 0, (
+        "an option still draws its own border, so the group reads as cards standing apart"
+    )
+
+    mark = page.locator("#opt-shim .cq-pick")
+    box = """el => [Math.round(el.getBoundingClientRect().width),
+                    Math.round(parseFloat(getComputedStyle(el, '::before').width)),
+                    getComputedStyle(el, '::before').visibility]"""
+    width, ring, drawn = mark.evaluate(box)
+    assert width == ring, (
+        f"the resting mark carries more than its ring: {width} vs {ring}"
+    )
+    assert drawn == "hidden", "the ring is drawn on a card the group already speaks for"
+
+    # And a reader arriving by keyboard can see where they landed. With the mark drawing
+    # nothing, a ring on it would ring an empty box at the card's foot, so it goes on the
+    # cell — what the press acts on, and what the reader is standing on. Reached by Tab
+    # rather than focus(), because :focus-visible is a fact about how focus arrived and a
+    # programmatic call is not the keyboard. Read as a style rather than a width, because
+    # `outline: none` leaves outline-width computing to the initial `medium`: a box drawing
+    # no ring at all still reports 3px.
+    mark.focus()
+    page.keyboard.press("Shift+Tab")
+    page.keyboard.press("Tab")
+    ring_on = """el => { const on = el.closest('cq-option');
+                      const drawn = (e) => { const s = getComputedStyle(e);
+                          return s.outlineStyle === 'none' ? 0 : parseFloat(s.outlineWidth); };
+                      return [on.id, on.matches(':has(> .cq-pick:focus-visible)'),
+                              drawn(on), drawn(el)]; }"""
+    on, held, card_ring, mark_ring = mark.evaluate(ring_on)
+    assert (on, held) == ("opt-shim", True), (
+        f"Tab did not land on the mark: {on} {held}"
+    )
+    assert card_ring > 0 and mark_ring == 0, (
+        f"the focus ring is on the wrong box: card {card_ring}, mark {mark_ring}"
+    )
+
+    page.locator("#opt-shim").click()
+    expect(mark).to_have_text("your pick")
+    width, ring, drawn = mark.evaluate(box)
+    assert width > ring and drawn == "visible", (
+        f"the picked mark states the pick in no width at all: {width} vs {ring}, {drawn}"
+    )
+
+    # The copy medium: scripts are dropped, so the pick cannot be made and the group must
+    # not go on saying one is waiting. The cards come apart and their rings come back, which
+    # is the same page paper gets, and both get it by never being handed the offer.
+    page.evaluate("() => document.documentElement.classList.add('cq-copy')")
+    assert page.locator("#approach").evaluate(edge) == 0, (
+        "a copy still draws the group as a control it has no way to work"
+    )
+    assert page.locator("#opt-stage").evaluate(edge) > 0, (
+        "the cards did not come back apart in a copy"
+    )
+    assert page.locator("#opt-stage .cq-pick").evaluate(box)[2] == "visible", (
+        "no ring and no container leaves a copy saying nothing about a pick at all"
+    )
     assert errors == []
     page.close()
 
@@ -2981,10 +3092,13 @@ def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serv
     one page carries both and neither knows about the other: the labels lay out as rows
     and the titled pair as a grid.
 
-    Two things the lint cannot see. A row's mark shows its dot and not its word, because
-    "choose" on every line of a list is the affordance said once per row where the dots
-    have already said it together — and what a *picked* mark says has to survive that,
-    since it is the page's only statement of where the pick sits. And a row's name is
+    Two things the lint cannot see. A resting mark shows no word in either form, because
+    an offer states nothing a reader could disagree with — and what a *picked* mark says
+    has to survive that, since it is the page's only statement of where the pick sits.
+    What differs is the dot: a row draws one, because a column of them down the list is
+    the whole of that form's offer, and a card does not, because its group draws the
+    border that says the same thing once. Both are asked here, since either could be the
+    theme forgetting a rule rather than each form answering for itself. And a row's name is
     what the author wrote in it: the mark that lands inside the row once it is picked is
     the page speaking (`says`) and must stay out of the row's own name (`wrote`), or a
     question answered reads its answer back as part of what was asked."""
@@ -3006,11 +3120,15 @@ def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serv
     assert ref.get_attribute("href") == "#sec-mounts"
     assert page.locator("#job-camera .cq-ref").count() == 0
 
-    # An open row's word is off the screen; a card's is not, which is the contrast that
-    # says the row form decided this and not the theme forgetting a rule.
+    # No open mark says its word, in either form. The dot is where they part: the row's is
+    # drawn and the card's is not, which is each form answering for its own offer rather
+    # than one rule going missing.
     hidden = "el => getComputedStyle(el).fontSize"
+    dot = "el => getComputedStyle(el, '::before').visibility"
     assert page.locator("#job-mounts .cq-pick").evaluate(hidden) == "0px"
-    assert page.locator("#br-steel .cq-pick").evaluate(hidden) != "0px"
+    assert page.locator("#br-steel .cq-pick").evaluate(hidden) == "0px"
+    assert page.locator("#job-mounts .cq-pick").evaluate(dot) == "visible"
+    assert page.locator("#br-steel .cq-pick").evaluate(dot) == "hidden"
 
     page.locator("#job-heater").click()
     expect(page.locator("#job-heater[chosen]")).to_have_count(1)
