@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Command hub: Atlas importer rewrite</title>
+    <link rel="stylesheet" href="/theme.css" />
+    <script type="module" src="/colloquy.js"></script>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">command hub · week 3 of 6</p>
+      <h1>Atlas importer rewrite</h1>
+      <p class="lede" id="hub-lede">
+        The standing view of the rewrite: what each agent holds, where every task
+        stands, and the decisions waiting on you. The orchestrator republishes as work
+        moves, so the page keeps up on its own — what it needs from you is the one
+        section below the numbers.
+      </p>
+
+      <cq-metrics id="hub-metrics">
+        <cq-metric id="hub-k-done" value="4 of 10" delta="+2" direction="up-good"
+          >tasks done</cq-metric
+        >
+        <cq-metric id="hub-k-agents" value="3">agents live</cq-metric>
+        <cq-metric id="hub-k-you" value="2">decisions waiting</cq-metric>
+        <cq-metric id="hub-k-reverts" value="0">reverts this week</cq-metric>
+      </cq-metrics>
+
+      <section id="hub-attention">
+        <h2>Needs you</h2>
+        <p id="hub-att-intro">
+          Two items, one decision each. The tree's ambers are the milder tier — work
+          finished and readable whenever you sit down; they queue, they don't interrupt.
+          Everything else on the page is news, not a request.
+        </p>
+        <h3 id="hub-att-schema">Land the schema migration?</h3>
+        <p id="hub-att-schema-why">
+          The migration adds the two nullable columns the reconciliation work writes
+          into. It touches <code>schema/atlas.sql</code>, which is in the overlap zone,
+          so it holds for your word rather than landing on green tests — file-disjoint
+          tasks still meet in this schema, which is why it is listed. Landing it
+          unblocks the variance report; holding it keeps main untouched but idles finch
+          after today. Click an option to decide.
+        </p>
+        <cq-options id="hub-gate-schema" choose>
+          <cq-option id="hub-gs-land">Land it now</cq-option>
+          <cq-option id="hub-gs-hold">Hold until the backfill is written</cq-option>
+          <cq-option id="hub-gs-look" for="t-schema"
+            >Walk me through it first</cq-option
+          >
+        </cq-options>
+        <h3 id="hub-att-fixture">The reconciliation fixture is yours</h3>
+        <p id="hub-att-fixture-why">
+          <strong>Reconcile ledger exports</strong> is blocked on a fixture with a
+          partially refunded order, which only you can pull from the production replica.
+          One command, pasted in a comment here, unblocks it.
+        </p>
+      </section>
+
+      <section id="hub-work">
+        <h2>Work</h2>
+        <p id="hub-work-intro">
+          The plan as it stands, counted by its leaves. Amber means finished by its
+          agent and waiting on your review; red is stuck, and says on what.
+        </p>
+        <cq-tasks id="hub-plan">
+          <cq-task id="t-ground" status="done" when="weeks 1-2">
+            <strong>Groundwork</strong>
+            <cq-task id="t-ground-corpus" status="done" owner="wren">
+              <strong>Snapshot the import corpus</strong>
+            </cq-task>
+            <cq-task id="t-ground-harness" status="done" owner="junco">
+              <strong>Replay harness</strong> Old and new importer over the same corpus,
+              diffed.
+            </cq-task>
+            <cq-task id="t-ground-schema" status="done" owner="finch">
+              <strong>Schema draft</strong>
+            </cq-task>
+          </cq-task>
+          <cq-task id="t-parser" status="active" owner="wren" when="week 3">
+            <strong>Replace the XML parser</strong> The streaming parser is in; the two
+            format edge cases remain.
+            <cq-task id="t-parser-stream" status="done" owner="wren">
+              <strong>Streaming core</strong> Constant-memory parse of the 4&nbsp;GB
+              nightly export.
+            </cq-task>
+            <cq-task
+              id="t-parser-cdata"
+              status="review"
+              owner="wren"
+              tags="atlas-cdata"
+            >
+              <strong>CDATA edge cases</strong> Diff is small and green; awaiting your
+              read.
+            </cq-task>
+            <cq-task id="t-parser-decl" status="planned">
+              <strong>Encoding declarations</strong> Starts once CDATA lands.
+            </cq-task>
+          </cq-task>
+          <cq-task id="t-schema" status="review" owner="finch" tags="atlas-schema">
+            <strong>Schema migration</strong> Written and tested; gated above because it
+            touches the overlap zone.
+          </cq-task>
+          <cq-task id="t-ledger" status="active" owner="junco" when="week 3-4">
+            <strong>Ledger reconciliation</strong>
+            <cq-task id="t-ledger-export" status="blocked" owner="junco">
+              <strong>Reconcile ledger exports</strong> Needs the fixture named above.
+            </cq-task>
+            <cq-task id="t-ledger-report" status="planned">
+              <strong>Nightly variance report</strong> Needs the schema migration
+              landed.
+            </cq-task>
+          </cq-task>
+          <cq-task id="t-cutover" status="planned" when="week 5">
+            <strong>Cut over the nightly job</strong> Shadow first, then swap.
+          </cq-task>
+        </cq-tasks>
+      </section>
+
+      <section id="hub-agents">
+        <h2>Agents</h2>
+        <table id="hub-roster">
+          <caption>
+            Where each agent is working, and its last report's age — read from the log,
+            never from the agent.
+          </caption>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Task</th>
+              <th>Branch</th>
+              <th>Last report</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">wren</th>
+              <td>CDATA edge cases</td>
+              <td><code>atlas-cdata</code></td>
+              <td>12 min ago</td>
+            </tr>
+            <tr>
+              <th scope="row">finch</th>
+              <td>Schema migration</td>
+              <td><code>atlas-schema</code></td>
+              <td>1 h ago</td>
+            </tr>
+            <tr>
+              <th scope="row">junco</th>
+              <td>Ledger reconciliation</td>
+              <td><code>atlas-ledger</code></td>
+              <td>3 h ago</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="hub-feed">
+        <h2>Feed</h2>
+        <cq-timeline id="hub-timeline">
+          <cq-event id="hub-e-cdata" at="thu 14:12" kind="info">
+            <strong>CDATA branch went green</strong> wren moved the task to review.
+          </cq-event>
+          <cq-event id="hub-e-schema" at="thu 13:40" kind="warning">
+            <strong>Schema migration held at the gate</strong> Overlap-zone file;
+            waiting on you above.
+          </cq-event>
+          <cq-event id="hub-e-stream" at="thu 11:03" kind="action">
+            <strong>Streaming core merged</strong> Serialized onto main after the
+            merge-slot test run.
+          </cq-event>
+        </cq-timeline>
+      </section>
+
+      <section id="hub-policy">
+        <h2>Standing policy</h2>
+        <p id="hub-policy-copy">
+          Tasks are scoped not to share files, branch from the same base commit, and
+          merge one at a time after a test run against current main. Mechanical changes
+          land on green; anything touching <code>schema/</code>, <code>auth/</code>, or
+          a public contract holds for your word, however green the tests. The grant is
+          yours, recorded below — click to tighten or revoke it any time — and any
+          landed change is a revert away for as long as you care to look.
+        </p>
+        <cq-options id="hub-policy-grant" choose>
+          <cq-option id="hub-pg-tiers" chosen> Two-tier gates as stated </cq-option>
+          <cq-option id="hub-pg-all">Everything waits for my word</cq-option>
+        </cq-options>
+      </section>
+    </main>
+  </body>
+</html>

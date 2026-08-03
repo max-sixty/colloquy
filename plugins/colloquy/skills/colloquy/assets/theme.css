@@ -373,7 +373,7 @@ cq-chip[tone="danger"] { background: var(--danger-tint); color: var(--danger-ink
  * argument form below states its own placement rather than unsaying this one's. */
 cq-options:has(> cq-option > strong):not(:has(> cq-option > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
     blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
-    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-timeline,
+    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-tasks, cq-timeline,
     cq-compare, cq-metrics, cq-tabs, cq-draft, cq-shot, cq-specimen))) {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
   gap: var(--sp-3);
@@ -392,11 +392,11 @@ cq-options:has(> cq-option > strong):not(:has(> cq-option > :is(p, h1, h2, h3, h
  * the decision, and follows it. */
 cq-options:has(> cq-option > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
     blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
-    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-timeline,
+    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-tasks, cq-timeline,
     cq-compare, cq-metrics, cq-tabs, cq-draft, cq-shot, cq-specimen)),
 cq-compare:has(> cq-variant > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
     blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
-    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-timeline,
+    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-tasks, cq-timeline,
     cq-compare, cq-metrics, cq-tabs, cq-draft, cq-shot, cq-specimen)) {
   display: block;
   & > :is(cq-option, cq-variant) { display: flow-root; margin: 0 0 var(--sp-2); }
@@ -721,6 +721,25 @@ cq-milestone[status="done"] > strong { color: var(--muted); }
 .cq-chips span { font-size: var(--t-6); line-height: 1.6; padding: 0 8px;
                  border-radius: 999px; background: var(--chip); color: var(--ink-2); }
 
+/* cq-tasks / cq-task: a hierarchy of work. The indent guides and status
+ * markers are CSS; the chip row (`owner`, `when`, `tags`, and a parent's
+ * done-fraction) is built by the cq-task upgrade. The marker vocabulary is
+ * the milestone's, plus `review` in the warn tint: finished by its holder,
+ * awaiting the reader — the amber is the reader's own work showing. */
+cq-tasks { display: block; margin: 14px 0; }
+cq-task { display: block; position: relative; padding-left: 26px; margin: 8px 0; }
+cq-task::before { content: ""; position: absolute; left: 6px; top: 5px;
+                  width: 10px; height: 10px; border-radius: 50%;
+                  background: var(--paper); border: 2px solid var(--muted); }
+cq-task[status="done"]::before    { background: var(--ok); border-color: var(--ok); }
+cq-task[status="active"]::before  { border-color: var(--accent);
+                                    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+cq-task[status="blocked"]::before { background: var(--danger); border-color: var(--danger); }
+cq-task[status="review"]::before  { background: var(--warn); border-color: var(--warn); }
+cq-task > cq-task { margin-left: 11px; border-left: 1px solid var(--rule); }
+cq-task > strong { margin-right: 6px; }
+cq-task[status="done"] > strong { color: var(--muted); }
+
 /* cq-timeline / cq-event: an event log on a rail. The dot is ::after, absolute,
  * colored by kind; the time label is the `at` attribute, said above the title. */
 cq-timeline { display: block; margin: 14px 0 14px 8px; }
@@ -916,7 +935,7 @@ cq-old { background: var(--del-tint); color: var(--muted);
 cq-new { background: var(--add-tint); }
 :is(cq-old, cq-new):has(> :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, pre,
     blockquote, section, article, div, figure, details, aside, cq-diagram, cq-diff,
-    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-timeline,
+    cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-tasks, cq-timeline,
     cq-compare, cq-metrics, cq-tabs, cq-draft, cq-shot, cq-specimen)) {
   display: block; padding: 2px 10px; margin: 10px 0; }
 /* Decided: the surviving slot is plain prose, the other one gone. */

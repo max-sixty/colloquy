@@ -78,6 +78,33 @@
     "x-content": "prose",
     "x-upgrade": true
   },
+  "cq-tasks": {
+    "description": "A hierarchy of work: what a project is made of, who holds each piece, and where each piece stands. Children are cq-task elements, nesting freely — the tree is the plan's own shape, so write the decomposition as it is rather than flattening it. Where cq-milestones is a flat rail of stages on a schedule and cq-board is a set the reviewer re-orders, cq-tasks is structure: a parent's children are what doing it means, and the upgrade counts each parent's subtree into a generated done-fraction chip so the tree reads as progress without a widget of its own. Statuses change by republishing — the page keeps up with the work — and comments anchor per task, so keep every task's id stable across versions.",
+    "type": "object",
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "additionalProperties": false,
+    "x-content": "items",
+    "x-upgrade": false,
+    "x-example": "<cq-tasks id=\"aviary-plan\">\n  <cq-task id=\"t-feeders\" status=\"active\" owner=\"wren\">\n    <strong>Rebuild the feeders</strong> Two of four mounted.\n    <cq-task id=\"t-mounts\" status=\"done\" owner=\"wren\"><strong>Replace the mounts</strong></cq-task>\n    <cq-task id=\"t-baffles\" status=\"review\" owner=\"finch\" when=\"aug 4\"><strong>Fit squirrel baffles</strong></cq-task>\n  </cq-task>\n  <cq-task id=\"t-bath\" status=\"blocked\">\n    <strong>Heat the bird bath</strong> Waiting on the transformer pick below.\n  </cq-task>\n</cq-tasks>"
+  },
+  "cq-task": {
+    "description": "One piece of the work. Lead with a <strong> title; prose follows, and child cq-task elements after the prose are its decomposition. `status` colors the marker: planned, active, blocked (stuck — the prose says on what), review (finished by whoever held it, awaiting the reader), done. `owner` names who holds it now — an agent, a session, a person — and `when` is a free-text schedule label; both render as chips after the title, with `tags` adding one chip per entry. A parent with children also gets a generated done-fraction chip counting its subtree. A task that needs the reader's word is `review` or `blocked`: those two are what an attention pass reads, so keep them honest — a task marked active that is really waiting on a decision is invisible exactly where it needs to be seen.",
+    "type": "object",
+    "properties": {
+      "id":     {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "status": {"enum": ["planned", "active", "blocked", "review", "done"]},
+      "owner":  {"type": "string"},
+      "when":   {"type": "string"},
+      "tags":   {"type": "string", "pattern": "^[a-z0-9-]+(,[a-z0-9-]+)*$"}
+    },
+    "required": ["id", "status"],
+    "additionalProperties": false,
+    "x-parent": ["cq-tasks", "cq-task"],
+    "x-content": "prose",
+    "x-upgrade": true
+  },
   "cq-timeline": {
     "description": "A chronological event log — the incident-report shape. Children are cq-event elements only. Where cq-milestones tracks planned work by status, cq-timeline records what happened, when.",
     "type": "object",

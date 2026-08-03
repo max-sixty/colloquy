@@ -24,6 +24,7 @@ TABS = [
     ("status-report", "Status report"),
     ("live-progress", "Live progress"),
     ("triage-board", "Triage board"),
+    ("command-hub", "Command hub"),
     ("release-notes", "Release notes"),
     ("parallel-workstreams", "Parallel workstreams"),
 ]
