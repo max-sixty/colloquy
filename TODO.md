@@ -9,21 +9,16 @@
   keys, per the never-closed widget list. Bare `r` resolves the focused thread
   now, so a verb vocabulary should keep the bare keys' meanings — `g r 1`
   reading "reply" would give one letter two verbs.
-- (2026-07-30) A reader can't walk a page's open questions from the keyboard, and the
-  design for it is agreed but unbuilt. `x-awaits` on a registry entry says an instance
-  of this tag is a standing request to the reader; unanswered then needs no new
-  bookkeeping, being the fold the runtime already computes — a widget with no surviving
-  action for its unit. One declaration drives a banner count, a key that steps
-  unanswered questions the way `j`/`k` steps threads, and the `?` overlay, with no
-  consumer naming a tag. Three declare it on day one (a group that takes picks, an
-  undecided `cq-suggestion`, and the box for words), and the banner's
-  `✓ Accept all (N)`, which counts suggestions by naming the tag, goes with them.
-  That is the registry-declared address the leader item above wants, reached from the
-  other end, so the two want settling together. Inside a group the affordance is half
-  there already — each option's mark is a press, so Tab reaches it and Enter picks —
-  and what is missing is ↑/↓ between options and 1–9 to pick, the number riding the
-  mark the option already carries so that nothing appears on a page nobody is
-  answering.
+- (2026-08-03) `x-awaits` shipped: the page's open asks are one list, and `a` walks it
+  from wherever the reader is to the ask's own first control. What is still missing is
+  the last step of the same gesture — answering without a mouse once you are there.
+  Inside a group the affordance is half built, since each option's mark is a press, so
+  Tab reaches it and Enter picks; ↑/↓ between options and 1–9 to pick are what is
+  absent, the number riding the mark the option already carries so that nothing appears
+  on a page nobody is answering. That is the registry-declared address the leader item
+  above wants, reached from the other end, so the two want settling together — and
+  `a`'s landing is now the third party to it, since a walk that hands the reader a
+  focused control is already most of an address.
 
 - (2026-07-30) A widget can't own a conversation. The box for words a question group
   carries posts an ordinary comment anchored on the widget, which is the right

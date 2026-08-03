@@ -130,6 +130,7 @@ export const agentName = () => agent;
 // implicitly ours — a widget can carry real state there, and replay must see it.
 const PAGE_PAINT_ATTRIBUTE = Object.freeze({
   class: "class",
+  ask: "data-cq-ask",
   done: "data-cq-done",
   restated: "data-cq-restated",
   replayWrote: "data-cq-replay-wrote",
@@ -885,6 +886,14 @@ style.textContent = `
     border: 1px solid var(--accent); border-radius: var(--r); background: var(--card);
     color: var(--ink); box-shadow: var(--shadow); }
   .cq-ins-block { background: var(--add-tint); box-shadow: 0 0 0 4px var(--add-tint); border-radius: 2px; }
+  /* Where stepping the page's open asks has put the reader (stepAsk), on the ask
+     rather than on whichever of its controls took the focus — the reader was brought
+     to the whole thing. Not keyed on focus: the same landing is reached two ways and
+     only the key carries keyboard modality, so a :focus-visible ring would leave the
+     banner's own control landing somewhere unmarked. Exactly one element wears it at a
+     time, and it is an outline like every other mark the runtime paints on the page's
+     own elements, so arriving moves nothing. */
+  [${PAGE_PAINT_ATTRIBUTE.ask}] { outline: 2px solid var(--accent); outline-offset: 3px; }
   /* Paper takes no input, so what a widget injects to be worked goes: the control,
      and the box that holds controls. What stays is a control whose label is one of
      the page's own words — a pick mark reading "chosen" is the only place the page
@@ -952,11 +961,13 @@ style.textContent = `
        says not to do. */
     .cq-banner select { font: inherit; padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; flex: none; width: 190px; text-overflow: ellipsis; }
     .cq-signoff { min-width: 116px; }
-    /* The two that count reserve the widest they reach anywhere below a thousand, so no
+    /* The three that count reserve the widest they reach anywhere below a thousand, so no
        arithmetic on the count can move them and none of it has to be thought about again.
        A page with a thousand open threads on it is not one anyone hands a user. */
     .cq-comments { min-width: 136px; }
-    .cq-accept-all { min-width: 145px; }
+    .cq-answer-all { min-width: 145px; }
+    /* Measured the same way as its neighbours, in a browser: "Asks (999)" is 93.2px. */
+    .cq-asks { min-width: 96px; }
     /* The one control on the right of the row that may give, because it is the leftmost
        of them and giving there moves nothing; the status text, off at the other end, is
        the other. The rest are .cq-btn, floored at their own words by nowrap — the chooser
@@ -1119,9 +1130,12 @@ const showNews = (control, on) => {
 };
 const latestChip = el("button", "cq-ui cq-btn cq-latest-chip", "");
 const diffBtn = el("button", "cq-btn", "Δ");
-const acceptAllBtn = el("button", "cq-btn cq-accept-all", "");
-acceptAllBtn.title = "Accept every suggested change still pending";
-for (const control of [latestChip, diffBtn, acceptAllBtn]) showNews(control, false);
+// What the page is still waiting on the reader for, and the way to the next one — the
+// same list the a key steps and the "?" overlay names, counted here so a reader who
+// has not scrolled that far still knows there is something to answer.
+const asksBtn = el("button", "cq-btn cq-asks", "");
+asksBtn.title = "Go to the next thing this page is waiting on you for (a)";
+for (const control of [latestChip, diffBtn, asksBtn]) showNews(control, false);
 const versionSelect = document.createElement("select");
 versionSelect.title = "Version";
 versionSelect.setAttribute("aria-label", "Version");
@@ -1149,7 +1163,7 @@ banner.append(
   statusText,
   el("span", "cq-spacer"),
   latestChip,
-  acceptAllBtn,
+  asksBtn,
   diffBtn,
   versionSelect,
   toggleBtn,
@@ -3569,6 +3583,14 @@ const KEYS = [
     run: () => setLeader(true),
   },
   {
+    key: "a",
+    label: "a",
+    does: "Go to the next thing this page is waiting on you for",
+    line: "asks",
+    when: () => openAsks().length > 0,
+    run: stepAsk,
+  },
+  {
     key: "v",
     label: "v",
     does: "Highlight changes since the previous version",
@@ -3924,39 +3946,150 @@ function toggleHelp() {
   showHelp(!helpOpen);
 }
 
-// ---------- suggestions ----------
-// A cq-suggestion is Claude's edit to content the user has seen, offered rather than
-// shipped. The widget owns one suggestion and marks its own state in the DOM;
-// the banner owns the page's total, derived from that and refreshed whenever a
-// widget says it changed. Accept all decides each suggestion individually, so
-// the log records exactly what was consented to — accepting the rest after
-// rejecting one stays honest.
-// Quoted ones are exhibits: they carry no controls, so they are not the
-// banner's to count nor Accept all's to decide.
-const pendingSuggestions = () =>
-  [...document.querySelectorAll("cq-suggestion:not([data-cq-state])")].filter(
-    (suggestion) => !quoted(suggestion),
+// ---------- the ask, collected ----------
+// An ask is a standing request to the reader: a question with no pick on it, a change
+// nobody has decided, a piece of work the page says is waiting on them. Which widgets
+// can be one is the registry's answer (x-awaits) and nothing out here names a tag —
+// the banner's count, the a key, and the "?" overlay's row are three readings of this
+// one list, so what the banner counts and what the key steps to cannot disagree. The
+// count used to be a query for `cq-suggestion:not([data-cq-state])`, which was
+// perfect for suggestions and silently blind to every other thing a page asks.
+//
+// Both halves of "unanswered" were already written down. Asking is the entry's own
+// condition over the element's attributes: a group takes picks only with `choose` and
+// stops asking once it is `settled`, a task waits only at `review` or `blocked`. And
+// answered is the state x-state already declares — where a verb records itself as an
+// attribute the page carries the answer, so a version that honors a pick reads as
+// answered with no log at all (the shipped examples arrive that way) and a pick the
+// reader cleared reads as open again; where a verb records nothing, because honoring
+// retires the whole wrapper, the fold is the only record there is.
+const askEntry = (el) => registry[el.tagName.toLowerCase()]?.["x-awaits"];
+// Every declared attribute holding one of the values that ask — a flag's two values
+// being its presence and its absence, since it carries none of its own.
+const asking = (el, when) =>
+  Object.entries(when ?? {}).every(([attr, values]) =>
+    values.some((value) =>
+      typeof value === "boolean"
+        ? el.hasAttribute(attr) === value
+        : el.getAttribute(attr) === value,
+    ),
   );
-function syncSuggestions() {
-  const n = pendingSuggestions().length;
-  showNews(acceptAllBtn, Boolean(n));
-  acceptAllBtn.textContent = `✓ Accept all (${n})`;
+function answeredAsk(el, fold) {
+  const specs = Object.values(registry[el.tagName.toLowerCase()]["x-state"] ?? {});
+  return specs.some((spec) =>
+    spec.record?.kind === "attribute"
+      ? domFacet(el, spec.record) !== ""
+      : fold.has(el.id),
+  );
 }
-// A decision also changes what text the page has — the retired slot leaves it
-// (`quotable`) — so the marks are repainted from the same signal, and a comment
-// on text the user just removed says so at once rather than at the next poll.
-document.addEventListener("cq-suggestions", () => {
-  syncSuggestions();
+const askTags = () => tagsDeclaring((entry) => entry["x-awaits"]);
+// In document order, because that is the order the page asks them in and the order
+// the reader walks. Quoted material asks nothing (an exhibited decision is a mention),
+// and neither does a widget in the comment layer: a reply's inline question belongs to
+// the discussion, which the panel already counts.
+function openAsks() {
+  const tags = askTags();
+  if (!tags.length) return [];
+  const fold = stateFold(VNUM);
+  return [...document.querySelectorAll(tags.join(","))].filter(
+    (el) =>
+      !quoted(el) &&
+      !inChrome(el) &&
+      asking(el, askEntry(el).when) &&
+      !answeredAsk(el, fold),
+  );
+}
+
+// One blanket answer per verb a widget declares one for (x-awaits.all), each deciding
+// its asks one at a time so the log records what was consented to rather than one
+// blanket yes — accepting the rest after rejecting one stays honest. The widget
+// exposes a method named for the verb; the label is built from the same word.
+//
+// Built when the registry lands rather than written out above, so the second widget to
+// declare one gets its control by declaring it. Each takes its place in the row rather
+// than a box of its own: a control with no siblings is a control the press sweep walks
+// past, and one that only ever appears at upgrade spends the spacer's slack, not the
+// room of anything to its right.
+const bulkButtons = new Map();
+function buildBulkAnswers() {
+  for (const tag of tagsDeclaring((entry) => entry["x-awaits"]?.all)) {
+    const verb = registry[tag]["x-awaits"].all;
+    if (bulkButtons.has(verb)) continue;
+    const word = verb[0].toUpperCase() + verb.slice(1);
+    const btn = el("button", "cq-btn cq-answer-all", "");
+    btn.title = `${word} every one still waiting on you`;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        for (const ask of openAsks())
+          if (askEntry(ask).all === verb) await ask[verb]?.();
+      } finally {
+        btn.disabled = false;
+      }
+    };
+    showNews(btn, false);
+    bulkButtons.set(verb, { btn, word });
+    banner.insertBefore(btn, diffBtn);
+  }
+}
+
+// The banner's reading of that one list. Refreshed from every signal that can change
+// it: a widget saying it has just taken an answer (cq-answered, which is also when the
+// page's own words change), and every poll, which is where the fold moves and where a
+// send that failed has its optimism taken back.
+function syncAsks() {
+  const asks = openAsks();
+  showNews(asksBtn, Boolean(asks.length));
+  asksBtn.textContent = `Asks (${asks.length})`;
+  for (const [verb, { btn, word }] of bulkButtons) {
+    const n = asks.filter((ask) => askEntry(ask).all === verb).length;
+    showNews(btn, Boolean(n));
+    btn.textContent = `✓ ${word} all (${n})`;
+  }
+}
+// An answer also changes what text the page has — a retired slot leaves it, a pick
+// mark starts saying "your pick" — so the marks are repainted from the same signal,
+// and a comment on text the user just removed says so at once rather than at the
+// next poll.
+document.addEventListener("cq-answered", () => {
+  syncAsks();
   paintAnchors();
 });
-acceptAllBtn.onclick = async () => {
-  acceptAllBtn.disabled = true;
-  try {
-    for (const suggestion of pendingSuggestions()) await suggestion.accept?.();
-  } finally {
-    acceptAllBtn.disabled = false;
-  }
-};
+document.addEventListener("cq-actions", syncAsks);
+asksBtn.onclick = stepAsk;
+
+// The next thing waiting on the reader, wrapping, because asks are a worklist rather
+// than a document to read through: answering one takes it out of the list, so forward
+// is the direction that has somewhere to go, and a single key that clamps at the end
+// would strand them there. The walk's position is carried the way the half-page keys
+// carry a destination — a place in a list rather than state anything else derives —
+// and an ask answered since the last press is simply no longer in the list, so the
+// walk resumes from the top.
+let askAt = null;
+// A press this control belongs to: one inside the ask, or one hoisted out of it and
+// pointing back (a suggestion's row is the column's child, so that it can hang in the
+// page margin). Landing on it rather than on the ask means Tab walks the rest of that
+// ask's own controls from there, and it is the only landing available where the
+// element has no box of its own to hold focus (a suggestion renders display: contents).
+const ASK_CONTROL = "[data-cq-offer][tabindex]";
+function stepAsk() {
+  const asks = openAsks();
+  if (!asks.length) return; // never: the key and the control are live only with asks
+  const to = (asks.indexOf(document.getElementById(askAt)) + 1) % asks.length;
+  const next = asks[to];
+  askAt = next.id;
+  for (const marked of document.querySelectorAll(`[${PAGE_PAINT_ATTRIBUTE.ask}]`))
+    marked.removeAttribute(PAGE_PAINT_ATTRIBUTE.ask);
+  reveal(next); // a settled group or an inactive tab has no geometry until it opens
+  next.setAttribute(PAGE_PAINT_ATTRIBUTE.ask, "1");
+  const control =
+    next.querySelector(ASK_CONTROL) ??
+    document.querySelector(`[data-cq-for="${next.id}"] ${ASK_CONTROL}`);
+  if (!control) next.tabIndex = -1; // nothing to work: the ask itself takes the focus
+  (control ?? next).focus({ preventScroll: true });
+  next.scrollIntoView({ behavior: SCROLL, block: "center" });
+  announce(`${to + 1} of ${asks.length} waiting on you`);
+}
 
 // ---------- version diff ----------
 // "Changes since vN": blocks (paragraphs, list items, widget items) whose text
@@ -4614,7 +4747,8 @@ upgradeWidgets().then(() => {
   // Before the first poll's replay: the authored facets are the markup's
   // initial condition, and replay is about to overwrite them in the DOM.
   captureAuthoredFacets();
-  syncSuggestions();
+  buildBulkAnswers();
+  syncAsks();
   anchoringReady = true;
   paintAnchors(); // an early general post may already have loaded anchored threads
   updateFab(); // an early selection is now read from the fully upgraded page

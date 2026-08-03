@@ -188,11 +188,23 @@ module and its entry, and where it would, the thing missing is a declaration.
 Most widgets are things a page contains, and those are anonymous outside their own
 module. A few are part of the machine the list is defined against, and core names those
 outright. The suggestion is the one today: the log settles it, `retirable_ids` is written
-in terms of its slots, thread markup refuses one, and the banner offers to accept them
-all. That name is a mechanism's, not a member's, so it isn't a special case waiting for a
-declaration to replace it. Which kind a widget is has one question behind it — is this one
-of the ways colloquy works, or one of the things a page can hold? Convenience is not an
-answer to it; a widget joins the first set by having the loop written in terms of it.
+in terms of its slots, and thread markup refuses one. That name is a mechanism's, not a
+member's, so it isn't a special case waiting for a declaration to replace it. Which kind a
+widget is has one question behind it — is this one of the ways colloquy works, or one of
+the things a page can hold? Convenience is not an answer to it; a widget joins the first
+set by having the loop written in terms of it.
+
+The banner's `✓ Accept all` used to be a fourth item in that list and was never one. It
+counted `cq-suggestion:not([data-cq-state])`, which is the shape of a mechanism and the
+substance of a member: what the page is waiting on the reader for is not a suggestion's
+question but the whole page's, so the count that named one tag was perfect for that tag
+and silently zero for every question, pick and blocked task beside it. `x-awaits` is what
+it became — the entry says an instance of this tag stands as a request to the reader, and
+one list then feeds the banner's count, the key that steps them and the `?` overlay. So
+the question above has a second edge: a name core can only defend because that widget got
+there first is a declaration waiting to be written, and the way to tell is to ask what the
+sentence would mean for the twelfth widget. "The log settles a suggestion" stays true of
+the mechanism; "the banner counts suggestions" was already the wrong sentence.
 
 Declare the general property, not the particular widget, or the special case has only
 moved into the registry: `x-upgrade` says a module enhances this tag, not that mermaid

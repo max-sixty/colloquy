@@ -181,7 +181,12 @@ and the comment layer left behind.
   card's column or an option's pick has no form yet.
 - The runtime injects the status banner, comment sidebar, version picker, and keyboard
   shortcuts (`?` in the browser shows the reference); don't build page UI for any of
-  those.
+  those. It also collects what the page is still waiting on the reader for — an
+  undecided suggestion, a `choose` group with no pick, a task at `review` or `blocked`
+  — into a banner count they can step through with `a`, from the vocabulary's own
+  declarations (`x-awaits`). So write the asks as widgets and let the count find them;
+  a hand-written "still open" list beside them is a second copy that goes stale the
+  moment one is answered.
 - **Sign-off is declared, not assumed.** A page that asks for the user's assent — a
   plan, a design, a proposed change, anything where approval unblocks work — declares
   `<meta name="cq-review" content="sign-off">` in the head, and the

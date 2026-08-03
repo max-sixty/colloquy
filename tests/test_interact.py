@@ -2929,6 +2929,8 @@ def test_boolean_attribute_subschemas_validate_without_crashing(
 @pytest.mark.parametrize(
     ("key", "value"),
     [
+        ("x-awaits", []),
+        ("x-awaits", {"when": {"choose": True}}),
         ("x-content", "words"),
         ("x-parent", []),
         ("x-says", []),
@@ -3112,6 +3114,36 @@ def test_retirement_verbs_fold_by_the_parent_widget(page_dir):
     result = check(page_dir)
     assert result.exit_code != 0
     assert "<cq-old> x-retired-when `accept` must fold by widget" in result.output
+
+
+@pytest.mark.parametrize(
+    ("tag", "awaits", "message"),
+    [
+        ("cq-options", {"when": {"pick": [True]}}, "names undeclared attribute `pick`"),
+        ("cq-options", {"when": {"choose": ["yes"]}}, "a flag is there or it isn't"),
+        ("cq-task", {"when": {"status": [True]}}, "that attribute is not a flag"),
+        ("cq-task", {"when": {"status": ["reviewing"]}}, "its own enum does not admit"),
+        (
+            "cq-suggestion",
+            {"all": "approve"},
+            "does not declare as an x-state verb",
+        ),
+    ],
+)
+def test_check_refuses_an_ask_no_page_could_carry(page_dir, tag, awaits, message):
+    """An ask waits on an attribute value, so a declaration naming one the widget
+    cannot hold asks on nothing — and does it silently, which is the failure a
+    never-closed vocabulary is worst at showing: the widget is simply absent from
+    every count and every step, exactly as if the feature had never been wired up.
+    Same for a blanket answer naming a verb the widget does not speak, whose button
+    would call a method nothing implements."""
+    registry = json.loads((page_dir / "registry.json").read_text())
+    registry[tag]["x-awaits"] = awaits
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+
+    result = check(page_dir)
+    assert result.exit_code != 0
+    assert f"<{tag}> x-awaits" in result.output and message in result.output
 
 
 @pytest.mark.parametrize("section", ["$events", "$languages", "$tones"])

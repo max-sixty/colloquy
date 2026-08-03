@@ -215,9 +215,9 @@ customElements.define(
       else delete this.dataset.cqState;
       if (this.#row) this.#row.hidden = Boolean(outcome); // a quoted one grew none
       schedule(); // one row fewer: the rows below it may no longer need a nudge
-      // The banner's pending count is derived from the page, so tell it the page
-      // changed rather than making it poll the DOM.
-      document.dispatchEvent(new CustomEvent("cq-suggestions"));
+      // The banner's count of what the page is still asking is derived from the page,
+      // so tell it the page changed rather than making it poll the DOM.
+      document.dispatchEvent(new CustomEvent("cq-answered"));
     }
 
     // accept | reject: the outcome is absolute, so replaying the sender's own

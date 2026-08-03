@@ -169,6 +169,13 @@ vocabulary for rides in the custom keywords below:
                 drives the POST and re-vendor contract gates, check's state gate,
                 the record-lag report, the runtime's pending mark, and the diff's
                 state half (see $state in the registry).
+    x-awaits    an instance of this tag is a standing request to the reader:
+                `when` says which instances ask (attribute values, a flag's
+                being true and false), `all` names the verb one press answers
+                every one with. What counts as answered is no new bookkeeping —
+                the record x-state already declares where there is one, the fold
+                where there isn't — so the banner's count, the key that steps
+                them and the `?` overlay read one list (see $awaits).
     x-example   one authored example, printed by `page catalog`
 
 Event kinds: comment (optional anchor {section, quote, and the neighbouring
@@ -383,9 +390,30 @@ STATE_SCHEMA = {
         "additionalProperties": False,
     },
 }
+# An ask is a standing request to the reader, and both halves of it are already
+# written down: `when` says which instances ask (attribute values, a flag's being
+# true and false), and x-state says what an answer looks like. See $awaits.
+AWAITS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "when": {
+            "type": "object",
+            "minProperties": 1,
+            "propertyNames": {"pattern": f"^{HTML_NAME}$"},
+            "additionalProperties": {
+                "type": "array",
+                "items": {"type": ["string", "boolean"]},
+                "minItems": 1,
+            },
+        },
+        "all": {"type": "string", "pattern": f"^{HTML_NAME}$"},
+    },
+    "additionalProperties": False,
+}
 EXTENSION_SCHEMA = {
     "type": "object",
     "properties": {
+        "x-awaits": AWAITS_SCHEMA,
         "x-content": {"enum": ["prose", "items", "data", "none"]},
         "x-example": {"type": "string"},
         "x-exhibit": {"type": "boolean"},
@@ -2363,7 +2391,10 @@ CATALOG_PREAMBLE = """\
 # an upgraded element whose body reaches the reader as its own words, which is
 # what makes it quotable — a body without it is source the widget renders.
 # x-language names the attribute carrying a code language, which is checked
-# against the one list this page colors from (printed below).
+# against the one list this page colors from (printed below). x-awaits marks a
+# tag whose instances stand as requests to the reader — what the banner counts
+# and the `a` key steps through, so a page's open questions are findable
+# without the reader hunting for them.
 """
 
 
@@ -2391,6 +2422,10 @@ def cmd_catalog(page_dir: Path) -> None:
             "\n# x-state — how a widget's action verbs and their record forms are declared.\n"
         )
         print(json.dumps(state, indent=2, ensure_ascii=False))
+    awaits = reg.get("$awaits")
+    if awaits:
+        print("\n# x-awaits — what makes an element one of the page's standing asks.\n")
+        print(json.dumps(awaits, indent=2, ensure_ascii=False))
     languages = reg.get("$languages")
     if languages:
         print(
@@ -3733,6 +3768,49 @@ def validate_registry(registry: dict, source) -> dict:
         if language and language not in properties:
             sys.exit(
                 f"{path}: <{tag}> x-language names undeclared attribute `{language}`"
+            )
+        # An ask names attributes and values the page can actually carry, or it asks
+        # on nothing: `status: ["reviewing"]` is a widget silently absent from every
+        # count and every step, which is the failure a never-closed vocabulary makes
+        # invisible. The value's kind follows the attribute's own schema — a flag is
+        # there or it isn't, an enum admits what it lists — and a subschema that
+        # states neither contradicts nothing.
+        awaits = entry.get("x-awaits", {})
+        for attr, values in awaits.get("when", {}).items():
+            if attr not in properties:
+                sys.exit(
+                    f"{path}: <{tag}> x-awaits names undeclared attribute `{attr}`"
+                )
+            declared = properties[attr] if isinstance(properties[attr], dict) else {}
+            for value in values:
+                if isinstance(value, bool):
+                    # A subschema saying neither a type nor an enum contradicts nothing;
+                    # one that says either has told us this attribute carries a value.
+                    if declared.get("type") not in (None, "boolean") or declared.get(
+                        "enum"
+                    ):
+                        sys.exit(
+                            f"{path}: <{tag}> x-awaits waits on `{attr}` being "
+                            f"{str(value).lower()}, but that attribute is not a flag"
+                        )
+                elif declared.get("type") == "boolean":
+                    sys.exit(
+                        f"{path}: <{tag}> x-awaits waits on flag `{attr}` holding "
+                        f"{value!r}; a flag is there or it isn't"
+                    )
+                elif (allowed := declared.get("enum")) is not None and (
+                    value not in allowed
+                ):
+                    sys.exit(
+                        f"{path}: <{tag}> x-awaits waits on `{attr}` at {value!r}, "
+                        f"which its own enum does not admit"
+                    )
+        # A blanket answer is one of this widget's own verbs, so the log records it
+        # the way every other decision is recorded.
+        if (blanket := awaits.get("all")) and blanket not in entry.get("x-state", {}):
+            sys.exit(
+                f"{path}: <{tag}> x-awaits answers every one at once with "
+                f"`{blanket}`, which it does not declare as an x-state verb"
             )
         needs_upgrade = [
             key

@@ -196,6 +196,11 @@ customElements.define(
         this.#label(option);
       }
       this.#retitle();
+      // A pick is an answer to what this group was asking, and a mark that now reads
+      // "your pick" is a word the page didn't have before: the banner's count and the
+      // page's marks both follow from the same one signal, here rather than at the
+      // sender, so a pick this tab rewound and one another tab made both reach them.
+      document.dispatchEvent(new CustomEvent("cq-answered"));
     }
 
     // Which kind of word the label is travels with it, on both shapes of mark and on

@@ -1465,7 +1465,7 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
     # status text and the chip, which is where the spacer's slack was: both are left of
     # everything else on the row, so what they give up moves nothing.
     states_a_width = (
-        "() => ['select', '.cq-comments', '.cq-signoff', '.cq-accept-all']"
+        "() => ['select', '.cq-comments', '.cq-signoff', '.cq-answer-all', '.cq-asks']"
         ".map((s) => document.querySelector('.cq-banner ' + s).offsetWidth)"
     )
     wide = page.evaluate(states_a_width)
@@ -4220,6 +4220,177 @@ def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, 
         tab.close()
 
 
+# Every shape the ask predicate has to tell apart, on one page: four things the page is
+# waiting on the reader for, and, beneath them, one of each way of not being one. The
+# four are in document order, because that is the order the walk below must take them in.
+ASKS_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>asks</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">What is still open</h1>
+<cq-options id="live-question" choose>
+  <cq-option id="lq-keep"><strong>Keep the store</strong> Sessions stay where they are.</cq-option>
+  <cq-option id="lq-token"><strong>Signed tokens</strong> No store at all.</cq-option>
+</cq-options>
+<cq-suggestion id="sug-refill">
+  <cq-old><p id="refill-was">Refill every feeder each morning.</p></cq-old>
+  <cq-new><p id="refill-now">Refill a feeder when its camera says so.</p></cq-new>
+</cq-suggestion>
+<cq-tasks id="plan">
+  <cq-task id="t-mounts" status="done"><strong>Replace the mounts</strong></cq-task>
+  <cq-task id="t-baffles" status="review" owner="finch"><strong>Fit squirrel baffles</strong></cq-task>
+  <cq-task id="t-bath" status="blocked"><strong>Heat the bird bath</strong></cq-task>
+  <cq-task id="t-camera" status="active"><strong>Mount the camera</strong></cq-task>
+</cq-tasks>
+<cq-options id="honored" choose>
+  <cq-option id="hon-tiers" chosen><strong>Two-tier gates</strong></cq-option>
+  <cq-option id="hon-one"><strong>One gate</strong></cq-option>
+</cq-options>
+<cq-options id="retired" choose settled>
+  <cq-option id="ret-lax"><strong>Lax cookie</strong></cq-option>
+</cq-options>
+<cq-options id="exhibited">
+  <cq-option id="exh-paper"><strong>Paper maps</strong></cq-option>
+</cq-options>
+<cq-milestones id="rail">
+  <cq-milestone id="m-survey" status="done"><strong>Survey the sites</strong></cq-milestone>
+  <cq-milestone id="m-build" status="active"><strong>Build the feeders</strong></cq-milestone>
+  <cq-milestone id="m-install" status="blocked"><strong>Install and watch</strong></cq-milestone>
+</cq-milestones>
+<cq-specimen id="spec" label="a decision">
+  <cq-options id="spec-opts" choose>
+    <cq-option id="spec-paper"><strong>Paper maps</strong></cq-option>
+  </cq-options>
+</cq-specimen>
+</main>
+</body>
+</html>
+"""
+ASKS_IN_ORDER = ["live-question", "sug-refill", "t-baffles", "t-bath"]
+
+
+def test_the_banner_counts_what_the_page_is_still_asking(browser, serve):
+    """One list, collected from what the registry declares rather than from any tag.
+
+    The count used to be a query for `cq-suggestion:not([data-cq-state])`: perfect for
+    suggestions, and silently nothing for every other thing a page waits on. What
+    makes an instance an ask is now the entry's own attribute condition, and what
+    makes it answered is the state x-state already declares — so this page's four are
+    a question with no pick, a change nobody has decided, and the two tasks whose
+    status says they are waiting.
+
+    The rest of the page is every way of not being one, and each was a way of getting
+    it wrong: a group whose pick the version already carries (`chosen`, with nothing in
+    the log — a fold-only reading counts it as open on every shipped example), one the
+    author has settled, one that takes no picks at all, an exhibited decision inside a
+    cq-specimen, and a milestone at `blocked`, which is the same word on a widget whose
+    entry does not declare it."""
+    page, errors = open_page(browser, serve(ASKS_PAGE))
+    asks = page.locator(".cq-asks")
+    expect(asks).to_have_text("Asks (4)")
+    # The blanket answer counts the same list, narrowed to the one kind that declares
+    # a verb for it, so the two numbers cannot describe different sets.
+    expect(page.locator(".cq-answer-all")).to_have_text("✓ Accept all (1)")
+
+    # Answering one takes it out. A pick is state the page itself carries, so the
+    # count follows the click; the suggestion's outcome is in the log alone, so that
+    # one follows the round trip.
+    page.locator("#lq-token").click()
+    expect(asks).to_have_text("Asks (3)")
+    page.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
+    expect(asks).to_have_text("Asks (2)")
+    expect(page.locator(".cq-answer-all")).to_be_hidden()
+
+    # And clearing the pick asks again: an empty answer is no answer, which only a
+    # reading of what the page carries can say.
+    page.locator("#lq-token").click()
+    expect(asks).to_have_text("Asks (3)")
+    assert errors == []
+    page.close()
+
+
+def test_a_key_walks_the_page_s_open_asks(browser, serve):
+    """j/k step the open threads; `a` steps the things the page is asking, and the
+    two lists are the same kind of thing to walk. It wraps rather than clamping,
+    because an ask leaves the list as soon as it is answered — forward is the
+    direction with somewhere to go, and one key that stopped at the last one would
+    strand the reader there.
+
+    The landing is marked on the ask and focused on the control that answers it, so
+    the reader can see what they were brought to and Tab straight into working it —
+    which is also the only landing available on a suggestion, whose element is
+    display: contents and can hold no focus of its own."""
+    page, errors = open_page(browser, serve(ASKS_PAGE))
+    walked = []
+    for _ in range(len(ASKS_IN_ORDER) + 1):  # one press past the end: it wraps
+        page.keyboard.press("a")
+        # Exactly one, so the mark says where this press put them rather than where an
+        # earlier one did — and asserting it is also the wait for this press to land.
+        expect(page.locator("[data-cq-ask]")).to_have_count(1)
+        walked.append(
+            page.evaluate(
+                "() => [document.querySelector('[data-cq-ask]').id,"
+                "       document.activeElement.tagName.toLowerCase()"
+                "       + ' ' + document.activeElement.className]"
+            )
+        )
+    assert walked == [
+        ["live-question", "span cq-pick cq-ui"],  # the question: its first pick mark
+        ["sug-refill", "span cq-sug-accept cq-ui"],  # ✓ Accept, out in the page margin
+        ["t-baffles", "cq-task "],  # a task holds no control, so it takes focus itself
+        ["t-bath", "cq-task "],
+        ["live-question", "span cq-pick cq-ui"],
+    ], f"the walk landed somewhere else: {walked}"
+
+    # The overlay and the key line offer it because there is something to reach.
+    page.keyboard.press("?")
+    expect(page.locator(".cq-help")).to_contain_text("waiting on you for")
+    page.keyboard.press("Escape")
+    expect(page.locator(".cq-keyline")).to_contain_text("asks")
+
+    # An answered ask leaves the walk: from the question, the next press used to reach
+    # the suggestion and now reaches what follows it.
+    page.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
+    expect(page.locator(".cq-asks")).to_have_text("Asks (3)")
+    page.keyboard.press("a")
+    expect(page.locator("#t-baffles")).to_be_focused()
+    assert errors == []
+    page.close()
+
+
+def test_an_ask_joins_the_walk_by_being_declared(browser, serve):
+    """The list is never closed, and this is the test of it: a widget core has never
+    heard of joins the count, the walk and the overlay by its registry entry alone,
+    and the one that carried the whole feature leaves by losing its own.
+
+    Driven by rewriting the page's vendored registry, because that is exactly what a
+    project layer does — a page can add a widget to its own vocabulary, and nothing in
+    the runtime, the banner or the key may need teaching about it."""
+    url = serve(ASKS_PAGE)
+    registry = json.loads((serve.page_dir / "registry.json").read_text())
+    registry["cq-milestone"]["x-awaits"] = {"when": {"status": ["active", "blocked"]}}
+    del registry["cq-suggestion"]["x-awaits"]
+    (serve.page_dir / "registry.json").write_text(json.dumps(registry))
+
+    page, errors = open_page(browser, url)
+    # Four, minus the suggestion that stopped declaring, plus the two milestones that
+    # started — and no code anywhere knows any of those three tags.
+    expect(page.locator(".cq-asks")).to_have_text("Asks (5)")
+    # The blanket answer went with the declaration that named its verb.
+    expect(page.locator(".cq-answer-all")).to_have_count(0)
+    for expected in ["live-question", "t-baffles", "t-bath", "m-build", "m-install"]:
+        page.keyboard.press("a")
+        expect(page.locator(f"#{expected}")).to_have_attribute("data-cq-ask", "1")
+    assert errors == []
+    page.close()
+
+
 def test_render_reports_markup_the_log_replays_over(browser, serve):
     """The static gate refuses a version that rewords what a decision rests on,
     but `chosen`, a card's column, and their kind say nothing a text diff can
@@ -5230,6 +5401,7 @@ def test_a_key_on_screen_is_a_key_that_works(browser, serve):
     expect(help_el).not_to_contain_text("On a focused thread")
     expect(help_el).not_to_contain_text("Older / newer version")
     expect(help_el).not_to_contain_text("Highlight changes")
+    expect(help_el).not_to_contain_text("waiting on you for")
     page.keyboard.press("Escape")
     expect(help_el).to_be_hidden()
 
