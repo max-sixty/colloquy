@@ -4853,6 +4853,16 @@ PAPER_WORDS = """() => {
 # the class standing in for the question, the same substitution the anchor pass made with
 # `.cq-ui`. The question is whose words these are, and the runtime marks its own in both
 # of the places it writes them.
+#
+# checkVisibility knows nothing of content-visibility either, which is what a collapse
+# wears: an inactive tab's panel and a settled group's cards are hidden="until-found" so
+# that find-in-page still reaches inside, and the text in one reports the boxes it last
+# laid out in — every sibling's at the same place. So a page with a collapsed group on it
+# failed about half the runs and passed the rest, which is the worst way for a gate to be
+# wrong: the page that goes out is whichever one the coin was kind to. A collapse is asked
+# for, and words nobody can see are not drawn over anything, so [hidden] is held out here
+# the way the size check holds it out. The coin comes down the same side every time on a
+# group that has been opened and closed, which is where the test pins it.
 COVERED_WORDS = """() => {
     const runs = [];
     const at = el => { const named = el.closest('[id]');
@@ -4861,7 +4871,7 @@ COVERED_WORDS = """() => {
     const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
         const el = n.parentElement;
-        if (!n.data.trim() || el.closest('.cq-chrome, .cq-mark-note')) continue;
+        if (!n.data.trim() || el.closest('.cq-chrome, .cq-mark-note, [hidden]')) continue;
         if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
         const range = document.createRange();
         range.selectNodeContents(n);

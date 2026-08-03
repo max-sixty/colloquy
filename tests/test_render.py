@@ -1496,6 +1496,46 @@ def test_the_gate_passes_a_page_that_carries_a_comment(browser, serve):
     )
 
 
+def test_the_gate_passes_a_page_whose_collapsed_cards_lie_on_each_other(browser, serve):
+    """Words drawn on other words is a question about the screen, and a collapse is the
+    page being asked to take words off it. The cards behind a settled row wear
+    hidden="until-found" so find-in-page still reaches them, which is content-visibility
+    rather than display, and checkVisibility answers for neither: they read as drawn, and
+    each reports the box it last laid out in, so all three land on one another. That is
+    the collapse working, and COVERED_WORDS says why it is held out.
+
+    On a fresh load whether they report at all is a coin, which is no basis for a test.
+    Opening the row and closing it again settles it: the cards lay out for real, and the
+    boxes they keep afterwards are that layout."""
+    url = serve(SETTLED_PAGE)
+    page, errors = open_page(browser, url)
+    row = page.locator("#transport .cq-settled")
+    card = page.locator("#transport #opt-lax")
+
+    row.click()
+    expect(card).to_be_visible()
+    row.click()
+    expect(card).to_be_hidden()
+
+    # The gate's own reading, taken here rather than left to render_version: that opens a
+    # fresh page, which is the coin again, and this page is the one holding the layout the
+    # cards kept. Then the same reading with the collapse no longer held out — named out
+    # of the selector rather than cut from it, so this stays the gate's reading however
+    # the things it holds out are ordered or added to.
+    unheld = interact.COVERED_WORDS.replace("[hidden]", "[cq-holds-nothing]")
+    held, reported = page.evaluate(interact.COVERED_WORDS), page.evaluate(unheld)
+    assert errors == []
+    assert held == []
+    assert unheld != interact.COVERED_WORDS, (
+        "the pass no longer holds collapsed content out by name"
+    )
+    assert any("opt-" in found for found in reported), (
+        "the cards fell on nobody, so a gate that never looked would pass this too"
+    )
+    page.close()
+    assert interact.render_version(browser, url) == []
+
+
 def test_check_render_refuses_what_only_a_browser_can_see(serve):
     """`version check --render` end to end, as the agent runs it: the static lint
     passes both versions, and only the one that renders clean may reach a reviewer.

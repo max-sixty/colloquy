@@ -266,8 +266,7 @@ question opens it and finds what they read before.
 A `cq-options` group has the same move built in. `settled` collapses it to one line naming
 the pick, with every option behind a disclosure; the reader can open it, disagree, and
 pick again. Reach for it where a decision retires inside a section that stays live; a
-section retiring whole takes its decided groups with it, marked the same way. A group
-nobody picked in has no pick to collapse to, so it retires with its section unmarked.
+section retiring whole takes its groups with it, marked the same way.
 
 Retiring is not revising. The words don't change, so it is neither a `cq-suggestion` nor
 grounds for `restated` — relocating a group the reviewer picked in is a version agreeing
