@@ -432,6 +432,35 @@ what it does because the declaration is the only copy: one rows constant per mod
 `keyHelp`, `keyHint`, and any announce() built from it, and the suite presses Escape on
 each declaring control and asserts exactly the declared effect.
 
+## A key on screen is a key that works
+
+Every surface that names a key promises the press does something now. One table (`KEYS`)
+keeps the words from drifting, and it did nothing to keep the surfaces from drifting from
+each other: the key line asked `when` and the `?` overlay didn't, so a page with no open
+thread offered `g 1–9` to reply to one, and a first version offered `v` with nothing to
+diff. Two shortcuts had no `when` at all — `v`'s liveness sat inside its own `run` and
+the version pair's inside `stepVersion`, where no surface could ask. So whether a key is
+live is declared once (`when`), `live` is the one question the dispatcher, the line, and
+the overlay all put to it — the scene branch that restates the j/k row asks it too, since
+a resolved thread stays focusable after the last open one is gone — and a label that
+names a range is a function (`g ${digits()}`), so it counts the threads that are there
+rather than promising nine. A liveness guard inside `run` is the tell, because it makes
+the key refuse a press some surface is still advertising.
+
+Live means the capability exists, not that every press moves. A stepper at its end — j on
+the last thread, `]` on the newest version — is a clamp on a live key: the promise is
+that there are threads or versions to walk, not that this edge press lands. What
+`stepVersion` used to hold alone was the other kind, deadness — one version, or a viewed
+version the server no longer lists, so nothing to step between at all — and that is what
+`when` now owns; the clamp stays in the stepper.
+
+The overlay renders at open and can go stale while it stands, and the two directions cost
+differently, both acceptably. A row going dead under it can't be pressed — help is a
+scope, the table stands down beneath it — and a key going live under it is merely
+unlisted until the next open, one press away; neither is a false promise. The widget
+sections (`keyHelp`) hold the rule for free — a module registers rows only when its
+widget is on the page, because only then does it load.
+
 ## A widget's chrome outlives its handlers
 
 `cq-shot` flips between two screenshots with a radio group and one `:has(:checked)` rule,

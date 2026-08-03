@@ -3334,7 +3334,12 @@ function setLeader(on) {
   panel.classList.toggle("cq-leader-armed", on);
   // The chips are the eye's copy; the arming itself is spoken, or the mode change
   // is silent to exactly the user who can't see them.
-  if (on && !was) announce("Reply to thread — press 1 to 9, Escape cancels");
+  if (on && !was)
+    announce(
+      `Reply to thread — press ${
+        addressable() > 1 ? `1 to ${addressable()}` : "1"
+      }, Escape cancels`,
+    );
   paintLine();
 }
 // What a digit does with the window: stepThread-to-nth and its Enter in one press.
@@ -3348,6 +3353,18 @@ function replyTo(n) {
   scrollToThread(thread.dataset.id);
 }
 
+// Whether a key is live right now is declared once (when) and asked through one
+// predicate by every consumer — the dispatcher, the key line's scene, and the "?"
+// overlay — so no surface can promise a press the table would refuse. A guard
+// inside run instead is a liveness no surface can see.
+const live = (b) => !b.when || b.when();
+const hasThreads = () => threadAddress.size > 0;
+const canStepVersions = () => versions.length > 1 && versions.includes(VNUM);
+// A label naming a range counts what is there rather than promising nine: at
+// most nine open threads are addressable, fewer when fewer are open.
+const addressable = () => Math.min(9, threadAddress.size);
+const digits = () => (addressable() > 1 ? `1–${addressable()}` : "1");
+const keyLabel = (b) => (typeof b.label === "function" ? b.label() : b.label);
 const KEYS = [
   {
     key: "c",
@@ -3374,32 +3391,34 @@ const KEYS = [
     label: "j / k",
     does: "Next / previous open thread",
     line: "threads",
-    when: () => threadAddress.size > 0,
+    when: hasThreads,
     run: () => stepThread(1),
   },
-  { key: "k", run: () => stepThread(-1) },
-  { label: "Enter", does: "On a focused thread: write a reply" },
+  { key: "k", when: hasThreads, run: () => stepThread(-1) },
+  { label: "Enter", does: "On a focused thread: write a reply", when: hasThreads },
   {
     key: "g",
-    label: "g 1–9",
+    label: () => `g ${digits()}`,
     does: "Reply to the nth open thread",
     line: "reply",
-    when: () => threadAddress.size > 0,
+    when: hasThreads,
     run: () => setLeader(true),
   },
   {
     key: "v",
     label: "v",
     does: "Highlight changes since the previous version",
-    run: () => diffBase && diffBtn.onclick(),
+    when: () => Boolean(diffBase),
+    run: () => diffBtn.onclick(),
   },
   {
     key: "[",
     label: "[ / ]",
     does: "Older / newer version",
+    when: canStepVersions,
     run: () => stepVersion(-1),
   },
-  { key: "]", run: () => stepVersion(1) },
+  { key: "]", when: canStepVersions, run: () => stepVersion(1) },
   { key: "?", label: "?", does: "This key reference", line: "keys", run: toggleHelp },
   {
     label: "Esc",
@@ -3440,7 +3459,7 @@ document.addEventListener("keydown", (ev) => {
   // Tab out.
   if (helpOpen && ev.key !== "?") return;
   const bound = KEYS.find((b) => b.key === ev.key);
-  if (!bound || (bound.when && !bound.when())) return;
+  if (!bound || !live(bound)) return;
   ev.preventDefault();
   bound.run();
 });
@@ -3474,7 +3493,7 @@ function scene() {
   if (leaderTimer)
     return {
       chord: "g",
-      rows: [["1–9", "reply to thread"]],
+      rows: [[digits(), "reply to thread"]],
       esc: { says: "cancel", out: () => setLeader(false) },
     };
   if (helpOpen)
@@ -3518,22 +3537,20 @@ function scene() {
   // The thread div itself, j/k's target — not a control inside it, whose Enter is
   // its own press and must not be promised as "reply"; nor a resolved thread,
   // which has no reply box for Enter to reach. The j/k row is the KEYS entry's
-  // own, not a restatement free to drift from it.
+  // own, not a restatement free to drift from it — liveness included, since a
+  // resolved thread stays focusable after the last open one is gone.
   if (active?.classList?.contains("cq-thread")) {
     const jk = KEYS.find((b) => b.key === "j");
     return {
       rows: [
         ...(active.querySelector(":scope > .cq-compose") ? [["Enter", "reply"]] : []),
-        [jk.label, jk.line],
+        ...(live(jk) ? [[keyLabel(jk), jk.line]] : []),
       ],
       esc: { says: "close comments", out: () => setPanel(false) },
     };
   }
   return {
-    rows: KEYS.filter((b) => b.line && (!b.when || b.when())).map((b) => [
-      b.label,
-      b.line,
-    ]),
+    rows: KEYS.filter((b) => b.line && live(b)).map((b) => [keyLabel(b), b.line]),
     esc: panelOpen ? { says: "close comments", out: () => setPanel(false) } : null,
   };
 }
@@ -3591,11 +3608,12 @@ function commentKey() {
 }
 
 // j/k walk the open threads: panel focus and the page highlight move as a pair —
-// they are two views of the same thread. Clamped at the ends, not wrapped.
+// they are two views of the same thread. Clamped at the ends, not wrapped; never
+// empty, because the keys are live (when) only while open threads exist, and
+// hasThreads counts what renderThreads wrote here in the same synchronous pass.
 function stepThread(dir) {
   if (!panelOpen) setPanel(true);
   const threads = [...threadsBox.querySelectorAll(":scope > .cq-thread")];
-  if (!threads.length) return;
   const at = threads.indexOf(document.activeElement?.closest?.(".cq-thread"));
   const next =
     threads[
@@ -3680,7 +3698,9 @@ function showHelp(open) {
       }
       return t;
     };
-    helpEl.append(table(KEYS.filter((b) => b.does).map((b) => [b.label, b.does])));
+    helpEl.append(
+      table(KEYS.filter((b) => b.does && live(b)).map((b) => [keyLabel(b), b.does])),
+    );
     for (const { title, rows } of helpSections.values())
       helpEl.append(el("h3", "", title), table(rows));
   }

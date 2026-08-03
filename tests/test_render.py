@@ -4982,10 +4982,12 @@ def test_the_key_line_says_what_a_press_will_do(browser, serve):
     expect(line).to_contain_text("keys")
     expect(line).not_to_contain_text("esc")
 
-    # Armed with the panel closed: the pending chord and its way out are on screen.
+    # Armed with the panel closed: the pending chord and its way out are on screen,
+    # and the digit chip counts the one thread there is rather than promising nine.
     page.keyboard.press("g")
-    expect(line).to_contain_text("1–9")
     expect(line).to_contain_text("reply to thread")
+    expect(line).to_contain_text("1")
+    expect(line).not_to_contain_text("1–9")
     expect(line).to_contain_text("cancel")
     page.keyboard.press("Escape")
     expect(line).not_to_contain_text("reply to thread")
@@ -5006,6 +5008,89 @@ def test_the_key_line_says_what_a_press_will_do(browser, serve):
     expect(line).not_to_contain_text("close comments")
     # Focus doesn't fall to body: it lands on the control that reopens the panel.
     expect(page.locator(".cq-comments")).to_be_focused()
+    assert errors == []
+    page.close()
+
+
+def test_a_key_on_screen_is_a_key_that_works(browser, serve):
+    """Every surface naming a key promises the press does something now. One table
+    kept the words from drifting and not the surfaces: the key line asked `when`,
+    the ? overlay didn't, and two shortcuts held their liveness where no surface
+    could ask — v in its own run, the version pair in stepVersion — so the overlay
+    offered g 1–9 with no thread to reply to, and v on a first version with nothing
+    to diff. Liveness is one declaration, and the dispatcher, the line, and the
+    overlay all ask it."""
+    url = serve(NOTED_PAGE)
+    d = serve.page_dir
+    page, errors = open_page(browser, url)
+    help_el = page.locator(".cq-help")
+
+    # No open threads, one version: the reference names only what a press would do.
+    page.keyboard.press("?")
+    expect(help_el).to_be_visible()
+    expect(help_el).to_contain_text("Comment on the selection")
+    expect(help_el).not_to_contain_text("Reply to the nth")
+    expect(help_el).not_to_contain_text("Next / previous open thread")
+    expect(help_el).not_to_contain_text("On a focused thread")
+    expect(help_el).not_to_contain_text("Older / newer version")
+    expect(help_el).not_to_contain_text("Highlight changes")
+    page.keyboard.press("Escape")
+    expect(help_el).to_be_hidden()
+
+    # The dispatcher asks the same declaration: k used to open an empty panel
+    # while j, when-gated, did nothing.
+    page.keyboard.press("j")
+    page.keyboard.press("k")
+    expect(page.locator(".cq-panel")).to_be_hidden()
+    line = page.locator(".cq-keyline")
+    expect(line).not_to_contain_text("threads")
+
+    # Threads arrive, and the next open holds the rows they make live — the g
+    # range counting the two there are, not the nine there could be.
+    for text in ["A thread.", "Another."]:
+        interact.append_event(
+            d, {"kind": "comment", "author": "user", "version": 1, "text": text}
+        )
+    told(page)
+    expect(page.locator(".cq-thread")).to_have_count(2)
+    # The key line repaints on the same render that made them live — no focus
+    # change to lean on, so the repaint is the thread render's own.
+    expect(line).to_contain_text("threads")
+    page.keyboard.press("?")
+    expect(help_el).to_contain_text("g 1–2")
+    expect(help_el).to_contain_text("Next / previous open thread")
+    expect(help_el).to_contain_text("On a focused thread")
+    expect(help_el).not_to_contain_text("Older / newer version")
+    page.keyboard.press("Escape")
+
+    # A v2 lands and the unpinned page follows it; on v2 the version keys are
+    # live, and v has a previous version to diff against.
+    (d / "versions" / "v2.html").write_text(NOTED_PAGE)
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 2, "text": "two"}
+    )
+    page.wait_for_url("**/versions/v2.html*")
+    expect(page.locator("button", has_text="Δ v1")).to_be_visible()
+    page.keyboard.press("?")
+    expect(help_el).to_contain_text("Older / newer version")
+    expect(help_el).to_contain_text("Highlight changes since the previous version")
+    expect(help_el).to_contain_text("g 1–2")
+    page.keyboard.press("Escape")
+
+    # A resolved thread stays focusable after the last open one is gone, and the
+    # scene branch that restates the j/k row over it asks the same liveness.
+    page.keyboard.press("c")
+    for n in [1, 2]:
+        page.locator(".cq-threads > .cq-thread").first.get_by_role(
+            "button", name="Resolve"
+        ).click()
+        expect(page.locator(".cq-details summary")).to_have_text(f"Resolved ({n})")
+    page.locator(".cq-details summary").click()
+    resolved = page.locator(".cq-details .cq-thread").first
+    resolved.click()
+    expect(resolved).to_be_focused()
+    expect(line).to_contain_text("close comments")
+    expect(line).not_to_contain_text("threads")
     assert errors == []
     page.close()
 
