@@ -279,7 +279,7 @@ wrong question to do it: a selection fills the lines it covers, so the button pl
 it lands in the margin, on the line a change's row hangs. Nothing was deadened — the
 reviewer pressed the 💬 they could see and got a composer, because a press on it is not the
 outside click that dismisses it. Floating chrome steps aside from what stands on the page
-(`placeFab`), asked of `data-cq-offer` so it holds for any control any widget hangs.
+(`placeClear`), asked of `data-cq-offer` so it holds for any control any widget hangs.
 
 Paper asks its own question and reads its own pair of markers. Print's question is "is
 this a thing to work, and nothing else?", because nothing on paper can be pressed; the

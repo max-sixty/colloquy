@@ -1031,7 +1031,17 @@ cq-diagram:not(.cq-rendered) > pre, cq-diff:not(.cq-rendered) > pre,
 cq-tree:not(.cq-rendered) > pre, cq-code:not(.cq-rendered) > pre, cq-draft > pre {
              background: none; border: 0; border-radius: 0; padding: 0; margin: 0;
              font: inherit; line-height: inherit; overflow: visible; }
-cq-diagram svg { display: block; margin: 0 auto; }
+/* A rendered diagram keeps its natural size — its module strips mermaid's
+ * scale-to-fit, which set a wide flowchart's labels below legibility — so a wide one
+ * scrolls in its own box, the same answer a wide table gets, instead of painting over
+ * the margin. max-width: none escapes the page-wide svg rule near the top, which
+ * would scale it right back down. Paper cannot scroll, so print restores the fit:
+ * width and viewBox stay in the markup, and max-width alone scales the drawing whole. */
+cq-diagram.cq-rendered { overflow-x: auto; }
+cq-diagram svg { display: block; margin: 0 auto; max-width: none; }
+@media print {
+  cq-diagram svg { max-width: 100%; }
+}
 
 /* cq-diff rendered form: one details per file, lines colored by kind. */
 cq-diff.cq-rendered details { margin: 8px 0; padding: 0; overflow: hidden;

@@ -3619,7 +3619,9 @@ def test_composer_grows_with_its_text_without_script(browser, serve):
 
     assert grown["h"] > empty["h"], "the box must grow with its content"
     assert not grown["scrollable"], "a box that fits its text must not be scrollable"
-    assert capped["h"] == 200, f"the box must stop at its ceiling, got {capped['h']}px"
+    # The ceiling is 50vh — the viewport's share, not a count of lines — measured
+    # here in the suite's 900px-tall window.
+    assert capped["h"] == 450, f"the box must stop at its ceiling, got {capped['h']}px"
     assert capped["scrollable"], (
         "past the ceiling the scrollbar is real and belongs there"
     )
@@ -5105,6 +5107,107 @@ def test_the_composer_never_stands_on_its_own_mark(browser, serve):
     assert not composer_quote(page)["shown"], (
         "the mark is showing and the composer prints the passage as well"
     )
+    assert errors == []
+    page.close()
+
+
+def test_the_composer_scrolls_with_the_passage_it_is_about(browser, serve):
+    """The box points at a passage, so it lives in the document's coordinate space and
+    scrolling moves the two together. It was viewport-fixed once: the page scrolled
+    under a box that stayed put, and an ⌥-click's composer drifted off the diagram it
+    was opened on and sat over whatever arrived beneath it.
+
+    Both readings and the scroll happen in one synchronous evaluate — writing
+    scrollTop reflows before the very next read — so there is no trip here to wait
+    on."""
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    page.locator("#p30").scroll_into_view_if_needed()
+    page.locator("#p30").click(click_count=3)
+    page.wait_for_selector(".cq-fab", state="visible")
+    page.locator(".cq-fab").click()
+    expect(page.locator(".cq-composer")).to_be_visible()
+    moved = page.evaluate("""() => {
+        const top = (el) => el.getBoundingClientRect().top;
+        const composer = document.querySelector('.cq-composer');
+        const passage = document.getElementById('p30');
+        const before = { composer: top(composer), passage: top(passage) };
+        document.body.scrollTop += 240;
+        return { composer: top(composer) - before.composer,
+                 passage: top(passage) - before.passage };
+    }""")
+    assert moved["passage"] < 0, "the scroll must actually have moved the page"
+    assert moved["composer"] == moved["passage"], (
+        f"the box parted from its passage: the page moved {-moved['passage']}px "
+        f"and the composer {-moved['composer']}px"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_the_composer_stands_in_the_margin_beside_the_passage(browser, serve):
+    """Where the column leaves room, the box goes into the margin rather than onto the
+    page: a 320px card over a 720px column stands on somebody's words wherever it
+    lands, and the margin holds none by construction. The passage and its neighbours
+    stay fully readable while the reviewer writes about them."""
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    resized(page, 1440, 900)
+    page.locator("#p30").scroll_into_view_if_needed()
+    page.locator("#p30").click(click_count=3)
+    page.wait_for_selector(".cq-fab", state="visible")
+    page.locator(".cq-fab").click()
+    expect(page.locator(".cq-composer")).to_be_visible()
+    standing = page.evaluate("""() => {
+        const box = document.querySelector('.cq-composer').getBoundingClientRect();
+        const column = document.querySelector('main').getBoundingClientRect();
+        const touching = [...document.querySelectorAll('main p, main h1')]
+            .filter(el => el.checkVisibility())
+            .filter(el => { const r = el.getBoundingClientRect();
+                            return r.left < box.right && box.left < r.right
+                                && r.top < box.bottom && box.top < r.bottom; })
+            .map(el => el.id || el.tagName);
+        return { left: box.left, columnRight: column.right, touching };
+    }""")
+    assert standing["left"] >= standing["columnRight"], (
+        f"the box opened at {standing['left']}px, inside the column ending at "
+        f"{standing['columnRight']}px, with a margin free to its right"
+    )
+    assert standing["touching"] == [], (
+        f"the box stands on the page's own text: {standing['touching']}"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_a_float_the_panel_displaces_hands_the_page_no_sideways_scroll(browser, serve):
+    """A float is an absolute child of body, so one standing past body's client box is
+    sideways-scrollable overflow. Placement clamps inside the box of that moment, and
+    the box then changes: the panel takes its strip, and a composer placed in a wide
+    window's margin overhung the narrowed page — the document panned 328px left under
+    a trackpad, with the composer standing on the panel that had displaced it. The
+    floats are placed again when layout reshapes, after the margin's own transition,
+    so the invariant is read with an auto-retrying wait rather than a one-shot read
+    racing the transitionend handler."""
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    resized(page, 1440, 900)
+    page.locator("#p30").scroll_into_view_if_needed()
+    page.locator("#p30").click(click_count=3)
+    page.wait_for_selector(".cq-fab", state="visible")
+    page.locator(".cq-fab").click()
+    expect(page.locator(".cq-composer")).to_be_visible()
+    page.locator(".cq-composer textarea").fill("held open across the panel opening")
+    assert page.evaluate(
+        "() => document.querySelector('.cq-composer').getBoundingClientRect().left"
+        "   >= document.querySelector('main').getBoundingClientRect().right"
+    ), "the margin placement is the precondition — nothing strands a column-placed box"
+    # A press on the banner's own button: standDown keeps a composer holding text.
+    page.get_by_role("button", name="Comments", exact=False).click()
+    panel_settled(page)
+    page.wait_for_function("""() => {
+        const box = document.querySelector('.cq-composer').getBoundingClientRect();
+        return document.body.scrollWidth - document.body.clientWidth === 0
+            && box.right <= document.body.clientWidth;
+    }""")
+    expect(page.locator(".cq-composer")).to_be_visible()
     assert errors == []
     page.close()
 
@@ -8779,6 +8882,62 @@ def test_a_widget_declaring_it_renders_a_picture_takes_a_click(browser, serve):
     assert not page.locator(".cq-fab").is_visible(), (
         "a click on prose was read as a click on a picture"
     )
+    assert errors == []
+    page.close()
+
+
+# Wide on purpose: six nodes across lays out near 1150px against the column's 672.
+WIDE_DIAGRAM_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wide diagram</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Flow</h1>
+<cq-diagram id="flow"><pre>
+graph LR
+  R[request] --> C{cookie valid?}
+  C -->|yes| S[read session from Redis]
+  S -->|hit| H[handle]
+  S -->|miss/outage| F[verify signed fallback]
+  F --> H
+  C -->|no| L[login]
+</pre></cq-diagram>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_wide_diagram_keeps_its_size_and_scrolls_its_own_box(browser, serve):
+    """Mermaid fits a diagram to its holder by scaling the whole drawing down, glyphs
+    included — this flowchart rendered at 63% in the column, its 16px labels
+    effectively 10px and unreadable. The module strips that: the drawing keeps the
+    size mermaid laid it out at, the widget's own box scrolls sideways — the theme's
+    answer for a wide table — and the document itself grows no sideways scroll."""
+    page, errors = open_page(browser, serve(WIDE_DIAGRAM_PAGE))
+    sizes = page.evaluate("""() => {
+        const holder = document.getElementById('flow');
+        const svg = holder.querySelector('svg');
+        return { drawn: svg.getBoundingClientRect().width,
+                 natural: svg.viewBox.baseVal.width,
+                 box: holder.clientWidth,
+                 scrolls: holder.scrollWidth > holder.clientWidth,
+                 sideways: document.body.scrollWidth - document.body.clientWidth };
+    }""")
+    assert sizes["natural"] > sizes["box"], (
+        "the fixture must lay out wider than the column, or this proves nothing"
+    )
+    assert round(sizes["drawn"]) == round(sizes["natural"]), (
+        f"the drawing was scaled to fit: natural {sizes['natural']}px, "
+        f"drawn {sizes['drawn']}px"
+    )
+    assert sizes["scrolls"], "a drawing wider than its box must scroll inside it"
+    assert sizes["sideways"] == 0, "the page itself must not scroll sideways"
     assert errors == []
     page.close()
 

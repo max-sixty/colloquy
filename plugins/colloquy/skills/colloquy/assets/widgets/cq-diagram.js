@@ -73,6 +73,18 @@ customElements.define(
         const mermaid = await loadMermaid();
         const { svg } = await mermaid.render(renderId, source);
         this.innerHTML = svg;
+        // Mermaid sizes to fit: the svg is width 100%, capped at its natural size, so
+        // a diagram wider than the column scales down whole, glyphs first — a
+        // five-node flowchart arrived at 63% with its labels below legibility.
+        // Legibility outranks fit: state the natural size and let the element's own
+        // box scroll sideways (the theme's answer for a wide table or pre). The
+        // viewBox is how every diagram type declares that size, so none is named.
+        const drawn = this.querySelector("svg");
+        const natural = drawn.viewBox.baseVal.width;
+        if (natural) {
+          drawn.setAttribute("width", natural);
+          drawn.style.maxWidth = "";
+        }
         this.classList.add("cq-rendered");
       } catch (err) {
         // mermaid leaves its temp node (id "d" + renderId) in the body on failure.

@@ -784,8 +784,11 @@ style.textContent = `
      reserving it produces. Nothing in the suite pins it; there is nothing here to
      pin it with. */
   html { height: 100%; overflow: hidden; }
-  body { box-sizing: border-box; height: 100%; overflow-y: auto; scroll-padding-top: 54px;
-         scrollbar-gutter: stable; }
+  /* position: relative makes body — the scroll container — the containing block for
+     the two floats that point into the document (the 💬 button and the composer), so
+     the browser scrolls them with the passage they stand beside. */
+  body { position: relative; box-sizing: border-box; height: 100%; overflow-y: auto;
+         scroll-padding-top: 54px; scrollbar-gutter: stable; }
   /* The strip the panel takes is given up as motion rather than as a jump, so the eye
      can follow the sentence it was reading to where it went. Keyed on the stamp that
      says the document is done becoming itself, because until then every margin the
@@ -826,9 +829,11 @@ style.textContent = `
      measures a textarea: the JS that did had to reset height to auto to re-measure,
      which made the box briefly too small for its own text on every keystroke — and a
      box that overflows, however briefly, flashes a scrollbar. Past max-height the
-     scrollbar is real and stays. Both selectors: the panel's boxes sit inside .cq-ui,
-     a widget's own box wears the class itself. */
-  .cq-ui textarea, textarea.cq-ui { font: inherit; padding: 5px 8px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; resize: none; field-sizing: content; max-height: 200px; overflow-y: auto; }
+     scrollbar is real and stays — and the ceiling is the viewport's share, not a count
+     of lines: 200px stopped a long comment at ten lines with the screen mostly empty.
+     Both selectors: the panel's boxes sit inside .cq-ui, a widget's own box wears the
+     class itself. */
+  .cq-ui textarea, textarea.cq-ui { font: inherit; padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; resize: none; field-sizing: content; max-height: 50vh; overflow-y: auto; }
   .cq-ui textarea:focus, textarea.cq-ui:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 45%, var(--card)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
   /* A marked passage is painted, not wrapped (see paintAnchors), so its rules reach it
      through the highlight registry — which styles glyphs, so the underline stands in for
@@ -1022,13 +1027,14 @@ style.textContent = `
     .cq-general { padding: 10px 14px; border-top: 1px solid var(--rule); }
     .cq-details { margin-top: 6px; color: var(--muted); background: none; border: none; padding: 0; }
     .cq-system { color: var(--ok); margin: 8px 0; }
-    .cq-fab { position: fixed; z-index: 9100; display: none; }
-    /* Its own fixed row beside the button, so the button keeps its box. The chips are
-       quieter than it because the words are still the ordinary case — an item is what
-       the reviewer reaches for when the words are not the point. */
-    .cq-fab-chain { position: fixed; z-index: 9100; display: none; gap: 4px; }
-    .cq-fab-item { background: var(--card); color: var(--ink-2); }
-    .cq-composer { position: fixed; z-index: 9100; display: none; width: 320px; background: var(--card);
+    /* The two floats that point at the page live in the document's coordinate space
+       (absolute, body their containing block), because what they point at does: a
+       composer that held its viewport spot while the page scrolled sat pinned over
+       whatever arrived under it, no longer beside the item it was about. Everything
+       else here is the viewport's own chrome and stays fixed. Below the banner's
+       9000, so a float scrolled to the top slides under the bar, not over it. */
+    .cq-fab { position: absolute; z-index: 8950; display: none; }
+    .cq-composer { position: absolute; z-index: 8950; display: none; width: 320px; background: var(--card);
       border: 1px solid var(--border-2); border-radius: var(--r); box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 10px; }
     /* A stranded quote is the whole passage, and the box is 320px wide. Only while showing:
        on the hidden one this would out-specify .cq-unseen's own overflow. */
@@ -1067,7 +1073,7 @@ style.textContent = `
        (aria-hidden), so it owes the press sweep nothing; syncLayout lifts it over a
        covering sheet the way it lifts the toast, and body reserves its height so
        the document's last lines never end under it. */
-    .cq-keyline { position: fixed; left: 18px; bottom: 14px; z-index: 9000; pointer-events: none;
+    .cq-keyline { position: fixed; left: 18px; bottom: 14px; z-index: 8940; pointer-events: none;
       display: flex; gap: 12px; align-items: baseline; max-width: calc(100vw - 36px);
       overflow: hidden; color: var(--muted); font-size: 12px; white-space: nowrap;
       background: var(--card); border: 1px solid var(--rule); border-radius: var(--r);
@@ -1166,12 +1172,6 @@ generalRow.append(generalInput, generalSend);
 panel.append(panelHead, threadsBox, generalRow);
 
 const fab = el("button", "cq-ui cq-btn primary cq-fab", "💬 Comment");
-// A chip per element enclosing the selection, in its own row beside the button rather
-// than inside it. The 💬 keeps its words, its width and its place, because the
-// reviewer's aim is on it before the chips are drawn — a control that
-// changes size under a pointer already reaching for it is what the press sweep exists to
-// catch. See "pointing at an item" below.
-const fabChain = el("div", "cq-ui cq-fab-chain");
 const composer = el("div", "cq-ui cq-composer");
 // Only ever shown detached — paintAnchors, its one writer, keeps it out of sight while
 // the page is marking the passage. cq-ui on the element itself, not just on the composer
@@ -1217,7 +1217,6 @@ chromeRoot.append(
   banner,
   panel,
   fab,
-  fabChain,
   composer,
   toastEl,
   liveEl,
@@ -1345,7 +1344,35 @@ function syncLayout() {
   keylineEl.style.bottom = (panelCovers ? generalRow.offsetHeight + 14 : 14) + "px";
   document.body.style.paddingBottom =
     basePaddingBottom + keylineEl.offsetHeight + 20 + "px";
+  syncFloats();
 }
+// The floats live in the document, and syncLayout is where its box changes shape — the
+// panel takes or returns its strip, a resize moves every rect, the composer's own
+// textarea grows under typing — so whatever float is up is placed again against the
+// new geometry: the composer from its own marks (a detached one re-clamps where it
+// stands), the button from the live selection where one still stands, and by
+// re-clamping alone where none does. Skipping this leaves a float placed at a wide
+// window's edge overhanging the box a panel then narrows, and an absolute child past
+// body's client box is sideways-scrollable overflow: the document panned 328px left
+// under a trackpad, with the composer standing on the panel that had displaced it.
+function syncFloats() {
+  if (composerOpen) {
+    const box = composer.getBoundingClientRect();
+    placeComposer(box.left, box.top);
+  }
+  if (fabAnchor?.quote && pageSelection()) updateFab();
+  else if (fabAnchor) {
+    const box = fab.getBoundingClientRect();
+    placeClear(fab, box.left, box.top);
+  }
+}
+// The strip's hand-over is motion (body's own margin transition), so the reflow the
+// floats must answer finishes long after syncLayout's write. The transition's end is
+// the fact to consume — reduced motion still fires it, at .01ms — and syncLayout's
+// own call covers the pre-stamp loads that run untransitioned.
+document.body.addEventListener("transitionend", (ev) => {
+  if (ev.propertyName === "margin-right") syncFloats();
+});
 function setPanel(open) {
   // Closing while focus is inside would drop it on body, the reviewer's place
   // lost silently; it lands on the one control that reopens what just closed.
@@ -1371,6 +1398,9 @@ addEventListener("resize", syncLayout);
 const layoutSizes = new ResizeObserver(syncLayout);
 layoutSizes.observe(generalRow);
 layoutSizes.observe(keylineEl);
+// The composer grows under typing (field-sizing), and a box placed above its passage
+// grows downward, back over the mark it was moved off — so its own resize re-places it.
+layoutSizes.observe(composer);
 
 let toastTimer = 0;
 function showToast(msg, onClick) {
@@ -2405,15 +2435,14 @@ const sectionOf = (anchor) =>
   anchor.section ? document.getElementById(anchor.section) : null;
 
 // ---------- pointing at an item ----------
-// Two gestures reach an item, and they serve different moments rather than splitting one.
-// The chips are a correction — a reviewer who selected a card's words and meant the card
-// is offered the enclosing chain, unasked, beside the button they are already looking at,
-// so nobody has to know of them in advance. ⌥-click is direct aim: no selection, no
-// chrome, and the only route to an item whose words are all inside controls. Both end in
-// openOnItem, so they cannot come to write different anchors for the same intent. A
-// third — a rule in the margin raised by hovering — was tried and cut: too strong for
-// what it offered, and placed at the item's own left edge, which is the page's margin
-// only for an item the page happens to have left-aligned.
+// One gesture reaches any item: ⌥-click — direct aim, no selection, no chrome, and the
+// only route to an item whose words are all inside controls. A plain click reaches the
+// visuals, which have no text to select. Two more routes were tried and cut: a rule in
+// the margin raised by hovering, too strong for what it offered and placed at the
+// item's own left edge, which is the page's margin only for an item the page happens
+// to have left-aligned; and a row of chips beside the 💬 offering the selection's
+// enclosing chain ("⬚ paragraph", "⬚ section") — a correction nobody had asked for,
+// paid in chrome beside every selection a reviewer made.
 //
 // What both write is the anchor colloquy already has. A comment on an element is
 // {section: <id>} with no quote — the shape a click on a diagram has made since the
@@ -2426,24 +2455,23 @@ const sectionOf = (anchor) =>
 // check` holds every id across versions, which is exactly why an anchor naming one
 // survives a rewrite that takes a quote down with it.
 const ITEM = "[id]:not(.cq-ui)";
-// Innermost first: a card, then its column, then the board, then the section holding it.
-// The chain is the answer to "which of these did you mean" — the reviewer is shown it
-// rather than the runtime guessing a level for them.
-function itemChain(node) {
-  const chain = [];
+// The innermost item: a card rather than its column, the column rather than the board —
+// the smallest thing under the pointer is the thing pointed at.
+function itemAt(node) {
   let at = node?.nodeType === 1 ? node : node?.parentElement;
   for (; at; at = at.parentElement)
-    if (at.matches(ITEM) && !inChrome(at) && !inUi(at)) chain.push(at);
-  return chain;
+    if (at.matches(ITEM) && !inChrome(at) && !inUi(at)) return at;
+  return null;
 }
-// What to call an item, in a word the reviewer is about to press. A widget names itself:
-// its tag minus the prefix is already the word the vocabulary chose ("card", "option",
-// "column"), so the twelfth widget gets a name here without core hearing about it.
+// What to call an item, in a word the reviewer reads beside a thread's § label. A widget
+// names itself: its tag minus the prefix is already the word the vocabulary chose
+// ("card", "option", "column"), so the twelfth widget gets a name here without core
+// hearing about it.
 //
-// The page's own elements have no such word. A tag is markup rather than English, and the
-// chips read "⬚ p" and "⬚ section" over ordinary prose — which names the thing to a
-// browser and to nobody else. So HTML's tags get the nouns a reader would use, and an
-// unlisted one falls back to its tag, which is worse than a word and better than nothing.
+// The page's own elements have no such word. A tag is markup rather than English, and a
+// label reading "§ p · …" over ordinary prose names the thing to a browser and to nobody
+// else. So HTML's tags get the nouns a reader would use, and an unlisted one falls back
+// to its tag, which is worse than a word and better than nothing.
 const HTML_WORDS = {
   p: "paragraph",
   li: "item",
@@ -2622,12 +2650,10 @@ function paintAnchors() {
   // never reads as a posted comment. An element a thread already outlines keeps the posted
   // colour: there is one outline to give, and the thread's is the clickable one.
   //
-  // Before the composer exists, the same outline answers "which of these am I about
-  // to comment on". A blind user offered `card`, `column` and
-  // `board` had no way to tell them apart, because the outline only arrived after the
-  // click — so the chain the chips exist to offer could not actually be chosen between.
-  // What a control would take is the same fact as what the composer holds, one step
-  // earlier, so it is the same paint rather than a second one.
+  // Before the composer exists, the same outline answers "which item am I about to
+  // comment on": the ⌥ aim paints the item a press would take. What a press would take
+  // is the same fact as what the composer then holds, one step earlier, so it is the
+  // same paint rather than a second one.
   const draft =
     composerOpen && pendingAnchor
       ? resolveAnchor(pendingAnchor, text)
@@ -2765,22 +2791,43 @@ document.addEventListener("mousemove", (ev) => {
 pageScroller.addEventListener("scroll", refreshHover, { passive: true });
 
 // ---------- selection → comment ----------
-// Floating UI has to stay clear of both the banner and the comment panel, which
-// covers the right of the viewport whenever it's open.
-const rightEdge = () => innerWidth - (panelOpen ? panel.offsetWidth : 0) - 8;
+// Floating UI stays inside the document's own box, which is body's client box: it
+// already ends at the open panel's edge (syncLayout's margin) and inside a classic
+// scrollbar's gutter, so a float clamped to it can't hand body a sideways scrollbar
+// by overhanging either. The covering sheet is the one strip that box no longer
+// states — body keeps its full width under it — so the sheet's own width comes off
+// here, and a float raised from the strip beside it can't stand over the thread list.
+const rightEdge = () =>
+  (panelCovers ? innerWidth - panel.offsetWidth : pageScroller.clientWidth) - 8;
+// The floats live in the document — they scroll with the passage they stand beside —
+// while every caller reasons in viewport terms: rects, the pointer, the banner's 48px.
+// So the one writer of their position is where the coordinates change space: clamp in
+// the viewport, store in the document.
 function place(node, left, top) {
   node.style.left = Math.max(8, Math.min(left, rightEdge() - node.offsetWidth)) + "px";
   node.style.top =
-    Math.max(48, Math.min(top, innerHeight - node.offsetHeight - 8)) + "px";
+    Math.max(48, Math.min(top, innerHeight - node.offsetHeight - 8)) +
+    pageScroller.scrollTop +
+    "px";
 }
-// The composer, which has one more thing to stay clear of: its own mark. That mark is the
-// only thing naming the passage the box is about, so a box standing on all of it is a box
-// about nothing. Not "no overlap" — the box has always covered the tail of a long passage
-// and that reads fine — but every rect hidden is the case to move for, and it is a case
-// that happens: a restored draft reappears near the top of the viewport, and the reading
-// position puts the passage it was made on back in the same place.
-// Below the passage where the viewport has room, above it otherwise; place()'s own clamp
-// has the last word, so a passage too tall for either side simply keeps the better spot.
+// The composer's first choice of a place is the column's margin, beside the passage:
+// the document is one centred column, so the margin holds no words by construction,
+// and the mark and the box then stand side by side — where the box opened instead at
+// the gesture (the fab, the ⌥-click's pointer), it stood on the page's own text next
+// to the passage, which is the one thing a 320px card over a 720px column can't avoid
+// doing there. placeClear steps it down past any control the page hangs out in that
+// same margin (a suggestion's Accept/Reject row).
+//
+// Where the margin is too narrow for the box — a laptop window, the panel open — it
+// has one thing left to stay clear of: its own mark. That mark is the only thing
+// naming the passage the box is about, so a box standing on all of it is a box about
+// nothing. Not "no overlap" — the box has always covered the tail of a long passage
+// and that reads fine — but every rect hidden is the case to move for, and it is a
+// case that happens: a restored draft reappears near the top of the viewport, and the
+// reading position puts the passage it was made on back in the same place.
+// Below the passage where the viewport has room, above it otherwise; place()'s own
+// clamp has the last word, so a passage too tall for either side simply keeps the
+// better spot.
 function placeComposer(left, top) {
   place(composer, left, top);
   const rects = pendingMarks.flatMap((where) =>
@@ -2789,6 +2836,13 @@ function placeComposer(left, top) {
       : [where.getBoundingClientRect()],
   );
   const box = composer.getBoundingClientRect();
+  const column = document.querySelector("main")?.getBoundingClientRect();
+  if (rects.length && column && column.right + 8 + box.width <= rightEdge())
+    return placeClear(
+      composer,
+      column.right + 8,
+      Math.min(...rects.map((r) => r.top)),
+    );
   // Vertically only: the document never scrolls sideways and body's margin keeps it clear
   // of the panel, so off-screen means scrolled past, and a mark scrolled past is not one
   // this box is standing on.
@@ -2820,9 +2874,10 @@ function placeComposer(left, top) {
   if (above >= 48) return place(composer, left, above);
   // Neither end has room, which a tall thing reaches easily: a board column is most of the
   // viewport before the box's own height is counted, and place()'s clamp would haul the box
-  // back over it — the very thing this is here to stop. So go beside instead. The document
-  // is one column with margin either side, and that margin is the room a box this size
-  // wants; the side is chosen rather than clamped, for the reason the fab's chips are.
+  // back over it — the very thing this is here to stop. So go beside instead, even where
+  // the margin is narrower than the box wants; the side is chosen rather than clamped,
+  // because the clamp keeps a box on screen by sliding it left, back over the thing it
+  // is avoiding.
   const rightOf = Math.max(...rects.map((r) => r.right)) + 8;
   const leftOf = Math.min(...rects.map((r) => r.left)) - box.width - 8;
   place(composer, rightOf + box.width <= rightEdge() ? rightOf : leftOf, top);
@@ -2898,83 +2953,38 @@ const pageControls = () =>
 // on it can't come to different conclusions about what the reader picked. Visibility is
 // derived from that anchor and never read back off the stylesheet.
 const beside = (rect) => [rect.right + 6, rect.top - 6];
-// It has one more thing to stay clear of, and it is the same kind of thing the composer's
-// mark is: a control standing on the page. The button floats and they don't. A selection
-// runs to the column's right edge on any line it fills, so `beside` puts the button in
-// the margin — which is where a suggestion hangs the row deciding the change that
-// selection just covered. The reviewer's own gesture then hid the Accept they were
-// reaching for, and the press that would have dismissed the button was the press it was
-// covering.
+// A float has one more thing to stay clear of, and it is the same kind of thing the
+// composer's mark is: a control standing on the page. The floats float and they don't.
+// A selection runs to the column's right edge on any line it fills, so `beside` puts
+// the button in the margin — which is where a suggestion hangs the row deciding the
+// change that selection just covered. The reviewer's own gesture then hid the Accept
+// they were reaching for, and the press that would have dismissed the button was the
+// press it was covering. The composer's margin placement stands in the same column of
+// rows, so it takes the same walk.
 //
 // Down, and past each in turn, because the margin runs down the page: clearing one row
 // can land on the next, and walking a sorted list is the step the rows themselves take to
-// nudge apart. place()'s clamp still has the last word, so a button with nowhere left to
+// nudge apart. place()'s clamp still has the last word, so a float with nowhere left to
 // go keeps the best spot rather than leaving the screen.
-function placeFab(left, top) {
-  place(fab, left, top);
-  const box = fab.getBoundingClientRect();
+function placeClear(node, left, top) {
+  place(node, left, top);
+  const box = node.getBoundingClientRect();
   const sharing = pageControls()
     .map((c) => c.getBoundingClientRect())
     .filter((r) => r.width && r.left < box.right && box.left < r.right)
     .sort((a, b) => a.top - b.top);
   let y = box.top;
   for (const r of sharing) if (r.top < y + box.height && y < r.bottom) y = r.bottom + 6;
-  if (y !== box.top) place(fab, left, y);
+  if (y !== box.top) place(node, left, y);
 }
 let fabAnchor = null;
-// The chips state everything else this gesture could be about — each item
-// enclosing the passage, innermost first. Whatever the button itself already carries is
-// dropped from them, so no level is offered twice. Capped, because a card inside a column
-// inside a board inside a section is already four and the reviewer is choosing rather than
-// browsing. Placed off the button's own box after it has been placed, so the chips follow
-// wherever placeFab moved it to clear the page's controls.
-const CHAIN_CAP = 3;
-function showFab(anchor, left, top, items = []) {
+function showFab(anchor, left, top) {
   fabAnchor = anchor;
   fab.style.display = anchor ? "block" : "none";
-  fabChain.textContent = "";
-  fabChain.style.display = "none";
-  if (!anchor) return;
-  placeFab(left, top);
-  const carried = anchor.quote ? null : anchor.section;
-  const chips = items.filter((item) => item.id !== carried).slice(0, CHAIN_CAP);
-  if (!chips.length) return;
-  for (const item of chips) {
-    const chip = el("button", "cq-btn cq-fab-item", `⬚ ${itemWord(item)}`);
-    chip.title = `Comment on this ${itemWord(item)} — ${itemSays(item) || item.id}`;
-    chip.onclick = () => openOnItem(item, fabChain.getBoundingClientRect());
-    // Which of the chain this chip means, shown before it is pressed rather than after.
-    chip.onmouseenter = () => previewOn(item);
-    chip.onmouseleave = () => previewOn(null);
-    chip.onfocus = () => previewOn(item);
-    chip.onblur = () => previewOn(null);
-    fabChain.append(chip);
-  }
-  fabChain.style.display = "flex";
-  placeChain();
+  if (anchor) placeClear(fab, left, top);
 }
-// Where the chips go, which is anywhere except on top of the button they are beside.
-// `place`'s clamp is the wrong tool here: it keeps a box on screen by sliding it left,
-// and a row of chips slid left lands on the 💬 and eats the press aimed at it. So the
-// side is chosen rather than clamped — right of the button, else left of it, else under
-// it — and only the vertical is clamped, where sliding covers nothing.
-function placeChain() {
-  const box = fab.getBoundingClientRect();
-  const width = fabChain.offsetWidth;
-  const right = box.right + 6;
-  const left = box.left - width - 6;
-  const [x, y] =
-    right + width <= rightEdge()
-      ? [right, box.top]
-      : left >= 8
-        ? [left, box.top]
-        : [Math.max(8, Math.min(box.left, rightEdge() - width)), box.bottom + 6];
-  fabChain.style.left = x + "px";
-  fabChain.style.top =
-    Math.max(48, Math.min(y, innerHeight - fabChain.offsetHeight - 8)) + "px";
-}
-// One way in to the composer for all three routes, so they cannot come to write different
-// anchors for the same press.
+// The one way an item under a gesture becomes the composer's anchor, so no two routes
+// can come to write different anchors for the same press.
 function openOnItem(item, from) {
   showFab(null);
   previewOn(null); // the composer's own mark takes over from here
@@ -3007,18 +3017,8 @@ function updateFab(visual) {
   const sel = pageSelection();
   const anchor = sel ? selectionAnchor(sel) : null;
   if (anchor?.quote.length >= MIN_QUOTE)
-    showFab(
-      anchor,
-      ...beside(sel.getRangeAt(0).getBoundingClientRect()),
-      itemChain(sel.getRangeAt(0).commonAncestorContainer),
-    );
-  else if (visual)
-    showFab(
-      { section: visual.id },
-      visual.x + 6,
-      visual.y - 40,
-      itemChain(document.getElementById(visual.id)),
-    );
+    showFab(anchor, ...beside(sel.getRangeAt(0).getBoundingClientRect()));
+  else if (visual) showFab({ section: visual.id }, visual.x + 6, visual.y - 40);
   else if (fabAnchor?.quote) showFab(null);
   return true;
 }
@@ -3044,7 +3044,7 @@ document.addEventListener("keyup", (ev) => {
 // (see claimPress) and must not take this with it, or the keyboard reference stays up over
 // the composer that press just opened. Hence one function, called from both.
 function standDown(target) {
-  if (!target.closest?.(".cq-fab, .cq-fab-chain, .cq-composer")) {
+  if (!target.closest?.(".cq-fab, .cq-composer")) {
     showFab(null);
     // Keep a composer that holds unsent text open so a stray click can't drop it;
     // Cancel discards explicitly, and the draft is persisted regardless. Asked only of a
@@ -3072,8 +3072,8 @@ document.addEventListener("mousedown", (ev) => standDown(ev.target));
 const visualSel = () =>
   [...tagsDeclaring((e) => e["x-visual"]), "svg", "img", "figure"].join(",");
 // While ⌥ is held the page shows what a click would take — the item under
-// the pointer wears the same outline a chip's hover paints, so the chord answers "which"
-// the way every other route does rather than asking the reviewer to click and find out.
+// the pointer wears the outline the composer's own passage will wear, so the chord
+// answers "which" before the click rather than asking the reviewer to press and find out.
 // `aiming` is the state and the class is a rendering of it; nothing reads the class back.
 //
 // It comes off on blur as well as on keyup, because the chord that switches windows takes
@@ -3086,7 +3086,7 @@ let aiming = false;
 function aimedItem() {
   if (composerOpen || pointer.x < 0) return null;
   const at = document.elementFromPoint(pointer.x, pointer.y);
-  return at && !inChrome(at) ? (itemChain(at)[0] ?? null) : null;
+  return at && !inChrome(at) ? itemAt(at) : null;
 }
 function setAiming(on) {
   aiming = on;
@@ -3142,7 +3142,7 @@ function claimPress(ev) {
   // ends after the aim's own press can still be ended.
   if (ev.type === "pointerdown") {
     aimedPress =
-      ev.altKey && !inChrome(ev.target) ? { item: itemChain(ev.target)[0] } : null;
+      ev.altKey && !inChrome(ev.target) ? { item: itemAt(ev.target) } : null;
     if (aimedPress) standDown(ev.target);
   }
   if (!aimedPress) return;
