@@ -870,6 +870,9 @@ style.textContent = `
      restating one, which is what the radius here used to override. */
   .cq-mark-el { outline: 2px solid var(--quote-bar); outline-offset: -2px; cursor: pointer; }
   .cq-mark-el.cq-pending { outline-color: var(--accent); cursor: auto; }
+  /* Armed, a press on a thread-marked element is the aim's, not the thread's, so the
+     hand that promises "open this thread" would promise the wrong thing. */
+  body.cq-aiming .cq-mark-el { cursor: default; }
   /* The one runtime word living inside the page's own elements, so its hiding cannot
      come from the chrome's scoped .cq-unseen — the same recipe, restated at document
      level. It becomes a skip-link-style control on focus: a reader who hears the count
@@ -1438,11 +1441,8 @@ async function post(event) {
 // stylesheet's job (field-sizing), not this file's.
 // Returns a sync() the caller runs after setting .value programmatically, so the send
 // button agrees with what's in the box.
-export const SEND_KEYS = /Mac|iPhone|iPad/.test(
-  navigator.platform || navigator.userAgent,
-)
-  ? "⌘⏎"
-  : "Ctrl+⏎";
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+export const SEND_KEYS = MAC ? "⌘⏎" : "Ctrl+⏎";
 function wireInput(ta, { hint, address, save, send, sendBtn }) {
   // The hint goes in the placeholder, where it's visible exactly while the box is
   // empty and can't be found any other way; the button's tooltip spells the send key
@@ -2456,11 +2456,15 @@ const sectionOf = (anchor) =>
 // survives a rewrite that takes a quote down with it.
 const ITEM = "[id]:not(.cq-ui)";
 // The innermost item: a card rather than its column, the column rather than the board —
-// the smallest thing under the pointer is the thing pointed at.
+// the smallest thing under the pointer is the thing pointed at. Never one the user's
+// decision settled off the page: the aim's paint already refused those, and a press
+// answered by a different predicate anchored a composer to a retired element — a box
+// about nothing, promised by nothing. One predicate, asked by the paint and the press
+// alike; the walk continues upward, because the enclosing item is what is on screen.
 function itemAt(node) {
   let at = node?.nodeType === 1 ? node : node?.parentElement;
   for (; at; at = at.parentElement)
-    if (at.matches(ITEM) && !inChrome(at) && !inUi(at)) return at;
+    if (at.matches(ITEM) && !inChrome(at) && !inUi(at) && !settledAway(at)) return at;
   return null;
 }
 // What to call an item, in a word the user reads beside a thread's § label. A widget
@@ -2552,15 +2556,16 @@ const PENDING = "cq-pending";
 const NOTE = "cq-mark-note";
 const marked = new Map(); // thread id -> (Range | Element)[]: the pass's record of what it drew
 let pendingMarks = []; // the same record for the open composer's own passage
-let pendingOutline = null; // the element the open composer outlines, owned by nobody else
-// The item a control under the pointer would comment on, shown in the same outline
-// before anything is committed. paintAnchors is the one thing that marks the page, so
-// this is state it reads rather than a second painter.
-let previewItem = null;
-function previewOn(item) {
-  if (previewItem === item) return;
-  previewItem = item;
-  paintAnchors();
+let pendingOutline = []; // the elements the draft and the ⌥ aim outline, owned by nobody else
+// What the aim last painted — a repaint gate, never a paint input. paintAnchors
+// derives the aimed item live, so a pass run for any reason (a replay's repaint, the
+// arm changing) paints what is under the pointer now; a latch here was a second answer
+// to the question the press asks fresh, and a replay repainted it stale. What the
+// cheap events decide is only whether the answer moved enough to buy a pass, the same
+// division refreshHover keeps for the marks.
+let aimedDrawn = null;
+function refreshAim() {
+  if ((aiming ? aimedItem() : null) !== aimedDrawn) paintAnchors();
 }
 const pointer = { x: -1, y: -1 }; // last seen, so a repaint can re-answer the hover
 let hovering = null;
@@ -2614,9 +2619,9 @@ function paintAnchors() {
   if (!anchoringReady) return;
   for (const where of allMarks())
     if (where instanceof Element) where.classList.remove("cq-mark-el");
-  pendingOutline?.classList.remove("cq-mark-el", PENDING);
+  for (const el of pendingOutline) el.classList.remove("cq-mark-el", PENDING);
   marked.clear();
-  pendingOutline = null;
+  pendingOutline = [];
 
   const text = pageText(); // read once, for every anchor this pass places
   const posted = [];
@@ -2650,29 +2655,33 @@ function paintAnchors() {
   // never reads as a posted comment. An element a thread already outlines keeps the posted
   // colour: there is one outline to give, and the thread's is the clickable one.
   //
-  // Before the composer exists, the same outline answers "which item am I about to
-  // comment on": the ⌥ aim paints the item a press would take. What a press would take
-  // is the same fact as what the composer then holds, one step earlier, so it is the
-  // same paint rather than a second one.
+  // The ⌥ aim wears the same paint, because it is the same fact one step earlier: the
+  // item a press would take is what the composer's mark then states. An open composer
+  // doesn't stand the aim down — a press while the box is up re-anchors it to the aimed
+  // item (openOnItem), and the outline is the promise a press keeps, so it paints
+  // wherever the press would act. Draft and aim can therefore outline two elements at
+  // once, which is the true state: where the draft stands, and where a press would
+  // move it.
   const draft =
-    composerOpen && pendingAnchor
-      ? resolveAnchor(pendingAnchor, text)
-      : previewItem && !settledAway(previewItem)
-        ? { element: previewItem }
-        : null;
+    composerOpen && pendingAnchor ? resolveAnchor(pendingAnchor, text) : null;
+  const aimed = aiming ? aimedItem() : null;
+  aimedDrawn = aimed;
   // Where the draft's passage is, recorded the way the threads' is, because placeComposer
-  // has to keep the box off it. An element a thread already outlines belongs in the record
-  // too — it is marked, just in the posted colour rather than the accent.
+  // has to keep the box off it — the draft's alone, never the aim's, or the box would
+  // dodge whatever the pointer wanders over. An element a thread already outlines belongs
+  // in the record too — it is marked, just in the posted colour rather than the accent.
   pendingMarks = draft
     ? draft.element
       ? [draft.element]
       : draft.segments.map((seg) => rangeOf([seg]))
     : [];
   const pending = [];
-  if (draft?.element && !allMarks().includes(draft.element)) {
-    draft.element.classList.add("cq-mark-el", PENDING);
-    pendingOutline = draft.element;
-  } else if (draft?.segments) pending.push(...pendingMarks);
+  for (const el of new Set([draft?.element, aimed].filter(Boolean)))
+    if (!allMarks().includes(el)) {
+      el.classList.add("cq-mark-el", PENDING);
+      pendingOutline.push(el);
+    }
+  if (draft?.segments) pending.push(...pendingMarks);
 
   // The composer's echo of its own passage, decided here because here is where it is known
   // whether the page is showing that passage. Usually it is — the box opens beside the words
@@ -2788,7 +2797,17 @@ document.addEventListener("mousemove", (ev) => {
   pointer.y = ev.clientY;
   refreshHover();
 });
-pageScroller.addEventListener("scroll", refreshHover, { passive: true });
+pageScroller.addEventListener(
+  "scroll",
+  () => {
+    refreshHover();
+    // The page moving under a held aim is the pointer moving over the page: what a
+    // press would take can change with no mouse event to say so, and an outline left
+    // on the old item promises a press the click no longer makes.
+    refreshAim();
+  },
+  { passive: true },
+);
 
 // ---------- selection → comment ----------
 // Floating UI stays inside the document's own box, which is body's client box: it
@@ -2983,7 +3002,6 @@ function showFab(anchor, left, top) {
 // can come to write different anchors for the same press.
 function openOnItem(item, from) {
   showFab(null);
-  previewOn(null); // the composer's own mark takes over from here
   openComposer({ section: item.id }, "", from.left, from.top);
 }
 // The button follows the selection. What counts as one is measured on the quote it would
@@ -3174,23 +3192,44 @@ const visualSel = () =>
 // the keyup with it, and a page left armed under nobody's hand is a claim the user
 // cannot dismiss.
 let aiming = false;
+// The aim chord, declared once. The key listeners, the press guard (claimPress), and
+// the "?" overlay's row all read this object — one declaration for the one binding
+// that is a chord rather than a key, so the reference row and the listeners at least
+// share a home. The label still restates the modifier by hand, in the platform's own
+// spelling; what the object buys is that the row cannot exist without the binding.
+const AIM = {
+  modifier: "Alt",
+  label: MAC ? "⌥ click" : "Alt+click",
+  does: "Comment on the item under the pointer, whole",
+};
 // What the pointer is over, asked of the page rather than of an event, so pressing the key
 // without moving the mouse answers too — the user holds ⌥ to find out what they would
-// get, and the answer cannot wait for them to jiggle the mouse first.
+// get, and the answer cannot wait for them to jiggle the mouse first. An open composer
+// is no reason to say nothing: the press still acts (it re-anchors the box), so the
+// promise still paints — what stood down here left that one press made blind.
 function aimedItem() {
-  if (composerOpen || pointer.x < 0) return null;
+  if (pointer.x < 0) return null;
   const at = document.elementFromPoint(pointer.x, pointer.y);
   return at && !inChrome(at) ? itemAt(at) : null;
 }
 function setAiming(on) {
   aiming = on;
   document.body.classList.toggle("cq-aiming", on);
-  previewOn(on ? aimedItem() : null);
+  refreshAim();
 }
-addEventListener("keydown", (ev) => ev.key === "Alt" && setAiming(true));
-addEventListener("keyup", (ev) => ev.key === "Alt" && setAiming(false));
+addEventListener("keydown", (ev) => ev.key === AIM.modifier && setAiming(true));
+addEventListener("keyup", (ev) => ev.key === AIM.modifier && setAiming(false));
 addEventListener("blur", () => setAiming(false));
-document.addEventListener("mousemove", () => aiming && previewOn(aimedItem()));
+// The keydown above can go unheard: a page reloaded under a held key — the poll following
+// a new version — never hears it, and claimPress reads live modifier state, so every
+// press on the new page was claimed while nothing could paint the promise. Mouse events
+// carry that same live state, so the move re-derives the arm from the freshest carrier,
+// through the one setter, rather than trusting the latch.
+document.addEventListener("mousemove", (ev) => {
+  const held = ev.getModifierState(AIM.modifier);
+  if (held !== aiming) setAiming(held);
+  else refreshAim();
+});
 
 // ⌥-click means the item under the pointer, whatever it holds. It costs the page no
 // chrome and the user no selection, and it reaches an item whose words are all
@@ -3235,7 +3274,10 @@ function claimPress(ev) {
   // under way when the key goes down keeps the events it is waiting for, and one that
   // ends after the aim's own press can still be ended.
   if (ev.type === "pointerdown") {
-    aimedPress = ev.altKey && !inChrome(ev.target) ? { item: itemAt(ev.target) } : null;
+    aimedPress =
+      ev.getModifierState(AIM.modifier) && !inChrome(ev.target)
+        ? { item: itemAt(ev.target) }
+        : null;
     if (aimedPress) standDown(ev.target);
   }
   if (!aimedPress) return;
@@ -3352,6 +3394,11 @@ function openComposer(anchor, text, left, top, suggest = false) {
   syncComposer();
   placeComposer(left, top);
   composerInput.focus();
+  // The store hears about the anchor now, not at the next keystroke: saving only on
+  // input left a re-anchored draft stored against the anchor the press had just moved
+  // it off, and a reload between the press and the next character quietly un-made the
+  // move.
+  saveComposerDraft();
 }
 // Hiding keeps the draft and closing discards it, but the mark goes down with the box
 // either way: a marked passage with no composer on screen points at nothing.
@@ -3473,9 +3520,11 @@ const KEYS = [
     line: "comment",
     run: commentKey,
   },
-  // No key of its own. Holding the key shows what it
-  // would take, so what the reference is still the only place for is that the key exists.
-  { label: "⌥ click", does: "Comment on the item under the pointer, whole" },
+  // The aim chord's own declaration: the object the listeners and the press guard
+  // read. No `key`, because the dispatcher's single keys are not what it binds;
+  // holding the modifier shows what a click would take, so the reference is where
+  // the chord is learned.
+  AIM,
   // The selection c acts on has a keyboard author, and it is the browser's: caret
   // browsing. Unnamed, the keyboard story ended at "the selection" and quietly
   // assumed a mouse — the blind drive's finding. Display-only, like ⌥ click: the
@@ -4268,6 +4317,7 @@ function applyActions() {
   const before = events.some((e) => e.kind === "action" && !appliedActions.has(e.seq))
     ? shallowSigs(document.body)
     : null;
+  const priorMotion = before && new Set(document.getAnimations());
   let applied = false;
   const deferredWidgets = new Set();
   for (const e of events) {
@@ -4337,6 +4387,13 @@ function applyActions() {
     // than left to the caller's order: a pass held off by a live drag lands on a poll
     // that has nothing else to re-render.
     paintAnchors();
+    // A FLIP a widget starts in applyAction keeps the moved element's hit box over
+    // its old home until the motion lands, so the pass above asked what is under the
+    // pointer mid-flight. The batch's own animations are the fact to consume — never
+    // the document's, whose chrome runs one that has no end — and when the last of
+    // them lands, ask again.
+    const started = document.getAnimations().filter((a) => !priorMotion.has(a));
+    Promise.allSettled(started.map((a) => a.finished)).then(refreshAim);
   }
   paintPending();
   // Every action in the log is now decided (applied, skipped, or retired), and

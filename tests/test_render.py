@@ -1050,6 +1050,10 @@ AIM_POINT = """(el) => {
 # the outline the composer's own passage wears, so the same query answers before the press
 # and after it, and the two answers agreeing is the promise being kept.
 OUTLINED = """() => document.querySelector(".cq-mark-el.cq-pending")?.id ?? null"""
+# All of them, for the one state that outlines two elements at once: a draft standing on
+# its anchor while the ⌥ aim says where a press would move it.
+OUTLINED_ALL = """() =>
+  [...document.querySelectorAll(".cq-mark-el.cq-pending")].map((el) => el.id).sort()"""
 # Where focus ended up, which is the effect a press has that leaves no mark in the markup:
 # `offer` gives every press it builds a tabindex, so a press the page received lands on
 # the control, where the aim's own leaves focus to the composer it opened.
@@ -1178,6 +1182,150 @@ def test_a_key_still_reaches_its_control_after_an_aimed_press(browser, serve):
     assert [
         e["action"] for e in interact.read_events(serve.page_dir) if "action" in e
     ] == ["choose"]
+    assert errors == []
+    page.close()
+
+
+def test_the_aim_still_promises_while_a_composer_is_open(browser, serve):
+    """An armed press with the box up re-anchors it, so the aim must still say where.
+
+    claimPress acts whether or not a composer stands open, and openComposer carries the
+    typed text onto the new anchor — so the aim standing down on composerOpen, as it did
+    from its first commit, left exactly one press made blind: the one that moves a
+    draft. Holding ⌥ over a second item paints its outline beside the draft's own mark;
+    two at once is the true state — where the draft stands, and where a press would
+    move it — and the press then does what the second outline promised."""
+    page, errors = open_page(browser, serve(REPLAYED_PAGE))
+    heading = page.locator("#t")
+    heading.hover()
+    page.keyboard.down("Alt")
+    heading.click()
+    page.keyboard.up("Alt")
+    composer = page.locator(".cq-composer")
+    expect(composer).to_be_visible()
+    composer.locator("textarea").fill("carried words")
+
+    card = page.locator("#card-notes")
+    card.hover()
+    page.keyboard.down("Alt")
+    promised = page.evaluate(OUTLINED_ALL)
+    assert promised == ["card-notes", "t"], (
+        f"holding ⌥ over a card with a draft open on the heading promised {promised}, "
+        "so the press that would move the draft is blind"
+    )
+    card.click()
+    page.keyboard.up("Alt")
+    expect(composer).to_be_visible()
+    expect(composer.locator("textarea")).to_have_value("carried words")
+    assert page.evaluate(OUTLINED_ALL) == ["card-notes"], (
+        "the press re-anchored the draft, so only its new anchor should stand outlined"
+    )
+    page.wait_for_function(ROUND_TRIP)
+    assert [
+        e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"
+    ] == []
+    assert errors == []
+    page.close()
+
+
+def test_a_reload_under_a_held_aim_rearms_on_the_first_move(browser, serve):
+    """The arm survives what the keydown cannot.
+
+    `aiming` is armed by an Alt keydown, and a page reloaded under a held key — the
+    poll following a new version does exactly this — never hears one, while claimPress
+    reads live modifier state: every press on the new page was claimed and none could
+    be promised. Mouse events carry that same live state, so the first move re-derives
+    the arm; this drives that move rather than a keydown the reload already ate."""
+    page, errors = open_page(browser, serve(REPLAYED_PAGE))
+    heading = page.locator("#t")
+    heading.hover()
+    page.keyboard.down("Alt")
+    expect(page.locator(".cq-mark-el.cq-pending")).to_have_id("t")
+    page.reload()
+    page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+    expect(page.locator(".cq-mark-el.cq-pending")).to_have_count(0)  # the latch is gone
+    heading.hover()  # the first move under the still-held key
+    expect(page.locator(".cq-mark-el.cq-pending")).to_have_id("t")
+    page.keyboard.up("Alt")
+    assert errors == []
+    page.close()
+
+
+def test_a_scroll_under_a_held_aim_moves_the_promise_with_the_page(browser, serve):
+    """What a press would take can change with no mouse event to say so.
+
+    Only the mousemove used to re-ask the aim, so scrolling under a held key left the
+    outline on the item that had been under the pointer while a press took the one now
+    there — the paint answering an old page, the claim the current one. The scroll
+    listener re-asks; this scrolls the page under a parked pointer and requires the
+    promise to answer for where the page now stands."""
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    page.mouse.move(600, 300)
+    page.keyboard.down("Alt")
+    first = page.evaluate(OUTLINED)
+    assert first, "nothing outlined under the parked pointer, so nothing is being aimed"
+    # Three whole paragraphs of scroll, measured off the page: the paragraphs are
+    # identical, so the pointer's offset into the outlined one becomes the same offset
+    # into the one three later, never the margin between two. body is the page's
+    # scroller, and scrollBy fires the same scroll events a wheel does.
+    page.evaluate(
+        """() => document.body.scrollBy(0, 3 *
+          (document.getElementById("p3").getBoundingClientRect().top -
+           document.getElementById("p2").getBoundingClientRect().top))"""
+    )
+    page.wait_for_function(
+        """(first) => {
+      const el = document.querySelector(".cq-mark-el.cq-pending");
+      const at = document.elementFromPoint(600, 300)?.closest("[id]:not(.cq-ui)");
+      return Boolean(el) && el === at && el.id !== first;
+    }""",
+        arg=first,
+    )
+    page.keyboard.up("Alt")
+    assert errors == []
+    page.close()
+
+
+def test_a_replay_under_a_held_aim_repaints_the_promise(browser, serve):
+    """A pass that runs paints the truth, whatever ran it.
+
+    A replay of another tab's action moves content and repaints the marks where they
+    now belong — and the aim used to ride that pass as an answer latched from the last
+    mouse event, so the pass itself painted a promise about a card no longer there.
+    The aimed item is derived inside the pass now, and the events only decide when a
+    pass is worth running. Nothing here moves the mouse after the arm: the page moves
+    instead, and the outline must follow or clear."""
+    url = serve(REPLAYED_PAGE)
+    page, errors = open_page(browser, url)
+    spot = page.locator("#card-importer").evaluate(
+        "el => { const r = el.getBoundingClientRect();"
+        " return [r.left + r.width / 2, r.top + 8]; }"
+    )
+    page.mouse.move(*spot)
+    page.keyboard.down("Alt")
+    expect(page.locator(".cq-mark-el.cq-pending")).to_have_id("card-importer")
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "action",
+            "author": "user",
+            "version": 1,
+            "widget": "work",
+            "action": "move",
+            "detail": {"card": "card-importer", "to": "col-done", "index": 0},
+        },
+    )
+    told(page)
+    expect(page.locator("#col-done #card-importer")).to_have_count(1)
+    page.wait_for_function(
+        """([x, y]) => {
+      const el = document.querySelector(".cq-mark-el.cq-pending");
+      const at = document.elementFromPoint(x, y)?.closest("[id]:not(.cq-ui)") ?? null;
+      return el === at && el?.id !== "card-importer";
+    }""",
+        arg=spot,
+    )
+    page.keyboard.up("Alt")
     assert errors == []
     page.close()
 
