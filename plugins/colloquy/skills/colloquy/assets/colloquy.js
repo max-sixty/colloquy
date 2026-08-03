@@ -343,6 +343,16 @@ async function highlightBlocks(root) {
 export const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 export const SCROLL = REDUCED ? "instant" : "smooth";
 
+// Web-Animations motion goes through here, so a reader who asked for stillness is
+// answered in one place rather than by each widget remembering the check: null under
+// reduce, and a caller treats "no animation" and "animation finished" as the same
+// state. Ease, no options — the board's FLIP and a suggestion's fold are the two
+// motions the product makes, and they agree.
+export function motion(el, keyframes, ms) {
+  if (REDUCED) return null;
+  return el.animate(keyframes, { duration: ms, easing: "ease" });
+}
+
 // Mention, not use: a widget inside one the registry marks x-exhibit is quoted
 // material. An interactive widget consults this before wiring anything that would carry
 // input back (a choose path, a drag grip), so an exhibit never takes the user's edits.
@@ -461,6 +471,37 @@ export function relabel(node, label, { says } = {}) {
   node.textContent = label;
   node.dataset.cqGen = "1";
   node.toggleAttribute("data-cq-said", says);
+}
+
+// Room for a word not yet said, taken from the words themselves. A control that will
+// rewrite its own label ("✓ Accept" to "✓ Accepted", a count gaining a digit) must
+// hold the widest word's room from the start, or the press rewrites the one line a
+// press may not move. Stating that room as a number is a measurement that stops
+// being true silently when the words or the font change, so the control measures the
+// words instead — in its own box and its own computed face, at load — and floors
+// itself there. The two sweeps (a press, and the poll) stay the check that the words
+// listed here are the words the writers actually write.
+//
+// Measured in place: text-only controls, swapped and restored synchronously, so no
+// frame paints mid-swap. Stood out of flow for the moment — absolute, hidden — so a
+// control whose news hasn't arrived yet (display: none) measures all the same and
+// its neighbours don't feel the fitting.
+export function reserve(control, labels) {
+  const stood = { text: control.textContent, css: control.style.cssText };
+  Object.assign(control.style, {
+    minWidth: "0",
+    display: "inline-block",
+    position: "absolute",
+    visibility: "hidden",
+  });
+  let widest = 0;
+  for (const label of labels) {
+    control.textContent = label;
+    widest = Math.max(widest, control.getBoundingClientRect().width);
+  }
+  control.textContent = stood.text;
+  control.style.cssText = stood.css;
+  control.style.minWidth = Math.ceil(widest) + "px";
 }
 
 // The element the document scrolls: body, not the viewport (see the stylesheet below,
@@ -792,8 +833,14 @@ style.textContent = `
   /* position: relative makes body — the scroll container — the containing block for
      the two floats that point into the document (the 💬 button and the composer), so
      the browser scrolls them with the passage they stand beside. */
+  /* The banner's height, said once. Everything at the top edge derives from it — the
+     bar itself, the panel starting under it, the focus-revealed mark note, the
+     scroll padding that keeps an anchored jump out from beneath it (plus air) — and
+     the body's own top padding is measured off the rendered bar (see the append
+     below) rather than restated. */
+  body { --cq-banner-h: 42px; }
   body { position: relative; box-sizing: border-box; height: 100%; overflow-y: auto;
-         scroll-padding-top: 54px; scrollbar-gutter: stable; }
+         scroll-padding-top: calc(var(--cq-banner-h) + 12px); scrollbar-gutter: stable; }
   /* The strip the panel takes is given up as motion rather than as a jump, so the eye
      can follow the sentence it was reading to where it went. Keyed on the stamp that
      says the document is done becoming itself, because until then every margin the
@@ -811,6 +858,18 @@ style.textContent = `
      @scope block below instead. */
   .cq-ui { font-family: var(--sans); font-size: var(--t-5); line-height: 1.45; color: var(--ink); box-sizing: border-box; }
   .cq-ui *, .cq-ui *::before, .cq-ui *::after { box-sizing: inherit; }
+  /* Clearing the UA's form-control face is a different kind of declaration from
+     choosing one, so the clearing lives in a layer, which any unlayered choice
+     outranks whatever its specificity. That makes unrepresentable what used to be a
+     cascade race: a control wearing .cq-ui itself takes the chrome face from its own
+     class instead of inheriting past it into the document's serif (the 💬 button shipped
+     that way, at 17px), and the one control whose face is deliberately the document's —
+     cq-draft's editor, which must match the body it replaces — states so unlayered in
+     the theme and wins that. A layered rule still outranks the UA's, which is all the
+     clearing ever needed. */
+  @layer cq-reset {
+    .cq-btn, .cq-ui textarea, textarea.cq-ui { font: inherit; }
+  }
   /* A press a widget injects is a span wearing role="button" (see offer), so the two
      things a <button> came with are stated here. The box, because an inline span drops
      vertical padding out of the line — only .cq-btn needs it, since every other press
@@ -820,7 +879,7 @@ style.textContent = `
      where nothing under the press is said: a descendant cannot win it back, since
      user-select none on an ancestor takes the whole subtree out of a pointer's reach
      whatever the descendant declares. */
-  .cq-btn { font: inherit; padding: 4px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); cursor: pointer; white-space: nowrap; color: inherit; display: inline-block; }
+  .cq-btn { padding: 4px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); cursor: pointer; white-space: nowrap; color: inherit; display: inline-block; }
   .cq-ui[role="button"]:not([data-cq-said]):not(:has([data-cq-said])) { user-select: none; -webkit-user-select: none; }
   .cq-btn:hover { background: var(--chip); }
   .cq-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
@@ -830,6 +889,16 @@ style.textContent = `
      wear. */
   .cq-btn:disabled, .cq-btn[aria-disabled="true"] { opacity: .55; cursor: default; }
   .cq-btn.on { border-color: var(--accent); color: var(--accent); background: var(--chip); }
+  /* The margin's press. Two shapes cover every labelled press the product makes: .cq-btn
+     in the runtime's furniture, and this pill out in the page margin, where a control
+     stands beside the reader's own words and hairline scale is what keeps it from
+     shouting over them. Stated once, at document level, because the margin's controls
+     live on both sides of the chrome's scope line — the runtime's 💬 and a suggestion's
+     ✓ Accept often share a line, and two hand-matched copies of this look were held
+     together only by a test. A decided suggestion re-states background and cursor over
+     these; its rules carry the attribute the decision wrote, so they outrank this. */
+  .cq-pill { font-size: var(--t-6); line-height: 1.7; padding: 0 8px; border: 1px solid var(--border-2); border-radius: 999px; background: var(--card); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+  .cq-pill:hover { background: var(--chip); }
   /* The colloquy text box, in one rule. field-sizing does the growing, so no script
      measures a textarea: the JS that did had to reset height to auto to re-measure,
      which made the box briefly too small for its own text on every keystroke — and a
@@ -838,7 +907,7 @@ style.textContent = `
      of lines: 200px stopped a long comment at ten lines with the screen mostly empty.
      Both selectors: the panel's boxes sit inside .cq-ui, a widget's own box wears the
      class itself. */
-  .cq-ui textarea, textarea.cq-ui { font: inherit; padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; resize: none; field-sizing: content; max-height: 50vh; overflow-y: auto; }
+  .cq-ui textarea, textarea.cq-ui { padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; resize: none; field-sizing: content; max-height: 50vh; overflow-y: auto; }
   .cq-ui textarea:focus, textarea.cq-ui:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 45%, var(--card)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
   /* A marked passage is painted, not wrapped (see paintAnchors), so its rules reach it
      through the highlight registry — which styles glyphs, so the underline stands in for
@@ -852,18 +921,37 @@ style.textContent = `
     text-decoration: underline 2px solid var(--accent); text-underline-offset: 3px; }
   body.cq-over-mark { cursor: pointer; }
   /* Holding ⌥ changes what a click means, and nothing on the page said so — the chord's
-     whole cost is that it is invisible. Two things say it now, and the division
-     matters: the item under the pointer outlines, which answers
-     *which*, and the cursor only has to stop saying "text". crosshair was tried and read
-     as a cross — an icon for closing something, not for aiming at it — and every other
-     stock cursor names an action this isn't (copy, alias, a menu). So the plain arrow: it
-     is the one thing that says "not a text selection" without claiming to be anything
-     else, and the outline is already carrying the meaning.
+     whole cost is that it is invisible. Two things say it, and the division matters:
+     the item under the pointer outlines, which answers *which*, and the cursor answers
+     *whether*. crosshair was tried and read as a cross — an icon for closing something,
+     not for aiming at it — and copy, alias and a menu each name an action this isn't.
+     What is left is the pair this page already spends on that same distinction one line
+     above: the hand where a press acts, the arrow where it doesn't. Armed, a press acts
+     exactly where there is an item under it and on nothing where there isn't
+     (claimPress), so those two states are those two cursors, and the hand promises no
+     more than the outline beside it does.
+     The plain arrow alone was the first answer and it under-promised. It says only "not
+     a text selection", which is the half a reader can already infer from the outline,
+     and it says the same thing over a gap a press does nothing in as over the paragraph
+     a press would take whole — so the one question the outline leaves ("would this
+     click do anything?") was the one the cursor declined to answer, and a user held the
+     key and asked it out loud.
+     Derived at the paint, off the value paintAnchors resolved for the outline, so there
+     is one answer to what the aim is on rather than a second reading free to disagree
+     with what is drawn.
+     What this does not reach is a control that states a cursor of its own — a
+     suggestion's ✓ Accept, an option row — which goes on showing its hand while an armed
+     press is being swallowed above it. Inherited declarations lose to declared ones, so
+     covering that means either an important universal rule or naming this container at
+     document level to hold the chrome out of it, and both are worse than the case: the
+     outline is absent there, which is the honest half of the answer, and the control's
+     hand says what it always says rather than something new and wrong.
      One declaration on the body, inherited, rather than a rule reaching down the page:
      naming .cq-chrome here to hold the chrome out would put that class into the
      document-level surface, and the class the chrome is rooted at is not vocabulary a
      widget wears. The chrome holds itself out instead, from inside its own scope. */
   body.cq-aiming { cursor: default; }
+  body.cq-aiming.cq-over-item { cursor: pointer; }
   /* Inside the element's own box, never outside it. An outline drawn outside is at the
      mercy of whatever encloses it: a board scrolls (overflow-x: auto), its columns sit
      flush against its padding box on three sides, and the mark on a column was clipped
@@ -876,8 +964,11 @@ style.textContent = `
   .cq-mark-el { outline: 2px solid var(--quote-bar); outline-offset: -2px; cursor: pointer; }
   .cq-mark-el.cq-pending { outline-color: var(--accent); cursor: auto; }
   /* Armed, a press on a thread-marked element is the aim's, not the thread's, so the
-     hand that promises "open this thread" would promise the wrong thing. */
+     hand here is the aim's answer rather than the thread's: it stands where the aim has
+     an item and comes off where it hasn't, which is the same promise the body is making
+     and not the mark's own "open this thread". */
   body.cq-aiming .cq-mark-el { cursor: default; }
+  body.cq-aiming.cq-over-item .cq-mark-el { cursor: pointer; }
   /* The one runtime word living inside the page's own elements, so its hiding cannot
      come from the chrome's scoped .cq-unseen — the same recipe, restated at document
      level. It becomes a skip-link-style control on focus: a reader who hears the count
@@ -885,7 +976,8 @@ style.textContent = `
      a selection, so the runtime's own words never enter a captured quote. */
   .cq-mark-note { position: absolute; width: 1px; height: 1px; padding: 0; border: 0;
     overflow: hidden; clip-path: inset(50%); user-select: none; }
-  .cq-mark-note:focus-visible { position: fixed; z-index: 9050; top: 48px; left: 8px;
+  .cq-mark-note:focus-visible { position: fixed; z-index: 9050;
+    top: calc(var(--cq-banner-h) + 6px); left: 8px;
     width: auto; height: auto; padding: 6px 10px; overflow: visible; clip-path: none;
     border: 1px solid var(--accent); border-radius: var(--r); background: var(--card);
     color: var(--ink); box-shadow: var(--shadow); }
@@ -928,12 +1020,22 @@ style.textContent = `
        itself, which is why this can't be written at document level without widening
        the shared vocabulary by a class only the runtime ever wears. */
     @media print { :scope { display: none; } }
-    /* cursor inherits, and the page's own body may be armed for ⌥ aiming — which is a
-       statement about the document, not about this layer. Stated here so the document
-       side needs no mention of this container's class, which would widen the shared
-       vocabulary by a name no widget ever wears. */
-    :scope { cursor: auto; }
-    .cq-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 9000; height: 42px;
+    /* What the layer inherits from the document, answered at the layer's root, because
+       the document below is a page of prose and this is not it.
+
+       cursor, because the page's own body may be armed for ⌥ aiming — a statement about
+       the document, not about anything in here. Stated on this side so the document side
+       needs no mention of this container's class, which would widen the shared vocabulary
+       by a name no widget ever wears.
+
+       The face, so anything in here that misses .cq-ui still inherits the chrome's
+       rather than the document's. The reset layer (above) is what keeps a control that
+       *wears* the class from walking past it — the 💬 button once inherited straight
+       into the page's serif at 17px that way — and this is the same answer for the
+       text around the controls. */
+    :scope { cursor: auto;
+      font-family: var(--sans); font-size: var(--t-5); line-height: 1.45; }
+    .cq-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 9000; height: var(--cq-banner-h);
       display: flex; align-items: center; gap: 10px; padding: 0 14px;
       background: var(--veil); backdrop-filter: blur(6px); border-bottom: 1px solid var(--rule); }
     .cq-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted-2); flex: none; }
@@ -947,38 +1049,30 @@ style.textContent = `
     .cq-spacer { flex: 1; min-width: 0; }
     /* This row is packed to the right against the spacer, and that decides who pays for
        a control changing size: it moves itself and everything to its left, while
-       everything to its right keeps its place. Four of these rewrite their own words —
-       the chooser's label carries the version's note, "✓ Approved" is 12px narrower than
-       "✓ Looks good", and two of them count something that gains a digit — so each states
-       a width rather than taking one, and the row holds still whichever of them speaks.
-       What a stated width cuts off, the chooser's own menu and its tooltip still hold.
+       everything to its right keeps its place. Three of these rewrite their own words —
+       "✓ Approved" is narrower than "✓ Looks good", and two of them count something
+       that gains a digit — so each holds room for the widest it may say, taken from the
+       words themselves (the reserve calls where the banner is built) rather than stated
+       here as numbers. Three numbers stood here once and all three quietly stopped
+       covering the day --t-5 moved from 13.5px to 14px; a reservation the control
+       measures in its own live face at load has no number to go stale. The two sweeps —
+       a press, and the poll — stay the check that the words reserved are the words the
+       writers actually write.
 
-       The numbers are measured rather than derived, so they are only as good as the font
-       they were measured in. That is what the two sweeps are for: a press, and the poll,
-       which between them work every one of these. Either fails the day a reservation
-       stops covering, rather than the day someone notices the row twitching. Three have
-       done that already, and their numbers below are the re-measurement: --t-5 moved
-       from 13.5px to 14px with the theme's type, taking "✓ Looks good" to 112.7px,
-       "Comments (999)" to 132.4px and "✓ Accept all (999)" to 141.8px — past all three
-       reservations at once. Each was read back out of a browser, because scaling the old
-       number by the ratio of the sizes is deriving it, which is the thing this comment
-       says not to do. */
-    .cq-banner select { font: inherit; padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; flex: none; width: 190px; text-overflow: ellipsis; }
-    .cq-signoff { min-width: 116px; }
-    /* The three that count reserve the widest they reach anywhere below a thousand, so no
-       arithmetic on the count can move them and none of it has to be thought about again.
-       A page with a thousand open threads on it is not one anyone hands a user. */
-    .cq-comments { min-width: 136px; }
-    .cq-answer-all { min-width: 145px; }
-    /* Measured the same way as its neighbours, in a browser: "Asks (999)" is 93.2px. */
-    .cq-asks { min-width: 96px; }
+       The chooser is the different case: its label carries the version's note, which
+       has no widest to reserve, so it states a width as a cap and its own menu and
+       tooltip hold what the cap cuts off. */
+    @layer cq-reset {
+      .cq-banner select, .cq-resolve { font: inherit; }
+    }
+    .cq-banner select { padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; flex: none; width: 190px; text-overflow: ellipsis; }
     /* The one control on the right of the row that may give, because it is the leftmost
        of them and giving there moves nothing; the status text, off at the other end, is
        the other. The rest are .cq-btn, floored at their own words by nowrap — the chooser
        was the exception, so a row with no room left took the width it states back off it,
        which put every reservation above back in play on any narrow enough window. */
     .cq-latest-chip { background: var(--warn-tint); border: 1px solid var(--warn); color: var(--warn-ink); border-radius: 6px; padding: 3px 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .cq-panel { position: fixed; top: 42px; right: 0; bottom: 0; width: min(${PANEL_W}px, 100vw); z-index: 8900;
+    .cq-panel { position: fixed; top: var(--cq-banner-h); right: 0; bottom: 0; width: min(${PANEL_W}px, 100vw); z-index: 8900;
       background: var(--card); border-left: 1px solid var(--rule); display: none; flex-direction: column; }
     .cq-panel.open { display: flex; }
     .cq-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--rule); font-weight: 600; }
@@ -1040,7 +1134,7 @@ style.textContent = `
     .cq-compose, .cq-general { display: flex; gap: 6px; margin-top: 8px; align-items: flex-end; }
     .cq-compose textarea, .cq-general textarea { flex: 1; min-width: 0; }
     .cq-thread-actions { display: flex; justify-content: space-between; margin-top: 8px; }
-    .cq-resolve { border: none; background: none; color: var(--muted); cursor: pointer; font: inherit; }
+    .cq-resolve { border: none; background: none; color: var(--muted); cursor: pointer; }
     .cq-resolve:hover { color: var(--ok); }
     .cq-general { padding: 10px 14px; border-top: 1px solid var(--rule); }
     .cq-details { margin-top: 6px; color: var(--muted); background: none; border: none; padding: 0; }
@@ -1051,7 +1145,23 @@ style.textContent = `
        whatever arrived under it, no longer beside the item it was about. Everything
        else here is the viewport's own chrome and stays fixed. Below the banner's
        9000, so a float scrolled to the top slides under the bar, not over it. */
-    .cq-fab { position: absolute; z-index: 8950; display: none; }
+    /* The 💬 stands out on the page, beside the reader's own words and in the same
+       margin a change's ✓ Accept hangs in — often on the same line, which is how the
+       two came to be compared. It used to answer that comparison badly: a solid accent
+       rectangle at the chrome's own size against two hairline pills, so the page's
+       margin held two idioms four centimetres apart and the louder one was the one
+       raised over the reader's sentence. Where a control stands decides which it
+       wears. In the runtime's own furniture — the banner, the panel, the composer — a
+       press is a .cq-btn and looks like one; out in the margin it is a .cq-pill, the
+       marginal mark stated once at document level where the theme's margin controls
+       wear it too.
+
+       The shadow is the one thing this control adds, and it earns it: this is the only
+       pill that floats over the page's own content rather than standing in the empty
+       rail, so it says so rather than relying on a hairline to separate it from
+       whatever it happens to be over. */
+    .cq-fab { position: absolute; z-index: 8950; display: none;
+      box-shadow: 0 2px 6px rgba(0,0,0,.14); }
     .cq-composer { position: absolute; z-index: 8950; display: none; width: 320px; background: var(--card);
       border: 1px solid var(--border-2); border-radius: var(--r); box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 10px; }
     /* A stranded quote is the whole passage, and the box is 320px wide. Only while showing:
@@ -1192,7 +1302,7 @@ const generalSend = el("button", "cq-btn primary", "Send");
 generalRow.append(generalInput, generalSend);
 panel.append(panelHead, threadsBox, generalRow);
 
-const fab = el("button", "cq-ui cq-btn primary cq-fab", "💬 Comment");
+const fab = el("button", "cq-ui cq-pill cq-fab", "💬 Comment");
 const composer = el("div", "cq-ui cq-composer");
 // Only ever shown detached — paintAnchors, its one writer, keeps it out of sight while
 // the page is marking the passage. cq-ui on the element itself, not just on the composer
@@ -1236,8 +1346,16 @@ keylineEl.setAttribute("aria-hidden", "true");
 const chromeRoot = el("div", "cq-chrome");
 chromeRoot.append(banner, panel, fab, composer, toastEl, liveEl, helpEl, keylineEl);
 document.body.append(chromeRoot);
+// The controls that rewrite their own words hold the widest of them now, measured in
+// the face the banner just rendered them in (see the stylesheet's banner comment).
+// The counting two hold the widest they reach anywhere below a thousand, so no
+// arithmetic on the count can move them — a page with a thousand open threads on it
+// is not one anyone hands a user.
+if (SIGNOFF) reserve(approveBtn, ["✓ Looks good", "✓ Approved"]);
+reserve(toggleBtn, ["Comments", "Comments (999)"]);
+reserve(asksBtn, ["Asks (999)"]);
 const basePaddingTop = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
-document.body.style.paddingTop = basePaddingTop + 42 + "px";
+document.body.style.paddingTop = basePaddingTop + banner.offsetHeight + "px";
 // The banner's reservation at the other edge: the key line stands for the page's
 // life, so the document's last lines get room rather than ending under it. The
 // amount is measured off the rendered line in syncLayout rather than stated here —
@@ -1776,7 +1894,7 @@ function threadNode(t, grow) {
     // Resolving rebuilds this node into the disclosure and takes focus with it —
     // the blind drive fell to body here. Land where j would have gone: the thread
     // that now holds this one's place, else the previous, else the list.
-    // Disabled for the flight (acceptAllBtn's shape): the r key repeats while
+    // Disabled for the flight (the bulk-answer buttons' shape): the r key repeats while
     // held, and every repeat before the poll replaces this node would post the
     // same resolve again. Re-enabled for the one path that keeps the node — a
     // send that failed, where the press must stay pressable.
@@ -1812,8 +1930,9 @@ function renderThreads() {
   // Newcomers settle in (`grow`) only when the user already has the list in front
   // of them: the first populated render is the page loading, not news arriving, and a
   // node animated while the panel is closed would replay the moment it opens.
-  const grow =
-    panelOpen && !REDUCED && Boolean(threadsBox.querySelector(":scope > .cq-thread"));
+  // (Reduced motion isn't asked here: grow is a CSS animation, and those are the
+  // theme's one global guard's to stop.)
+  const grow = panelOpen && Boolean(threadsBox.querySelector(":scope > .cq-thread"));
 
   const wanted = [];
   if (!threads.length) wanted.push(emptyNote);
@@ -2684,6 +2803,10 @@ function paintAnchors() {
     composerOpen && pendingAnchor ? resolveAnchor(pendingAnchor, text) : null;
   const aimed = aiming ? aimedItem() : null;
   aimedDrawn = aimed;
+  // The cursor's half of the promise, written where the outline's half is decided, so
+  // the hand cannot stand over a press the paint knows takes nothing. `aiming` alone
+  // says the page is armed; this says the aim has landed on something.
+  document.body.classList.toggle("cq-over-item", Boolean(aimed));
   // Where the draft's passage is, recorded the way the threads' is, because placeComposer
   // has to keep the box off it — the draft's alone, never the aim's, or the box would
   // dodge whatever the pointer wanders over. An element a thread already outlines belongs
@@ -4056,6 +4179,9 @@ function buildBulkAnswers() {
     showNews(btn, false);
     bulkButtons.set(verb, { btn, word });
     banner.insertBefore(btn, diffBtn);
+    // In the row now, so it holds the widest it reaches below a thousand — the same
+    // words syncAsks writes, measured in the face it will render in (see reserve).
+    reserve(btn, [`✓ ${word} all (999)`]);
   }
 }
 

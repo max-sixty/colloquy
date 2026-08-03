@@ -3,15 +3,37 @@
  * rejects it in place; the outcome rides the action channel cq-board opened, and
  * the next version carries the settled markup.
  *
- * Deciding is the end of the matter on screen: the element collapses to the
- * settled slot immediately (the theme drops every mark from it), exactly as a
+ * Deciding is the end of the matter on screen: the element settles to the
+ * surviving slot there and then (the theme drops every mark from it), exactly as a
  * dragged card sits where it was dropped before the honoring version exists —
  * the live view is the version plus the user's actions replayed on it. So
  * applyAction states an absolute outcome, which makes a reload, a second tab,
  * and the sender itself all converge on the same view. A pick can be cleared by
- * clicking its mark again; a decision can't, because settling deliberately
- * leaves nothing behind to click — that is the whole point of it reading as
- * ordinary prose. Changing your mind is a comment, and the version reverses it.
+ * clicking its mark again; a decision can't. Changing your mind is a comment,
+ * and the version reverses it.
+ *
+ * What deciding must not be is the page rearranging itself under the hand that
+ * pressed. It was both. A block change is a struck old paragraph over a tinted
+ * new one, so accepting took 179 measured pixels out of the middle of the page in
+ * one frame, and everything below jumped up under the pointer; and the row the
+ * user had just pressed cleared itself in the same frame, leaving a corner toast
+ * as the only evidence that anything had been done at all. Two rules answer it,
+ * both of them already written down. Where something has to move it moves as
+ * motion, so the retired slot folds over a fifth of a second and the eye follows
+ * the sentence to where it went. And the pressed control's own line holds still:
+ * the row stays, the control the user pressed says what it did ("✓ Accepted"),
+ * and its pair goes without giving up its room. The rail is reserved for the
+ * page's life whether or not any row is left in it, so the standing record costs
+ * nothing that was going to be reclaimed — and a reader who looks back at the
+ * margin can see which changes they took.
+ *
+ * The word a decision leaves behind has its room from the start: a control that
+ * took the room for two more glyphs at the moment it was pressed would move its
+ * neighbour on the one line where nothing may. Each control reserves the width of
+ * its own decided word as the row is built (reserve), measured in the control's
+ * live face rather than stated as a number, so the reservation re-measures itself
+ * when the font moves — and the one table below is what the controls write and
+ * what they reserve, so the two cannot drift.
  *
  * Placement: the controls hang in the theme's rail, off the column's right edge,
  * on the line the change starts. Two elements say that, because one box cannot.
@@ -34,13 +56,38 @@
  * takes the rest), where it isn't the row docks into flow where it was hoisted to,
  * a control line under the block it follows; and whether two rows land on top of
  * each other, which a translate nudges apart without touching layout. */
-import { agentName, offer, once, quoted, says, sendAction, toast } from "/colloquy.js";
+import {
+  agentName,
+  motion,
+  offer,
+  once,
+  quoted,
+  reserve,
+  says,
+  sendAction,
+  toast,
+} from "/colloquy.js";
+
+// How long the retired slot takes to fold away. Long enough that the eye can follow a
+// paragraph's worth of page closing, short enough that the decision still reads as
+// having happened at the press: the board's own FLIP is 150ms over a card's width, and
+// this is a taller distance travelled by the whole column below it.
+const FOLD_MS = 220;
+
+// Each control's word in both states — what #name writes, and what the control
+// reserves room for, out of the one table so neither can outgrow the other.
+const WORDS = {
+  accept: ["✓ Accept", "✓ Accepted"],
+  reject: ["✗ Reject", "✗ Rejected"],
+};
+const verb = (btn) => (btn.matches(".cq-sug-accept") ? "accept" : "reject");
 
 // Every row on the page against the anchor it hangs from, so one observer serves
 // all of them and the pass can ask each whether its change is on screen.
 const rows = new Map();
 let pending = 0;
 let observing = false;
+let railStated = false; // --rail is measured off the first row and holds for the page
 
 const schedule = () => {
   cancelAnimationFrame(pending);
@@ -75,7 +122,6 @@ function relayout() {
   }));
   const inMargin = [];
   for (const { row, rect, shown } of measured) {
-    if (row.hidden) continue; // decided: there is nothing left to place
     if (!shown) row.classList.add("cq-waiting");
     else if (rect.right > room) row.classList.add("cq-docked");
     else inMargin.push(row);
@@ -99,6 +145,7 @@ customElements.define(
   class extends HTMLElement {
     #row = null;
     #anchor = null;
+    #motion = null; // the fold in flight, so a rewind can take it back
 
     connectedCallback() {
       // Re-connection — a card dragged to another column, a replay moving one —
@@ -118,11 +165,24 @@ customElements.define(
       this.#row = offer("span", "cq-sug-actions");
       this.#row.style.positionAnchor = `--sug-${this.id}`;
       this.#row.dataset.cqFor = this.id; // which change it decides, for anyone reading the page
-      this.#row.append(
-        this.#button("accept", "✓ Accept"),
-        this.#button("reject", "✗ Reject"),
-      );
+      this.#row.append(this.#button("accept"), this.#button("reject"));
       this.#hang();
+      // In the document now, so each control measures its decided word in the face it
+      // actually renders in and floors itself there — the line the press is made on
+      // holds still when the word changes (see the module header).
+      for (const btn of this.#row.querySelectorAll(":scope > [role='button']"))
+        reserve(btn, WORDS[verb(btn)]);
+      // The rail is the row it holds: measured off the first row once its controls
+      // hold their decided words' room, and stated on the root element — the page's
+      // own inline style, so an exported copy keeps the value it was rendered with.
+      // theme.css spends it (body's padding-right) and deliberately states no number.
+      if (!railStated) {
+        railStated = true;
+        const width =
+          this.#row.getBoundingClientRect().width +
+          parseFloat(getComputedStyle(this.#row).marginLeft);
+        document.documentElement.style.setProperty("--rail", Math.ceil(width) + "px");
+      }
       if (!observing) {
         observing = true;
         // The body's box carries the horizontal question (viewport, comment
@@ -159,15 +219,33 @@ customElements.define(
 
     // Through `offer` like every other injected control, so the markers and the
     // element are the runtime's one answer rather than this widget's: "✓ Accept" is
-    // a thing to do, and a press is a span (see offer) whatever it says.
-    #button(outcome, label) {
-      const btn = offer("button", `cq-sug-${outcome}`, label);
+    // a thing to do, and a press is a span (see offer) whatever it says. cq-pill is
+    // the margin's shape, the runtime's word too.
+    #button(outcome) {
+      const btn = offer("button", `cq-pill cq-sug-${outcome}`);
+      btn.onclick = () => this.#decide(outcome);
+      this.#name(btn, false, this.#label());
+      return btn;
+    }
+
+    // Everything a control says, in the state it is in: the word it shows (from
+    // WORDS, the same table its reservation is measured from), and the name that has
+    // to carry the change as well, since the visible word says only the outcome. The
+    // change's own words come in rather than being read here, because settling
+    // retires the slot they live in and a name asked for afterwards would answer the
+    // id. Both controls restate together — the pair's word flips too, unseen inside
+    // its hidden box and inside the room both reserved.
+    #name(btn, decided, change) {
+      const kind = verb(btn);
+      btn.textContent = WORDS[kind][decided ? 1 : 0];
       btn.setAttribute(
         "aria-label",
-        `${outcome === "accept" ? "Accept" : "Reject"} the suggested change: ${this.#label()}`,
+        `${kind === "accept" ? "Accept" : "Reject"}${decided ? "ed" : ""} the suggested change: ${change}`,
       );
-      btn.onclick = () => this.#decide(outcome);
-      return btn;
+      // A decision is the end of the matter, so the record it leaves is a record and
+      // not a control: it keeps its place and its focus ring, and refuses a press the
+      // way #decide already does.
+      btn.setAttribute("aria-disabled", String(decided));
     }
 
     // What the change is about, for the button's label and the toast: the
@@ -211,13 +289,89 @@ customElements.define(
     }
 
     #settle(outcome) {
+      // A settle that changes nothing does nothing, which is what makes the poll's
+      // replay of this tab's own decision the no-op an absolute action promises to be.
+      // The attribute was idempotent on its own and the fold is not: replayed, it
+      // folded a slot that had already folded, from a height it no longer had.
+      if ((this.dataset.cqState ?? null) === (outcome ?? null)) return;
+      // A send the server refused rewinds a decision that may still be folding, and a
+      // fold outliving the state it was playing would leave the slot to reappear
+      // whenever it happened to land. Cancelling it runs the same cleanup finishing
+      // does, so the slot comes back to whatever the state now says.
+      this.#motion?.cancel();
+      // Both of these are read before the state moves, because the state is what
+      // retires a slot: its words leave the page's reading with it, and its box stops
+      // being drawn at all.
+      const change = this.#label();
+      const fold = outcome && this.#fold(outcome);
       if (outcome) this.dataset.cqState = outcome;
       else delete this.dataset.cqState;
-      if (this.#row) this.#row.hidden = Boolean(outcome); // a quoted one grew none
-      schedule(); // one row fewer: the rows below it may no longer need a nudge
+      if (this.#row) {
+        // The row stays; what changes is which of the two controls is speaking. A
+        // quoted one grew none.
+        if (outcome) this.#row.dataset.cqOutcome = outcome;
+        else delete this.#row.dataset.cqOutcome;
+        for (const btn of this.#row.querySelectorAll(":scope > [role='button']"))
+          this.#name(btn, Boolean(outcome), change);
+      }
+      fold?.();
+      schedule(); // the rows below may no longer need the nudge they had
       // The banner's count of what the page is still asking is derived from the page,
       // so tell it the page changed rather than making it poll the DOM.
       document.dispatchEvent(new CustomEvent("cq-answered"));
+    }
+
+    // The retired slot's room, given back as motion rather than taken in a frame. Only
+    // where there is room worth following: a slot holding block content is the case that
+    // moves the page, and an inline one swaps a few words inside a line the reader is
+    // looking at.
+    //
+    // Measured before the decision and played after it, so the state the rest of the
+    // page reads is true from the first frame — the log has it, the banner's count has
+    // it, a second tab converging on it has it — while the pixels catch up. The inline
+    // display outranks the rule that hides the slot for exactly as long as the fold
+    // lasts, and nothing but this function writes it.
+    //
+    // The height is stated as a border box, whatever the slot's own sizing is. The
+    // measurement to hand is the rendered box (padding included, since the block form
+    // pads its slots), and starting a content-box height there would open the fold two
+    // pixels taller than the paragraph it is replacing — a jump on the first frame, in
+    // the one animation written to remove one.
+    #fold(outcome) {
+      const going = this.querySelector(
+        outcome === "accept" ? ":scope > cq-old" : ":scope > cq-new",
+      );
+      if (!going) return null;
+      const style = getComputedStyle(going);
+      if (style.display !== "block") return null;
+      const from = {
+        height: going.getBoundingClientRect().height + "px",
+        marginTop: style.marginTop,
+        marginBottom: style.marginBottom,
+        paddingTop: style.paddingTop,
+        paddingBottom: style.paddingBottom,
+        opacity: 1,
+      };
+      const to = Object.fromEntries(Object.keys(from).map((k) => [k, "0px"]));
+      to.opacity = 0;
+      return () => {
+        going.style.display = "block";
+        going.style.boxSizing = "border-box";
+        going.style.overflow = "hidden";
+        const played = (this.#motion = motion(going, [from, to], FOLD_MS));
+        const done = () => {
+          going.style.display = "";
+          going.style.boxSizing = "";
+          going.style.overflow = "";
+          if (this.#motion === played) this.#motion = null;
+        };
+        // Cancelling rejects `finished`, which is a rewind rather than a fault:
+        // caught, so it is not an unhandled rejection, and the same hand-back runs
+        // either way. A reader who asked for less motion gets no animation at all
+        // (motion returns null), so the hand-back runs at once and the collapse is
+        // the frame of the press.
+        played ? played.finished.catch(() => {}).then(done) : done();
+      };
     }
 
     // accept | reject: the outcome is absolute, so replaying the sender's own

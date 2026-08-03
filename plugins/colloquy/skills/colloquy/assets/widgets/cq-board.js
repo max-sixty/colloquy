@@ -32,6 +32,7 @@ import {
   announce,
   keyHelp,
   keyHint,
+  motion,
   pageScroller,
   REDUCED,
   SCROLL,
@@ -345,14 +346,14 @@ customElements.define(
       const first = card.getBoundingClientRect();
       this.#place(card, col, detail.index);
       if (hadFocus) grip.focus({ preventScroll: true }); // reparenting blurred it
-      if (REDUCED) return;
       const last = card.getBoundingClientRect();
       const dx = first.left - last.left;
       const dy = first.top - last.top;
       if (dx || dy)
-        card.animate(
+        motion(
+          card,
           [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
-          { duration: 150, easing: "ease" },
+          150,
         );
     }
   },

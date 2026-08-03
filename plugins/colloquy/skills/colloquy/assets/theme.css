@@ -42,7 +42,10 @@
   --accent: #2f5480; --ok: #3f7d4e;   --warn: #b4741a;   --danger: #b4402f;
   --r: 6px;
   --sp-1: 4px; --sp-2: 8px; --sp-3: 16px; --sp-4: 24px;
-  --rail: 168px;     /* the comment margin: the widest control row, plus its gap */
+  /* --rail, the comment margin, has no value here: it is the widest control row plus
+     its gap, which is a fact about the controls' own words and face, so cq-suggestion.js
+     measures the first row it builds and states it on the root element. The rule that
+     spends it is beside .cq-sug-actions below. */
   /* The ladder, body at --t-4. Measured on Charter at 17px: 7.9px a character, so
      the column below holds about 74 of them. */
   --t-6: 11.5px; --t-5: 14px; --t-4: 17px; --t-3: 20px; --t-2: 24px; --t-1: 31px;
@@ -427,7 +430,7 @@ cq-compare:has(> cq-variant > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, 
 /* The rings: a card states its status as a border it already has, so both live with
  * the card form. A row has no border to color and says the same two things with a
  * wash (below), and a card taking a pick has no border either once the group takes it
- * over, so the joined form restates both as rails (further below). */
+ * over, so the joined form restates both as edge stripes (further below). */
 cq-options:has(> cq-option > strong) > cq-option[recommended] { border-color: var(--accent);
                          box-shadow: 0 0 0 1px var(--accent); }
 cq-options:has(> cq-option > strong) > cq-option[chosen] { border-color: var(--ok);
@@ -460,8 +463,13 @@ cq-options:has(> cq-option > strong) > cq-option[chosen] { padding-bottom: 32px;
 }
 cq-options:has(> cq-option > strong) > cq-option .cq-pick {
                      position: absolute; left: var(--sp-3); bottom: 9px; }
+/* The face is stated here, not left to a class: the mark has two shapes — a press
+ * wearing .cq-ui where the group takes picks, a bare span where it doesn't — and only
+ * one of them has the class to answer for it, so the one rule both shapes share names
+ * the family, size and line itself. */
 cq-option .cq-pick { display: inline-flex; align-items: center; gap: 6px;
-                     font: inherit; font-size: var(--t-6); line-height: 1.5;
+                     font-family: var(--sans);
+                     font-size: var(--t-6); line-height: 1.5;
                      color: var(--muted); }
 cq-option .cq-pick::before { content: ""; width: 11px; height: 11px; flex: none;
                      border: 1.5px solid var(--border-2); border-radius: 50%;
@@ -503,7 +511,7 @@ cq-options[choose]:has(.cq-pick:focus-visible) > cq-option > .cq-pick-num { disp
 cq-options > .cq-done { margin-top: 8px; }
 cq-options[answered] > .cq-done { color: var(--ok-ink); border-color: var(--ok);
                      background: var(--ok-tint); }
-/* A card group under `choose` is one control, not a set of cards standing near each other.
+/* A group under `choose` is one control, not a set of options standing near each other.
  * Deleting the offer word left the question of what says a decision is waiting, and the
  * answer is the group rather than another thing drawn on every member: a group offers and
  * its members are what is offered, so writing the offer onto each of them was the mistake a
@@ -512,11 +520,22 @@ cq-options[answered] > .cq-done { color: var(--ok-ink); border-color: var(--ok);
  * repetition at one size says "these are alternatives" before a word is read, and it says
  * it once. The shape appears only where `choose` does, so its presence is the offer.
  *
- * Both card forms, because the question is the group's rather than the layout's: the terse
- * grid's columns and the argument form's rows become cells of the same control, and neither
- * states its own answer to "is this answerable". Which is why this sets `display: grid` for
- * a form the theme otherwise lays out as blocks — one column, no template stated, so the
- * grid form keeps its own `auto-fit` tracks and the argument form keeps one row per option.
+ * Every form, because the question is the group's rather than the layout's: the terse
+ * grid's columns, the argument form's rows and the question form's list all become cells of
+ * the same control, and none of them states its own answer to "is this answerable". Which is
+ * why this sets `display: grid` for two forms the theme otherwise lays out as blocks — one
+ * column, no template stated, so the grid form keeps its own `auto-fit` tracks and the other
+ * two keep one row per option.
+ *
+ * The list form was left out of this at first, on the reading that a bare-label row is a
+ * quiet thing and a border around it would be shouting. What that actually shipped was a
+ * question with no visible answer to "which of these can I press": the rows carry no
+ * border, no fill and no rule between them (the list rules below), so at rest a `choose`
+ * list is three lines of prose with a faint dot column off to the right, and the only thing
+ * that ever draws a row's own box is the hover wash — which arrives after the reader has
+ * already had to guess where to aim. A reader said so of the shipped page. Whatever the
+ * form, the offer has to be visible before the pointer is committed, and that is the same
+ * fact this rule was written for.
  *
  * The live page only, which is the same reason twice. On paper nothing can be picked, and
  * an exported copy has had its scripts dropped, so a group drawn as a control in either
@@ -529,7 +548,7 @@ cq-options[answered] > .cq-done { color: var(--ok-ink); border-color: var(--ok);
  * twice and a group that isn't joined has to say the offer itself. */
 @media screen {
  html:not(.cq-copy) {
-  cq-options[choose]:not([settled]):has(> cq-option > strong) {
+  cq-options[choose]:not([settled]) {
     display: grid; gap: 1px; background: var(--card);
     border: 1px solid var(--border-2); border-radius: var(--r); overflow: hidden;
     /* The hairline is the cell's own outer shadow rather than the gap showing a colour
@@ -539,14 +558,16 @@ cq-options[answered] > .cq-done { color: var(--ok-ink); border-color: var(--ok);
      * the group's clip takes the overhang at its edges.
      *
      * Both statuses then move inside, since a cell has no border of its own left to colour:
-     * each is a rail on the leading edge, paint within the box it belongs to, which is what
-     * holding still asks for anyway. Held in `--rail` and `--fill` so a state names its
-     * colour and the composite is written once — the alternative is every state restating
-     * the hairline beside its own rail, and the day one of them forgets, a cell loses the
-     * line that made the group one thing. */
-    & > cq-option { --rail: transparent; --fill: var(--card);
+     * each is a stripe on the leading edge, paint within the box it belongs to, which is
+     * what holding still asks for anyway. Held in `--stripe` and `--fill` so a state names
+     * its colour and the composite is written once — the alternative is every state
+     * restating the hairline beside its own stripe, and the day one of them forgets, a
+     * cell loses the line that made the group one thing. (Not named --rail: that token is
+     * the page's comment margin, and a cell redefining it for a different fact was one
+     * name meaning two things.) */
+    & > cq-option { --stripe: transparent; --fill: var(--card);
                      margin: 0; border: 0; border-radius: 0; background: var(--fill);
-                     box-shadow: 0 0 0 1px var(--rule), inset 3px 0 0 var(--rail); }
+                     box-shadow: 0 0 0 1px var(--rule), inset 3px 0 0 var(--stripe); }
     /* Hover deepens whatever the cell is filled with, rather than lifting it: a cell that
      * rose would pull away from the hairlines that are the whole of what joins the group.
      * One rule for every state, the pick included — clicking that one clears it, so it has
@@ -561,8 +582,8 @@ cq-options[answered] > .cq-done { color: var(--ok-ink); border-color: var(--ok);
      * and getting a grey that belongs to neither palette. */
     & > cq-option:hover { transform: none;
                      background: color-mix(in srgb, var(--fill) 92%, var(--ink)); }
-    & > cq-option[recommended] { --rail: var(--accent); }
-    & > cq-option[chosen] { --rail: var(--ok); --fill: var(--ok-tint); }
+    & > cq-option[recommended] { --stripe: var(--accent); }
+    & > cq-option[chosen] { --stripe: var(--ok); --fill: var(--ok-tint); }
     /* The box for words is the group's own child, so joining the group takes it inside the
      * border too — and butted against the last cell with the same hairline, it reads as one
      * more option rather than as the way past them. It is apparatus, so it wears the tint
@@ -570,13 +591,20 @@ cq-options[answered] > .cq-done { color: var(--ok-ink); border-color: var(--ok);
      * for a reader whom none of the cells above fits. */
     & > .cq-say { margin-top: 0; padding: 10px 12px; background: var(--field);
                      box-shadow: 0 0 0 1px var(--rule); }
-    /* The mark keeps its box and stops drawing. The room stays reserved, so a pick still
-     * moves nothing; the ring is the weaker of two ways to say the same thing now that the
-     * group's shape says it, and one mechanism per guarantee means the weaker one goes. That
-     * leaves nothing for a focus ring to sit around, so it sits around the cell — which is
-     * what the press acts on, and what a reader arriving by keyboard has actually landed on.
-     * Inset, because the group clips its edges. */
-    & > cq-option .cq-pick:not([data-cq-said])::before { visibility: hidden; }
+    /* On a card the mark keeps its box and stops drawing. The room stays reserved, so a
+     * pick still moves nothing; the ring is the weaker of two ways to say the same thing
+     * now that the group's shape says it, and one mechanism per guarantee means the weaker
+     * one goes.
+     *
+     * A card can give it up because the state has the whole cell to live in — the fill and
+     * the rail are the card. A row's cell is one line, and its mark is a column at the
+     * line's end that the form reserves room for by name (the list rules below): stop
+     * drawing there and the reservation is a hole rather than padding, with every row
+     * ending in a wide blank where the ticks were. So the ring stays in the list, which is
+     * also the form where it answers a second question a card's never has to — a `multiple`
+     * group is a set of independent slots, and an empty one is a fact about that row rather
+     * than a repetition of the group's offer. */
+    & > cq-option:has(> strong) .cq-pick:not([data-cq-said])::before { visibility: hidden; }
     & > cq-option:has(> .cq-pick:focus-visible) { outline: 2px solid var(--accent);
                      outline-offset: -2px; }
     & > cq-option > .cq-pick:focus-visible { outline: none; }
@@ -600,8 +628,13 @@ cq-options[answered] > .cq-done { color: var(--ok-ink); border-color: var(--ok);
  * this one's. The row form got there first and then argued the wrong reason for keeping the
  * word on a card — that a card has no dots beside it to say it — when a choose group has
  * two to five cards and every one carries a mark. The column was there; it was weak, spread
- * down a tall card, and the answer to that is to strengthen it. What the card form does
- * instead of a dot is above: the group takes the offer, once. */
+ * down a tall card, and the answer to that is to strengthen it.
+ *
+ * The dot itself is the row's and not the card's, and the reason is this form's own
+ * apparatus rather than anything about offers: a row reserves a column of room for its
+ * mark by name below, so a mark that stopped drawing would leave a blank the width of the
+ * word it isn't saying at the end of every line. A card's mark stands in padding, where
+ * drawing nothing reads as padding. Both are stated where the joined group is (above). */
 cq-options:not(:has(> cq-option > strong)) > cq-option {
                      display: table; width: 100%; border-spacing: var(--sp-2) 0;
                      padding: 5px 0; border: 0; border-radius: 6px;
@@ -630,10 +663,12 @@ cq-options:not(:has(> cq-option > strong)) > cq-option > :is(.cq-ref, .cq-pick) 
  * room already held. Out of flow rather than last in it, because the word is what decides
  * a line box's height and an open mark hasn't got one: centred on the row, the dot stands
  * where it stood whether or not the word is there to say so. Both widths are measured
- * ("your pick" at --t-6) rather than derived, and the press test is what says so the day
- * they stop covering. */
+ * ("your pick" at --t-6 in the chrome's sans, 67px including the padding) rather than
+ * derived, and the press test is what says so the day they stop covering — as it would
+ * have the day the mark stopped reading in the document's serif, which is 3px narrower
+ * and had 66px covering it. */
 cq-options:not(:has(> cq-option > strong)) > cq-option > .cq-pick {
-                     position: relative; box-sizing: border-box; min-width: 66px;
+                     position: relative; box-sizing: border-box; min-width: 68px;
                      padding-right: 17px; text-align: right; }
 cq-options:not(:has(> cq-option > strong)) > cq-option > .cq-pick::before {
                      position: absolute; right: 0; top: 0; bottom: 0; margin: auto 0; }
@@ -662,18 +697,16 @@ cq-options:not(:has(> cq-option > strong)) > cq-option > .cq-pick::before {
 /* `settled`: the decision is made and acted on, so the group reads as one line
  * — the disclosure the upgrade builds — with the cards behind it. Unupgraded, and
  * anywhere the disclosure has no handler behind it, every card shows. */
-/* Scoped, not a bare .cq-settled: the row wears cq-ui for the chrome look, and the
- * runtime's own .cq-ui font and color rules are later in the cascade. This is the
- * page's disclosure, so it reads at the theme's summary size. (The part of the row
- * naming the chosen card is the page speaking and says so, which anchoring reads
- * over the class — see cq-options.js.) Laid out by the live-page block below;
- * hidden until then, because a button is worth showing only where something will
- * answer it. */
+/* The row wears cq-ui, and the chrome face, size and ink it carries are the look; what
+ * this states is only the row's own box and weight. (The part of the row naming the
+ * chosen card is the page speaking and says so, which anchoring reads over the class —
+ * see cq-options.js.) Laid out by the live-page block below; hidden until then, because
+ * a button is worth showing only where something will answer it. */
 cq-options[settled] > .cq-settled {
               grid-column: 1 / -1; display: none; width: 100%; align-items: baseline;
               gap: var(--sp-2); margin: 0 0 var(--sp-2); padding: 7px 12px;
-              font: inherit; font-size: var(--t-5); font-weight: 600; text-align: left;
-              background: var(--field); color: var(--ink); cursor: pointer;
+              font-weight: 600; text-align: left;
+              background: var(--field); cursor: pointer;
               border: 1px solid var(--rule); border-radius: var(--r); }
 cq-options[settled]:not([open]) > .cq-settled { margin-bottom: 0; }
 cq-options[settled] > .cq-settled:hover { border-color: var(--border-2); }
@@ -870,7 +903,7 @@ cq-tabs.cq-rendered > cq-tab { margin-top: 14px; }
  * buttons is worth showing only where something will answer one. */
 .cq-tabstrip { display: none; flex-wrap: wrap; gap: 2px;
                border-bottom: 1px solid var(--rule); }
-.cq-tabstrip .cq-tab-btn { font: inherit; font-size: var(--t-5); padding: 6px 12px;
+.cq-tabstrip .cq-tab-btn { padding: 6px 12px;
                color: var(--muted); cursor: pointer;
                border-bottom: 2px solid transparent; margin-bottom: -1px;
                border-radius: var(--r) var(--r) 0 0; }
@@ -955,7 +988,20 @@ cq-new { background: var(--add-tint); }
     cq-code, cq-tree, cq-board, cq-options, cq-milestones, cq-tasks, cq-timeline,
     cq-compare, cq-metrics, cq-tabs, cq-draft, cq-shot, cq-specimen)) {
   display: block; padding: 2px 10px; margin: 10px 0; }
-/* Decided: the surviving slot is plain prose, the other one gone. */
+/* Decided: the surviving slot is plain prose, the other one gone. The retired one is
+ * folded away by the widget rather than dropped in a frame (cq-suggestion.js), and the
+ * survivor gives up its padding over the same span — a block slot's 10px is the sentence
+ * the reader is looking at stepping sideways, which is the jerk the fold is there to
+ * remove, only smaller. Declared on the slot rather than on the decided state, because a
+ * transition is read from the state the element is leaving; the reduced-motion guard at
+ * the foot of this file takes it with everything else.
+ *
+ * Padding alone. The tint going is paint, which a state change may do freely, and a
+ * transitioned background is the thing the choose group's own comment above warns
+ * about: the tokens themselves move when the reader's system flips to dark, so every
+ * slot on the page would animate from one palette to the other for a change nobody
+ * made. */
+cq-old, cq-new { transition: padding .22s ease; }
 cq-suggestion[data-cq-state] > :is(cq-old, cq-new) {
   background: none; color: inherit; text-decoration: none; padding: 0; }
 cq-suggestion[data-cq-state="accept"] > cq-old,
@@ -973,18 +1019,43 @@ cq-suggestion[data-cq-state="reject"]:not(:has(cq-old)) { display: none; }
  * Waiting, the change is inside something collapsed and there is no line yet. */
 .cq-sug-actions { position: absolute; left: 100%; margin-left: 22px; top: anchor(top);
     display: inline-flex; gap: 4px; white-space: nowrap; }
-.cq-sug-actions[hidden] { display: none; } /* outranks the flex above, unlike the UA rule */
 .cq-sug-actions.cq-waiting { display: none; }
 .cq-sug-actions.cq-docked { position: static; margin: 2px 0 12px; }
-.cq-sug-actions [role="button"] { font: inherit; font-size: var(--t-6); line-height: 1.7;
-    padding: 0 8px; border: 1px solid var(--border-2); border-radius: 999px;
-    background: var(--card); color: var(--ink-2); cursor: pointer; }
-.cq-sug-actions [role="button"]:hover { background: var(--chip); }
+/* The controls are .cq-pill — the margin's press, stated once in the runtime's
+ * document-level vocabulary, where the 💬 that shares this margin wears it too. What
+ * is here is only what a suggestion's own states add to it. */
 .cq-sug-actions [role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.cq-sug-actions .cq-sug-accept:hover { border-color: var(--ok); color: var(--ok-ink); }
-.cq-sug-actions .cq-sug-reject:hover { border-color: var(--danger); color: var(--danger-ink); }
+/* Hover is an offer, so the coloured edge is the pending row's alone: a decided one has
+ * nothing left to press and its own colour to keep. Scoped rather than unsaid
+ * afterwards — a hover rule undone by a later one is the shape the row form's first
+ * draft got wrong. (The pill's own hover wash needs no scoping: a decided control's
+ * background carries the attribute the decision wrote, which outranks it.) */
+.cq-sug-actions:not([data-cq-outcome]) .cq-sug-accept:hover { border-color: var(--ok); color: var(--ok-ink); }
+.cq-sug-actions:not([data-cq-outcome]) .cq-sug-reject:hover { border-color: var(--danger); color: var(--danger-ink); }
+/* Decided. The control the user pressed states the outcome where it stood, in the
+ * outcome's own colour; its pair stops showing without giving up its room, so the one
+ * line a press must not disturb is the line the press leaves exactly as it found it.
+ * The past tense grows into room the control reserved from its own decided word as the
+ * row was built (cq-suggestion.js), which is why the word can change without the box
+ * doing the same.
+ *
+ * visibility, not display: the room is the point. It also takes the hidden control out
+ * of the tab order and out of the accessibility tree, which is what a press nobody can
+ * make any more should be. */
+.cq-sug-actions[data-cq-outcome="accept"] .cq-sug-reject,
+.cq-sug-actions[data-cq-outcome="reject"] .cq-sug-accept { visibility: hidden; }
+.cq-sug-actions[data-cq-outcome] [role="button"] { cursor: default; }
+.cq-sug-actions[data-cq-outcome="accept"] .cq-sug-accept { border-color: var(--ok);
+    color: var(--ok-ink); background: var(--ok-tint); }
+.cq-sug-actions[data-cq-outcome="reject"] .cq-sug-reject { border-color: var(--danger);
+    color: var(--danger-ink); background: var(--danger-tint); }
 /* A page carrying a change to decide gives the rail up out of its own width,
  * rather than hanging the controls in whatever centring happens to leave over.
+ * How wide is the row's own business: cq-suggestion.js measures the first row it
+ * builds — controls already holding their decided words' room — and states --rail
+ * on the root element, so the rail follows the controls' face instead of standing
+ * here as a number, and an exported copy carries the value it was rendered with
+ * in the root's own style attribute.
  * Leftovers ran out in the posture a user actually reads in: the open comment
  * panel takes the right of the window, the margin thins below the row, and every
  * row docked above the change it decides — which reads as belonging to the
@@ -1171,8 +1242,12 @@ cq-draft { display: block; border: 1px dashed var(--border-2); border-radius: 6p
 .cq-draft-body, .cq-draft-edit.cq-ui { white-space: pre-wrap; }
 .cq-draft-pencil { opacity: .45; }
 cq-draft:hover .cq-draft-pencil, cq-draft:focus-within .cq-draft-pencil { opacity: 1; }
+/* The one control whose face is deliberately the document's: the box shows the page's
+   words in the page's serif, or the double-clicked word reflows under the pointer the
+   moment the box opens. Stated unlayered, so it outranks the runtime's layered
+   UA-clearing and the chrome face .cq-ui would otherwise put on it. */
 .cq-draft-edit.cq-ui { display: block; width: 100%; padding: 0; border: 0; background: none;
-           min-height: 0; max-height: none; overflow: hidden; }
+           font: inherit; min-height: 0; max-height: none; overflow: hidden; }
 .cq-draft-edit.cq-ui:focus { box-shadow: none; }
 .cq-draft-controls, .cq-draft-history { display: none; }
 @media screen {
@@ -1211,8 +1286,8 @@ cq-draft:hover .cq-draft-pencil, cq-draft:focus-within .cq-draft-pencil { opacit
 
 /* Reduced motion: one global guard covers every animation and transition in the
  * theme and the injected layers (!important outranks inline styles, so
- * JS-driven transitions stop too). JS-driven motion — smooth scrolls,
- * Web-Animations moves — honors the runtime's REDUCED/SCROLL exports. */
+ * JS-driven transitions stop too). JS-driven motion goes through the runtime's
+ * motion() and SCROLL, which answer the same preference themselves. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .01ms !important;

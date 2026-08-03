@@ -134,12 +134,18 @@ comment posted from the terminal took `Comments (9)` to `Comments (10)` and the 
 chooser 6px with it; a second tab deciding the last pending suggestion took the ✓ Accept
 all away and slid the New-version chip 148px right, under whoever was reaching for it.
 
-Two sweeps are what make a reserved width safe to state as a number, and between them they
-work every one: a press, and the poll, which is the half no gesture can reach. Room
-reserved before it is needed gets measured in a browser, so it is a fact about one font,
-free to stop covering when the words change or where the system font sets them wider.
-Reserving and checking are one mechanism rather than two: the number alone is a guess that
-stops being true silently, which is the failure this whole norm is made of.
+Room is reserved from the words themselves wherever the words are enumerable: a control
+that will rewrite its own label lists what it may say and `reserve` floors it at the
+widest, measured in the control's own box and live face at load — so the reservation
+re-measures itself when the type moves, instead of standing as a number somebody once
+read out of a browser. Three numbers stood in the banner that way and all three quietly
+stopped covering the day `--t-5` grew half a pixel. A number is stated only where there
+is no widest word to measure — the version chooser's cap against unbounded notes, the
+pick column's dot room — and each of those is a fact about one font, free to stop
+covering silently. The two sweeps are what check both kinds, and between them they work
+every one: a press, and the poll, which is the half no gesture can reach. For the
+measured kind they check the words listed are the words the writers write; for the
+stated kind they are the only thing standing between the number and its going stale.
 
 A stylesheet lint was the first attempt at that check, and the shape is wrong. It reads
 the selector, and the state a control shows is not reliably in one: a class the module
@@ -184,6 +190,25 @@ And a change the user asked for may change the page: accepting a suggestion repl
 the words, and the paragraph below moves because the content did. What is forbidden is
 movement they did not ask for, and movement that answers a small gesture with a large
 rearrangement.
+
+Deciding a suggestion was both of those and cleared its own control besides. A block
+change is a struck old paragraph stacked over a tinted new one, so accepting dropped 179
+measured pixels out of the middle of the shipped design page in the frame of the press,
+and everything below arrived somewhere else with no path between the two; and the row
+the user had just pressed took itself off the page in that same frame, leaving a corner
+toast as the only evidence anything had happened. Both halves are answered by rules
+above rather than by new ones. The retired slot folds over a fifth of a second, which is
+the form the eye can follow — measured before the decision, played after it, so what the
+log and a second tab read is true from the first frame while the pixels catch up. And
+the pressed control's own line holds still: the control states the outcome where it
+stood ("✓ Accepted"), its pair gives up its ink and not its room, and the room the past
+tense needs was reserved from the decided word itself as the row was built (`reserve`),
+so the word can change without the box doing the same.
+
+An acknowledgement is worth more than the room it costs. The rail is reserved for the
+page's life once any change is on it, so a decided row is standing in space that was
+never going to be reclaimed — and a user who scrolls back can see which changes they
+took, which nothing on the page said before.
 
 ## Assume the browser it already assumes
 
@@ -334,6 +359,28 @@ still the page's words, still something to select and quote. Nothing built throu
 `offer` belongs in that rule: those wear `.cq-ui`, which already answers in the same
 face, so listing one is inert and reads as a claim that the runtime's chrome is the page.
 
+The class answering for the face is not the same as the face arriving, and five controls
+sat in the gap. Clearing the UA's form-control font is asked for by inheriting
+(`font: inherit`), and inheriting finds the chrome's face only where a `.cq-ui` float
+*encloses* the control. Where the control wears the class itself, a clearing rule that
+outranked `.cq-ui` sent the walk straight past it into the document: the 💬 button came
+out in the page's serif at 17px, alone in the chrome and three points larger than
+everything beside it; a picked option's mark and a settled group's disclosure said their
+one word each in Charter.
+
+Clearing a face and choosing one are different kinds of declaration, so the clearing
+lives in a cascade layer (`cq-reset`, in the runtime's stylesheet), which any unlayered
+choice outranks whatever its specificity. That makes the collision unrepresentable
+rather than re-fixed per control: `.cq-ui` states the chrome face and wins it on any
+control wearing the class, the one control whose face is deliberately the document's —
+`cq-draft`'s editor, which must match the body it replaces — says so unlayered in the
+theme and wins that, and the chrome's container still states the face once for anything
+inside it that misses the class. A mark whose shapes straddle the line — `cq-option`'s
+is a press wearing `.cq-ui` where the group takes picks and a bare span where it
+doesn't — keeps its face in the one rule both shapes share, since only one of them has
+the class to read from. Then re-measure: "your pick" is 3px wider in the sans, and the
+row form reserves that column by a number.
+
 The serif is stacked, not shipped, and the reason is the copy. `theme.css` is inlined
 whole into every `version export` and parsed by `version check` on every version, so a
 webfont has to arrive as a base64 blob in both — and referenced by URL instead it falls
@@ -341,10 +388,11 @@ back silently in exactly the medium that has no server to ask. Charter and Iowan
 Style ship on macOS, Georgia everywhere else; each is a screen serif with a large
 x-height, which is what matters at 17px.
 
-Changing any of this moves every width someone reserved by measuring, and the press sweep
-above is what says so — it named the sign-off button the day `--t-5` went from 13.5px to
-14px and 110px stopped covering "✓ Looks good". Re-measure and restate the number; don't
-derive it.
+Changing any of this moves every reserved width. The ones taken from the words
+(`reserve`) re-measure themselves on the next load; the ones stated as numbers are what
+the press sweep above answers for — it named the sign-off button the day `--t-5` went
+from 13.5px to 14px and 110px stopped covering "✓ Looks good". For those, re-measure and
+restate the number; don't derive it.
 
 ## The page may break a word, so anything that must not come apart says so
 
@@ -406,6 +454,17 @@ and the markup stays the author's, which between them leave one candidate — th
 cell a table puts around them. The layout is then stated around that box rather than
 through it, and the fix to the mark's column falls out: the apparatus takes the cells
 after it and claims none of the row's width.
+
+What the forms don't get to answer differently is whether the group can be answered at
+all. Under `choose` it draws as one control — a border with its options as cells sharing
+hairlines — because that is a fact about the group and not about the layout, and the
+shape appearing at all is the offer. The list form was exempted from it at first, on the
+reading that a bare-label row is a quiet thing and a border around it would be shouting;
+what shipped was a question with no visible answer to "which of these can I press",
+since a row draws no border, no fill and no rule between it and the next. The only thing
+that ever drew a row's own box was the hover wash, which arrives after the reader has
+committed the pointer, and a reader asked why. A form may decide how it looks; it may
+not decide whether it says it takes an answer.
 
 The module is where this stops. It sees the difference exactly once (`for` renders a
 reference) and never asks which form it is in, because a second reading of "am I rows?"
@@ -503,10 +562,10 @@ the stylesheet's shape. The runtime's private rules sit in one `@scope` block ro
 at its own container, where no class a widget or a page coins can match them —
 `cq-tabs` once marked itself `cq-live`, the chrome's name for its visually-hidden
 live region, and every tabbed page clipped to a pixel. What is styled at document
-level is the shared vocabulary, and only that: `cq-ui` and `cq-btn`, which a widget's
-controls wear on purpose, and the marks the runtime paints onto the page's own
-elements. A global rule is a widening of that vocabulary; the render suite pins the
-list so widening is a decision rather than a leak.
+level is the shared vocabulary, and only that: `cq-ui`, `cq-btn` and `cq-pill`, which
+a widget's controls wear on purpose, and the marks the runtime paints onto the page's
+own elements. A global rule is a widening of that vocabulary; the render suite pins
+the list so widening is a decision rather than a leak.
 
 The container answers in script too, and the class had been answering for it. Whether
 a widget's state has a version to contradict, and which block the reader's eye rests

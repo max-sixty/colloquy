@@ -1050,6 +1050,10 @@ AIM_POINT = """(el) => {
 # the outline the composer's own passage wears, so the same query answers before the press
 # and after it, and the two answers agreeing is the promise being kept.
 OUTLINED = """() => document.querySelector(".cq-mark-el.cq-pending")?.id ?? null"""
+# What the arm says about the next press, in the one property that is on screen before
+# the outline is read. Asked of body, where the aim declares it and from where it is
+# inherited by everything on the page that doesn't state a cursor of its own.
+AIM_CURSOR = """() => getComputedStyle(document.body).cursor"""
 # All of them, for the one state that outlines two elements at once: a draft standing on
 # its anchor while the ⌥ aim says where a press would move it.
 OUTLINED_ALL = """() =>
@@ -1110,6 +1114,15 @@ def test_an_aimed_press_does_only_what_the_outline_promised(browser, serve, exam
         page.mouse.move(*point)
         page.keyboard.down("Alt")
         promised = page.evaluate(OUTLINED)
+        # The cursor is the other half of the same promise, and it is derived from the
+        # same value the outline is: the hand where a press takes something, the arrow
+        # where it takes nothing. Read off body, which is where the aim declares it —
+        # a widget's own control still states its resting cursor, and does so whether or
+        # not the key is down.
+        assert page.evaluate(AIM_CURSOR) == ("pointer" if promised else "default"), (
+            f"holding ⌥ over {label} in {example.name} outlined {promised} and pointed "
+            f"a {page.evaluate(AIM_CURSOR)} cursor at it"
+        )
         page.mouse.click(*point)
         page.keyboard.up("Alt")
         composer = page.locator(".cq-composer")
@@ -1345,6 +1358,63 @@ def test_the_chrome_keeps_its_presses_while_the_page_is_armed(browser, serve):
     panel_settled(page)
     expect(page.locator(".cq-panel")).to_be_visible()
     expect(page.locator(".cq-composer")).to_be_hidden()
+    assert errors == []
+    page.close()
+
+
+def test_the_armed_cursor_says_whether_a_press_would_take_anything(browser, serve):
+    """The chord's cost is that it is invisible, and the cursor pays part of it.
+
+    Holding ⌥ used to draw a plain arrow over the whole page: it said "not a text
+    selection" and nothing else, which leaves the one question the outline can't answer
+    for a reader who hasn't looked yet — would this click do anything at all? An armed
+    press takes the item under it and acts on nothing where there is none (claimPress),
+    so the hand and the arrow are those two states, and the hand is exactly as good as
+    the outline beside it because both are read off the same value.
+
+    Read where the reader's pointer is rather than off body, since the aim declares it
+    on body and everything on the page inherits it — the promise is only kept if it
+    arrives at the glyphs. The margin beside the column is the page's own gap: no
+    element there carries an id, so an armed press has nothing to take.
+
+    `auto` is the resting state, and it is the whole point of the arrow: unarmed, the
+    browser decides from what is under the pointer and draws an I-beam over words, so
+    naming a cursor at all is the runtime saying those words are not a selection now."""
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    at_pointer = """([x, y]) =>
+        getComputedStyle(document.elementFromPoint(x, y)).cursor"""
+    on_item = page.locator("#p2").evaluate(
+        "el => { const r = el.getBoundingClientRect();"
+        " return [r.left + 20, r.top + r.height / 2]; }"
+    )
+    # Beside the column, level with the same paragraph: body's own margin, which the
+    # centred 720px column leaves on a 1200px viewport.
+    in_gap = [40, on_item[1]]
+    assert page.evaluate(at_pointer, on_item) == "auto", (
+        "an unarmed page already named a cursor, so the arm has nothing left to say"
+    )
+
+    page.mouse.move(*on_item)
+    page.keyboard.down("Alt")
+    expect(page.locator(".cq-mark-el.cq-pending")).to_have_id("p2")
+    assert page.evaluate(at_pointer, on_item) == "pointer", (
+        "the aim outlined the paragraph and the cursor declined to promise the press"
+    )
+
+    page.mouse.move(*in_gap)
+    expect(page.locator(".cq-mark-el.cq-pending")).to_have_count(0)
+    assert page.evaluate(at_pointer, in_gap) == "default", (
+        "the aim had nothing to take and the hand promised a press anyway"
+    )
+
+    # Back on the item, so the arm coming off is read from the state that promises most.
+    page.mouse.move(*on_item)
+    expect(page.locator(".cq-mark-el.cq-pending")).to_have_id("p2")
+    page.keyboard.up("Alt")
+    expect(page.locator(".cq-mark-el.cq-pending")).to_have_count(0)
+    assert page.evaluate(at_pointer, on_item) == "auto", (
+        "the key came up and the page went on offering the aim's press"
+    )
     assert errors == []
     page.close()
 
@@ -2487,12 +2557,14 @@ def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
     assert {c for c in surface["global"] if c.startswith("cq-")} == {
         "cq-ui",
         "cq-btn",
+        "cq-pill",
         "cq-over-mark",
         "cq-mark-el",
         "cq-pending",
         "cq-ins-block",
         "cq-mark-note",
         "cq-aiming",
+        "cq-over-item",
     }, (
         "the document-level class surface changed: widen the shared vocabulary on purpose"
     )
@@ -3221,6 +3293,10 @@ mornings last winter.</p></section>
   <cq-option id="br-steel"><strong>Steel</strong> Galvanised, drop-in.</cq-option>
   <cq-option id="br-cedar"><strong>Cedar</strong> Cheap; needs sealing.</cq-option>
 </cq-options>
+<cq-options id="ordered">
+  <cq-option id="ord-mounts">Mounts, before the frost</cq-option>
+  <cq-option id="ord-heater">Heater, after it</cq-option>
+</cq-options>
 </main>
 </body>
 </html>
@@ -3243,22 +3319,46 @@ def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serv
     Two things the lint cannot see. A resting mark shows no word in either form, because
     an offer states nothing a reader could disagree with — and what a *picked* mark says
     has to survive that, since it is the page's only statement of where the pick sits.
-    What differs is the dot: a row draws one, because a column of them down the list is
-    the whole of that form's offer, and a card does not, because its group draws the
-    border that says the same thing once. Both are asked here, since either could be the
-    theme forgetting a rule rather than each form answering for itself. And a row's name is
+    What differs is the dot: a row draws one and a card does not. A card gives it up
+    because the state has the whole cell to live in, while a row's is a column at the
+    line's end with room reserved for it by name, so a row that stopped drawing there
+    would end in a blank the width of the word it isn't saying — and in a `multiple`
+    group an unticked slot is a fact about that row rather than a repetition of the
+    group's offer. Both are asked here, since either could be the theme forgetting a rule
+    rather than each form answering for itself. And a row's name is
     what the author wrote in it: the mark that lands inside the row once it is picked is
     the page speaking (`says`) and must stay out of the row's own name (`wrote`), or a
     question answered reads its answer back as part of what was asked."""
     page, errors = open_page(browser, serve(ASK_PAGE))
     assert errors == []
 
-    assert (
-        page.locator("#jobs").evaluate("el => getComputedStyle(el).display") == "block"
+    # One row per option in the list form, whatever the container is: a single column
+    # with no template stated, against the card form's own auto-fit tracks.
+    tracks = "el => getComputedStyle(el).gridTemplateColumns.split(' ').length"
+    assert page.locator("#jobs").evaluate(tracks) == 1
+    assert page.locator("#bracket").evaluate(tracks) > 1
+
+    # Under `choose` the group is one control in every form, and the list was the form
+    # that went without: rows draw no border, no fill and no rule between them, so at
+    # rest the only thing that ever drew a row's own box was the hover wash — which
+    # arrives after the reader has already had to guess where to aim. The group's edge
+    # and the cells' hairlines are what a reader sees before committing the pointer, and
+    # they are the same two rules a card group has always had.
+    edge = """el => { const s = getComputedStyle(el);
+                      return s.borderTopStyle === 'none' ? 0 : parseFloat(s.borderTopWidth); }"""
+    hairline = "el => getComputedStyle(el).boxShadow"
+    assert page.locator("#jobs").evaluate(edge) > 0, (
+        "a list offering a pick draws no edge, so nothing says the rows are answerable"
     )
-    assert (
-        page.locator("#bracket").evaluate("el => getComputedStyle(el).display")
-        == "grid"
+    assert page.locator("#job-mounts").evaluate(hairline) != "none", (
+        "a row draws no box of its own, so its bounds show only under the pointer"
+    )
+    # And the shape is the offer, so a list that asks nothing wears none of it.
+    assert page.locator("#ordered").evaluate(edge) == 0, (
+        "a list with no pick to take was drawn as a control anyway"
+    )
+    assert page.locator("#ord-mounts").evaluate(hairline) == "none", (
+        "a row nobody can press draws cell edges anyway"
     )
 
     # The block a row is about, reachable as a link and written as the id it names —
@@ -3269,8 +3369,8 @@ def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serv
     assert page.locator("#job-camera .cq-ref").count() == 0
 
     # No open mark says its word, in either form. The dot is where they part: the row's is
-    # drawn and the card's is not, which is each form answering for its own offer rather
-    # than one rule going missing.
+    # drawn and the card's is not, which is each form answering for the room it reserved
+    # rather than one rule going missing.
     hidden = "el => getComputedStyle(el).fontSize"
     dot = "el => getComputedStyle(el, '::before').visibility"
     assert page.locator("#job-mounts .cq-pick").evaluate(hidden) == "0px"
@@ -4025,20 +4125,48 @@ def test_the_rail_survives_every_script_being_removed(browser, serve, tmp_path):
 
 def test_accepting_a_suggestion_settles_it_and_reaches_claude(browser, serve):
     """Accepting collapses the change to the proposal as ordinary prose — no
-    tint, no strike, no leftover chrome — because the live view is the version
-    plus the user's actions, and the honoring version only has to catch up.
+    tint, no strike — because the live view is the version plus the user's
+    actions, and the honoring version only has to catch up.
     The outcome has to reach the log too: what the user sees settle and what
-    Claude is told must be the same event."""
+    Claude is told must be the same event.
+
+    What stays is the row, saying what was done there. It used to clear itself in
+    the same frame as the press, leaving a corner toast as the only evidence that
+    anything had happened — and clearing a control is the one thing a press may not
+    do to the line it was made on. Now the control the user pressed states the
+    outcome where it stood and stops offering; its pair keeps its room and gives up
+    only its ink, so nothing on the row is anywhere new."""
     page, _errors = open_page(browser, serve(SUGGESTION_PAGE))
-    accept = page.locator("[data-cq-for='sug-refill'] .cq-sug-accept")
+    row = page.locator("[data-cq-for='sug-refill']")
+    accept = row.locator(".cq-sug-accept")
+    reject = row.locator(".cq-sug-reject")
     assert accept.get_attribute("aria-label").startswith(
         "Accept the suggested change: Refill a feeder when"
     ), "the button names the proposal, not the text being replaced"
+    # Inside the row rather than on the page: the row is positioned, so a button's
+    # offset box is its place on that row, and an inline change that reflows the
+    # paragraph it sits in carries the whole row with it legitimately. What must not
+    # move is one control against the other.
+    box = "el => [el.offsetLeft, el.offsetTop, el.offsetWidth, el.offsetHeight]"
+    before = [accept.evaluate(box), reject.evaluate(box)]
+    # innerText throughout: what these assert is the visible word, and innerText is the
+    # rendered text where textContent is the markup's.
+    expect(accept).to_have_text("✓ Accept", use_inner_text=True)
 
     accept.click()
     expect(page.locator("#sug-refill cq-old")).to_be_hidden()
     expect(page.locator("#sug-refill cq-new")).to_be_visible()
-    expect(page.locator("[data-cq-for='sug-refill']")).to_be_hidden()
+    expect(accept).to_have_text("✓ Accepted", use_inner_text=True)
+    assert accept.get_attribute("aria-label").startswith(
+        "Accepted the suggested change: Refill a feeder when"
+    ), "the record still offers the press it has already taken"
+    assert accept.get_attribute("aria-disabled") == "true"
+    assert [accept.evaluate(box), reject.evaluate(box)] == before, (
+        "the row rearranged as it was decided, on the one line a press must leave alone"
+    )
+    assert reject.evaluate("el => getComputedStyle(el).visibility") == "hidden", (
+        "the decision left both halves of the offer standing"
+    )
     settled = page.locator("#sug-refill cq-new").evaluate(
         "el => getComputedStyle(el).textDecorationLine + ' ' + getComputedStyle(el).backgroundColor"
     )
@@ -4075,6 +4203,7 @@ SHORT_SUGGESTION = """<!doctype html>
   <cq-old><p id="was">Retry twice.</p></cq-old>
   <cq-new><p id="now">Retry three times.</p></cq-new>
 </cq-suggestion>
+<p id="after">The backoff is unchanged either way.</p>
 </section>
 </main>
 </body>
@@ -4109,6 +4238,122 @@ def test_a_widget_naming_its_own_words_does_not_read_the_runtimes(
     page.close()
 
 
+# Every animation the page starts, held at time zero so a test can read it rather than
+# race it. The runtime's own chrome runs CSS animations, which this never sees; what it
+# catches is a widget's WAAPI motion, started synchronously inside the gesture that
+# causes it. Installed before anything runs, so the first frame is already held.
+HOLD_MOTION = """
+  window.__cqHeld = [];
+  const inner = Element.prototype.animate;
+  Element.prototype.animate = function (...args) {
+    const motion = inner.apply(this, args);
+    motion.pause();
+    motion.currentTime = 0;
+    window.__cqHeld.push(motion);
+    return motion;
+  };
+"""
+
+
+def test_a_decided_change_folds_away_rather_than_vanishing(browser, serve):
+    """A decision may move the page; it may not teleport it.
+
+    A block change is a struck old paragraph stacked over a tinted new one, and
+    accepting used to drop the old one with `display: none` in the frame of the press —
+    179 measured pixels out of the middle of the shipped design page, with everything
+    below jumping up under the pointer that had just pressed. The rule this layer
+    already carries is that a change the user asked for may move the page and must do
+    it as motion, because motion is the form the eye can follow to where the sentence
+    went.
+
+    Held at its first frame rather than sampled mid-flight, which would be a race with
+    the clock and would pass on a fast machine either way: the fold is read where it
+    starts (the slot's own height, not zero), stepped to the middle, and then let go, so
+    what the test proves is the shape of the motion and not how long the run took.
+
+    An inline change is the test below: it has nothing to follow, and folding one would
+    be the harm rather than the fix."""
+    page, errors = open_page(browser, serve(SHORT_SUGGESTION), init_script=HOLD_MOTION)
+    old = page.locator("#sug cq-old")
+    after = page.locator("#after")
+    tall = old.evaluate("el => el.getBoundingClientRect().height")
+    assert tall > 0
+    below = after.evaluate("el => el.getBoundingClientRect().top")
+
+    page.locator("[data-cq-for='sug'] .cq-sug-accept").click()
+    # The state is true from the first frame — the log carries it, the banner counts it,
+    # a second tab converging reads it — while the pixels are still catching up.
+    assert page.locator("#sug[data-cq-state='accept']").count() == 1
+    held = page.evaluate(
+        """() => window.__cqHeld.map((m) => [m.effect.target.tagName.toLowerCase(),
+                                             m.effect.getTiming().duration])"""
+    )
+    assert [t for t, _ in held] == ["cq-old"], (
+        f"the retired slot went without motion to follow: {held}"
+    )
+    at = "() => document.querySelector('#sug cq-old').getBoundingClientRect().height"
+    assert page.evaluate(at) == pytest.approx(tall, abs=1), (
+        "the fold begins somewhere other than where the paragraph was standing"
+    )
+    page.evaluate(
+        "() => { const m = window.__cqHeld[0];"
+        "        m.currentTime = m.effect.getTiming().duration / 2; }"
+    )
+    middle = page.evaluate(at)
+    assert 0 < middle < tall, f"the fold's midpoint is not between its ends: {middle}"
+
+    page.evaluate("() => window.__cqHeld[0].play()")
+    expect(old).to_be_hidden()
+    assert after.evaluate("el => el.getBoundingClientRect().top") < below, (
+        "the page never gave back the room the retired paragraph was holding"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_an_inline_change_is_swapped_rather_than_folded(browser, serve):
+    """The other half of the rule above, and the half where folding would be the harm.
+
+    A height to animate means a `display: block` held over the slot for the duration, so
+    a few words swapped mid-sentence would open a paragraph break and close it again —
+    motion answering a change that moved nothing. The shipped inline corpus is the case,
+    and what it asserts is that nothing was started at all."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE), init_script=HOLD_MOTION)
+    page.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
+    expect(page.locator("#sug-refill cq-old")).to_be_hidden()
+    assert page.evaluate("() => window.__cqHeld.length") == 0, (
+        "a few words swapped inside a line were given a fold, and a block box to do it in"
+    )
+    assert errors == []
+    page.close()
+
+
+def test_a_reader_who_asked_for_less_motion_gets_the_collapse_at_once(browser, serve):
+    """The fold is a courtesy to the eye, and an eye that asked for stillness is owed
+    the outcome instead — the same bargain the board's own FLIP makes.
+
+    Asked of the context rather than of the page, because the runtime reads the
+    preference once as it loads: emulating it afterwards changes what the media query
+    would answer and not what the module already recorded."""
+    context = browser.new_context(
+        viewport={"width": 1200, "height": 900},
+        color_scheme="light",
+        reduced_motion="reduce",
+    )
+    try:
+        page, errors = open_page(
+            browser, serve(SHORT_SUGGESTION), context=context, init_script=HOLD_MOTION
+        )
+        page.locator("[data-cq-for='sug'] .cq-sug-accept").click()
+        expect(page.locator("#sug cq-old")).to_be_hidden()
+        assert page.evaluate("() => window.__cqHeld.length") == 0, (
+            "a reader who asked for less motion was given a fold to sit through"
+        )
+        assert errors == []
+    finally:
+        context.close()
+
+
 def test_accept_all_decides_every_pending_suggestion(browser, serve):
     """The banner's button is a shortcut for the user who has read the page
     and wants all of it, so it has to reach the ones their eye didn't: the
@@ -4122,7 +4367,9 @@ def test_accept_all_decides_every_pending_suggestion(browser, serve):
         expect(page.locator(f"#{widget} cq-new")).to_be_visible()
         # Waited for, not read once: each is decided by its own round trip, so the
         # last of them is still in flight when the first has settled.
-        expect(page.locator(f"[data-cq-for='{widget}']")).to_be_hidden()
+        expect(page.locator(f"[data-cq-for='{widget}'] .cq-sug-accept")).to_have_text(
+            "✓ Accepted", use_inner_text=True
+        )
     for widget in (
         "sug-refill",
         "sug-in-card",
@@ -4155,8 +4402,14 @@ def test_a_decision_the_server_never_took_goes_back_to_pending(browser, serve):
     page.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
 
     expect(page.locator("#sug-refill cq-old")).to_be_visible()
-    expect(page.locator("[data-cq-for='sug-refill']")).to_be_visible()
     assert page.locator("#sug-refill").get_attribute("data-cq-state") is None
+    # The row is the record of a decision, so a decision that was never taken must not
+    # be standing in it: both controls offering again, neither of them past tense.
+    accept = page.locator("[data-cq-for='sug-refill'] .cq-sug-accept")
+    reject = page.locator("[data-cq-for='sug-refill'] .cq-sug-reject")
+    expect(accept).to_have_text("✓ Accept", use_inner_text=True)
+    expect(reject).to_be_visible()
+    assert accept.get_attribute("aria-disabled") == "false"
     # And the page's own count is derived from that, so it comes back too.
     expect(page.get_by_role("button", name="Accept all (3)")).to_be_visible()
     expect(page.locator(".cq-toast")).to_contain_text("Couldn't send")
@@ -4177,9 +4430,11 @@ def test_a_decision_the_server_never_took_goes_back_to_pending(browser, serve):
 def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, serve):
     """Two windows on one page are two views of one log, not two documents. A
     decision taken in either arrives in the other by the same replay that keeps a
-    reload's drag — and deciding takes the controls away, so the tab that receives
-    one has to settle it without the click that settled the tab that sent it. Where
-    the two disagree, the later entry in the log is what both end on."""
+    reload's drag, and the record it leaves in the margin has to arrive with it: the
+    tab that receives one settles it without the click that settled the tab that sent
+    it, and a row still offering the press is a window disagreeing with the log about
+    what has already been decided. Where the two disagree, the later entry in the log
+    is what both end on."""
     url = serve(SUGGESTION_PAGE)
     first, first_errors = open_page(browser, url)
     second, second_errors = open_page(browser, url)
@@ -4189,9 +4444,12 @@ def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, 
     told(second)
     expect(second.locator("#sug-refill cq-old")).to_be_hidden()
     expect(second.locator("#sug-refill cq-new")).to_be_visible()
-    expect(
-        second.locator("[data-cq-for='sug-refill']")
-    ).to_be_hidden()  # nothing left to decide
+    # Nothing left to decide, and the row says which way it went — written by the
+    # replay here rather than by a press, which is the only place that path is driven.
+    accepted = second.locator("[data-cq-for='sug-refill'] .cq-sug-accept")
+    expect(accepted).to_have_text("✓ Accepted", use_inner_text=True)
+    assert accepted.get_attribute("aria-disabled") == "true"
+    expect(second.locator("[data-cq-for='sug-refill'] .cq-sug-reject")).to_be_hidden()
     expect(second.get_by_role("button", name="Accept all (2)")).to_be_visible()
 
     # Now the race the controls make possible: a window cut off from the log still
@@ -4342,7 +4600,7 @@ def test_a_key_walks_the_page_s_open_asks(browser, serve):
         )
     assert walked == [
         ["live-question", "span cq-pick cq-ui"],  # the question: its first pick mark
-        ["sug-refill", "span cq-sug-accept cq-ui"],  # ✓ Accept, out in the page margin
+        ["sug-refill", "span cq-pill cq-sug-accept cq-ui"],  # ✓ Accept, in the margin
         ["t-baffles", "cq-task "],  # a task holds no control, so it takes focus itself
         ["t-bath", "cq-task "],
         ["live-question", "span cq-pick cq-ui"],
@@ -6348,6 +6606,63 @@ def test_the_comment_button_stands_on_no_control(browser, serve):
     expect(
         page.locator(".cq-composer")
     ).to_be_hidden()  # the press decided, it didn't compose
+    assert errors == []
+    page.close()
+
+
+def test_the_margin_offers_one_kind_of_press(browser, serve):
+    """The 💬 and a change's ✓ Accept stand in the same margin, sometimes on the same
+    line — the test above is that collision — so they have to read as one thing.
+
+    They did not. The button was the chrome's own idiom (a solid accent rectangle at
+    the chrome's size, and, through a cascade nobody meant, set in the page's serif
+    three points larger than every other control in the layer) beside two hairline
+    pills, which put two idioms four centimetres apart in the one place a reader
+    compares them. Where a control stands decides which it wears: in the runtime's
+    furniture a press is a .cq-btn and looks like one, and out in the margin it is a
+    marginal mark.
+
+    Pinned by reading both off one page. The pill is one statement now (.cq-pill, in
+    the runtime's document-level vocabulary), but either wearer can still restate a
+    property in its own rules — the fab's scoped block and the suggestion's state
+    rules both layer over it — and this is what says such a restatement kept the
+    family. The shadow is the one property allowed to differ, and it is the
+    difference that is real: only one of them floats over the page's own words rather
+    than standing in the empty rail."""
+    page, errors = open_page(browser, serve(SUGGESTION_PAGE))
+    box = page.locator("#replace").bounding_box()
+    page.mouse.move(box["x"] + 4, box["y"] + 6)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] - 8, box["y"] + box["height"] - 6, steps=16)
+    page.mouse.up()
+    expect(page.locator(".cq-fab")).to_be_visible()
+    # The drag ends where the button is raised, so the pointer is on it: both are read
+    # at rest, since a hover state read against a resting one compares nothing.
+    page.mouse.move(4, 4)
+
+    family = """el => { const s = getComputedStyle(el);
+        return Object.fromEntries(["font-family", "font-size", "line-height",
+            "border-radius", "border-top-width", "border-top-style", "padding",
+            "background-color", "color"].map(p => [p, s.getPropertyValue(p)])); }"""
+    raised = page.locator(".cq-fab").evaluate(family)
+    resident = page.locator("[data-cq-for='sug-refill'] .cq-sug-accept").evaluate(
+        family
+    )
+    assert raised == resident, (
+        "the margin's two presses are drawn differently:\n  "
+        + "\n  ".join(
+            f"{k}: {raised[k]!r} vs {resident[k]!r}"
+            for k in raised
+            if raised[k] != resident[k]
+        )
+    )
+    assert "system-ui" in raised["font-family"], (
+        f"the margin's presses speak in the document's voice: {raised['font-family']}"
+    )
+    assert (
+        page.locator(".cq-fab").evaluate("el => getComputedStyle(el).boxShadow")
+        != "none"
+    ), "the one press that floats over the page says nothing about it"
     assert errors == []
     page.close()
 
