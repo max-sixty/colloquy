@@ -4104,6 +4104,13 @@ diffBtn.onclick = async () => {
 // whose user has said nothing yet. The banner asks whether anyone is attending, and
 // only two things answer yes: Claude is credibly busy, or a `colloquy wait` is live.
 // Everything else is absence, where the reason and the remedy are all that vary.
+//
+// One of those absences is not a fault, and reading it as one was the bug. A page served
+// across sessions — a command hub, a dashboard left open for a fortnight — is unheld for
+// most of its life, and a night of it is Tuesday. So the banner separates "somebody is
+// behind this page and isn't keeping up", which is worth an amber dot and a nudge, from
+// "nobody is behind it", which is the standing page at rest: grey, and the plain fact
+// that it picks up again when a session does.
 const HANDOFF_GRACE_MS = 2 * 60 * 1000;
 const WORKING_GRACE_MS = 15 * 60 * 1000;
 function renderStatus(state) {
@@ -4115,9 +4122,6 @@ function renderStatus(state) {
     return;
   }
   const { status, listening, pending, session_alive } = state;
-  // The one hard fact here is the owning process. Unknown counts as alive: a page
-  // nothing claimed (interact.py run outside Claude Code) isn't an abandoned one.
-  const alive = session_alive !== false;
   // How long the claim has gone unrefreshed. The rope is short for the status
   // `colloquy wait` writes as it prints a batch, because the agent writes its own
   // `colloquy status` after acknowledgement — that mark outliving minutes is a dropped
@@ -4125,40 +4129,48 @@ function renderStatus(state) {
   const grace = status.handoff ? HANDOFF_GRACE_MS : WORKING_GRACE_MS;
   const quiet =
     Boolean(status.ts) && Date.now() - new Date(status.ts).getTime() > grace;
+  // Nothing is behind the claim. The claimant pid settles it where there is one: gone
+  // is gone, whatever the claim says and however lately a stray `colloquy wait` bumped
+  // the heartbeat for a session that can no longer read it. Where nothing claimed the
+  // page — a server started outside an agent host — there is no pid to look for, so a
+  // live watcher or a claim still inside its grace is the whole of the evidence, and
+  // once both are spent the page is unheld too.
+  const unheld =
+    session_alive === false || (session_alive === null && !listening && quiet);
+  // What the user's words do meanwhile. The log takes them with nobody on the other
+  // end; the only thing attendance changes is when they are read.
+  const saved = pending
+    ? `${pending} update${pending === 1 ? "" : "s"} waiting.`
+    : "Your comments are saved.";
   let cls = "away",
     text = "",
     showAge = false;
   if (status.state === "idle") {
     cls = "";
     text = "Colloquy closed";
-  } else if (alive && status.state === "working" && !quiet) {
+  } else if (unheld) {
+    // No agent is named, because which one picks the page up next is not a fact this
+    // page holds — only that the log is there for whichever does.
+    cls = "";
+    text = `No session holds this page. ${saved} It picks up again when a session does.`;
+  } else if (status.state === "working" && !quiet) {
     cls = "working";
     showAge = Boolean(status.ts);
     text = `${agentName()} is working${status.detail ? " — " + status.detail : ""}`;
-  } else if (alive && listening) {
+  } else if (listening) {
     cls = "listening";
     text = `${agentName()} is listening — select text to comment`;
   } else {
-    // Nobody is attending: say why, what's waiting, and what to do. A dead session is
-    // never coming back, a recent check-in means Claude is mid-turn, and a long silence
-    // means it lost the thread.
-    const [why, how] = !alive
+    // Somebody is behind the page and isn't attending: say which and what to do. A
+    // long silence means Claude lost the thread; a recent check-in means it is
+    // mid-turn and the next one collects.
+    const [why, how] = quiet
       ? [
-          `The ${agentName()} session behind this page has ended.`,
-          "Start one in the terminal to pick it up.",
+          `${agentName()} last checked in ${ago(status.ts)}.`,
+          "Nudge it in the terminal.",
         ]
-      : quiet
-        ? [
-            `${agentName()} last checked in ${ago(status.ts)}.`,
-            "Nudge it in the terminal.",
-          ]
-        : [`${agentName()} isn't watching right now.`, "It picks them up next turn."];
-    // The user's updates land in the append-only log either way; what changes is when
-    // they're read.
-    const held = pending
-      ? `${pending} update${pending === 1 ? "" : "s"} waiting.`
-      : "Your comments are saved.";
-    text = `${why} ${held} ${how}`;
+      : [`${agentName()} isn't watching right now.`, "It picks them up next turn."];
+    text = `${why} ${saved} ${how}`;
   }
   dot.className = "cq-dot " + cls;
   statusText.textContent = "";

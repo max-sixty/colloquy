@@ -8986,10 +8986,18 @@ def live_watcher(page_dir, page):
 def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, dead_pid):
     """The banner may claim no more than the page directory can prove. A watch that
     has stopped must read differently from a watch with nothing to report, because
-    otherwise the user's only way to tell them apart is to ask."""
+    otherwise the user's only way to tell them apart is to ask.
+
+    And a page nothing is behind must read differently from either, without reading as
+    a fault: a standing page spends the night that way, so the words are the plain
+    computed fact and the dot is not the amber it wears for a session falling behind."""
     page, _ = open_page(browser, serve(LONG_PAGE, comments=1))
     d = tmp_path / "page"
     text, dot = page.locator(".cq-status-text"), page.locator(".cq-dot")
+    UNHELD = (
+        "No session holds this page. 1 update waiting."
+        " It picks up again when a session does."
+    )
 
     def declare(
         state,
@@ -8999,6 +9007,7 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
         handoff=False,
         quiet_for=0,
         session_pid=None,
+        claimed=True,
     ):
         ts = datetime.now().astimezone() - timedelta(seconds=quiet_for)
         status = {
@@ -9008,10 +9017,18 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
         }
         if handoff:
             status["handoff"] = True
-        interact.write_json(
-            d / "session.json",
-            {"id": "s", "pid": session_pid or os.getpid(), "agent": agent, "ts": "t"},
-        )
+        if claimed:
+            interact.write_json(
+                d / "session.json",
+                {
+                    "id": "s",
+                    "pid": session_pid or os.getpid(),
+                    "agent": agent,
+                    "ts": "t",
+                },
+            )
+        else:
+            (d / "session.json").unlink(missing_ok=True)
         interact.write_json(d / "status.json", status)
         told(page)
 
@@ -9043,12 +9060,23 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
     declare("working", "running the migration", quiet_for=10 * 60)
     expect(text).to_have_text(re.compile(r"^Claude is working — running the migration"))
 
-    # A dead session needs no timeout at all — the owning pid is simply gone.
+    # A dead session needs no timeout at all — the owning pid is simply gone, so the
+    # claim it left has nothing behind it however lately it was written.
     declare("working", "running the migration", session_pid=dead_pid)
-    expect(text).to_have_text(
-        "The Claude session behind this page has ended. 1 update waiting."
-        " Start one in the terminal to pick it up."
-    )
+    expect(text).to_have_text(UNHELD)
+    # Grey, not the amber a session falling behind wears: nobody is on the line, which
+    # is a page's arrangement rather than something for the user to chase.
+    expect(dot).to_have_class(re.compile(r"^cq-dot\s*$"))
+
+    # Nothing ever claimed the page — a server started outside an agent host. There is
+    # no pid to ask after, so a claim made moments ago is evidence and still stands.
+    declare("working", "running the migration", claimed=False)
+    expect(text).to_have_text(re.compile(r"^Claude is working — running the migration"))
+
+    # Once that claim goes quiet there is nothing left holding the page, and an hour of
+    # silence on a page that stands for weeks is not a fault to report.
+    declare("working", "running the migration", quiet_for=60 * 60, claimed=False)
+    expect(text).to_have_text(UNHELD)
 
     declare("working", "revising the plan", agent="Codex")
     expect(text).to_have_text(re.compile(r"^Codex is working — revising the plan"))

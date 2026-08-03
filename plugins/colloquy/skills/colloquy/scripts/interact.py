@@ -47,7 +47,10 @@ A page directory holds:
     heartbeat.json       watcher liveness, bumped by `colloquy wait` while it runs
     cursor.json          seq of the last user event acknowledged from the agent's
                          model context, written by `colloquy ack`
-    server.json          {"port", "pid", "url"} for the running server
+    server.json          {"port", "pid", "url", "lifetime"} for the running server.
+                         lifetime is "session" when the launching `server run` claimed
+                         the page and "standing" when nothing did — see below, since
+                         it decides what is allowed to take the server down
     access.json          {"host", "bind", "token"}: the name the page's URL carries,
                          the interface its server binds, and the key the URL carries.
                          Minted at the first `server run` and kept, because a restart
@@ -69,6 +72,15 @@ long turn, and the banner gives it a much shorter rope. Wait output that lands
 while the agent is already working leaves that claim untouched; there is no pickup
 gap to date.
 
+Where nothing answers for the claim at all, the banner drops it rather than
+repeating it: a claimant pid that has exited settles the question outright, and a
+page nothing ever claimed has only the claim's own age to go on, so it falls to
+the same grace. Either way the page is unheld, and the banner says that instead —
+"no session holds this page" is a fact it computed, where "Claude is working"
+would be a fortnight-old sentence someone else wrote. It is also not a fault: a
+page that stands for weeks (below) spends most of its life unheld, and picks up
+again the moment a session does.
+
 The `hook` command closes the same gap from the agent's side. Registered on
 Stop, UserPromptSubmit and SessionEnd, it refuses to let a turn end with one of
 this session's pages unwatched, surfaces unacknowledged user events at the next
@@ -79,6 +91,21 @@ launcher — absent that (interact.py run outside an agent host), nothing is cla
 and the hooks stand down. Unacknowledged events are the one thing
 `colloquy status <page> idle` can't close over: idling is how a colloquy ends,
 and one can't end on comments nobody read.
+
+Whether a session's end reaches a server is decided once, by the launch, and
+written down in server.json as its lifetime. `server run` from an agent host
+claims the page, and that claim is what two reapers act on: a watcher thread
+stops the process when the claimant pid goes, and SessionEnd idles the page and
+stops the server. `server run` from a bare shell — a terminal, a launchd job —
+claims nothing, and that is the standing serve: a page kept up across sessions,
+for a command hub or a dashboard someone leaves open for weeks. No daemon is
+involved and nothing revives it; `colloquy server stop` is its one reaper, which
+is the whole of what "standing" means. A session that picks the page up later
+owes it a watcher while it lives, exactly as it would any page, and takes
+nothing down when it ends: no watcher was ever started for a server it didn't
+launch, and SessionEnd leaves a standing one alone rather than adopting it —
+including the page's status, since the colloquy outlives the session that
+answered on it for an afternoon.
 
 `page init` vendors the runtime, theme, registry, widgets, and vendor assets into the
 page directory, overlaying by precedence: colloquy's shipped defaults, then the
@@ -642,14 +669,46 @@ def running_server(page_dir: Path):
     return None
 
 
+def standing_server(page_dir: Path) -> bool:
+    """Whether the page's running server is one no session's end may take down.
+
+    The launch decided this and server.json records it, so the two reapers a
+    session has — this module's watcher thread and the SessionEnd hook — ask one
+    question rather than each guessing from what it can see. Neither could
+    reconstruct the answer anyway: a session may claim a page long after a bare
+    shell started serving it, and from that point the claim says nothing about
+    who launched the process."""
+    info = running_server(page_dir)
+    return bool(info) and info["lifetime"] == "standing"
+
+
+def lifetime_note(page_dir: Path, lifetime: str) -> str:
+    """What ends this server, said at the moment it starts.
+
+    The two lifetimes are indistinguishable from the terminal — same command,
+    same URL — and the difference only shows up hours later, when one process is
+    gone and the other isn't. So `server run` states which it is rather than
+    leaving it to be discovered, and names the command where that is the only way
+    out."""
+    if lifetime == "standing":
+        return (
+            "standing server: no agent session claimed this page, so it outlives "
+            f"this shell. `colloquy server stop {page_dir}` is what stops it."
+        )
+    return (
+        "session server: it stops when the agent session that claimed this page ends."
+    )
+
+
 def stop_when_session_ends(httpd: ThreadingHTTPServer, page_dir: Path) -> None:
     """Stop a session-managed server once the page's current claimant is gone.
 
     Read the claim afresh on every pass: another live session may take over the
     already-running server, and then its pid — not the process that originally
     launched the server — is the one whose lifetime matters. This watcher is
-    only started when `server run` has a claim, so a manually launched server
-    remains an explicit-stop process.
+    only started when `server run` has a claim, which is what makes the standing
+    serve work: a bare-shell server has no watcher to retarget, so a session
+    claiming the page afterwards inherits no power to end it.
     """
     orphaned_at = None
     while True:
@@ -1789,6 +1848,11 @@ def cmd_serve(page_dir: Path, host: str | None = None) -> None:
                 "first, then re-run with --host"
             )
         print(existing["url"], flush=True)
+        # The running server's lifetime, not this invocation's: claiming the page
+        # does not adopt a server this launch found already up.
+        print(
+            lifetime_note(page_dir, existing["lifetime"]), file=sys.stderr, flush=True
+        )
         return
     access = page_access(page_dir, host)
     base = 41000 + zlib.crc32(str(page_dir.resolve()).encode()) % 4000
@@ -1815,11 +1879,21 @@ def cmd_serve(page_dir: Path, host: str | None = None) -> None:
                 "interface and put NAME in the URL."
             )
     url = page_url(access, httpd.server_address[1])
+    lifetime = "session" if claimed else "standing"
     write_json(
         page_dir / "server.json",
-        {"port": httpd.server_address[1], "pid": os.getpid(), "url": url},
+        {
+            "port": httpd.server_address[1],
+            "pid": os.getpid(),
+            "url": url,
+            "lifetime": lifetime,
+        },
     )
+    # The URL is the payload and goes to stdout alone, as everything downstream
+    # reads it there; what ends this process is the account beside it, and stderr
+    # is where colloquy's other accounts of themselves already go.
     print(url, flush=True)
+    print(lifetime_note(page_dir, lifetime), file=sys.stderr, flush=True)
     if claimed:
         threading.Thread(
             target=stop_when_session_ends,
@@ -2406,6 +2480,12 @@ def cmd_hook(payload: dict) -> None:
     event, sid = payload.get("hook_event_name"), payload.get("session_id") or ""
     if event == "SessionEnd":
         for page_dir in owned_pages(sid):
+            # A standing server is not this session's to end. Picking a page up
+            # earns the watch obligation, never the launch's authority over the
+            # process — and idling would close a colloquy that outlives this
+            # session just as the server does, so both stand down together.
+            if standing_server(page_dir):
+                continue
             cmd_status(page_dir, "idle", "the session that opened this page has ended")
             cmd_stop(page_dir)
         (state_home() / "sessions" / f"{sid}.json").unlink(missing_ok=True)

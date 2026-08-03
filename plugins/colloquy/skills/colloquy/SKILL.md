@@ -388,8 +388,9 @@ is truncated, acknowledge nothing and retrieve the whole batch. After the comple
 untruncated batch enters context, acknowledge through its highest sequence, handle every
 earlier event in that batch, then run `colloquy status <page> idle`. That explicit status
 command remains the act that ends the agent side of a page.
-Use it directly when the work a sign-off page tracks is finished too. The server needs
-no stopping; it goes down with the session. A page ending with record debt publishes
+Use it directly when the work a sign-off page tracks is finished too. A server you
+started needs no stopping; it goes down with the session (a standing one is the
+exception, below, and stays up). A page ending with record debt publishes
 one final honoring version first, because the final version is the page that has to read
 right without the log; `colloquy transcript` lists what still lags on stderr, and prints
 the whole exchange as Markdown when a PR description wants it. `version export` writes
@@ -501,6 +502,30 @@ the URL an open page is polling.
 Address, bind, and key are minted once and kept in `<page>/access.json` — `--host` is
 recorded there too — because a restart has to reproduce the URL an open browser is still
 polling. Deleting that file derives the address again from the session running now.
+
+## A page that outlives the session
+
+`server run` from your session claims the page, and the server goes down when the
+session ends. Run from a shell of the user's own instead — a terminal, a login item — it
+claims nothing and stays up: that is a **standing page**, the arrangement for a command
+hub or a dashboard they keep open for weeks. `server run` says which of the two it
+started on the line after the URL. Nothing revives a standing server and no session's
+end reaches it; `colloquy server stop <page>` is the only thing that ends one.
+
+A lifetime belongs to the process, so a crash ends it along with the server. The one
+restart in colloquy is `colloquy wait`'s, and it starts a server of the session running
+the wait — so a standing server that died and came back that way now goes down with that
+session. Say so when it happens: the user re-establishes a standing page from their own
+shell, and only they can.
+
+Working on a standing page changes nothing you do. Pick it up with `colloquy wait` as
+usual, publish versions as usual, and expect the same loop while your session lasts — a
+`server run` of your own finds the standing server already up, prints its URL, and
+leaves it running. What changes is the ending: don't stop the server, and use
+`colloquy status <page> idle` only when the *page* is finished, not when your work on it
+is. A session that just ends leaves the page up and unheld, which is what the user sees
+between sessions and what the banner says; an idled one reads "Colloquy closed" to
+someone who was expecting it tomorrow.
 
 ## Before the URL goes out
 

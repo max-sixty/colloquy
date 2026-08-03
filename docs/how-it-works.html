@@ -237,7 +237,12 @@
         </p>
         <p id="wait-stateless">
           The server and the wait both go down with the session, and the page directory
-          is the whole state.
+          is the whole state. Which is what lets a page outlive every session that works
+          on it: start <code>server run</code> from a shell of your own and it belongs
+          to no session, so nothing takes it down but <code>colloquy server stop</code>.
+          Sessions then come and go around a page that stays up, and between them the
+          banner says so — no session holds this page, and it picks up again when one
+          does.
         </p>
       </section>
 

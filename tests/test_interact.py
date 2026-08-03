@@ -4368,6 +4368,7 @@ def start_managed_server(page_dir, session_id, session_pid):
         text=True,
     )
     assert process.stdout.readline().startswith("http://127.0.0.1:")
+    assert "session server" in process.stderr.readline()
     return process
 
 
@@ -4406,15 +4407,10 @@ def test_a_live_session_can_take_over_an_existing_server(page_dir):
                 process.wait(timeout=5)
 
 
-def test_a_sessionless_server_ignores_a_stale_claim_and_requires_explicit_stop(
-    page_dir,
-):
-    dead = subprocess.Popen([sys.executable, "-c", ""])
-    dead.wait(timeout=5)
-    interact.write_json(
-        page_dir / "session.json",
-        {"id": "old-session", "pid": dead.pid, "agent": "Codex", "ts": "t"},
-    )
+def start_standing_server(page_dir):
+    """`server run` from a bare shell — a terminal, a login item. The host session
+    variables are stripped here rather than left to the caller's environment,
+    because the tests that use this go on to claim the page from one."""
     env = os.environ.copy()
     for name in (
         "CLAUDE_CODE_SESSION_ID",
@@ -4424,7 +4420,7 @@ def test_a_sessionless_server_ignores_a_stale_claim_and_requires_explicit_stop(
         "COLLOQUY_AGENT",
     ):
         env.pop(name, None)
-    server = subprocess.Popen(
+    process = subprocess.Popen(
         [
             sys.executable,
             str(interact.__file__),
@@ -4437,7 +4433,21 @@ def test_a_sessionless_server_ignores_a_stale_claim_and_requires_explicit_stop(
         text=True,
         env=env,
     )
-    assert server.stdout.readline().startswith("http://127.0.0.1:")
+    assert process.stdout.readline().startswith("http://127.0.0.1:")
+    assert "standing server" in process.stderr.readline()
+    return process
+
+
+def test_a_sessionless_server_ignores_a_stale_claim_and_requires_explicit_stop(
+    page_dir,
+):
+    dead = subprocess.Popen([sys.executable, "-c", ""])
+    dead.wait(timeout=5)
+    interact.write_json(
+        page_dir / "session.json",
+        {"id": "old-session", "pid": dead.pid, "agent": "Codex", "ts": "t"},
+    )
+    server = start_standing_server(page_dir)
     try:
         # The only held window in the suite, because it is the only assertion with nothing
         # to consume: a watcher that never starts states nothing, and the server going on
@@ -4448,6 +4458,51 @@ def test_a_sessionless_server_ignores_a_stale_claim_and_requires_explicit_stop(
         assert server.poll() is None, (
             "a manual server inherited the stale session claim"
         )
+        assert "stopped server" in interact.cmd_stop(page_dir)
+        server.wait(timeout=5)
+    finally:
+        if server.poll() is None:
+            server.terminate()
+            server.wait(timeout=5)
+
+
+def test_a_standing_server_outlives_a_session_that_picks_the_page_up(
+    page_dir, monkeypatch, capsys
+):
+    """The standing serve, the whole way round: a page kept up across sessions, and a
+    session that works on it for an afternoon and goes. Picking a page up earns the
+    watch obligation and nothing else, so the session's end must take down neither the
+    process it didn't start nor a colloquy that outlives it."""
+    server = start_standing_server(page_dir)
+    try:
+        launched = interact.read_json(page_dir / "server.json")
+        assert launched["lifetime"] == "standing"
+
+        # A session picks the page up, the way `colloquy wait` does.
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "later")
+        monkeypatch.setenv("CLAUDE_PID", str(os.getpid()))
+        assert interact.claim_page(page_dir)
+        interact.cmd_status(page_dir, "waiting", "")
+        # Without this the hook would skip the page for the wrong reason and the test
+        # would pass with the bug in: the standing check has to be what spares it.
+        assert page_dir in interact.owned_pages("later")
+
+        # A `server run` of its own finds this one up and reports the lifetime the
+        # running server has, not the one this claiming launch would have given it.
+        interact.cmd_serve(page_dir)
+        served = capsys.readouterr()
+        assert served.out.strip() == launched["url"]
+        assert "standing server" in served.err
+
+        interact.cmd_hook({"hook_event_name": "SessionEnd", "session_id": "later"})
+
+        # The hook is synchronous, so its declining to act is complete when it returns
+        # and there is no window to hold: `cmd_stop` unlinks server.json whether or not
+        # its kill lands, so the record standing is a stop never attempted.
+        assert interact.read_json(page_dir / "server.json") == launched
+        assert interact.read_json(page_dir / "status.json")["state"] == "waiting"
+        # And `cmd_stop` reports a stop only for a pid it finds alive, so this reads
+        # twice: the server was still running, and this is the one thing that ends it.
         assert "stopped server" in interact.cmd_stop(page_dir)
         server.wait(timeout=5)
     finally:
