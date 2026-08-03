@@ -1,8 +1,8 @@
-/* cq-draft: a block of text the reviewer owns — rewrite it in place, and the exact
+/* cq-draft: a block of text the user owns — rewrite it in place, and the exact
  * words reach the agent.
  *
  * The problem this solves that no other widget does: cq-board and cq-options let the
- * reviewer *choose* among things the agent wrote, but never *change* the words. The
+ * user *choose* among things the agent wrote, but never *change* the words. The
  * fastest correction to a sentence is typing the better sentence, not describing it in
  * a comment. That capability is the whole element: one verb (`edit`, the entire new
  * text), no container, no approve/skip chrome. Decisions compose from structures that
@@ -22,8 +22,8 @@
  *    exists only while an edit is open, and its result is written back as text. Read
  *    mode is the resting state; comments and Δ work there. The capture also strips the
  *    indentation the HTML source gave every line, so an agent can indent a draft like
- *    any other child content without the indentation becoming part of the text under
- *    review.
+ *    any other child content without the indentation becoming part of the draft's
+ *    text.
  * 2. applyAction states absolute values — the whole body, never a patch — so replay is
  *    idempotent, two tabs converge on the last write, and an edit no version has
  *    honored yet re-applies to each new version instead of visibly reverting. Until
@@ -54,7 +54,7 @@
  *
  * The fast path is taken on the second mousedown rather than on dblclick, because the
  * word the browser selects is selected *by* that mousedown and painted before dblclick
- * arrives: clearing it afterwards is a frame too late, and the reviewer saw a word
+ * arrives: clearing it afterwards is a frame too late, and the user saw a word
  * flash blue and vanish. Cancelling the mousedown's default means there was never a
  * selection to flash, or a comment button to contest the gesture. What that default
  * was saying — "this word" — is carried into the box instead, where a double-click
@@ -212,7 +212,7 @@ customElements.define(
         this.#open(undefined, wordAt(this.#body, ev.clientX, ev.clientY));
       });
 
-      // A recovered edit outranks the authored text: the reviewer typed it and never
+      // A recovered edit outranks the authored text: the user typed it and never
       // got it sent, so it must survive exactly as the composer's drafts do.
       const pending = loadEdit(this.id);
       if (pending !== null && pending !== raw) this.#open(pending);
@@ -393,7 +393,7 @@ customElements.define(
       this.#ta = null;
       // States the whole row rather than removing two buttons from it, so read mode
       // is one call from anywhere. The edit box had focus and is gone; hand it to the
-      // draft's one persistent control so a keyboard reviewer isn't dropped back at
+      // draft's one persistent control so a keyboard user isn't dropped back at
       // the page top.
       this.#row.replaceChildren(this.#pencil);
       this.#pencil.focus();
@@ -419,7 +419,7 @@ customElements.define(
         toast(`Edited “${this.id}” — sent to ${agentName()}`);
       } else {
         // Unsent means unrecorded. Put the words back on screen and keep the
-        // reviewer's text in storage so nothing they typed is lost.
+        // user's text in storage so nothing they typed is lost.
         this.#body.textContent = previous;
         saveEdit(this.id, text);
         this.#open(text);

@@ -43,7 +43,7 @@
   reload, a version navigation, and a server restart — the port is derived from the page
   directory, so a re-serve lands on the same origin — and a closed tab is the one case
   it doesn't cover. That is the ordinary case here rather than a rare one: each round's
-  reply hands the URL over again and the reviewer opens the page from the turn in front
+  reply hands the URL over again and the user opens the page from the turn in front
   of them, so a page's tabs accumulate. Swapping the store for localStorage trades the
   gap for a worse failure, since one store shared across those tabs means a send or a
   Cancel in an old tab clears text being typed in the new one. The build that avoids
@@ -55,7 +55,7 @@
   that box for its thread's life, so the index would be one more store to hold in step
   with the list. The server is where Slack keeps drafts and the one place
   these cannot go: here the server is the agent, and an unsent draft would be words the
-  reviewer has not decided to say, sitting where the next `review wait` can read them.
+  user has not decided to say, sitting where the next `colloquy wait` can read them.
 
 - (2026-08-02) Probably rename to `leaf`, taking `leaf.page` with it. Not settled.
   `/colloquy` comes late in Claude Code's completion menu, and the rule behind that is

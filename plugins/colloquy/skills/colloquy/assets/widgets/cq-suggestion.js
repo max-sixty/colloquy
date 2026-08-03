@@ -1,12 +1,12 @@
-/* cq-suggestion: Claude's edit to content the reviewer has already seen, offered
- * as a proposal rather than shipped as a fait accompli. The reviewer accepts or
+/* cq-suggestion: Claude's edit to content the user has already seen, offered
+ * as a proposal rather than shipped as a fait accompli. The user accepts or
  * rejects it in place; the outcome rides the action channel cq-board opened, and
  * the next version carries the settled markup.
  *
  * Deciding is the end of the matter on screen: the element collapses to the
  * settled slot immediately (the theme drops every mark from it), exactly as a
  * dragged card sits where it was dropped before the honoring version exists —
- * the live view is the version plus the reviewer's actions replayed on it. So
+ * the live view is the version plus the user's actions replayed on it. So
  * applyAction states an absolute outcome, which makes a reload, a second tab,
  * and the sender itself all converge on the same view. A pick can be cleared by
  * clicking its mark again; a decision can't, because settling deliberately
@@ -188,7 +188,7 @@ customElements.define(
       if (this.dataset.cqState) return Promise.resolve(true);
       // Read before settling: deciding retires a slot, a retired slot leaves the page's
       // reading, and `says` on what has left the reading answers nothing — the toast
-      // then named the widget's id instead of the words the reviewer just judged.
+      // then named the widget's id instead of the words the user just judged.
       const label = this.#label();
       this.#settle(outcome);
       // Accepting the fix answers the thread it was written for, so the same

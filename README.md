@@ -14,7 +14,7 @@ each new version on its own.
 ![colloquy demo](docs/demo.gif)
 
 [`docs/`](docs/) is the site, published at <https://max-sixty.github.io/colloquy/>:
-`index.html` is the tour (what it does, and a review end to end), `examples.html` lists
+`index.html` is the tour (what it does, and one session end to end), `examples.html` lists
 the example pages, `how-it-works.html` covers the mechanism, and `customizing.html`
 covers themes and project widgets. Each uses colloquy's own theme, so they double as
 specimens, and each opens the same from a checkout as from the web.
@@ -94,12 +94,12 @@ scripts/site.py
 
 The suite is integration tests over the real thing. `test_interact.py` exercises the
 lint, vendoring, publishing, catalog, export, thread-markup validation, and the anchors
-`review comment` writes by reading a version file. `test_render.py`
+`colloquy comment` writes by reading a version file. `test_render.py`
 loads the shipped examples in a real browser (both color schemes) and asserts what a
 static lint can't reach: every widget upgrades into a box with usable size, the document
 and the comment panel scroll in separate regions, the comment box grows without any
 script sizing it, and neither pressing a control nor news arriving on its own moves the
-controls beside it. One journey test drives the whole review loop through the real UI
+controls beside it. One journey test drives the whole loop through the real UI
 (select a passage, comment, drag a card, follow the next version, find the comment still
 anchored) and pins the event log it leaves. `test_product_page.py` holds the pages under
 `docs/` to the shipped theme and widget registry, and `test_site.py` builds the site and
@@ -109,8 +109,8 @@ sideways on a phone. Playwright attaches to the Chrome
 already installed (`channel="chrome"`), so there is no browser download and still no
 build step. Driving a page by hand to check a change works the same way: run `page init`
 for the directory, then serve it from `interact.handler_for(page_dir, token)` in-process
-as the fixtures do, opening the page with that key in the query (`?t=…`). `server run` instead puts a live review behind the session, and the
-review-loop hooks then hold it to watching that page.
+as the fixtures do, opening the page with that key in the query (`?t=…`). `server run` instead puts a live page behind the session, and the
+loop's hooks then hold it to watching that page.
 
 The suite runs in the environment `pyproject.toml` names and `uv.lock` pins. That is the
 developer's environment only: colloquy declares what it needs in `interact.py`'s PEP 723
@@ -143,7 +143,7 @@ file, so `scripts/vendor-marked.sh` is a copy at a pinned version, not a build.
 
 ## Recording the demo
 
-`scripts/record-demo.sh` drives a review through the shipped server and Chrome, then
+`scripts/record-demo.sh` drives a session through the shipped server and Chrome, then
 writes the resulting animation to `docs/demo.gif`.
 
 ## Related

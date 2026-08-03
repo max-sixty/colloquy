@@ -1,4 +1,4 @@
-/* cq-board: the one widget the reviewer edits directly, movable two ways that
+/* cq-board: the one widget the user edits directly, movable two ways that
  * share one send path and one gesture gate. Dragging is wired via the vendored
  * SortableJS (pointer-driven `forceFallback` mode, so touch works and the
  * follower is stylable — native HTML5 DnD is not used). The grip is a press
@@ -92,7 +92,7 @@ customElements.define(
     // exhibit is read like anything else, it just takes no input.
     //
     // The heading is written here too, rather than declared x-says and left to
-    // the runtime's pass, because it is two things at once: the words a reviewer
+    // the runtime's pass, because it is two things at once: the words a user
     // selects to comment on the column, and the list's accessible name. The pass
     // renders one run of words at an edge and knows nothing about names, so it
     // would put these into the tree a second time under a list already carrying
@@ -111,7 +111,7 @@ customElements.define(
         heading.dataset.cqSaid = "label";
         heading.dataset.cqGen = "1";
         // The column already carries these words as its name, so the heading is
-        // the visible half only: the tree hears them once, the reviewer can still
+        // the visible half only: the tree hears them once, the user can still
         // select them, and the theme's generated copy is left to the no-script case.
         heading.setAttribute("aria-hidden", "true");
         heading.textContent = col.getAttribute("label");
@@ -120,7 +120,7 @@ customElements.define(
     }
 
     // Every grip's name, in the idiom the live region already announces moves in
-    // ("card — column"): the reviewer who lands on a grip by Tab hears where the
+    // ("card — column"): the user who lands on a grip by Tab hears where the
     // card is without having read the list it sits in, and whether the move still
     // awaits a version after its transient announcement has faded.
     #names() {

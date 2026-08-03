@@ -15,7 +15,7 @@
  * Two kinds of word, and they are marked differently on purpose. Each frame's caption
  * names which state it holds, which is the widget's own word and the only thing telling
  * the two frames apart once paper has both of them on the page: data-cq-gen alone, so
- * the version diff looks away and the reviewer can still select it. The radio beside it
+ * the version diff looks away and the user can still select it. The radio beside it
  * is a thing to press, so it goes through `offer` with the rest of the chrome. What the
  * page has to say about the change itself is neither — it is prose, written around the
  * element, where a comment can reach it like any other sentence. */

@@ -12,14 +12,14 @@ allowed-tools:
 ---
 
 Present a concept, decision, findings, or work in progress as an HTML page the user opens
-in a browser and reviews in place: they select text and comment, you reply in-thread and ship revised
-versions, and a banner shows whether you're working or listening. Reach for it instead
-of a wall-of-text plan or a `.md` report handed over by path, when a complex change
-needs shared understanding or a decision before code, when a diagnosis or review is
-itself the deliverable, or when a run of work has items the reviewer will want to watch
-go by. With nothing named below, the subject is whatever the session is about — the plan
-you were about to give, the design under discussion, the findings you just gathered, or
-the work you are about to start.
+in a browser and works in place — a colloquy: they select text and comment, decide and
+edit through what the page offers, you reply in-thread and ship revised versions, and a
+banner shows whether you're working or listening. Reach for it instead of a wall-of-text plan or a
+`.md` report handed over by path, when a complex change needs shared understanding or a
+decision before code, when a diagnosis or review is itself the deliverable, or when a
+run of work has items the user will want to watch go by. With nothing named below, the
+subject is whatever the session is about — the plan you were about to give, the design
+under discussion, the findings you just gathered, or the work you are about to start.
 
 $ARGUMENTS
 
@@ -30,7 +30,7 @@ most of that.
 
 **Shape follows the subject.** Ask what the subject *is* before writing about it. A set
 of things renders as things — `cq-milestones` for work with stages, `cq-board` for work
-the reviewer re-orders, `cq-options` for a decision, `cq-metrics` for what was measured —
+the user re-orders, `cq-options` for a decision, `cq-metrics` for what was measured —
 and the prose says what only prose can. Five paragraphs about five items hand the reader
 the job of rebuilding the list you dissolved; the same five as items, each carrying its
 own state, are read at a glance and commented on one at a time.
@@ -44,15 +44,15 @@ one can win. Every such group carries a box for words, so "none of these" and a 
 why need no separate gesture. A page presenting five candidates in prose and offering
 nothing to press has handed the reader a document where it meant to ask a question.
 
-**The page keeps up with the work.** A page is not only a thing to review before the
+**The page keeps up with the work.** A page is not only a thing to approve before the
 work starts. Where the work is yours to do and the page tracks it, publish a version each
 time the state moves — an item to `active`, then `done`; a finding added as you find it —
-and the reviewer watches it happen instead of reading about it afterwards. Their browser
+and the user watches it happen instead of reading about it afterwards. Their browser
 follows each new version by itself, deferring only while they are mid-comment or
 mid-drag, so a version costs them nothing. Ship one when an item's state actually
 changes rather than at every step it took, and let
-`review state <page> working "<detail>"` carry the finer grain in between. Keep
-`review wait <page>` running while you work, in the host-specific loop below: a comment
+`colloquy status <page> working "<detail>"` carry the finer grain in between. Keep
+`colloquy wait <page>` running while you work, in the host-specific loop below: a comment
 that lands mid-flight ("skip that one") then reaches you at the next step rather than at
 the end, and the banner reads as working throughout.
 
@@ -63,7 +63,7 @@ The page lives in its own directory, conventionally
 for the topic (`migration-options`, `auth-diagnosis`) — every leaf command takes the
 page directory explicitly, so any location works. The directory survives the session
 and is where every version, the event log, and the vendored widget layer live. It is
-review state, not an archive: content with a life beyond the review leaves through
+live state, not an archive: content with a life beyond the page leaves through
 `version export` or a copied version, to wherever that content belongs.
 
 The launcher is `${CLAUDE_SKILL_DIR}/../../bin/colloquy`. Resolve
@@ -78,13 +78,13 @@ colloquy version check <page> --render       # browser gate, once per page
 colloquy version publish <page> --version 1 --text "<changelog>"
 colloquy version export <page> -o <file>     # standalone HTML copy
 colloquy server run <page> [--host NAME]     # long-running; prints the URL
-colloquy review state <page> working "<detail>"  # or: waiting, idle
-colloquy review wait <page>                  # prints unacknowledged reviewer events
-colloquy review ack <page> <seq>             # complete, untruncated output reached context
-colloquy review comment <page> --quote "<passage>" --text "…"
-colloquy review reply <page> --to <id> --text "…"
-colloquy review events <page>                # full event log
-colloquy review transcript <page>            # review as Markdown
+colloquy status <page> working "<detail>"    # or: waiting, idle
+colloquy wait <page>                         # prints unacknowledged user events
+colloquy ack <page> <seq>                    # complete, untruncated output reached context
+colloquy comment <page> --quote "<passage>" --text "…"
+colloquy reply <page> --to <id> --text "…"
+colloquy events <page>                       # full event log
+colloquy transcript <page>                   # the exchange as Markdown
 ```
 
 If the resolved launcher does not exist, the plugin payload is incomplete; say so. In a
@@ -100,24 +100,24 @@ repository checkout it lives at `plugins/colloquy/bin/colloquy`.
    per directory, so the URL survives a restart.
 4. Run `version publish <page> --version 1 --text "<changelog>"`. Publishing checks
    the version first and refuses a failure, so a half-written or broken file is never
-   live in the reviewer's browser. Before the URL first goes out, run the browser gate
+   live in the user's browser. Before the URL first goes out, run the browser gate
    too: `version check <page> --render` (see "Before the URL goes out"). Then hand the
    user the URL with a one-line orientation (select text to comment; on a sign-off
-   page, "✓ Looks good" approves; otherwise "End review" ends comments without
-   approval) and enter the review loop.
+   page, "✓ Looks good" approves; otherwise "End colloquy" ends comments without
+   approval) and enter the loop.
 
 ## When the deliverable is the file
 
-`--export` in the argument asks for the page rather than the review: steps 1, 2 and 4
+`--export` in the argument asks for the file rather than the live page: steps 1, 2 and 4
 as above, then `version export <page> -o <file>` and hand back the `file://` URL. No
-`server run`, no `review wait`, no review loop — the page directory is still built, so
-the same page can be served and reviewed later without being rewritten, and the Stop
-hook covers only pages that were served or waited on, so it has nothing to say about
-this one. Write the file wherever the project puts things for the user to open.
+`server run`, no `colloquy wait`, no loop — the page directory is still built, so the
+same page can be served later without being rewritten, and the Stop hook covers only
+pages that were served or waited on, so it has nothing to say about this one. Write the
+file wherever the project puts things for the user to open.
 
-Mid-review the same command answers "give me a copy": `version export` writes any
-published version, as many times as asked, and the review carries on around it. The
-copy is the page as the browser drew it, with the reviewer's decisions replayed onto it
+While a page is live the same command answers "give me a copy": `version export` writes
+any published version, as many times as asked, and the page carries on around it. The
+copy is the page as the browser drew it, with the user's decisions replayed onto it
 and the comment layer left behind.
 
 ## Page conventions
@@ -160,18 +160,18 @@ and the comment layer left behind.
   id does. The reader's place on the page falls back to those same ids when the text
   around it was rewritten. Keep ids stable across versions so neither detaches, and out
   of the `cq-` prefix, which the runtime coins its own ARIA targets in.
-- **Edits to reviewed content ship as suggestions.** Changing a passage the reader
+- **Edits to already-seen content ship as suggestions.** Changing a passage the reader
   has already seen — a rewrite, a deletion, above all the fix a comment asked for —
   goes in a `cq-suggestion`: `cq-old` carries the current markup verbatim (its ids
-  ride there), `cq-new` the proposal, and the reader accepts or rejects it in the
+  ride there), `cq-new` the proposal, and the user accepts or rejects it in the
   margin. Fresh content — the first version, a new section, a restructure — is
-  written straight, and its review is comments as usual. Name the answered thread
+  written straight, and comments cover it as usual. Name the answered thread
   with `resolves="<comment id>"` so accepting the fix closes the thread too.
   Deciding isn't the only answer: the proposed words are ordinary page text, so the
-  reader can select them and comment instead — worth saying where the page
+  user can select them and comment instead — worth saying where the page
   introduces its first suggestion, since ✓ and ✗ are the only visible affordances.
-- **Who writes the words picks the shape.** Three things change text once a review is
-  under way, and they differ by seat rather than by style. Prose you own, rewritten
+- **Who writes the words picks the shape.** Three things change text once the page is
+  in front of the user, and they differ by seat rather than by style. Prose you own, rewritten
   after the reader has seen it: a `cq-suggestion`, theirs to accept or reject. A
   passage that is theirs to word — a release note, a summary in their voice: a
   `cq-draft`, which nobody decides and the next version carries verbatim. Their
@@ -182,14 +182,14 @@ and the comment layer left behind.
 - The runtime injects the status banner, comment sidebar, version picker, and keyboard
   shortcuts (`?` in the browser shows the reference); don't build page UI for any of
   those.
-- **Sign-off is declared, not assumed.** A page that asks for the reader's assent — a
+- **Sign-off is declared, not assumed.** A page that asks for the user's assent — a
   plan, a design, a proposed change, anything where approval unblocks work — declares
   `<meta name="cq-review" content="sign-off">` in the head, and the
   banner offers "✓ Looks good". A page that only informs (a status report, an
-  incident chronicle) omits it: its review is comments only, and the banner instead
-  offers a neutral "End review" control with no approval meaning.
+  incident chronicle) omits it: it takes comments only, and the banner instead
+  offers a neutral "End colloquy" control with no approval meaning.
   `version check` rejects unknown `cq-*` metas and any other `cq-review` value.
-- **Announce interactivity in prose.** A fresh reviewer won't guess from a grip glyph
+- **Announce interactivity in prose.** Someone new to the page won't guess from a grip glyph
   or a hover cursor that a board takes drags or an options group takes clicks — the
   sentence introducing the widget says it ("drag cards to reprioritize; your edits
   reach me directly", "click an option to decide"). The widgets stay chrome-free on
@@ -202,7 +202,7 @@ and the comment layer left behind.
   layout must be bespoke, drawn from the theme's tokens, with labelled nodes and
   arrowheaded edges. Never box-drawing (`┌─┐ │ ▼`) in a `<pre>`.
 - **Name a code block's language and it gets colored.** Two shapes, by what the block
-  is for: `<pre><code class="language-python">` for a literal the reader selects and
+  is for: `<pre><code class="language-python">` for a literal the user selects and
   quotes — a command, a config, a snippet of output — and `<cq-code language="python">` for
   a walkthrough, which adds line numbers, `hi` ranges, and `cq-note` remarks anchored at
   a line. The language names are the same set either way, `page catalog` lists them, and
@@ -216,7 +216,8 @@ and the comment layer left behind.
   Render ticket keys, MR/PR numbers, and URLs as real `<a>` links, not plain text.
   Inside a `<cq-specimen>` a fictional URL is fine.
 - **Keep wide content inside the column** — 720px in the default theme. The comment
-  layer anchors to on-screen text, so a page that scrolls sideways is hard to review.
+  layer anchors to on-screen text, so a page that scrolls sideways is hard to comment
+  on.
   Give any element that can overflow (a `<pre>`, a `<table>`, an `<svg>`)
   `max-width: 100%` or `overflow-x: auto`, and size diagrams responsively rather than a
   fixed pixel width wider than the column. `version check` flags fixed widths that
@@ -226,7 +227,7 @@ and the comment layer left behind.
   the `src` to write; that path is the only form an image takes on a page, because a
   base64 `data:` URI is more bytes than you can usefully type and it would sit in every
   version forever. Each file is named by the hash of its bytes, so two versions showing
-  one screenshot share one copy and a version the reader approved cannot come to show
+  one screenshot share one copy and a version the user approved cannot come to show
   them something else. `version check` refuses a `/media/` reference the directory
   can't answer.
   Where the deliverable is a change to a UI with a real *before* state, let the reader
@@ -251,84 +252,84 @@ A page shows where its topic stands now, with what came before still on it. That
 "Show the destination, not the journey" over time: the journey grows as the work does, so
 v1's destination — four options laid out for a decision — is the journey by v4, once the
 decision has been made and applied. Leaving it at full height in the order it was written
-turns the page into the record of the investigation, and the reviewer has to work the
+turns the page into the record of the investigation, and the user has to work the
 present out of that.
 
 Each version is therefore a rewrite toward the present. The body carries what is live —
-the question in front of the reviewer and what they need to answer it — and the lede says
+the question in front of the user and what they need to answer it — and the lede says
 what the page is asking now. A section the topic has moved past goes to a `Settled`
 section at the foot: `<h2>Settled</h2>`, and under it one `<details>` per retirement, its
 `<summary>` naming the question and what closed it (the option picked, or the section that
 superseded it). Nothing is deleted. What retires moves intact, ids and all, so the anchors
-hold and `version check` passes, and a reviewer who wants the argument behind a settled
+hold and `version check` passes, and a user who wants the argument behind a settled
 question opens it and finds what they read before.
 
 A `cq-options` group has the same move built in. `settled` collapses it to one line naming
-the pick, with every option behind a disclosure; the reader can open it, disagree, and
+the pick, with every option behind a disclosure; the user can open it, disagree, and
 pick again. Reach for it where a decision retires inside a section that stays live; a
 section retiring whole takes its groups with it, marked the same way.
 
 Retiring is not revising. The words don't change, so it is neither a `cq-suggestion` nor
-grounds for `restated` — relocating a group the reviewer picked in is a version agreeing
+grounds for `restated` — relocating a group the user picked in is a version agreeing
 with them.
 
 Time it by what is still moving rather than by what is finished. A decision stays live
 while you are applying it and settles once nothing is revisiting it, usually a version or
-two on, and a section the reviewer is still commenting in stays in the body until that
+two on, and a section the user is still commenting in stays in the body until that
 thread closes.
 
-## The review loop
+## The loop
 
 Whenever you hand over the URL or finish a round of work, run
-`review state <page> waiting`, then enter the loop for the current host:
+`colloquy status <page> waiting`, then enter the loop for the current host:
 
-Every handover message carries the page's URL again, so the reviewer can open the page
+Every handover message carries the page's URL again, so the user can open the page
 from the turn in front of them.
 
-- **Claude Code:** start `review wait <page>` as a background task and end the turn.
+- **Claude Code:** start `colloquy wait <page>` as a background task and end the turn.
   Its completion returns as host input: an idle session starts a turn, while a working
   session receives it between tool calls. Restart the background wait after each batch.
 - **Codex:** send the URL to the user in an intermediate update before waiting. Start
-  `review wait <page>` in unified exec, retain the returned session id, and keep the
-  current turn active. Where the reviewer owns the next move, poll that exact session
+  `colloquy wait <page>` in unified exec, retain the returned session id, and keep the
+  current turn active. Where the user owns the next move, poll that exact session
   with empty `write_stdin` calls and long yields until it returns. Where you are working,
   leave the same waiter running, continue the work, and poll it between tool calls or
   milestones so a comment can change the next decision. Never detach the wait and never
   end the turn expecting its completion to start another one: Codex has no unprompted
   completion delivery. Start a fresh wait session after each batch and retain its new id.
 
-While `review wait` runs, the banner names the current agent as listening. It can stay
-open as long as the reviewer takes, and exits when the user comments, replies, resolves,
-ends or approves the review, or edits an interactive widget (a drag on a `cq-board`
-arrives as an `action` event), printing the unacknowledged reviewer events as JSON
-lines. Printing is deliberately not receipt: a
+While `colloquy wait` runs, the banner names the current agent as listening. It can stay
+open as long as the user takes, and exits when they comment, reply, resolve,
+approve the page or end the colloquy, or edit an interactive widget (a drag on a
+`cq-board` arrives as an `action` event), printing the unacknowledged user events
+as JSON lines. Printing is deliberately not receipt: a
 detached process can finish without its output ever entering model context. As soon as
-a complete wait result enters context, run `review ack <page> <highest-seq>` before
+a complete wait result enters context, run `colloquy ack <page> <highest-seq>` before
 interpreting or handling it. If the wait output was truncated at all, acknowledge
 nothing: run a new wait with enough output capacity to receive the whole batch. A scalar
 cursor cannot represent a missing line in the middle. Acknowledgement is monotonic and
 idempotent; an event posted between wait and ack has a higher sequence and remains
 pending. Until ack, the next wait prints the batch again. Reading the full log with
-`review events` does not acknowledge it. User comments exist only through the browser;
-`review comment` posts as you, never as them.
+`colloquy events` does not acknowledge it. User comments exist only through the browser;
+`colloquy comment` posts as you, never as them.
 
 A wait result while the page already says `working` leaves that status untouched;
 `handoff` dates only a pickup from a non-working state.
 
 For each acknowledged batch:
 
-1. Run `review state <page> working "<what you're doing>"` and refresh the detail at
+1. Run `colloquy status <page> working "<what you're doing>"` and refresh the detail at
    each milestone. The banner shows it live, and reads a state left unrefreshed long
    enough as the agent having gone quiet.
-2. Address every event `review wait` printed. Each is JSON carrying the server-minted
-   `id` that `review reply --to` takes:
-   - **A comment**: `review reply` in-thread, and change the page where the comment
+2. Address every event `colloquy wait` printed. Each is JSON carrying the server-minted
+   `id` that `colloquy reply --to` takes:
+   - **A comment**: `colloquy reply` in-thread, and change the page where the comment
      warrants it — usually both. A reply's `--text` is brief Markdown — lists, `code`,
      fenced blocks, a table, bare URLs arrive as links — and every raw tag in it
-     renders as its characters: write `<T>`, `<div>`, or a `cq-` tag in prose and the
-     reviewer reads exactly those words. To put a widget in the thread (a small
+     renders as its characters: write `<T>`, `<div>`, or a `cq-` tag in prose and
+     the user reads exactly those words. To put a widget in the thread (a small
      `cq-diagram` explaining a fix renders live there), pass its markup as `--markup`,
-     which renders after the text. `review reply` validates it against the vendored
+     which renders after the text. `colloquy reply` validates it against the vendored
      registry and rejects what `version check` would, and a widget's ids must be
      fresh — it refuses ids the page or an earlier message already uses, and
      `version check` keeps later versions off a reply's.
@@ -371,28 +372,28 @@ For each acknowledged batch:
    though a decline's why can take a sentence or two. The browser follows the published
    version automatically.
 4. Re-enter the host's loop above: start a new background wait in Claude Code, or a new
-   unified-exec wait in Codex and retain its exact session. Use `review state <page>
-   waiting` and long-poll where the next move is the reviewer's. Where it is yours, use
+   unified-exec wait in Codex and retain its exact session. Use `colloquy status <page>
+   waiting` and long-poll where the next move is the user's. Where it is yours, use
    `working`, keep doing the work, and poll the running waiter between milestones.
 
 A `done` event is sign-off — it arrives only from a page declaring it (see the
 conventions). It approves the work rather than ending the page: carry the approval back
 into the main task, and where the approved work is yours to do, the page keeps up with
-it from here. So the page stays `working` under a live `review wait` — "skip that one"
+it from here. So the page stays `working` under a live `colloquy wait` — "skip that one"
 then reaches you mid-flight rather than at the end.
 
-On a comments-only page, `close` is the neutral terminal event from "End review". It
+On a comments-only page, `close` is the neutral terminal event from "End colloquy". It
 does not approve anything and does not mutate the page status by itself. If wait output
 is truncated, acknowledge nothing and retrieve the whole batch. After the complete,
 untruncated batch enters context, acknowledge through its highest sequence, handle every
-earlier event in that batch, then run `review state <page> idle`. That explicit state
+earlier event in that batch, then run `colloquy status <page> idle`. That explicit status
 command remains the act that ends the agent side of a page.
 Use it directly when the work a sign-off page tracks is finished too. The server needs
-no stopping; it goes down with the session. A review ending with record debt publishes
+no stopping; it goes down with the session. A page ending with record debt publishes
 one final honoring version first, because the final version is the page that has to read
-right without the log; `review transcript` lists what still lags on stderr, and prints
-the whole review as Markdown when a PR description wants it. `version export` writes
-the page itself as one file when that is what outlives the review.
+right without the log; `colloquy transcript` lists what still lags on stderr, and prints
+the whole exchange as Markdown when a PR description wants it. `version export` writes
+the page itself as one file when that is what outlives it.
 
 The `Stop` hook applies the same invariant differently by host. In Claude Code, a fresh
 wait heartbeat means the background watcher can safely carry the next comment into a
@@ -404,21 +405,21 @@ retrying if output is truncated), then acknowledge and handle it. The hook's one
 recursion escape
 still lets a turn it has already blocked proceed once.
 
-The invariant is what the reviewer is owed — from the browser, a page nobody is
-listening to looks exactly like a page whose reviewer simply has not commented yet, so
-without it they find out by asking. It covers the pages you run `server run` or `review
-wait` on, the two acts that put a reviewer on the other end, so a directory you only
-built or linted is outside it. `review state <page> idle` refuses while events remain
-unacknowledged: run `review wait`, which returns at once when they are already there,
+The invariant is what the user is owed — from the browser, a page nobody is listening
+to looks exactly like a page whose user simply has not commented yet, so without it
+they find out by asking. It covers the pages you run `server run` or `colloquy wait`
+on, the two acts that put a user on the other end, so a directory you only built or
+linted is outside it. `colloquy status <page> idle` refuses while events remain
+unacknowledged: run `colloquy wait`, which returns at once when they are already there.
 If its output is truncated, acknowledge nothing and rerun with enough output capacity
-for the whole batch. After a complete batch enters context, run `review ack` through
+for the whole batch. After a complete batch enters context, run `colloquy ack` through
 its highest sequence.
-`review wait` also restarts a server that died under it and reports the restart on
+`colloquy wait` also restarts a server that died under it and reports the restart on
 stderr; exit 2 means it couldn't, and the page stays down until `server run`.
 
 ## Pointing at a passage yourself
 
-`review comment` opens a thread the way the reviewer's selection does — same anchor,
+`colloquy comment` opens a thread the way the user's selection does — same anchor,
 same Markdown, same reply box, labelled with the current agent instead of You. Reach for it when what you have to say is
 about one passage and you can't settle it yourself: a sentence that reads two ways, an
 assumption the paragraph rests on, a line only they have the fact to fix. Anything you
@@ -426,12 +427,12 @@ can settle, settle — ship the fix. In chat, the reader has to find the passage
 in the margin it is already beside them.
 
 ```bash
-colloquy review comment <page> --quote "<passage from the version file>" --text "…"
-colloquy review comment <page> --section <element-id> --text "…"  # diagram or image
+colloquy comment <page> --quote "<passage from the version file>" --text "…"
+colloquy comment <page> --section <element-id> --text "…"  # diagram or image
 ```
 
 It anchors in the newest published version, deriving the section the way the browser
-does, and reads the version the way the reviewer sees it: a slot their decision retired
+does, and reads the version the way the user sees it: a slot their decision retired
 (an accepted suggestion's `cq-old`, a rejected one's `cq-new`) is off the page, however
 much the file still holds it, and a `cq-draft` they have edited says their words — quote
 the text their edit sent, not the body you authored. Quote the words the file holds, not
@@ -446,7 +447,7 @@ their screen.
 
 A comment asks; a `cq-suggestion` proposes. Where you have the better sentence, ship it
 as a suggestion in the next version and let them accept it — a comment is for the
-question you can't answer yourself. The reviewer resolves either. There is no CLI that
+question you can't answer yourself. The user resolves either. There is no CLI that
 resolves a thread: a note's purpose is discharged by being read, and only the reader
 knows that happened.
 
@@ -465,8 +466,8 @@ layer; pass `--user` for the user layer. The merged vocabulary is validated befo
 vendoring, and its `x-state.detail` schema validates every action at
 `POST /api/event`. `page catalog` reflects the result.
 
-The page directory is self-contained: an approved version can't change under its
-reviewer. Re-running `page init` on a live page is the explicit re-vendor; note it in
+The page directory is self-contained: a version the user approved can't change under
+them. Re-running `page init` on a live page is the explicit re-vendor; note it in
 the next version's changelog. It refuses when the incoming layer no longer accepts a
 logged event kind or action contract (tag, verb, and detail), since that event would
 stop replaying.
@@ -475,9 +476,9 @@ stop replaying.
 
 `server run` serves a page on the address its session arrived on: for an SSH session, the
 one the client reached this machine on; otherwise loopback. The URL therefore opens as
-printed whether the reviewer's browser is here or on the machine they SSH'd from.
+printed whether the user's browser is here or on the machine they SSH'd from.
 
-That address is a route the session demonstrated, which the reviewer's browser may not
+That address is a route the session demonstrated, which the user's browser may not
 share: a jump host or NAT between them and this machine leaves it unroutable from where
 they sit. Only their browser can see that, so the report comes from them. Silence on
 this side looks the same whether they haven't looked yet or can't reach the page at all.
@@ -486,7 +487,7 @@ When they say the URL doesn't load, `colloquy server stop` and re-run with
 as given, and the server binds every interface so the name need not resolve to a local
 address. A machine on an overlay
 network (a tailnet) has that network as an interface, so its name there reaches a
-reviewer with no route otherwise; failing everything, `version export` hands over the
+user with no route otherwise; failing everything, `version export` hands over the
 page as a file.
 
 Reaching past loopback opens the port to that network, and `POST /api/event` appends to a
@@ -503,11 +504,11 @@ polling. Deleting that file derives the address again from the session running n
 
 ## Before the URL goes out
 
-Three passes stand between a version and its reviewer.
+Three passes stand between a version and its user.
 
 **The lint.** `version publish` runs `version check` on every version and refuses a
 failure, so the workflow needs no separate static check and a failing version never
-reaches the reviewer. It is deterministic and needs no browser, and a failure names
+reaches the user. It is deterministic and needs no browser, and a failure names
 what to fix — the markup's structure, the registry's rules, and the id-survival rule
 above.
 
@@ -523,7 +524,7 @@ cannot see: a console error, a widget upgraded into a box of no size, a page tha
 scrolls sideways, a `cq-diagram` whose mermaid source doesn't parse, words on screen
 that no selection can reach, words the screen shows and a printout drops, a version
 that authors widget state the log replays over
-(a different option `chosen`, a card in a column the reviewer dragged it out of — the
+(a different option `chosen`, a card in a column the user dragged it out of — the
 decision stands, so carry it in the markup or rewrite the passage and declare
 `restated`). The lint validates a diagram element but never the notation
 in its body, so a typo there would otherwise reach the reader as an error box; and it

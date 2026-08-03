@@ -31,7 +31,7 @@ A page directory holds:
                          not the layer's — but served the same way, and
                          content-addressing is what lets content live here at all: a
                          name means one set of bytes forever, so a version the
-                         reviewer approved cannot show them different pixels later,
+                         user approved cannot show them different pixels later,
                          and two versions showing the same screenshot share the one
                          file rather than a copy each. It is also the only door an
                          image has: the page's author is a language model, and a
@@ -41,12 +41,12 @@ A page directory holds:
                          optimisation over inlining; inlining was never available
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
     status.json          the agent's declared state: {"state": working|waiting|idle, "detail", "ts"};
-                         when `review wait` prints for a non-working page, it writes
-                         working with "handoff": true until the agent's own
-                         `review state` lands
-    heartbeat.json       watcher liveness, bumped by `review wait` while it runs
-    cursor.json          seq of the last reviewer event acknowledged from the agent's
-                         model context, written by `review ack`
+                         when `colloquy wait` prints for a non-working page, it
+                         writes working with "handoff": true until the agent's
+                         own `colloquy status` lands
+    heartbeat.json       watcher liveness, bumped by `colloquy wait` while it runs
+    cursor.json          seq of the last user event acknowledged from the agent's
+                         model context, written by `colloquy ack`
     server.json          {"port", "pid", "url"} for the running server
     access.json          {"host", "bind", "token"}: the name the page's URL carries,
                          the interface its server binds, and the key the URL carries.
@@ -58,25 +58,25 @@ status.json is a claim, and a claim never expires on its own: an agent that
 stopped watching renders exactly like one that is watching and has nothing to
 say, so a comment can sit unread with the page still reading "Claude is
 working". The directory therefore also carries what it can prove — a heartbeat
-only a live `review wait` bumps, the acknowledgement cursor, and the owning session's pid —
-and `/api/state` ships those beside the claim, so the banner can say when the
-claim has outlived them. When a wait prints for a non-working page, it marks the
-status it writes "handoff", which dates it: after acknowledgement the agent writes
-its own `review state`, so the mark surviving is a dropped pickup rather than a
+only a live `colloquy wait` bumps, the acknowledgement cursor, and the owning
+session's pid — and `/api/state` ships those beside the claim, so the banner can
+say when the claim has outlived them. When a wait prints for a non-working page, it
+marks the status it writes "handoff", which dates it: after acknowledgement the agent
+writes its own `colloquy status`, so the mark surviving is a dropped pickup rather than a
 long turn, and the banner gives it a much shorter rope. Wait output that lands
 while the agent is already working leaves that claim untouched; there is no pickup
 gap to date.
 
 The `hook` command closes the same gap from the agent's side. Registered on
 Stop, UserPromptSubmit and SessionEnd, it refuses to let a turn end with one of
-this session's pages unwatched, surfaces unacknowledged reviewer events at the next
+this session's pages unwatched, surfaces unacknowledged user events at the next
 prompt, and idles the pages and stops their servers when the session exits. It
 finds them through ~/.local/state/colloquy/sessions/<session id>.json, which
-`server run` and `review wait` write the host session identity supplied by the launcher —
-absent that (interact.py run outside an agent host), nothing is claimed and the
-hooks stand down. Unacknowledged events are the one thing `review state <page> idle`
-can't close over: idling is how a review ends, and a review can't end on comments
-nobody read.
+`server run` and `colloquy wait` write the host session identity supplied by the
+launcher — absent that (interact.py run outside an agent host), nothing is claimed
+and the hooks stand down. Unacknowledged events are the one thing
+`colloquy status <page> idle` can't close over: idling is how a colloquy ends,
+and one can't end on comments nobody read.
 
 `page init` vendors the runtime, theme, registry, widgets, and vendor assets into the
 page directory, overlaying by precedence: colloquy's shipped defaults, then the
@@ -87,12 +87,12 @@ merge by top-level name, with a later layer replacing one complete entry rather
 than deep-merging its schema; runtime, widget, and vendor files replace by path.
 The page directory itself lives wherever the caller says —
 conventionally ~/.local/state/colloquy/pages/<slug>/ — and is self-contained,
-so an approved version can't change under its reviewer; re-running `page init`
+so an approved version can't change under its user; re-running `page init`
 is the explicit re-vendor, noted in the next version's changelog.
 
 The registry is shared by the JS runtime, the POST and re-vendor action gates,
 this file's `version check` and thread-markup validation, the passage reader
-`review comment` anchors through, and the `page catalog` the agent reads. Each
+`colloquy comment` anchors through, and the `page catalog` the agent reads. Each
 entry is JSON Schema over the instance built from the element's attributes
 (values as strings, flag attributes as True). What JSON Schema has no
 vocabulary for rides in the custom keywords below:
@@ -111,7 +111,7 @@ vocabulary for rides in the custom keywords below:
                 side of the decision.
     x-says      attributes whose values are words the reader sees, mapped to the
                 edge they render at ("before" = first child, "after" = last).
-                The runtime renders them as real text there, because a reviewer
+                The runtime renders them as real text there, because a user
                 can only quote what a text node holds — the theme's matching
                 `content: attr()` is the same words for a page with no script.
     x-refers    attributes whose values name another element on the page. The
@@ -131,11 +131,11 @@ vocabulary for rides in the custom keywords below:
     x-upgrade   true when the runtime imports /widgets/<tag>.js for it
     x-verbatim  true when an upgraded element's body reaches the reader as its own
                 words. Otherwise a module may render anything in place of them, so
-                `review comment` treats the element as opaque and won't quote
+                `colloquy comment` treats the element as opaque and won't quote
                 through it.
     x-state     the widget's action verbs: each verb's detail schema, its fold
                 unit, and the record form its state takes in markup. Every
-                applyAction is absolute, so the reviewer's standing state is a
+                applyAction is absolute, so the user's standing state is a
                 fold — the last surviving action per unit — and one declaration
                 drives the POST and re-vendor contract gates, check's state gate,
                 the record-lag report, the runtime's pending mark, and the diff's
@@ -147,38 +147,38 @@ text as prefix/suffix where there is any, which is what tells two identical
 passages apart), reply (parent=id),
 resolve (parent=id), done (user sign-off; the banner offers it only on a page
 declaring <meta name="cq-review" content="sign-off">), close (a neutral end to a
-comments-only review), action (user; a widget reporting the
+comments-only colloquy), action (user; a widget reporting the
 user editing the document through it — widget=element id, action=verb, detail
 per widget, version the edit was made against), note (agent; per-version
 changelog, carrying `restated`: the element ids whose decisions the publishing
 version took back). The server stamps every browser-posted event author=user;
-Agent-side `review comment`, `review reply`, and `version publish` stamp the wire
+Agent-side `colloquy comment`, `colloquy reply`, and `version publish` stamp the wire
 role author=claude, and comments/replies also carry the originating host's display
 name. A message body is Markdown, stored as typed and
 rendered by the page's own vendored runtime — the browser is where the page's other
 rendering already lives, and vendoring the renderer beside the panel's styles is what
 keeps the two versioning together. Raw HTML in a body renders as its characters there,
 so text cannot inject markup; a widget rides the event's `markup` field instead, whose
-one door is `review comment`/`review reply`, where it is validated against the vendored
-registry — the discussion-side analog of `version check`. The browser door refuses the
+one door is `colloquy comment`/`colloquy reply`, where it is validated against the
+vendored registry — the discussion-side analog of `version check`. The browser door refuses the
 field, so everything in the log under that name has been through the gate.
 
 Either side can open a thread, and `author` is the whole difference between them. The
-reviewer selects a passage and the browser writes the anchor from the
-selection; `review comment` writes the same anchor from a quote, reading the
+user selects a passage and the browser writes the anchor from the
+selection; `colloquy comment` writes the same anchor from a quote, reading the
 version the way the anchor pass reads the DOM (see "passages" below).
-Everything downstream already turns on `author`: `review wait` prints user
+Everything downstream already turns on `author`: `colloquy wait` prints user
 events and the banner counts them, so Claude's own comment neither wakes its
 watcher nor reads as unanswered. What Claude cannot do is `resolve` — a note's
 purpose is discharged by being read, and only the reader knows that happened;
 closing one from this side would file it away unread.
 
 Commands:
+    status, wait, ack, comment, reply, events, transcript
     page       init catalog media
     customize  theme widget
     version    check publish export
     server     run stop
-    review     state wait ack comment reply events transcript
 
 `version check` is a deterministic pre-handover lint (no browser, near-free;
 `version publish` re-runs it on every version): the HTML parses with balanced
@@ -204,7 +204,7 @@ The invariants live in render_version, which tests/test_render.py drives over
 the shipped examples, so the gate and the suite cannot drift apart.
 
 Passages: an anchor is resolved in the browser and written down here, so
-`review comment` reads a version the way the anchor pass reads the DOM — text
+`colloquy comment` reads a version the way the anchor pass reads the DOM — text
 in document order, minus the runtime's own words, plus the words a widget says
 through an x-says attribute, one space wherever the enclosing text block
 changes, whitespace collapsed. What the file cannot know is what a widget's
@@ -213,7 +213,7 @@ an upgraded element is opaque unless x-verbatim says its body reaches the
 reader as its own words, and an opaque element and each of its children is
 fenced. A quote never spans a fence, so "the page has words here that the file
 doesn't" is a refusal when the comment is written rather than an anchor that
-detaches later in the reviewer's browser. Element-anchor an opaque widget
+detaches later in the user's browser. Element-anchor an opaque widget
 instead (`--section`), which is the anchor a click on a diagram makes.
 
 A version is written in more than one language, and each is read by a parser for
@@ -285,11 +285,11 @@ EVENT_VOCABULARY = {
 ACK_BATCH_INSTRUCTION = (
     "If wait output is truncated, acknowledge nothing and rerun with enough output "
     "capacity for the whole batch. After a complete batch enters context, run "
-    "`colloquy review ack <page> <highest-seq>`."
+    "`colloquy ack <page> <highest-seq>`."
 )
 # Fields whose one door is the CLI. The browser door refuses them rather than
-# silently dropping: `markup` enters only through the gate `review comment` and
-# `review reply` run, which is what lets every reader trust what the log holds
+# silently dropping: `markup` enters only through the gate `colloquy comment` and
+# `colloquy reply` run, which is what lets every reader trust what the log holds
 # under that name.
 AGENT_ONLY_FIELDS = {"markup"}
 EVENT_BASE_FIELDS = {"id", "ts", "author", "kind", "seq"}
@@ -381,7 +381,7 @@ VENDORED_DIRS = ("widgets", "vendor")
 # Images the page shows, named by the hash of their bytes (`page media`). Not vendored
 # — they are the page's content, not the layer's — but served like it, and the
 # naming is what keeps the directory's promise: same name, same bytes, so a
-# version the reviewer approved cannot show them something else later.
+# version the user approved cannot show them something else later.
 MEDIA_DIR = "media"
 MEDIA_TYPES = {
     ".png": "image/png",
@@ -498,7 +498,7 @@ def json_bytes(obj, *, indent=None) -> bytes:
 
 
 def write_json(path: Path, obj) -> None:
-    # Atomic: the serve process reads these files while review commands write them;
+    # Atomic: the serve process reads these files while the CLI commands write them;
     # a torn cursor or status would make the page report false state. Each writer
     # stages through an exclusively created name so simultaneous writers cannot
     # replace one another's temp file.
@@ -661,13 +661,13 @@ def page_access(page_dir: Path, host: str | None = None) -> dict:
     this machine: loopback. The server binds that address alone, so the open port
     faces only the network the session crossed.
 
-    But a route the session demonstrated is not one the reviewer's browser
+    But a route the session demonstrated is not one the user's browser
     shares: a jump host or NAT between them and this machine leaves it
     unroutable from where they sit, and no derivation from this end can know the
     name they do route to. `--host` states it. A stated name goes in the URL and
     the bind widens to every interface of both families (`::`, V6ONLY off),
     because the name need not resolve to an address this machine could bind (a
-    NAT'd public IP), let alone say which family the reviewer reaches it by. An
+    NAT'd public IP), let alone say which family the user reaches it by. An
     overlay network the machine has joined (a tailnet) is just one more
     interface. That widens exposure to the machine's other networks and no
     further — colloquy never creates a route that didn't exist.
@@ -680,7 +680,7 @@ def page_access(page_dir: Path, host: str | None = None) -> dict:
 
     Minted once and kept. `revive_server` restarts a dead server by re-running
     `server run` bare, and a fresh address or key there would leave the
-    reviewer's open page polling a URL that no longer answers — which is why a
+    user's open page polling a URL that no longer answers — which is why a
     stated host is recorded here rather than passed per run, and why re-stating
     one keeps the key."""
     access = read_json(page_dir / "access.json")
@@ -747,9 +747,9 @@ def claim_page(page_dir: Path) -> bool:
     wherever they live). The host identity reaches this process through the
     environment, so this needs no cooperation from the agent.
 
-    `server run` and `review wait` claim; nothing else does. The claim tracks
+    `server run` and `colloquy wait` claim; nothing else does. The claim tracks
     the watch obligation the hooks enforce: `server run` puts the page in front
-    of a reviewer and incurs it, while `review wait` takes it up. Authoring
+    of a user and incurs it, while `colloquy wait` takes it up. Authoring
     commands neither incur the obligation nor discharge it, so a directory a
     session only wrote to, like a throwaway page for testing the widget layer,
     owes nobody a watcher. Return whether this invocation made a claim, so a
@@ -803,9 +803,9 @@ def owned_pages(session_id: str) -> list:
 
 
 def unacknowledged(events: list, cursor: int) -> list:
-    """The reviewer's events past the acknowledgement cursor: posted, and not yet
+    """The user's events past the acknowledgement cursor: posted, and not yet
     confirmed in the agent's model context. The one predicate for that — the
-    banner's pending count and `review wait`'s output must agree on which events
+    banner's pending count and `colloquy wait`'s output must agree on which events
     those are."""
     return [e for e in events if e["seq"] > cursor and e["author"] == "user"]
 
@@ -852,7 +852,7 @@ class Handler(BaseHTTPRequestHandler):
     # refusing the note is the gate's whole job. Set to that version's number,
     # the handler exposes on-disk versions up to it, previewed one included as
     # latest, so the runtime neither 404s the preview nor follows the published
-    # latest away from it mid-check. None — every server a reviewer reaches —
+    # latest away from it mid-check. None — every server a user reaches —
     # exposes noted versions only.
     preview_upto = None
 
@@ -1057,7 +1057,7 @@ class Handler(BaseHTTPRequestHandler):
                 purpose = (
                     "sign-off"
                     if terminal == "done"
-                    else "ending its comments-only review"
+                    else "ending its comments-only colloquy"
                 )
                 self._json(
                     {
@@ -1074,8 +1074,8 @@ class Handler(BaseHTTPRequestHandler):
             if error := action_contract_error(self.page_dir, event, events, registry):
                 self._json({"error": error}, 400)
                 return
-        # A parent names a message in a thread, the same rule `review reply` holds Claude
-        # to. Enforced here so a walk up the log always terminates at a comment.
+        # A parent names a message in a thread, the same rule `colloquy reply`
+        # holds Claude to. Enforced so a walk up the log terminates at a comment.
         if "parent" in event and event["parent"] not in {
             e["id"] for e in events if e["kind"] in {"comment", "reply"}
         }:
@@ -1372,7 +1372,7 @@ def cmd_init(page_dir: Path) -> None:
         sys.exit(
             "this page's log holds vocabulary the incoming layer no longer speaks:\n"
             + "\n".join(f"  - {g}" for g in gaps)
-            + "\nre-vendoring would silently stop these replaying — the reviewer's"
+            + "\nre-vendoring would silently stop these replaying — the user's"
             " recorded decisions among them."
         )
 
@@ -1699,11 +1699,11 @@ def cmd_media(page_dir: Path, files: list) -> list:
     bytes; returns (source, served path) per file, in the order given.
 
     Content-addressing is doing two jobs. It keeps the directory's promise —
-    a name can only ever mean one set of bytes, so a version the reviewer
+    a name can only ever mean one set of bytes, so a version the user
     approved shows them the same picture forever, which is the same guarantee
     vendoring gives the layer. And it de-duplicates for free: a version that
     re-shows last version's screenshot re-uses the file rather than a second
-    copy of it, which is what makes the review history cheap to keep."""
+    copy of it, which is what makes the version history cheap to keep."""
     out = []
     (page_dir / MEDIA_DIR).mkdir(exist_ok=True)
     for src in files:
@@ -1736,7 +1736,7 @@ def cmd_serve(page_dir: Path, host: str | None = None) -> None:
     existing = running_server(page_dir)
     if existing:
         # A stated host silently ignored would print a URL that contradicts the
-        # flag, so compare against that URL — what the reviewer would be handed.
+        # flag, so compare against that URL — what the user would be handed.
         if host and urlsplit(existing["url"]).hostname != host.lower():
             sys.exit(
                 f"already serving at {existing['url']}; `colloquy server stop` "
@@ -1794,13 +1794,13 @@ def cmd_status(page_dir: Path, state: str, detail: str, handoff: bool = False) -
 
 
 def revive_server(page_dir: Path) -> bool:
-    """Bring a page back up after its server died. The reviewer's browser has
-    been showing "Server offline" since it happened, and `review wait` is the
+    """Bring a page back up after its server died. The user's browser has
+    been showing "Server offline" since it happened, and `colloquy wait` is the
     only thing positioned to notice — so it restarts the server rather than
-    handing the diagnosis to Claude and the discovery to the reviewer.
+    handing the diagnosis to Claude and the discovery to the user.
 
     Detached, because the restarted server has to outlive both this
-    `review wait` and the background task that started it, exactly as the
+    `colloquy wait` and the background task that started it, exactly as the
     original `server run` does. sys.executable is the resolved uv environment,
     so this skips uv entirely."""
     (page_dir / "server.json").unlink(missing_ok=True)
@@ -1819,15 +1819,15 @@ def revive_server(page_dir: Path) -> bool:
 
 
 def cmd_wait(page_dir: Path) -> int:
-    """Hold until the reviewer speaks, and deliver what they said.
+    """Hold until the user speaks, and deliver what they said.
 
     A wait ends on them, or on the page's server being down with no restart to
-    make. It puts no clock on how long a reviewer takes, because there is no such
+    make. It puts no clock on how long a user takes, because there is no such
     measurement to take from this side of the wire: a page whose address their
     browser can't route to and a page they simply haven't opened yet look
     identical at every length, so a deadline over it announces the first while
     describing the second — and the second is the ordinary case. Only their
-    browser can tell them apart, and the reviewer holds the URL from the turn
+    browser can tell them apart, and the user holds the URL from the turn
     that handed it over, so the report comes from them; SKILL.md's "Where the
     page is served" carries the recourse."""
     claim_page(page_dir)
@@ -1846,9 +1846,9 @@ def cmd_wait(page_dir: Path) -> int:
                 if status["state"] != "working":
                     # Flip before the agent handles the batch: the handoff gap between this
                     # exit and pickup must not show "waiting". handoff=True dates
-                    # that claim; the agent's own `review state` clears it. Mid-work output
-                    # has no pickup gap, so leave the existing claim byte-for-byte
-                    # untouched instead of shortening its freshness window.
+                    # that claim; the agent's own `colloquy status` clears it.
+                    # Mid-work output has no pickup gap, so leave the existing claim
+                    # byte-for-byte untouched instead of shortening its freshness window.
                     # "update", not "comment": a batch may mix comments and actions.
                     n = len(new_user)
                     cmd_status(
@@ -1861,14 +1861,14 @@ def cmd_wait(page_dir: Path) -> int:
             if time.time() > server_check_at:
                 server_check_at = time.time() + 5
                 if not running_server(page_dir):
-                    # An idle page has no reviewer to keep online, and the
+                    # An idle page has no user to keep online, and the
                     # SessionEnd hook idles then stops: without this the watcher
                     # it raced would put the server straight back up.
                     if (read_json(page_dir / "status.json") or {"state": "idle"})[
                         "state"
                     ] == "idle":
                         print(
-                            "the review is closed; not restarting the server",
+                            "the colloquy ended; not restarting the server",
                             file=sys.stderr,
                         )
                         return 2
@@ -1892,9 +1892,9 @@ def cmd_wait(page_dir: Path) -> int:
 
 
 def cmd_ack(page_dir: Path, seq: int) -> None:
-    """Acknowledge through one reviewer event after complete wait output reached context.
+    """Acknowledge through one user event after complete wait output reached context.
 
-    The target itself must be a reviewer event. This catches a mistyped sequence and
+    The target itself must be a user event. This catches a mistyped sequence and
     prevents an agent from advancing the cursor to a trailing log entry it never saw.
     Writing only when the cursor advances makes retries harmless.
     """
@@ -1902,7 +1902,7 @@ def cmd_ack(page_dir: Path, seq: int) -> None:
     if seq > len(events):
         sys.exit(f"event {seq} does not exist; the log ends at {len(events)}")
     if events[seq - 1]["author"] != "user":
-        sys.exit(f"event {seq} is not a reviewer event")
+        sys.exit(f"event {seq} is not a user event")
     cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
     if seq > cursor:
         write_json(page_dir / "cursor.json", {"seq": seq})
@@ -2051,7 +2051,7 @@ def message_agent(page_dir: Path) -> str:
 
 
 def cmd_comment(page_dir: Path, quote: str, section: str, text, markup: str) -> None:
-    """Open a thread on a passage, as the reviewer's own selection does. The anchor is
+    """Open a thread on a passage, as the user's own selection does. The anchor is
     captured against the version they are looking at — the newest published one, since a
     version no `note` has released is a passage nobody can be pointed at — and read as
     they see it: a slot their decision retired is off the page, and a draft they edited
@@ -2154,7 +2154,7 @@ def cmd_events(page_dir: Path, after: int) -> None:
 
 
 def cmd_transcript(page_dir: Path) -> None:
-    """The review thread as Markdown, for reuse in a PR description."""
+    """The page's exchange as Markdown, for reuse in a PR description."""
     events = read_events(page_dir)
     versions = list_versions(page_dir)
     title = ""
@@ -2163,7 +2163,7 @@ def cmd_transcript(page_dir: Path) -> None:
         parser.feed(version_path(page_dir, versions[-1]).read_text(encoding="utf-8"))
         parser.close()
         title = parser.title.strip()
-    print(f"## Review: {title or page_dir.name}")
+    print(f"## Colloquy: {title or page_dir.name}")
 
     notes = [e for e in events if e["kind"] == "note"]
     if notes:
@@ -2171,8 +2171,8 @@ def cmd_transcript(page_dir: Path) -> None:
         for e in notes:
             print(f"- v{e['version']}: {e['text']}")
 
-    # The reviewer's direct edits are review outcomes; without them the transcript
-    # understates the review whenever a changelog note doesn't restate them. So
+    # The user's direct edits are outcomes of the exchange; without them the transcript
+    # understates it whenever a changelog note doesn't restate them. So
     # is a version taking one back, which is the same understatement the other
     # way round — an edit shown as final that a later version overruled.
     # Widget-agnostic rendering: verb + detail pairs, against the version edited.
@@ -2216,10 +2216,10 @@ def cmd_transcript(page_dir: Path) -> None:
             print(f"Approved at {e['ts']}.")
             break
         if e["kind"] == "close":
-            print(f"Review ended at {e['ts']}.")
+            print(f"Colloquy ended at {e['ts']}.")
             break
 
-    # To stderr — stdout is the artifact. A transcript is a review's closing act,
+    # To stderr — stdout is the artifact. A transcript is a page's closing act,
     # and the record debt it reports here is about to stop being fixable.
     published = published_versions(page_dir, events)
     registry = load_registry(page_dir)
@@ -2243,7 +2243,7 @@ CATALOG_PREAMBLE = """\
 # whitespace is load-bearing without a stylesheet to read.
 # x-upgrade marks tags a JS module enhances in the browser — the interactive
 # widgets and the data-body renderers; x-says names the attributes whose values
-# the reader sees as words, and the edge each renders at, so the reviewer can
+# the reader sees as words, and the edge each renders at, so the user can
 # select and comment on them like any other text on the page. x-verbatim marks
 # an upgraded element whose body reaches the reader as its own words, which is
 # what makes it quotable — a body without it is source the widget renders.
@@ -2301,38 +2301,38 @@ def cmd_stop(page_dir: Path) -> str:
     return outcome
 
 
-# ---------- hook: the review loop, enforced rather than remembered ----------
+# ---------- hook: the loop, enforced rather than remembered ----------
 
 
 def unattended_pages(session_id: str) -> list:
-    """This session's pages the reviewer is looking at with nobody on the other
+    """This session's pages the user is looking at with nobody on the other
     end, each with what to do about it. The invariant is that a page is either
     watched or idle: between turns there is no third state, so anything else is
-    a review that has quietly stopped."""
+    a page that has quietly stopped listening."""
     reasons = []
     for page_dir in owned_pages(session_id):
         events = read_events(page_dir)
         state = full_state(page_dir, events, published_versions(page_dir, events))
         codex = state["agent"] == "Codex"
         if state["listening"] and not codex:
-            # A live `review wait` is the watch, and it prints what's pending on its own.
-            # Reporting the page here would have Claude start a second one, and two
+            # A live `colloquy wait` is the watch, and it prints what's pending on its
+            # own. Reporting the page here would have Claude start a second one, and two
             # waiters would print the same unacknowledged events twice.
             continue
         n = state["pending"]
         if n:
             if codex and state["listening"]:
                 remedy = (
-                    "Poll the existing `colloquy review wait` unified-exec session with "
+                    "Poll the existing `colloquy wait` unified-exec session with "
                     "`write_stdin`."
                 )
             elif codex:
                 remedy = (
-                    "Start `colloquy review wait` in unified exec, retain its session id, "
+                    "Start `colloquy wait` in unified exec, retain its session id, "
                     "and poll it with `write_stdin`."
                 )
             else:
-                remedy = "`colloquy review wait` prints them."
+                remedy = "`colloquy wait` prints them."
             remedy += f" {ACK_BATCH_INSTRUCTION} Then address every one."
             reasons.append(
                 f"{page_dir}: {n} user event{'s' if n != 1 else ''} you haven't picked up. "
@@ -2341,22 +2341,22 @@ def unattended_pages(session_id: str) -> list:
         elif state["status"]["state"] != "idle":
             if codex and state["listening"]:
                 reasons.append(
-                    f"{page_dir}: Codex review is still open. Keep this turn active and "
-                    "poll the existing `colloquy review wait` unified-exec session with "
-                    "`write_stdin`."
+                    f"{page_dir}: the Codex page is still live. Keep this turn "
+                    "active and poll the existing `colloquy wait` unified-exec "
+                    "session with `write_stdin`."
                 )
             elif codex:
                 reasons.append(
-                    f"{page_dir}: no watcher. Start `colloquy review wait` in unified exec, "
+                    f"{page_dir}: no watcher. Start `colloquy wait` in unified exec, "
                     "retain its session id, and keep this turn active while polling it with "
-                    "`write_stdin`; or run `colloquy review state <page> idle` if the review "
-                    "is over."
+                    "`write_stdin`; or run `colloquy status <page> idle` if the page "
+                    "is done."
                 )
             else:
                 reasons.append(
-                    f"{page_dir}: no watcher. Start `colloquy review wait` on it as a "
-                    "background task, or run `colloquy review state <page> idle` if the "
-                    "review is over."
+                    f"{page_dir}: no watcher. Start `colloquy wait` on it as a "
+                    "background task, or run `colloquy status <page> idle` if the "
+                    "page is done."
                 )
     return reasons
 
@@ -2376,7 +2376,7 @@ def cmd_hook(payload: dict) -> None:
     reasons = unattended_pages(sid)
     if not reasons:
         return
-    message = "colloquy — a review page of this session's is unattended:\n" + "\n".join(
+    message = "colloquy — a page of this session's is unattended:\n" + "\n".join(
         f"- {r}" for r in reasons
     )
     if event == "Stop":
@@ -2504,7 +2504,7 @@ COLUMN_FALLBACK = 780
 # Attribute widths only count as pixels on these elements.
 PIXEL_WIDTH_TAGS = {"img", "svg", "table", "canvas", "iframe", "video", "object"}
 
-# Blocks a reviewer predictably points at whole rather than quoting: a run of code,
+# Blocks a user predictably points at whole rather than quoting: a run of code,
 # a table, a figure — and the sections SKILL.md already holds to "give every section
 # an id". Widgets aren't listed because the registry's schemas already demand ids
 # wherever pointing at one matters.
@@ -2579,7 +2579,7 @@ class _StructParser(HTMLParser):
         self.language_blocks = []
         # {"tag", "line", "under"} per id-less occurrence of a pointable block,
         # with the nearest open ancestor carrying an id — (tag, id) or None — so
-        # unpointable_blocks can judge where a reviewer's aim would land.
+        # unpointable_blocks can judge where a user's aim would land.
         self.bare_blocks = []
         self._svg_depth = 0
 
@@ -2590,7 +2590,7 @@ class _StructParser(HTMLParser):
     @property
     def restated(self) -> set:
         """Ids this version declares it has rewritten, retracting whatever the
-        reviewer had recorded on them."""
+        user had recorded on them."""
         return {
             rec["attrs"]["id"]
             for rec in self.cq_elements
@@ -2744,7 +2744,7 @@ class _StructParser(HTMLParser):
         # slash is a trap on any non-void tag: HTML ignores it, the element stays
         # open in a browser and swallows the rest of its parent, so from here on
         # this parser's tree and the browser's would diverge. Reject the form
-        # outright rather than model a tree the reviewer's page won't have.
+        # outright rather than model a tree the user's page won't have.
         self._harvest(tag, self._attributes(tag, attrs))
         if self._svg_depth:  # SVG has real self-closing syntax
             return
@@ -2808,7 +2808,7 @@ def version_review_mode(page_dir: Path, version: int):
 
 
 # ---------- passages: the text an anchor points at ----------
-# The runtime resolves an anchor against the DOM; `review comment` writes one down
+# The runtime resolves an anchor against the DOM; `colloquy comment` writes one down
 # against the file. The two have to read the same page or the anchor lands somewhere it
 # was never made, so this mirrors colloquy.js's capture rather than approximating it:
 # the same skip list, the same block-boundary space, the same collapse, the same caps.
@@ -2831,7 +2831,7 @@ def version_review_mode(page_dir: Path, version: int):
 #               there, `gone` here). Its values are also the vocabulary's decision
 #               verbs, which is where `decisions` reads them from.
 #   x-state, record kind "body"  the verb whose detail text becomes this element's
-#               body once the reviewer sends one (cq-draft's `edit`): replay writes
+#               body once the user sends one (cq-draft's `edit`): replay writes
 #               the newest surviving one into the DOM verbatim (applyAction is
 #               absolute), so a reading given the fold's word (rewritten_bodies)
 #               holds their words in the authored body's place. It asks nothing of
@@ -2840,7 +2840,7 @@ def version_review_mode(page_dir: Path, version: int):
 # A module writes between the children of the element it upgrades — a column's heading, a
 # milestone's chips, a diff's gutters — so an opaque element and each of its children is
 # fenced. A quote never spans a fence, which turns "the page has words here that the file
-# doesn't" from an anchor that silently detaches in the reviewer's browser into a refusal
+# doesn't" from an anchor that silently detaches in the user's browser into a refusal
 # at the moment it is written, addressed to the one party who can still fix it.
 #
 # Retirement drops and rewriting substitutes rather than fencing, because that is what
@@ -2889,7 +2889,7 @@ class _PassageParser(HTMLParser):
     this reading drops it the same way. A decision that leaves its
     widget with nothing — a deletion accepted, an insertion refused — empties the
     wrapper too (`gone`), because an element showing nothing is one nobody can point
-    at, however present its markup. `rewrites` is the reviewer's
+    at, however present its markup. `rewrites` is the user's
     standing text per element whose registry entry records a verb as the body
     (`rewritten_bodies`): their words stand in the authored body's place, because
     replay writes exactly that into the DOM. Without either, the reading is the
@@ -2904,7 +2904,7 @@ class _PassageParser(HTMLParser):
         self.owner = []  # per character: the tuple of enclosing ids
         self.fences = set()  # indices a quote may not span
         self.retired = {}  # id under a retired slot → the suggestion whose decision did it
-        self.rewritten = {}  # id whose body the reviewer rewrote → the verb that did it
+        self.rewritten = {}  # id whose body the user rewrote → the verb that did it
         self.gone = {}  # decided id whose decision left it empty → the outcome that did it
         self.bearing = (
             set()
@@ -2998,7 +2998,7 @@ class _PassageParser(HTMLParser):
         )
         # Silenced from above: the element shows nothing of its own, so a rewrite of
         # its body has nothing to stand in for — an edited draft inside a slot the
-        # reviewer accepted away left the page with the slot.
+        # user accepted away left the page with the slot.
         silenced = bool(
             (parent and parent["skip"])
             or retired_by
@@ -3010,7 +3010,7 @@ class _PassageParser(HTMLParser):
         # enclosing id in _write.
         if parent and not silenced:
             self.bearing.add(parent["id"])
-        # A body the reviewer rewrote. `rewritten_bodies` already resolved the verb
+        # A body the user rewrote. `rewritten_bodies` already resolved the verb
         # through this element's x-state, so an id in the dict is the whole test:
         # the fold decides, this pass only applies.
         sub = self.rewrites.get(attrs_d.get("id")) if not silenced else None
@@ -3079,7 +3079,7 @@ class Passages(NamedTuple):
     owner: list  # per character: the tuple of enclosing ids, outermost first
     fences: set  # indices a quote may not span: where a module may write
     retired: dict  # id under a retired slot → the suggestion whose decision did it
-    rewritten: dict  # id whose body the reviewer rewrote → the verb that did it
+    rewritten: dict  # id whose body the user rewrote → the verb that did it
     gone: dict  # decided id whose decision left it empty → the outcome that did it
 
 
@@ -3122,9 +3122,9 @@ def spoken(html: str, registry: dict) -> dict:
     This is the version's own reading of itself, so it is `page_passages` sliced by
     id rather than a second walk: chrome skipped, x-says attributes counted (a
     picked option's `effort` is a word on the page now, so changing it changes what
-    the reviewer decided about), whitespace collapsed the way a captured quote is.
+    the user decided about), whitespace collapsed the way a captured quote is.
     Asking whether two versions still say the same thing has to mean the same text a
-    reviewer could have selected, or the question is about something else.
+    user could have selected, or the question is about something else.
 
     `section_span` answers this for one id by scanning the page; every id at once is
     that same scan, done once."""
@@ -3172,7 +3172,7 @@ def capture_anchor(
     what to do about it — a quote the file doesn't hold, or holds twice, is a question
     with an answer, and asking now beats posting a comment that lands nowhere.
 
-    `decided` and `rewrites` make this the reading the reviewer is looking at rather
+    `decided` and `rewrites` make this the reading the user is looking at rather
     than the version as authored: a slot their decision retired is off the page, and a
     body their edit rewrote holds their words — so an anchor is met here the way it
     would land there, instead of detaching in front of them."""
@@ -3189,13 +3189,13 @@ def capture_anchor(
         if section in retired:
             sid = retired[section]
             raise ValueError(
-                f"§ {section} left the page when the reviewer chose to {decided[sid]} "
+                f"§ {section} left the page when the user chose to {decided[sid]} "
                 f"§ {sid} — a decided suggestion's losing slot is retired, and an anchor "
                 "on it would reach nobody. Anchor on the settled text instead."
             )
         if section in gone:
             raise ValueError(
-                f"§ {section} settled to nothing when the reviewer chose to {gone[section]} "
+                f"§ {section} settled to nothing when the user chose to {gone[section]} "
                 "it — the decision removed everything it held from the page, and an anchor "
                 "on it would reach nobody. Anchor on the surrounding text instead."
             )
@@ -3269,7 +3269,7 @@ def capture_anchor(
 
 
 def _removed_by(html, registry, wanted: str, section: str, decided, rewritten):
-    """What took `wanted` off the reviewer's page, when the version as authored still
+    """What took `wanted` off the user's page, when the version as authored still
     holds it: the decision that retired the slot it sat in, or the edit that rewrote
     the element saying it. Naming that act beats telling the writer the page never
     said it."""
@@ -3287,13 +3287,13 @@ def _removed_by(html, registry, wanted: str, section: str, decided, rewritten):
             sid = next((wid for wid in ids if wid in decided), None)
             if sid:
                 return (
-                    f"the reviewer chose to {decided[sid]} § {sid} — that decision "
+                    f"the user chose to {decided[sid]} § {sid} — that decision "
                     "retired these words from the page. Quote it as it now stands."
                 )
             wid = next((wid for wid in ids if wid in rewritten), None)
             if wid:
                 return (
-                    f"the reviewer rewrote § {wid} — their {rewritten[wid]} replaced "
+                    f"the user rewrote § {wid} — their {rewritten[wid]} replaced "
                     "these words. Quote the text as they left it."
                 )
     return None
@@ -3885,7 +3885,7 @@ def language_errors(
     blocks: list, cq_elements: list, registry: dict, known: list
 ) -> list:
     """A declared language the runtime won't honor. Nothing here is visible to the
-    reviewer either way — a class in the wrong place and a misspelt language both render
+    user either way — a class in the wrong place and a misspelt language both render
     as an ordinary uncolored block — so the failure is routed to the one party who can
     still fix it, which is whoever wrote the word.
 
@@ -3929,7 +3929,7 @@ def tone_errors(cq_elements: list, registry: dict) -> list:
     The same failure `language` has and the same reason for catching it here: a
     misspelt tone paints nothing, and a chip that should have been red renders
     neutral on a page that otherwise looks perfectly well. Nobody downstream can
-    see it — not the reviewer, who never knew it was meant to be red — so the one
+    see it — not the user, who never knew it was meant to be red — so the one
     party who can still fix it is whoever wrote the word, and this is where they
     are told. A class would have been the same words with no one checking them.
     """
@@ -3977,7 +3977,7 @@ def retirable_ids(suggestions: list, events: list, dropped: set, outcomes: dict)
     it actually dropped. A logged outcome settles a suggestion: accepting
     retires the markup it replaced, rejecting retires the proposal, and either
     retires the wrapper. A proposal no one has answered can still be withdrawn —
-    nothing reviewed was kept — but only whole: the wrapper goes with the
+    no decision rested on it — but only whole: the wrapper goes with the
     proposal inside it, so a version can't quietly keep an unanswered proposal
     as settled content, and not while an unresolved thread is anchored in it.
 
@@ -4154,7 +4154,7 @@ def folded_facet(e: dict, spec: dict):
 def page_fold(html: str, events: list, registry: dict, upto):
     """state_fold asked of one page: its elements, its words, and the log windowed
     to `upto` — one construction, so its readers (`record_lag`, and the readings
-    `decisions` and `rewritten_bodies` give `review comment` and `version check`)
+    `decisions` and `rewritten_bodies` give `colloquy comment` and `version check`)
     cannot drift on floors or window. Returns (fold, byid, spk); the extras are
     the page readings the fold was built from, for a caller comparing it back
     against the markup."""
@@ -4171,7 +4171,7 @@ def page_fold(html: str, events: list, registry: dict, upto):
 
 
 def rewritten_bodies(fold: dict) -> dict:
-    """id → (verb, text): the reviewer's standing rewrite of each element whose
+    """id → (verb, text): the user's standing rewrite of each element whose
     registry entry records a verb as the body (x-state record kind "body"), as
     replay leaves it. The fold is state_fold's — the last surviving action per
     unit under the retraction floors — read here for the one record kind whose
@@ -4198,10 +4198,10 @@ def decisions(fold: dict, registry: dict) -> dict:
 
 
 def record_lag(html: str, events: list, registry: dict) -> list:
-    """Units whose markup lags the reviewer's standing state — the record debt a
+    """Units whose markup lags the user's standing state — the record debt a
     log-less reader would miss. Advice, never errors: a version is free to stay
     silent (replay resolves it), but SKILL.md's record obligation needs a
-    feedback loop, and a finished review's final version is the page that has
+    feedback loop, and a finished page's final version is the page that has
     to read right without the log."""
     if not registry:
         return []
@@ -4222,10 +4222,10 @@ def record_lag(html: str, events: list, registry: dict) -> list:
 
 
 def unpointable_blocks(parser: _StructParser) -> list:
-    """Blocks a reviewer will aim at whole that no anchor can name. Advice, never a
+    """Blocks a user will aim at whole that no anchor can name. Advice, never a
     gate, in the same register as record_lag: SKILL.md states the id rule, and this
-    is its feedback loop. The page that introduced item anchoring failed its own
-    review here — its code blocks carried no ids, so a comment aimed at one fell
+    is its feedback loop. The page that introduced item anchoring hit this
+    failure itself — its code blocks carried no ids, so a comment aimed at one fell
     through to the enclosing section and read as the gesture being broken rather
     than the page being bare, and nothing anywhere said so.
 
@@ -4261,12 +4261,12 @@ def restatement_errors(
     cur, prev, was: dict, now: dict, events: list, prev_num: int, registry: dict
 ) -> list:
     """The other half of the id-survival rule. That one keeps a republish from
-    dropping the anchors a reviewer hung on the page; this one keeps it from
+    dropping the anchors a user hung on the page; this one keeps it from
     dropping the decisions they recorded on it. CLAUDE.md carries why the log
     outranks the markup and what that cost.
 
     The runtime replays every action onto every later version, so a version
-    cannot revise what a reviewer acted on: replay would paint their recorded
+    cannot revise what a user acted on: replay would paint their recorded
     state back over the revision and the new words would reach nobody. A version
     that means to revise says so — `restated` on what it rewrote — and one that
     changes those words in silence is refused here. An unearned `restated` is an
@@ -4275,12 +4275,12 @@ def restatement_errors(
 
     The comparison is the words each version says (`spoken`), because words are
     what a decision is about. Re-indenting a draft, marking the picked option
-    `chosen`, or relocating a card the reviewer already moved is not a revision,
+    `chosen`, or relocating a card the user already moved is not a revision,
     and neither is writing their own edit back — a version that says what they
     said is agreeing with them.
 
     Words are one divergence kind; declared state is the other. For each verb
-    the registry declares (x-state), the fold gives the reviewer's standing
+    the registry declares (x-state), the fold gives the user's standing
     state per unit, and a version whose markup actively changes that unit's
     record away from both the previous version's and the fold is refused the
     same way a silent rewrite of words is. Writing the folded state is the
@@ -4309,7 +4309,7 @@ def restatement_errors(
         if any(taken_back.get(i, 0) > e["version"] for i in action_rests_on(e, now)):
             continue
         for subject in action_subjects(e, byid, now, registry):
-            # Only what the reviewer had recorded by the time they were looking
+            # Only what the user had recorded by the time they were looking
             # at prev.
             if subject in was and e["version"] <= prev_num:
                 decided.setdefault(subject, []).append(e)
@@ -4336,7 +4336,7 @@ def restatement_errors(
             continue
         where = f"<{rec['tag']} id={unit!r}> (line {rec['line']})"
         errors.append(
-            f"{where}: its state changed under the reviewer's decision — the markup "
+            f"{where}: its state changed under the user's decision — the markup "
             f"shows {f_cur!r} where their {e['action']} (on v{e.get('version', 0)}) "
             f"left {f_fold!r}. Their decision is what the page shows, so this state "
             f"would never reach them — add `restated` to retract it and ask again, "
@@ -4345,12 +4345,12 @@ def restatement_errors(
 
     for sid, rec in sorted(byid.items()):
         live, restated = decided.get(sid, []), sid in declared
-        # A version that writes back what the reviewer themselves recorded is
+        # A version that writes back what the user themselves recorded is
         # agreeing with them, not overruling them — an honored `edit` is the
         # commonest and most correct thing an author does with a draft, and the
         # gate has to stay quiet for it or it fires on nearly every version and
         # teaches authors to reach for `restated` by reflex. No verb is special-
-        # cased: it is enough that the words on the page are words the reviewer
+        # cased: it is enough that the words on the page are words the user
         # sent.
         echoed = {
             " ".join(str(v).split())
@@ -4368,7 +4368,7 @@ def restatement_errors(
             # An already-retracted widget is the case an author lands on by being
             # careful — carrying the attribute forward the way state used to have
             # to be carried — so it gets its own answer rather than the
-            # never-decided one, which would read as if the reviewer had done
+            # never-decided one, which would read as if the user had done
             # nothing.
             if sid in taken_back:
                 errors.append(
@@ -4380,7 +4380,7 @@ def restatement_errors(
                 why = (
                     f"its words are unchanged since v{prev_num}"
                     if live
-                    else "the reviewer has recorded nothing on it"
+                    else "the user has recorded nothing on it"
                 )
                 errors.append(
                     f"{where}: restated, but there is nothing to retract — {why}. "
@@ -4389,7 +4389,7 @@ def restatement_errors(
         elif changed and live and not restated:
             did = ", ".join(f"{e['action']} on v{e.get('version')}" for e in live[-3:])
             errors.append(
-                f"{where}: its words changed, and the reviewer has already acted "
+                f"{where}: its words changed, and the user has already acted "
                 f"on it ({did}). Their decision is what the page shows, so these "
                 f"words would never reach them — add `restated` to retract it and "
                 f"ask again, or leave the text as v{prev_num} had it."
@@ -4516,7 +4516,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     )
 
     # "Previous" is the last *published* version before this one — the page the
-    # reviewer was actually looking at, which is what `review comment` anchors
+    # user was actually looking at, which is what `colloquy comment` anchors
     # against and what the browser diffs against. The file before it on disk may be an
     # abandoned draft no note ever released: ids nobody saw, words nobody could
     # have decided on. The first published version has no predecessor, so it
@@ -4606,7 +4606,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
     )
     # Advice, never a gate: silence is blessed and replay resolves it, but a
     # log-less reader (a printout, a transcript's audience) sees only the markup,
-    # so say where it lags the log. Loudest at the end of a review — the final
+    # so say where it lags the log. Loudest at the end of the exchange — the final
     # version is the page that must read right without the log.
     for line in record_lag(html, events, registry or {}):
         print(f"  · record behind the log — {line}")
@@ -4624,7 +4624,7 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
 RENDER_VIEWPORT = {"width": 1200, "height": 900}
 
 
-# Words the page shows that no reviewer can select, and so no comment can be
+# Words the page shows that no user can select, and so no comment can be
 # anchored on. A widget has two ways to leave them there, neither of which a
 # static lint can see, and a page-local widget is where both keep happening.
 #
@@ -4637,7 +4637,7 @@ RENDER_VIEWPORT = {"width": 1200, "height": 900}
 #
 # Or it can leave them under .cq-ui with nothing said about whose words they are.
 # That class is the chrome face, a look — reaching for it as a general "this is
-# chrome" marker is how a reviewer ends up unable to comment on a heading they can
+# chrome" marker is how a user ends up unable to comment on a heading they can
 # see. The declaration is made where the label is written: data-cq-said for the page
 # speaking, which the anchor pass reads over the box around it, data-cq-offer for a
 # thing to work. So inside a widget, every word under .cq-ui has to be declared the
@@ -4702,8 +4702,8 @@ UNREACHABLE_WORDS = """() => {
 # Content set outside the column it belongs to. The sideways-scroll reading is
 # the same question asked of the window, and the window is the wider of the two:
 # the gate renders at 1200px against a 720px column, so 200px of margin on each
-# side absorbs a spill that scrolls nothing. What is out there is the review
-# margin, where a suggestion's controls hang, and the reviewer's own window is
+# side absorbs a spill that scrolls nothing. What is out there is the
+# margin, where a suggestion's controls hang, and the user's own window is
 # free to be narrower than this one — so a page that passed here scrolls
 # sideways on the machine it was written for.
 #
@@ -4751,15 +4751,15 @@ PAST_THE_COLUMN = """() => {
     const found = [];
     for (const [el, past] of over) {
         if ([...over.keys()].some(other => other !== el && other.contains(el))) continue;
-        found.push(`${at(el)} is set ${past}px past the column, out in the review margin`);
+        found.push(`${at(el)} is set ${past}px past the column, out in the margin`);
     }
     return [...new Set(found)];
 }"""
 
 
 # A version whose markup asserts a state the log replays over — `chosen` moved
-# to another option, a card re-authored into a column the reviewer dragged it
-# out of. Replay resolves it in the reviewer's favor, so what needs reporting is
+# to another option, a card re-authored into a column the user dragged it
+# out of. Replay resolves it in the user's favor, so what needs reporting is
 # the author's intent going down silently. The static half can't say which
 # attribute is a verb's state — that lives in each widget's applyAction, and a
 # table here would be the second copy the registry exists to prevent — so the
@@ -4793,7 +4793,7 @@ REPLAY_OVERRIDES = """async () => {
     }
     return [...groups].map(([who, asserted]) =>
         `${who} authors state the log replays over (${asserted.join(', ')}): `
-        + `the reviewer's decision stands — either carry it in the markup, or `
+        + `the user's decision stands — either carry it in the markup, or `
         + `rewrite the passage and declare restated`);
 }"""
 
@@ -4804,7 +4804,7 @@ REPLAY_OVERRIDES = """async () => {
 # and the ways it can fail to are all silent — a widget's control that is a statement as
 # well as a thing to press (the pick mark, which took the only words naming the option a
 # group carried), a rule of the page's own that hides its content in print. The whole
-# page rather than the widgets in it, because a reviewer's printout losing a paragraph is
+# page rather than the widgets in it, because a user's printout losing a paragraph is
 # no better than losing a widget's word. Declared offers are excluded because paper has
 # nothing to press; the runtime's own layer is excluded because it was never the
 # document, and a widget rendered inside it (a reply's markup) is the panel's, not the
@@ -4827,7 +4827,7 @@ PAPER_WORDS = """() => {
 
 # Words the page draws in the same place as other words. A copy went out with a settled
 # group's cards laid across the heading above them — the cards kept the collapsed
-# padding, which is the room the group is laid out in — and the reviewer saw it in the
+# padding, which is the room the group is laid out in — and the user saw it in the
 # first second while every assertion passed: the words were all present, all shown, and
 # all of a usable size. They were in the same place, and nothing was asking about place.
 #
@@ -4840,7 +4840,7 @@ PAPER_WORDS = """() => {
 # inside it are one run of words that the flow lays out together, and their boxes
 # overlap by construction. Two pixels of slack, since a line box carries its leading and
 # adjacent blocks can round into each other by a hair. The runtime's layer is skipped
-# too: it floats over the document on purpose, and where that costs the reviewer a press
+# too: it floats over the document on purpose, and where that costs the user a press
 # it is the hit test that says so.
 #
 # The layer is in two places, so the skip names both. The line counting a passage's
@@ -4898,7 +4898,7 @@ def render_version(browser, url: str) -> list:
     console or page error, a request that 404s, a fail-soft error box, an upgrade
     module that never defines its declared element, a widget upgraded into a box
     of no usable size, the page scrolling sideways, content set past the column
-    and out into the review margin, words the reviewer can read and can't
+    and out into the margin, words the user can read and can't
     select, words drawn on top of other words — each
     in both color schemes, because the dark theme is real CSS nobody otherwise
     renders — plus, in one scheme, a version that authors widget state the log
@@ -5044,10 +5044,10 @@ def render_version(browser, url: str) -> list:
 @contextlib.contextmanager
 def preview_server(page_dir: Path, version: int):
     """The page directory on a loopback port, exposing versions up to this one, for
-    the length of a `with`. Two callers need a browser to see a version the reviewer
+    the length of a `with`. Two callers need a browser to see a version the user
     may not have (`version check --render` before its note lands, `version export`
     on any published one), and the preview window is what lets them: the server's
-    own liveness rule is the reviewer's, and this widens it for exactly one process."""
+    own liveness rule is the user's, and this widens it for exactly one process."""
     # Its own key, not the page's: this server is loopback-only and lives for the
     # length of a `with`, so it neither needs nor should mint the page's access.
     token = secrets.token_urlsafe(16)
@@ -5066,7 +5066,7 @@ def render_check(page_dir: Path, version: int) -> int:
     render invariants on this version.
 
     Playwright is the gate's own extra, not the script's: declaring it in the
-    PEP 723 header would put its wheel in every `server run`, `review wait`, and
+    PEP 723 header would put its wheel in every `server run`, `colloquy wait`, and
     `version publish`, so the import happens here and its absence names the
     invocation that supplies it. Chrome is part of this gate: if it cannot
     launch, the gate fails."""
@@ -5115,7 +5115,7 @@ def render_check(page_dir: Path, version: int) -> int:
 # What a standalone copy drops. Scripts go because there is no server behind a file
 # and nothing left for them to reach; the runtime's own layer goes with them, since a
 # comment box that swallows what you type and a banner claiming someone is listening
-# are worse than no chrome at all — a copy that lies about being a review. What stays
+# are worse than no chrome at all — a copy that lies about being a live page. What stays
 # is everything the widgets built, the controls they injected among it: a control whose
 # state the browser owns still works with no script running, which is why a `cq-shot`
 # flips on radios.
@@ -5172,10 +5172,10 @@ def export_page(browser, url: str, page_dir: Path) -> str:
 
     One implementation with two callers, as `render_version` is: `version export`
     supplies a browser of its own, and the suite drives this over the shipped
-    examples with the one it already has, so the copy a reviewer gets and the copy
+    examples with the one it already has, so the copy a user gets and the copy
     the suite asserts on cannot drift.
 
-    The reviewer's decisions come with it. Replay is what puts them on the page, so
+    The user's decisions come with it. Replay is what puts them on the page, so
     this waits for the runtime's caught-up stamp exactly as the gate does, and a page
     whose board was rearranged copies rearranged."""
     from playwright.sync_api import TimeoutError as PlaywrightTimeout
@@ -5262,7 +5262,7 @@ def resolve_dir(dir_arg: str, must_exist: bool = True) -> Path:
 
 @click.group()
 def cli() -> None:
-    """Build and run interactive review pages."""
+    """Build and run interactive pages a session shares with its user."""
 
 
 @cli.group(short_help="Create pages and add media.")
@@ -5404,7 +5404,7 @@ def server() -> None:
 @click.option(
     "--host",
     metavar="NAME",
-    help="bind every interface and put NAME in the URL, for a reviewer the "
+    help="bind every interface and put NAME in the URL, for a user the "
     "derived address can't reach; recorded in access.json",
 )
 def run(dir: str, host: str | None) -> None:
@@ -5423,19 +5423,14 @@ def stop(dir: str) -> None:
     print(cmd_stop(resolve_dir(dir)))
 
 
-@cli.group(short_help="Watch and write to a live review.")
-def review() -> None:
-    """Watch and write to a live review."""
-
-
-@review.command(short_help="Set the agent's banner state.")
+@cli.command(short_help="Set the agent's banner state.")
 @click.argument("dir", metavar="PAGE")
 @click.argument("state", type=click.Choice(["working", "waiting", "idle"]))
 @click.argument("detail", required=False, default="")
-def state(dir: str, state: str, detail: str) -> None:
+def status(dir: str, state: str, detail: str) -> None:
     """Set the agent's banner state."""
     page_dir = resolve_dir(dir)
-    # Idling over unacknowledged events ends the review on a reviewer still owed an
+    # Idling over unacknowledged events ends the colloquy on a user still owed an
     # answer. Here rather than in cmd_status because SessionEnd idles pages whose
     # session is already gone, where nothing is left to pick them up.
     events = read_events(page_dir)
@@ -5447,27 +5442,27 @@ def state(dir: str, state: str, detail: str) -> None:
     if pending:
         sys.exit(
             f"{pending} user event{'s' if pending != 1 else ''} nobody has picked up; "
-            "idling closes the review over them. `colloquy review wait` prints them "
+            "idling ends the colloquy over them. `colloquy wait` prints them "
             "and returns at once when events are already waiting. "
             + ACK_BATCH_INSTRUCTION
         )
     cmd_status(page_dir, state, detail)
 
 
-@review.command(
-    short_help="Print unacknowledged reviewer events, then exit.",
+@cli.command(
+    short_help="Print unacknowledged user events, then exit.",
     help=(
-        "Wait for reviewer events not yet acknowledged from model context and print "
+        "Wait for user events not yet acknowledged from model context and print "
         "them as JSON lines.\n\n" + ACK_BATCH_INSTRUCTION
     ),
 )
 @click.argument("dir", metavar="PAGE")
 def wait(dir: str) -> None:
-    """Print unacknowledged reviewer events, then exit."""
+    """Print unacknowledged user events, then exit."""
     sys.exit(cmd_wait(resolve_dir(dir)))
 
 
-@review.command(
+@cli.command(
     short_help="Acknowledge one complete, untruncated wait batch.",
     help=ACK_BATCH_INSTRUCTION,
 )
@@ -5478,7 +5473,7 @@ def ack(dir: str, seq: int) -> None:
     cmd_ack(resolve_dir(dir), seq)
 
 
-@review.command(short_help="Open an agent thread on a page passage.")
+@cli.command(short_help="Open an agent thread on a page passage.")
 @click.argument("dir", metavar="PAGE")
 @click.option("--quote", help="passage text from the published version")
 @click.option("--section", metavar="ID", help="element ID to anchor or scope --quote")
@@ -5487,13 +5482,13 @@ def ack(dir: str, seq: int) -> None:
 def comment(dir: str, quote: str, section: str, text: str, markup: str) -> None:
     """Open a thread on a passage as the agent (--text or stdin).
 
-    The reviewer answers it in the browser and resolves it there. Refuses a quote the
+    The user answers it in the browser and resolves it there. Refuses a quote the
     published version does not hold, or holds more than once.
     """
     cmd_comment(resolve_dir(dir), quote, section, text, markup)
 
 
-@review.command(short_help="Reply to a thread as the agent.")
+@cli.command(short_help="Reply to a thread as the agent.")
 @click.argument("dir", metavar="PAGE")
 @click.option("--to", required=True, metavar="ID", help="comment or reply ID to answer")
 @click.option("--text", help="reply text (default: stdin)")
@@ -5503,7 +5498,7 @@ def reply(dir: str, to: str, text: str, markup: str) -> None:
     cmd_reply(resolve_dir(dir), to, text, markup)
 
 
-@review.command(short_help="Print the event log as JSON lines.")
+@cli.command(short_help="Print the event log as JSON lines.")
 @click.argument("dir", metavar="PAGE")
 @click.option(
     "--after",
@@ -5515,15 +5510,15 @@ def reply(dir: str, to: str, text: str, markup: str) -> None:
 def events(dir: str, after: int) -> None:
     """Print the event log as JSON lines.
 
-    This is read-only and does not acknowledge reviewer events.
+    This is read-only and does not acknowledge user events.
     """
     cmd_events(resolve_dir(dir), after)
 
 
-@review.command(short_help="Print the review as Markdown.")
+@cli.command(short_help="Print the page's exchange as Markdown.")
 @click.argument("dir", metavar="PAGE")
 def transcript(dir: str) -> None:
-    """Print the review as Markdown."""
+    """Print the page's exchange as Markdown."""
     cmd_transcript(resolve_dir(dir))
 
 

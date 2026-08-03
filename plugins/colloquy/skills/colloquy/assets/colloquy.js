@@ -5,14 +5,14 @@
  * module per tag marked x-upgrade — element-widgets need no JS at all; the theme's CSS
  * renders them. It also renders the attributes the registry marks x-says as real text
  * (renderSaid), for every widget alike: a word the page says has to be a word the
- * reviewer can select. Upgrades flush before the first anchor pass, so comment quotes
+ * user can select. Upgrades flush before the first anchor pass, so comment quotes
  * always search the enhanced DOM. Widget modules import only the small helper surface
  * they need from here.
  *
  * Actions: an interactive widget (cq-board) reports the user editing the document
- * through it as an `action` event — sendAction posts it, `review wait` prints it, and
- * `review ack` records that the complete wait batch reached model context. The live
- * view is the version plus every action recorded up to it, replayed on each poll:
+ * through it as an `action` event — sendAction posts it, `colloquy wait` prints it,
+ * and `colloquy ack` records that the complete wait batch reached model context. The
+ * live view is the version plus every action recorded up to it, replayed on each poll:
  * authored markup is what a widget was before anyone touched it, the log is every
  * transition since, and the log wins. A decision therefore outlives the version it
  * was made on, without the page's author having to copy it into the next one by
@@ -20,7 +20,7 @@
  * about got rewritten — `version check` makes the author say so (see restatement_errors in
  * interact.py); it is never inferred from the markup's silence. Widgets opt in via an
  * applyAction(action, detail) method stating an absolute value, so a reload keeps the
- * reviewer's drag and a second tab follows along live.
+ * user's drag and a second tab follows along live.
  *
  * Comment layer: talks to interact.py's server — polls GET /api/state, posts events to
  * POST /api/event. Everything it injects is namespaced .cq-* and marked .cq-ui, and it
@@ -30,7 +30,7 @@
  * and it is anchoring's answer only where nothing nearer speaks. A label the widget
  * declares the page's own words (relabel's data-cq-said) is nearer, and wins: a heading
  * in a chrome-looking row and a tab's name inside its own strip button are both passages
- * a reviewer can point at. Reading the class as the whole answer is what left a reviewer
+ * a user can point at. Reading the class as the whole answer is what left a user
  * able to see a draft's heading and unable to comment on it. A widget's own label, note
  * or badge outside any control declares nothing at all: data-cq-gen alone keeps it out of
  * the diff and in reach of the anchor pass. CLAUDE.md carries why.
@@ -65,7 +65,7 @@
  * which a widget's own box opts into by wearing `cq-ui`. No script measures a textarea,
  * so none can leave one momentarily too small for its own text — the shape of bug that
  * flashes a scrollbar per keystroke. The thread list is reconciled, never rebuilt: a
- * poll adds what arrived and touches nothing the reviewer already holds, so scroll,
+ * poll adds what arrived and touches nothing the user already holds, so scroll,
  * focus and caret keep themselves because the nodes holding them survive. News moves
  * nothing; a send reveals the message it just landed — the panel scrolls to it and
  * flashes its thread, the same answer a click on a page mark gets — and ends in the
@@ -98,7 +98,7 @@
  * crosses into typing context, backing out one layer per press without ever eating
  * text.
  *
- * What a key would do right now is state the reviewer can read, not recall: scene()
+ * What a key would do right now is state the user can read, not recall: scene()
  * derives the current scope from the state that already exists (the leader, the
  * overlay, the composer, focus, the panel) and is the one definition of Escape's
  * ladder — escapeKey() runs the rung scene() returns, and the key line (one quiet
@@ -114,7 +114,7 @@
  * the log's own. Its text is Markdown, rendered with every raw tag escaped to the
  * characters it was written in, so prose that says `Vec<T>` keeps its own words and
  * text cannot inject markup. A widget rides the event's `markup` field instead, whose
- * one door is the CLI gate (`review comment`/`review reply` validate it against the
+ * one door is the CLI gate (`colloquy comment`/`colloquy reply` validate it against the
  * vendored registry; the browser door refuses the field), so what lands here is
  * injected as validated. A suggestion's text renders verbatim: its characters are
  * bound for the page as typed. */
@@ -344,7 +344,7 @@ export const SCROLL = REDUCED ? "instant" : "smooth";
 
 // Mention, not use: a widget inside one the registry marks x-exhibit is quoted
 // material. An interactive widget consults this before wiring anything that would carry
-// input back (a choose path, a drag grip), so an exhibit never takes the reader's edits.
+// input back (a choose path, a drag grip), so an exhibit never takes the user's edits.
 // Presentational upgrades and view state run regardless — a quoted diagram still
 // renders, a quoted settled group still collapses.
 export function quoted(el) {
@@ -362,7 +362,7 @@ export function quoted(el) {
 // "button" names a thing to press, not the element. A real <button> is a wall a
 // pointer's selection cannot cross — Chrome starts no selection inside a form
 // control and `user-select: text` does not move it — so any word inside one is
-// unreachable to a reviewer whatever it is marked, and a control's label turns out
+// unreachable to a user whatever it is marked, and a control's label turns out
 // to be one of the page's own words often enough (a tab's name, the card a settled
 // group carries, the mark on a chosen option) that a widget cannot be trusted to
 // have picked the element with that in mind. So a press is a span wearing the role,
@@ -399,7 +399,7 @@ document.addEventListener("keydown", (ev) => {
 });
 
 // A drag that ends on a control is that selection's mouseup, not a press: the
-// reviewer was reaching for the words, and a control whose label is one of the
+// user was reaching for the words, and a control whose label is one of the
 // page's own words is exactly where they reach. Here rather than in each widget,
 // because `offer` is what made the thing pressable — the same reason the markers
 // live there. A keyboard activation (detail 0) is never a drag.
@@ -409,7 +409,7 @@ document.addEventListener("keydown", (ev) => {
 // button came up. Asking instead whether the selection contains the control is a
 // question about the DOM, and it answers yes for any selection running over the
 // control: a suggestion's row is the column's own child, in flow between the block
-// holding the change and the next one, so a reviewer who read across the change and
+// holding the change and the next one, so a user who read across the change and
 // then reached for Accept pressed a control that had gone dead — and stayed dead,
 // because a press that refuses a drag (`user-select: none`) never collapses the
 // selection that deadened it either.
@@ -436,7 +436,7 @@ document.addEventListener(
 //
 // This writes one marker and one only: data-cq-said, the page speaking. Anchoring
 // takes it over the `.cq-ui` box around it — that box is a look, the chrome face, and
-// it was standing in for a permission the reviewer has no category for — and paper
+// it was standing in for a permission the user has no category for — and paper
 // reads it beside data-cq-offer to keep a control whose label is one of the page's own
 // words. data-cq-gen goes on either way, because the diff parses the base version
 // unupgraded and would read any label as text that version lacked.
@@ -480,7 +480,7 @@ export function sendAction(el, action, detail) {
 }
 
 // A widget's box for words. A page can ask a question its options don't cover the
-// answer to — "none of these", or a pick's why — and the reader needs somewhere to
+// answer to — "none of these", or a pick's why — and the user needs somewhere to
 // put that without going hunting for a passage to select. What they type goes back as
 // an ordinary comment anchored on the widget, so it is a thread beside the question:
 // replied to in place, resolved like any other, and in the transcript with everything
@@ -663,12 +663,12 @@ async function upgradeWidgets() {
 }
 
 // Words a widget says through an attribute — a metric's number, an event's time, an
-// option's chip band — rendered as text the reviewer can reach. The theme renders the same
+// option's chip band — rendered as text the user can reach. The theme renders the same
 // words with `content: attr()`, and a pseudo-element's glyphs are in no text node: no
 // selection can cover them, so no comment can be anchored on them, and the page shows
 // text you can read and can't point at. Not the widget author's to remember, either: the
 // registry names the attributes (x-says) and one pass renders them, so a widget cannot
-// render a word the reviewer can't quote.
+// render a word the user can't quote.
 //
 // Each value goes at the edge its pseudo-element occupied (before = first child, after =
 // last) — the only placement a pseudo could ever have had, and so the line past which a
@@ -682,7 +682,7 @@ async function upgradeWidgets() {
 // gets (docs/how-it-works.html is one); they stand down where this pass has been, asked
 // by :has(), so the two are never both on. The span is data-cq-gen and not .cq-ui: the
 // diff parses the base version unupgraded and must not read it as text that version
-// lacked, and the reviewer must be able to quote it.
+// lacked, and the user must be able to quote it.
 //
 // data-cq-said names the attribute here and stands bare on a label relabel wrote, because
 // the two are one claim — these words are the page's, whoever rendered them. The anchor
@@ -720,14 +720,14 @@ function renderSaid(root) {
 }
 
 // Anything a mouse can scroll, a keyboard can reach. A `pre` too wide for the column
-// scrolls, and a reviewer working from the keyboard had no way at all to the half of the
+// scrolls, and a user working from the keyboard had no way at all to the half of the
 // line off the right of it — which is a phone's every code block, since the column there
 // is 372px and a line of code is not. Asked of the computed overflow rather than of a list
 // of tags, so a widget that scrolls is covered by scrolling and the twelfth one needs no
 // entry, and it reaches the runtime's own boxes on the same terms as the page's. Asked of
 // the content first, because a box holding a control of its own is already reachable
 // (cq-board, through its grips) and a tab stop over the whole board would stand between
-// the reviewer and the card they were tabbing to.
+// the user and the card they were tabbing to.
 const FOCUSABLE =
   'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
 function reachScrollers(root) {
@@ -794,7 +794,7 @@ style.textContent = `
      says the document is done becoming itself, because until then every margin the
      page has is one it arrived with: a panel restored open would otherwise slide into
      place on load, and a version switch is a load, so every revision would arrive
-     sliding sideways under a reviewer who asked for a revision and not for motion.
+     sliding sideways under a user who asked for a revision and not for motion.
      The stamp lands at the end of the start chain, long after the restore. Reduced
      motion is handled globally by the theme's guard. */
   body[${PAGE_PAINT_ATTRIBUTE.upgraded}="1"] { transition: margin-right .18s ease; }
@@ -951,7 +951,7 @@ style.textContent = `
     .cq-signoff { min-width: 116px; }
     /* The two that count reserve the widest they reach anywhere below a thousand, so no
        arithmetic on the count can move them and none of it has to be thought about again.
-       A page with a thousand open threads on it is not one anyone hands a reviewer. */
+       A page with a thousand open threads on it is not one anyone hands a user. */
     .cq-comments { min-width: 136px; }
     .cq-accept-all { min-width: 145px; }
     /* The one control on the right of the row that may give, because it is the leftmost
@@ -972,7 +972,7 @@ style.textContent = `
     .cq-empty { color: var(--muted); padding: 18px 4px; }
     .cq-thread { position: relative; border: 1px solid var(--rule); border-radius: var(--r); padding: 10px; margin-bottom: 12px; }
     .cq-thread.flash { animation: cq-runtime-4f3c2a8d-flash 1.2s ease-out; }
-    /* An arrival the reconcile added while the reviewer was watching. Motion, not a
+    /* An arrival the reconcile added while the user was watching. Motion, not a
        jump: nothing above it moves, and the newcomer settles rather than appears. */
     .cq-thread.grow, .cq-msg.grow { animation: cq-runtime-4f3c2a8d-grow .32s cubic-bezier(.2,.7,.3,1); }
     .cq-thread:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -1139,8 +1139,8 @@ toggleBtn.title =
 toggleBtn.setAttribute("aria-expanded", "false");
 const approveBtn = el("button", "cq-btn primary cq-signoff", "✓ Looks good");
 approveBtn.title = "Approve this work; the page stays open for follow-up";
-const endReviewBtn = el("button", "cq-btn cq-end-review", "End review");
-endReviewBtn.title = "End this comments-only review";
+const endColloquyBtn = el("button", "cq-btn cq-end-colloquy", "End colloquy");
+endColloquyBtn.title = "End this comments-only colloquy";
 banner.append(
   dot,
   statusText,
@@ -1151,7 +1151,7 @@ banner.append(
   versionSelect,
   toggleBtn,
 );
-banner.append(SIGNOFF ? approveBtn : endReviewBtn);
+banner.append(SIGNOFF ? approveBtn : endColloquyBtn);
 
 const panel = el("aside", "cq-ui cq-panel");
 const panelHead = el("div", "cq-panel-head");
@@ -1322,7 +1322,7 @@ function syncLayout() {
   // and the page hands over scrolling with it: one wheel gesture moves one region,
   // and while the sheet is up that region is its thread list. The page holds its
   // place for when the sheet closes — a hidden-overflow scroller keeps its position,
-  // and still moves for a j/k walk or a version switch restoring where the reviewer
+  // and still moves for a j/k walk or a version switch restoring where the user
   // was, so the passage behind the sheet is the one the panel is talking about.
   //
   // The strip is taken from the page rather than held aside for it, which makes
@@ -1374,7 +1374,7 @@ document.body.addEventListener("transitionend", (ev) => {
   if (ev.propertyName === "margin-right") syncFloats();
 });
 function setPanel(open) {
-  // Closing while focus is inside would drop it on body, the reviewer's place
+  // Closing while focus is inside would drop it on body, the user's place
   // lost silently; it lands on the one control that reopens what just closed.
   if (!open && panel.contains(document.activeElement))
     toggleBtn.focus({ preventScroll: true });
@@ -1621,7 +1621,7 @@ function msgNode(m) {
 // selection) and names its section instead of quoting it. One function, so the two places
 // can't come to say it differently.
 //
-// An id is the page's name for an item and not the reviewer's. `card-migration` says
+// An id is the page's name for an item and not the user's. `card-migration` says
 // nothing they wrote, and pointing at an item is an ordinary gesture rather than the
 // diagram's special case, so anchors reading this way are ordinary in the panel too.
 // An element anchor is labelled with the item's own opening words, and falls
@@ -1678,7 +1678,7 @@ function systemNode(e, text) {
   return div;
 }
 
-// The resolved disclosure, one <details> for the page's life: the reviewer's
+// The resolved disclosure, one <details> for the page's life: the user's
 // open/closed toggle is the browser's state, and it survives arrivals only if the
 // element does — the rebuild this replaced snapped it shut on every one.
 let resolvedBox = null;
@@ -1688,7 +1688,7 @@ let resolvedBox = null;
 // messages and refreshes its clocks. Resolving is the one transition that reshapes a
 // node (the reply box, the actions and the badge all go) and so the one that rebuilds
 // it; msgBodies carries the rendered bodies across. `grow` animates what this call
-// creates, for arrivals into a list the reviewer is already looking at.
+// creates, for arrivals into a list the user is already looking at.
 function threadNode(t, grow) {
   const existing = threadsBox.querySelector(`.cq-thread[data-id="${t.root.id}"]`);
   const existingResolved = existing && !existing.querySelector(":scope > .cq-compose");
@@ -1785,13 +1785,13 @@ function threadNode(t, grow) {
 // dropped. The rebuild this replaced destroyed every node on every render and then
 // hand-restored the reader's place — scroll offset, focused thread, caret — and what
 // no restore could give back was identity: nothing could animate, one send route kept
-// focus and the other dropped it, and a reviewer's own comment landed below the fold
+// focus and the other dropped it, and a user's own comment landed below the fold
 // of a list put back exactly where it was. Nodes surviving is what deleted all of it.
 function renderThreads() {
   const threads = buildThreads();
   const open = threads.filter((t) => !t.resolved);
   const resolved = threads.filter((t) => t.resolved);
-  // Newcomers settle in (`grow`) only when the reviewer already has the list in front
+  // Newcomers settle in (`grow`) only when the user already has the list in front
   // of them: the first populated render is the page loading, not news arriving, and a
   // node animated while the panel is closed would replay the moment it opens.
   const grow =
@@ -1809,7 +1809,7 @@ function renderThreads() {
   for (const e of events) {
     if (e.kind === "done") wanted.push(systemNode(e, `✓ Approved ${ago(e.ts)}`));
     else if (e.kind === "close")
-      wanted.push(systemNode(e, `Review ended ${ago(e.ts)}`));
+      wanted.push(systemNode(e, `Colloquy ended ${ago(e.ts)}`));
   }
   if (resolved.length) {
     if (!resolvedBox) {
@@ -1887,11 +1887,11 @@ function revealThread(id) {
 // again. The version diff additionally skips content an upgrade generated, because the
 // base document parses unupgraded and would never match it. So generated text the page
 // authored — a widget's label, an attribute renderSaid rendered — is diff-invisible and
-// quotable, which is the pair a reviewer expects: they can point at it, and it doesn't
+// quotable, which is the pair a user expects: they can point at it, and it doesn't
 // read as a change nobody wrote.
 //
 // A decided suggestion's retired slot goes with them. Its markup is still in the
-// document — the honoring version is what finally drops it — but the reviewer has
+// document — the honoring version is what finally drops it — but the user has
 // removed it, and the live view is the version plus their decisions. Text nobody can
 // see is text nobody can mean: without this a comment made on a passage then accepted
 // away kept reading as attached in the panel and jumped nowhere, and a quote from
@@ -1909,7 +1909,7 @@ const retiredSlots = () =>
     )
     .join(", ");
 // What no label can speak through, however it is marked: an inline script, the
-// stylesheet a rendered diagram carries inside its <svg>, and a slot the reviewer's
+// stylesheet a rendered diagram carries inside its <svg>, and a slot the user's
 // decision took off the page. Chrome is the rest of what the anchor pass skips and
 // the one part a label yields — it is a look, and a look cannot make a word the
 // runtime's.
@@ -1918,7 +1918,7 @@ function silenced() {
   return ["script", "style", ...(retired ? [retired] : [])].join(", ");
 }
 
-// An element the reviewer's decision took off the page, asked of an element rather
+// An element the user's decision took off the page, asked of an element rather
 // than of text: a retired slot (or anything inside one), or a decided element the
 // retirement emptied — a deletion accepted, an insertion refused — whose every child
 // is now a retired slot or the runtime's own chrome, with no text of its own. The
@@ -1947,7 +1947,7 @@ const SAID = "[data-cq-said]";
 // document? Every affordance asks it before acting on where the pointer or the caret is.
 // The nearest element that answers wins: a declared label is the page's words inside the
 // control it labels, and a control nested inside one is chrome again. `.cq-ui` alone was
-// the answer once, and it is a look — which is how a reviewer ended up reading a heading
+// the answer once, and it is a look — which is how a user ended up reading a heading
 // they could not point at, twice.
 const inUi = (node) => {
   const near = (node?.nodeType === 1 ? node : node?.parentElement)?.closest(
@@ -1965,9 +1965,9 @@ const inChrome = (node) => Boolean(node?.closest(".cq-chrome"));
 const TEXT_BLOCK =
   "p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dd,dt,figcaption,summary";
 // The two readings, each one predicate over a text node and named for the question it
-// answers. Anchoring reads what the reviewer can point at: not the runtime's own words —
+// answers. Anchoring reads what the user can point at: not the runtime's own words —
 // `inUi`, which a declared label answers for itself — and nothing behind a wall no label
-// speaks through, so a pick mark inside a slot the reviewer accepted away is gone with
+// speaks through, so a pick mark inside a slot the user accepted away is gone with
 // the slot, its marker notwithstanding. The diff reads what the base version holds, and
 // the base parses unupgraded, so everything an upgrade generated goes, a declared label
 // included: the version being compared against has none.
@@ -2147,7 +2147,7 @@ export const says = (el) => quoteFrom(textNodesUnder(el));
 // version it compares against has no generated nodes at all; a widget asks it to name
 // one of its own parts, where `says` would hand back the widget's own declared labels
 // along with the words — a picked row's mark is the page speaking, so it is in the
-// reading a reviewer points at and out of the row's name.
+// reading a user points at and out of the row's name.
 export const wrote = (el) => quoteFrom(textNodesUnder(el, authored()));
 
 // A passage as one Range: what paints it, and what measures it for a scroll.
@@ -2177,7 +2177,7 @@ const EDGE = "\u0000"; // no document holds one, so it can't collide with page t
 // A quote names text, not a place, and a page is free to say the same thing twice. Where it
 // does, the words on either side decide which occurrence was meant. A unified diff holds
 // the same line on both sides by construction, so without this, commenting on a fixed line
-// marked the broken one — the reviewer's objection attached to the code they were objecting
+// marked the broken one — the user's objection attached to the code they were objecting
 // to, and stored that way. Section scoping cannot reach it, because both sides of a diff
 // live under one id. Context rather than an offset: an offset goes stale silently when the
 // page is revised, while neighbours can be checked against the page as it now stands — see
@@ -2348,7 +2348,7 @@ function findQuote(text, quote, anchor, within) {
 
 // ---------- view continuity ----------
 // Following a new version is a navigation, so without help the reader lands at the top
-// of a fresh document mid-review. The passage they were reading rides across in
+// of a fresh document mid-session. The passage they were reading rides across in
 // sessionStorage — per-tab like unsent drafts, because a reading position belongs to a
 // tab and shouldn't outlive it. It travels as a landmark rather than a pixel offset,
 // since content moves between versions: re-find the passage by its text within its
@@ -2442,7 +2442,7 @@ const sectionOf = (anchor) =>
 // item's own left edge, which is the page's margin only for an item the page happens
 // to have left-aligned; and a row of chips beside the 💬 offering the selection's
 // enclosing chain ("⬚ paragraph", "⬚ section") — a correction nobody had asked for,
-// paid in chrome beside every selection a reviewer made.
+// paid in chrome beside every selection a user made.
 //
 // What both write is the anchor colloquy already has. A comment on an element is
 // {section: <id>} with no quote — the shape a click on a diagram has made since the
@@ -2463,7 +2463,7 @@ function itemAt(node) {
     if (at.matches(ITEM) && !inChrome(at) && !inUi(at)) return at;
   return null;
 }
-// What to call an item, in a word the reviewer reads beside a thread's § label. A widget
+// What to call an item, in a word the user reads beside a thread's § label. A widget
 // names itself: its tag minus the prefix is already the word the vocabulary chose
 // ("card", "option", "column"), so the twelfth widget gets a name here without core
 // hearing about it.
@@ -2503,7 +2503,7 @@ function itemWord(item) {
   // A <pre> is a block of something and the something is in the markup: the documented
   // shape for source is <pre><code class="language-*">, and a <pre> without the <code> is
   // the shape for what isn't source — a transcript, a stack trace, command output. So the
-  // word is read rather than assumed, and a reviewer who calls it a code block is offered
+  // word is read rather than assumed, and a user who calls it a code block is offered
   // one.
   if (tag === "pre") return item.querySelector(":scope > code") ? "code" : "block";
   return HTML_WORDS[tag] ?? tag;
@@ -2523,7 +2523,7 @@ function itemSays(item) {
 }
 function resolveAnchor(anchor, text) {
   // An element anchor asks a different question — whether the section is still on the
-  // reviewer's page — and the whole page is not an answer to it. Existence alone isn't
+  // user's page — and the whole page is not an answer to it. Existence alone isn't
   // either: a decided element whose markup settles to nothing is present in the
   // document and absent from the screen, and an anchor held to it read as attached
   // while outlining nothing.
@@ -2637,7 +2637,7 @@ function paintAnchors() {
     // hears it — or, for a passage that sits in no block of its own, the element the
     // anchor names, which is where the runtime already puts chrome a widget has to live
     // with (a card's drag grip). Never the inline run or the body div in between, because
-    // a widget reads those back as its own: cq-draft seeds the editor a reviewer types
+    // a widget reads those back as its own: cq-draft seeds the editor a user types
     // into from its body div, and a line inside it is chrome in the text they send back.
     const blocks = found.element
       ? [found.element]
@@ -2678,7 +2678,7 @@ function paintAnchors() {
   // whether the page is showing that passage. Usually it is — the box opens beside the words
   // it just marked, and printing them inside it says the same sentence twice, side by side.
   // So the quote is the fallback rather than the statement: it shows where the mark can't,
-  // which is where this version no longer holds the passage — a draft the reviewer carried
+  // which is where this version no longer holds the passage — a draft the user carried
   // onto a newer version, whose text survived the trip when its passage didn't. Dashed and
   // muted, the panel's detached treatment, for the same fact.
   //
@@ -2690,7 +2690,7 @@ function paintAnchors() {
   // quote stays in the tree as the box's description whichever way it renders. Written only
   // when it changes, because assigning textContent replaces the node even with the same
   // string, and this pass reruns whenever a comment arrives — a stranded quote is the only
-  // copy of that passage left, so it is text a reviewer may be selecting to keep.
+  // copy of that passage left, so it is text a user may be selecting to keep.
   const label = composerOpen ? anchorLabel(pendingAnchor) : "";
   if (composerQuote.textContent !== label) composerQuote.textContent = label;
   composerQuote.classList.toggle("cq-unseen", !label || Boolean(draft));
@@ -2853,7 +2853,7 @@ function placeComposer(left, top) {
     r.top >= box.top &&
     r.bottom <= box.bottom;
   // A passage and a thing want different rules here, because
-  // they are read differently. Covering the tail of a quote is fine — the reviewer has read
+  // they are read differently. Covering the tail of a quote is fine — the user has read
   // it, and the mark still names where it starts. A card, a column, a metric is judged as
   // one object, so a box standing anywhere on it is a box between them and the thing they
   // are writing about. ⌥-click made that plain by opening the composer under the pointer,
@@ -2957,7 +2957,7 @@ const beside = (rect) => [rect.right + 6, rect.top - 6];
 // composer's mark is: a control standing on the page. The floats float and they don't.
 // A selection runs to the column's right edge on any line it fills, so `beside` puts
 // the button in the margin — which is where a suggestion hangs the row deciding the
-// change that selection just covered. The reviewer's own gesture then hid the Accept
+// change that selection just covered. The user's own gesture then hid the Accept
 // they were reaching for, and the press that would have dismissed the button was the
 // press it was covering. The composer's margin placement stands in the same column of
 // rows, so it takes the same walk.
@@ -2997,7 +2997,7 @@ function openOnItem(item, from) {
 // almost anywhere.
 const MIN_QUOTE = 3;
 // A selection of the page's own words, as against none, a bare caret, or one made inside
-// the runtime's own layer. That is the line between a reviewer reaching for a passage and
+// the runtime's own layer. That is the line between a user reaching for a passage and
 // one working the chrome, and it is the question every caller here is really asking.
 const pageSelection = () => {
   const sel = getSelection();
@@ -3025,7 +3025,7 @@ function updateFab(visual) {
 // Where the pointer stopped is not the question; where the selection is, is. The guard
 // exists so a mouseup inside the runtime's layer — a click in the panel, the composer —
 // can't re-decide the button out from under an open draft. A drag that ends on a widget's
-// control is the opposite case: the reviewer was selecting that control's label, and a
+// control is the opposite case: the user was selecting that control's label, and a
 // tab's name runs to within a few pixels of the strip button's padding, so the mouseup
 // lands on chrome while the selection is the page's.
 document.addEventListener("mouseup", (ev) => {
@@ -3073,15 +3073,15 @@ const visualSel = () =>
   [...tagsDeclaring((e) => e["x-visual"]), "svg", "img", "figure"].join(",");
 // While ⌥ is held the page shows what a click would take — the item under
 // the pointer wears the outline the composer's own passage will wear, so the chord
-// answers "which" before the click rather than asking the reviewer to press and find out.
+// answers "which" before the click rather than asking the user to press and find out.
 // `aiming` is the state and the class is a rendering of it; nothing reads the class back.
 //
 // It comes off on blur as well as on keyup, because the chord that switches windows takes
-// the keyup with it, and a page left armed under nobody's hand is a claim the reviewer
+// the keyup with it, and a page left armed under nobody's hand is a claim the user
 // cannot dismiss.
 let aiming = false;
 // What the pointer is over, asked of the page rather than of an event, so pressing the key
-// without moving the mouse answers too — the reviewer holds ⌥ to find out what they would
+// without moving the mouse answers too — the user holds ⌥ to find out what they would
 // get, and the answer cannot wait for them to jiggle the mouse first.
 function aimedItem() {
   if (composerOpen || pointer.x < 0) return null;
@@ -3099,26 +3099,26 @@ addEventListener("blur", () => setAiming(false));
 document.addEventListener("mousemove", () => aiming && previewOn(aimedItem()));
 
 // ⌥-click means the item under the pointer, whatever it holds. It costs the page no
-// chrome and the reviewer no selection, and it reaches an item whose words are all
+// chrome and the user no selection, and it reaches an item whose words are all
 // inside a control. What it costs is discoverability, which the cursor answers as far as
 // a modifier can: while the key is down the pointer says a click will aim.
 //
 // The press it aims with is the aim's alone, so it is taken at capture — ahead of every
 // handler out on the page, and of the browser's own defaults. Read on the way back up
 // instead, it was a press the page had already had: ⌥-clicking an option card opened the
-// composer *and* picked the option, sending Claude a decision the reviewer never made,
+// composer *and* picked the option, sending Claude a decision the user never made,
 // and ⌥-clicking a tab's name aimed at the widget while switching the panel under it.
 // Every widget that takes a press had it, because none of them was ever told. The outline
 // is the promise, and a press keeps it by being the only thing the press does.
 //
 // Claimed at the press rather than judged at the click, because the press is where ⌥
-// states what the reviewer meant. A key released before the button comes back up would
+// states what the user meant. A key released before the button comes back up would
 // otherwise leave a press already taken from the page doing nothing at all.
 //
 // What is armed is the page rather than the items on it: an armed press aims where there
 // is an item under it, and acts on nothing where there isn't. That is what the cursor is
 // already saying, over everything the chrome doesn't hold out of it. Falling through to
-// the page instead would leave the reviewer reading the outline to find out which of the
+// the page instead would leave the user reading the outline to find out which of the
 // two a press is about to be — and a suggestion's ✓ Accept hangs in the page's own
 // column, outside the element it decides, so there is nothing above it to aim at and
 // getting that wrong sends Claude a decision.
@@ -3148,7 +3148,7 @@ function claimPress(ev) {
   if (!aimedPress) return;
   // A click carrying no press belongs to the control it is on rather than to a press that
   // has already finished: `offer` calls click() to supply the keys a span doesn't come
-  // with, and the reviewer's Enter must reach the control they are on whatever the last
+  // with, and the user's Enter must reach the control they are on whatever the last
   // press was.
   if (ev.type === "click" && !ev.detail) return;
   // Not on pointerdown, whose cancellation takes the mouse events with it — the click this
@@ -3303,7 +3303,7 @@ const syncGeneral = wireInput(generalInput, {
 });
 
 approveBtn.onclick = () => post({ kind: "done", version: VNUM, text: "Looks good" });
-endReviewBtn.onclick = () => post({ kind: "close", version: VNUM });
+endColloquyBtn.onclick = () => post({ kind: "close", version: VNUM });
 
 // ---------- keyboard ----------
 // One table drives both the dispatcher and the "?" overlay, so help can't drift
@@ -3317,7 +3317,7 @@ endReviewBtn.onclick = () => post({ kind: "close", version: VNUM });
 // thread's reply box, in the order j/k walk. While armed each addressable box wears
 // its digit as a chip and the key line shows the pending chord (both renderings of
 // leaderTimer, never read back), so the armed window is visible wherever the
-// reviewer is looking, panel open or closed. A digit consumes the window; any other
+// user is looking, panel open or closed. A digit consumes the window; any other
 // key disarms it and keeps its ordinary meaning, so a mistyped g costs nothing; Esc,
 // the timeout, and focus entering a box disarm too.
 const LEADER_MS = 1500;
@@ -3333,7 +3333,7 @@ function setLeader(on) {
   leaderTimer = on ? setTimeout(() => setLeader(false), LEADER_MS) : null;
   panel.classList.toggle("cq-leader-armed", on);
   // The chips are the eye's copy; the arming itself is spoken, or the mode change
-  // is silent to exactly the reviewer who can't see them.
+  // is silent to exactly the user who can't see them.
   if (on && !was) announce("Reply to thread — press 1 to 9, Escape cancels");
   paintLine();
 }
@@ -3626,7 +3626,7 @@ threadsBox.addEventListener("keydown", (ev) => {
 // They move the region the reader's own scrolling moves, which under a covering sheet is
 // its thread list rather than the page behind it — the rule syncLayout already states
 // for the wheel, and a key is no different. Scrolling a page nobody can see reads to the
-// reviewer as the key doing nothing, and then the document is somewhere else when the
+// user as the key doing nothing, and then the document is somewhere else when the
 // sheet closes.
 //
 // The destination is carried rather than measured afresh, because scrollBy measures from
@@ -3693,7 +3693,7 @@ function toggleHelp() {
 }
 
 // ---------- suggestions ----------
-// A cq-suggestion is Claude's edit to reviewed content, offered rather than
+// A cq-suggestion is Claude's edit to content the user has seen, offered rather than
 // shipped. The widget owns one suggestion and marks its own state in the DOM;
 // the banner owns the page's total, derived from that and refreshed whenever a
 // widget says it changed. Accept all decides each suggestion individually, so
@@ -3712,7 +3712,7 @@ function syncSuggestions() {
 }
 // A decision also changes what text the page has — the retired slot leaves it
 // (`quotable`) — so the marks are repainted from the same signal, and a comment
-// on text the reviewer just removed says so at once rather than at the next poll.
+// on text the user just removed says so at once rather than at the next poll.
 document.addEventListener("cq-suggestions", () => {
   syncSuggestions();
   paintAnchors();
@@ -3728,7 +3728,7 @@ acceptAllBtn.onclick = async () => {
 
 // ---------- version diff ----------
 // "Changes since vN": blocks (paragraphs, list items, widget items) whose text
-// isn't present in the base version get a tinted marker, so re-reviewing a
+// isn't present in the base version get a tinted marker, so re-reading a
 // revision is cheap. Block-level and additions-only — deleted text has no home
 // to mark — and a widget that renders its own body is opaque to it. The base is
 // the previous published version.
@@ -3869,9 +3869,9 @@ diffBtn.onclick = async () => {
 // ---------- banner ----------
 // "Claude is working" is a claim in status.json, and nothing revises a claim once the
 // session behind it walks away — so a page nobody is watching reads exactly like a page
-// whose reviewer has said nothing yet. The banner asks whether anyone is attending, and
-// only two things answer yes: Claude is credibly busy, or a `review wait` is live. Everything
-// else is absence, where the reason and the remedy are all that vary.
+// whose user has said nothing yet. The banner asks whether anyone is attending, and
+// only two things answer yes: Claude is credibly busy, or a `colloquy wait` is live.
+// Everything else is absence, where the reason and the remedy are all that vary.
 const HANDOFF_GRACE_MS = 2 * 60 * 1000;
 const WORKING_GRACE_MS = 15 * 60 * 1000;
 function renderStatus(state) {
@@ -3887,8 +3887,8 @@ function renderStatus(state) {
   // nothing claimed (interact.py run outside Claude Code) isn't an abandoned one.
   const alive = session_alive !== false;
   // How long the claim has gone unrefreshed. The rope is short for the status
-  // `review wait` writes as it prints a batch, because the agent writes its own
-  // `review state` after acknowledgement — that mark outliving minutes is a dropped
+  // `colloquy wait` writes as it prints a batch, because the agent writes its own
+  // `colloquy status` after acknowledgement — that mark outliving minutes is a dropped
   // pickup, not a long turn.
   const grace = status.handoff ? HANDOFF_GRACE_MS : WORKING_GRACE_MS;
   const quiet =
@@ -3898,7 +3898,7 @@ function renderStatus(state) {
     showAge = false;
   if (status.state === "idle") {
     cls = "";
-    text = "Review closed";
+    text = "Colloquy closed";
   } else if (alive && status.state === "working" && !quiet) {
     cls = "working";
     showAge = Boolean(status.ts);
@@ -3912,7 +3912,7 @@ function renderStatus(state) {
     // means it lost the thread.
     const [why, how] = !alive
       ? [
-          `The ${agentName()} session reviewing this page has ended.`,
+          `The ${agentName()} session behind this page has ended.`,
           "Start one in the terminal to pick it up.",
         ]
       : quiet
@@ -3921,7 +3921,7 @@ function renderStatus(state) {
             "Nudge it in the terminal.",
           ]
         : [`${agentName()} isn't watching right now.`, "It picks them up next turn."];
-    // Reviewer updates land in the append-only log either way; what changes is when
+    // The user's updates land in the append-only log either way; what changes is when
     // they're read.
     const held = pending
       ? `${pending} update${pending === 1 ? "" : "s"} waiting.`
@@ -4002,7 +4002,7 @@ latestChip.onclick = () => (location.href = "/");
 
 // ---------- polling ----------
 // Rendering version V shows V plus every action recorded up to it, replayed in
-// seq order: a reload keeps the reviewer's drag, a second tab follows along
+// seq order: a reload keeps the user's drag, a second tab follows along
 // live, and a decision made on v10 still stands on v25. Widgets opt in by
 // exposing applyAction(action, detail) — an absolute placement, so replaying
 // the sender's own action is a no-op. The first poll runs after upgrades
@@ -4021,7 +4021,7 @@ const appliedActions = new Set();
 // What an action rests on: the widget that sent it, and the parts of that widget
 // its detail names — a `move` rests on its card as much as on the board. Either
 // can be taken back, which is what lets a rewritten card drop its own moves while
-// the rest of the board stays where the reviewer put it. Containment is the test,
+// the rest of the board stays where the user put it. Containment is the test,
 // not "the page has an element by that id", so a literal detail value can't
 // collide with an unrelated element that happens to be called the same thing.
 function restsOn(e, widget) {
@@ -4038,7 +4038,7 @@ function restsOn(e, widget) {
 // so with `restated`, and publishing records it on the note that released it.
 // Reading it from the log rather than from the markup is what makes it last —
 // the version *after* the rewrite declares nothing, and its silence would
-// otherwise hand the reviewer's retracted state straight back.
+// otherwise hand the user's retracted state straight back.
 function retractionFloors(upto) {
   const floors = new Map();
   for (const e of events)
@@ -4102,7 +4102,7 @@ function applyActions() {
       appliedActions.add(e.seq);
       continue;
     }
-    // A pinned older version is a historical view, so it shows what the reviewer
+    // A pinned older version is a historical view, so it shows what the user
     // had done by then and not what they did later. A widget inside the comment
     // layer (.cq-chrome — a reply's inline question) has no version at all: its markup
     // is frozen in the log, and no version can rewrite or retract it.
@@ -4114,7 +4114,7 @@ function applyActions() {
       const gone = restsOn(e, el).filter((id) => (takenBack.get(id) ?? 0) > e.version);
       if (gone.length) {
         // Say so on the page: a decision undone looks exactly like one never
-        // made, and the reviewer is owed the difference.
+        // made, and the user is owed the difference.
         for (const id of gone) {
           const target = document.getElementById(id);
           if (target) target.setAttribute(PAGE_PAINT_ATTRIBUTE.restated, "1");
@@ -4164,7 +4164,7 @@ function applyActions() {
 
 // ---------- decided, awaiting the honoring version ----------
 // The registry's x-state names each verb's fold unit and record form, so one
-// pass renders "the reviewer decided this and no version has carried it yet"
+// pass renders "the user decided this and no version has carried it yet"
 // for every widget alike — choose had its mark, edit its tint, move nothing,
 // and the asymmetry was each widget remembering (or not) on its own. The
 // authored facets are captured once per page load, after upgrades and before
@@ -4225,7 +4225,7 @@ function captureAuthoredFacets() {
   }
 }
 
-// The reviewer's standing state as of `upto`: the last surviving action per
+// The user's standing state as of `upto`: the last surviving action per
 // declared unit. Every applyAction is absolute, which is what makes this a
 // fold — one linear scan, no replay simulation. Surviving means not under a
 // retraction floor keyed on what the action rests on — the same containment
@@ -4304,7 +4304,7 @@ async function poll() {
     const approved = events.some((e) => e.kind === "done");
     approveBtn.disabled = approved;
     approveBtn.textContent = approved ? "✓ Approved" : "✓ Looks good";
-    endReviewBtn.disabled = events.some((e) => e.kind === "close");
+    endColloquyBtn.disabled = events.some((e) => e.kind === "close");
     const agentReplies = events.filter(
       (e) => e.author === "claude" && e.kind === "reply",
     );
@@ -4320,7 +4320,7 @@ async function poll() {
   applyActions();
   // Sequence consumers render after replay, so their history and the widget's
   // standing body describe the same poll. This also fires when the event list did
-  // not grow: applyAction may have deferred while a reviewer was typing, then become
+  // not grow: applyAction may have deferred while a user was typing, then become
   // applicable on the next poll after they close the editor.
   document.dispatchEvent(new Event("cq-actions"));
 }

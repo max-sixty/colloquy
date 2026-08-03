@@ -1,6 +1,6 @@
 """Integration tests for interact.py: the check lint, init vendoring, note-gated
 serving, the catalog, reply widget validation, and the live server + wait
-round-trip that the review loop rides on.
+round-trip that the loop rides on.
 
 Run from the repo root:
 
@@ -74,17 +74,23 @@ graph LR
             ["--help"],
             """Usage: colloquy [OPTIONS] COMMAND [ARGS]...
 
-  Build and run interactive review pages.
+  Build and run interactive pages a session shares with its user.
 
 Options:
   --help  Show this message and exit.
 
 Commands:
-  customize  Create theme and widget customizations.
-  page       Create pages and add media.
-  review     Watch and write to a live review.
-  server     Run or stop the local server.
-  version    Check, publish, and export versions.
+  ack         Acknowledge one complete, untruncated wait batch.
+  comment     Open an agent thread on a page passage.
+  customize   Create theme and widget customizations.
+  events      Print the event log as JSON lines.
+  page        Create pages and add media.
+  reply       Reply to a thread as the agent.
+  server      Run or stop the local server.
+  status      Set the agent's banner state.
+  transcript  Print the page's exchange as Markdown.
+  version     Check, publish, and export versions.
+  wait        Print unacknowledged user events, then exit.
 """,
             id="root",
         ),
@@ -150,26 +156,6 @@ Commands:
 """,
             id="server",
         ),
-        pytest.param(
-            ["review", "--help"],
-            """Usage: colloquy review [OPTIONS] COMMAND [ARGS]...
-
-  Watch and write to a live review.
-
-Options:
-  --help  Show this message and exit.
-
-Commands:
-  ack         Acknowledge one complete, untruncated wait batch.
-  comment     Open an agent thread on a page passage.
-  events      Print the event log as JSON lines.
-  reply       Reply to a thread as the agent.
-  state       Set the agent's banner state.
-  transcript  Print the review as Markdown.
-  wait        Print unacknowledged reviewer events, then exit.
-""",
-            id="review",
-        ),
     ],
 )
 def test_cli_help_groups_commands_with_complete_summaries(args, expected):
@@ -188,7 +174,7 @@ def test_cli_help_groups_commands_with_complete_summaries(args, expected):
 def test_wait_and_ack_help_require_a_complete_batch(command):
     result = CliRunner().invoke(
         interact.cli,
-        ["review", command, "--help"],
+        [command, "--help"],
         terminal_width=200,
     )
 
@@ -202,7 +188,7 @@ def test_ack_batch_instruction_preserves_scalar_cursor_safety():
     assert interact.ACK_BATCH_INSTRUCTION == (
         "If wait output is truncated, acknowledge nothing and rerun with enough output "
         "capacity for the whole batch. After a complete batch enters context, run "
-        "`colloquy review ack <page> <highest-seq>`."
+        "`colloquy ack <page> <highest-seq>`."
     )
 
 
@@ -231,7 +217,7 @@ def test_init_help_names_the_version_file_layout():
         (["version", "check", "page", "--render"], True),
         (["version", "export", "page", "-o", "export"], True),
         (["version", "check", "export"], False),
-        (["review", "reply", "page", "--to", "c1", "--text", "export"], False),
+        (["reply", "page", "--to", "c1", "--text", "export"], False),
     ],
 )
 def test_shim_adds_playwright_only_for_browser_commands(
@@ -276,7 +262,7 @@ def check(d, version=None):
 
 
 def publish(d, version=1):
-    """Append the note event that makes a version the reviewer-seen baseline:
+    """Append the note event that makes a version the user-seen baseline:
     `version check` compares against the last *published* version, and an action
     can only ever be made against one the server exposed."""
     interact.append_event(
@@ -330,7 +316,7 @@ def test_claude_and_codex_load_the_same_plugin_payload():
     for relative in [
         "bin/colloquy",
         "hooks/hooks.json",
-        "hooks/scripts/review-guard.py",
+        "hooks/scripts/loop-guard.py",
         "skills/colloquy/SKILL.md",
         "skills/colloquy/scripts/interact.py",
         # The lock only pins what it ships beside; an install that loses it
@@ -371,7 +357,10 @@ def test_an_installed_payload_is_complete_and_launches_outside_the_checkout(tmp_
         check=False,
     )
     assert help_result.returncode == 0, help_result.stderr
-    assert "Build and run interactive review pages." in help_result.stdout
+    assert (
+        "Build and run interactive pages a session shares with its user."
+        in help_result.stdout
+    )
 
     init_result = subprocess.run(
         [launcher, "page", "init", page],
@@ -1516,7 +1505,7 @@ def test_init_refuses_a_case_aliased_source_at_a_page_destination(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.chdir(project)
     runner = CliRunner()
-    page = tmp_path / "ReviewPage"
+    page = tmp_path / "MixedCasePage"
     initialized = runner.invoke(interact.cli, ["page", "init", str(page)])
     assert initialized.exit_code == 0, initialized.output
     alias = case_alias(page)
@@ -1756,7 +1745,7 @@ def test_check_rejects_duplicate_attributes_the_browser_reads_differently(page_d
 
 def test_check_rejects_a_language_nothing_will_color(page_dir):
     """A declared language the runtime won't honor renders as a plain block, which is
-    exactly what a block with no language renders as — so the reviewer sees nothing
+    exactly what a block with no language renders as — so the user sees nothing
     wrong and the author never finds out. Every way of getting it wrong is the lint's,
     because the author is the only one who can still fix any of them: the class somewhere
     other than <pre><code>, an unknown word on the class, and an unknown word on a
@@ -1844,7 +1833,7 @@ def test_a_tone_the_layer_cannot_paint_is_refused_where_the_author_can_still_fix
 ):
     """The same failure a misspelt language has, and caught for the same reason: a
     tone nothing matches paints nothing, so the chip renders neutral on a page that
-    otherwise looks perfectly well. The reviewer cannot see it — they never knew it
+    otherwise looks perfectly well. The user cannot see it — they never knew it
     was meant to be red — so the only party who can still fix it is whoever wrote
     the word, and the lint is where they are told. This is the whole difference
     between the attribute and a class, which nothing checks."""
@@ -1893,7 +1882,7 @@ def test_a_layer_naming_no_languages_refuses_every_word_rather_than_none(page_di
     """A layer that names none colors none, so a page declaring one is asking for
     something it cannot get. The list is therefore read and indexed, never tested for
     emptiness: an empty list that stood the check down would be a check retiring itself
-    the moment its list moved — and this is the check whose failures the reviewer can't
+    the moment its list moved — and this is the check whose failures the user can't
     see either way, so silence is the one outcome it must not have."""
     registry = json.loads((page_dir / "registry.json").read_text())
     registry["$languages"]["names"] = []
@@ -2089,7 +2078,7 @@ def test_accepting_licenses_retiring_the_replaced_markup(page_dir):
 
 def test_an_unanswered_proposal_cant_be_kept_as_settled_content(page_dir):
     # Self-accepting: the wrapper goes but its proposal stays, presented as
-    # ordinary prose the reviewer never agreed to. Withdrawal is whole or not.
+    # ordinary prose the user never agreed to. Withdrawal is whole or not.
     insert = """<cq-suggestion id="sug-thistle">
   <cq-new><p id="thistle-plan">Switch the north feeder to thistle in autumn.</p></cq-new>
 </cq-suggestion>
@@ -2105,7 +2094,7 @@ def test_an_unanswered_proposal_cant_be_kept_as_settled_content(page_dir):
     assert result.exit_code == 1
     assert "sug-thistle" in result.output
     # A refused version never published, so it is nobody's baseline: v3 stands
-    # against v1 — the page the reviewer was actually looking at — and there a
+    # against v1 — the page the user was actually looking at — and there a
     # whole withdrawal is fine. So is honoring a logged accept.
     (page_dir / "versions" / "v3.html").write_text(PAGE)
     assert check(page_dir, version=3).exit_code == 0
@@ -2115,7 +2104,7 @@ def test_an_unanswered_proposal_cant_be_kept_as_settled_content(page_dir):
 
 def test_rejecting_licenses_retiring_the_proposal(page_dir):
     # A reject is consent to drop the proposal, so it retires even while a
-    # thread about it is open — the reviewer has already answered.
+    # thread about it is open — the user has already answered.
     suggest(page_dir)
     (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace(
@@ -2196,7 +2185,6 @@ def test_reply_refuses_a_suggestion(page_dir):
     result = CliRunner().invoke(
         interact.cli,
         [
-            "review",
             "reply",
             str(page_dir),
             "--to",
@@ -2263,7 +2251,7 @@ def test_check_rejects_duplicate_ids_and_dropped_ids(page_dir):
 
 
 def _decided(page_dir, words):
-    """v1 carrying a draft the reviewer has since rewritten, and the log that
+    """v1 carrying a draft the user has since rewritten, and the log that
     says so. Whatever v2 does about it, `version check` is what has to notice."""
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
@@ -2291,9 +2279,9 @@ def _decided(page_dir, words):
     )
 
 
-def test_a_version_may_not_quietly_rewrite_what_the_reviewer_decided(page_dir):
+def test_a_version_may_not_quietly_rewrite_what_the_user_decided(page_dir):
     """The runtime replays a recorded action onto every later version, so the
-    reviewer's edit stands over whatever v2's markup says about that widget.
+    user's edit stands over whatever v2's markup says about that widget.
     Which makes a rewritten widget a version talking to nobody — its new words
     could never reach the reader. `restated` is how a version says it means to
     take the decision back, and this is the gate that makes it say so."""
@@ -2301,7 +2289,7 @@ def test_a_version_may_not_quietly_rewrite_what_the_reviewer_decided(page_dir):
     assert check(page_dir).exit_code == 0
 
     # Re-emitting what v1 said is the ordinary republish, and costs nothing:
-    # the reviewer's edit is already on screen over it.
+    # the user's edit is already on screen over it.
     v2("Ship the flag dark, then backfill.")
     assert check(page_dir, version=2).exit_code == 0, (
         "a republish that changes nothing must pass"
@@ -2344,7 +2332,7 @@ def test_restating_on_the_first_version_is_refused(page_dir):
 
 
 def test_restating_a_widget_that_kept_its_words_is_refused(page_dir):
-    """`restated` discards what the reviewer recorded, so a version may only
+    """`restated` discards what the user recorded, so a version may only
     spend it where there is a rewrite to justify it. Unpoliced, it is the one
     word that turns the gate back into the silence it replaced."""
     v2 = _decided(page_dir, "Ship the flag dark, then backfill.")
@@ -2371,13 +2359,13 @@ Y = ("card-y", "", "Wire the importer")
 
 
 def test_the_gate_asks_about_the_card_that_was_moved_and_not_the_board(page_dir):
-    """A `move` names the board, but what the reviewer decided about is the card:
+    """A `move` names the board, but what the user decided about is the card:
     where it belongs. Holding the version to the board's whole contents would
     refuse it for editing an untouched card or adding a new one — a rule that
     fires on innocent versions is one authors learn to silence.
 
     So the subject is the card, and `restated` on it retracts that card's moves
-    alone. The rest of the board stays where the reviewer put it, which is what
+    alone. The rest of the board stays where the user put it, which is what
     keeps a typo fix from costing them an afternoon's arrangement."""
 
     def write(version, todo, done):
@@ -2406,7 +2394,7 @@ def test_the_gate_asks_about_the_card_that_was_moved_and_not_the_board(page_dir)
         "an untouched card is not the gate's business"
     )
 
-    # The card written where the reviewer put it. Redundant now that replay
+    # The card written where the user put it. Redundant now that replay
     # carries the move, but a version that does it anyway is not wrong.
     write(2, [Y], [X])
     assert check(page_dir, version=2).exit_code == 0, (
@@ -2499,7 +2487,7 @@ def test_the_gate_reads_a_pick_the_same_way_it_reads_an_edit(page_dir):
         "an unpicked option is free to change"
     )
 
-    # The picked one, rewritten — the reviewer chose those words.
+    # The picked one, rewritten — the user chose those words.
     write(2, a=" chosen", shim="Fastest to ship, and we own the shim forever.")
     result = check(page_dir, version=2)
     assert result.exit_code == 1
@@ -2512,7 +2500,7 @@ def test_the_gate_reads_a_pick_the_same_way_it_reads_an_edit(page_dir):
     # to them as the option changing, and is caught the same way its prose is.
     write(2, a=" chosen", chip="<cq-chip>effort: high</cq-chip>")
     result = check(page_dir, version=2)
-    assert result.exit_code == 1, "a chip is words the reviewer read"
+    assert result.exit_code == 1, "a chip is words the user read"
     assert "o-shim" in result.output
 
     write(2, a=" chosen restated", chip="<cq-chip>effort: high</cq-chip>")
@@ -2563,7 +2551,7 @@ def test_a_cleared_pick_rests_on_the_group_that_holds_it(page_dir):
 def test_a_version_may_not_quietly_move_the_pick(page_dir):
     """The words gate can't see `chosen` — the attribute says nothing — so this
     is the state gate's own case: a version marking a different option than the
-    reviewer picked is overruling them as surely as a rewrite is, and says so
+    user picked is overruling them as surely as a rewrite is, and says so
     with the group's `restated` or not at all. After the retraction the state is
     the author's again: the next version moves the pick freely, because a unit
     with no surviving folded action is exempt — that exemption is what keeps
@@ -2635,7 +2623,7 @@ def test_a_version_may_not_quietly_move_the_pick(page_dir):
 def test_check_reports_record_lag_without_erroring(page_dir):
     """Silence is blessed — replay resolves it — but a log-less reader sees only
     the markup, so `version check` says where it lags the log, as advice on a passing
-    run. `review transcript` says the same to stderr, where the debt stops being
+    run. `colloquy transcript` says the same to stderr, where the debt stops being
     fixable."""
 
     def write(version, a=""):
@@ -2671,12 +2659,12 @@ def test_check_reports_record_lag_without_erroring(page_dir):
     assert result.exit_code == 0
     assert "record behind the log" not in result.output
 
-    result = CliRunner().invoke(interact.cli, ["review", "transcript", str(page_dir)])
+    result = CliRunner().invoke(interact.cli, ["transcript", str(page_dir)])
     assert "record behind the log" in result.output  # CliRunner folds stderr in
 
 
-def test_check_advises_where_a_reviewers_aim_has_nothing_to_land_on(page_dir):
-    """A block a reviewer points at whole needs an id, or the aim falls through to
+def test_check_advises_where_a_users_aim_has_nothing_to_land_on(page_dir):
+    """A block a user points at whole needs an id, or the aim falls through to
     the enclosing section — the failure item anchoring's own page shipped. Advice
     on a passing run, not a gate, and quiet where a tight wrapper (a figure around
     a table) already gives the aim something to hold."""
@@ -3177,7 +3165,7 @@ def test_init_requires_the_event_vocabulary_the_layer_writes(page_dir, tmp_path,
 
 def test_a_widget_nobody_has_touched_is_not_the_gate_s_business(page_dir):
     """The gate is about decisions, so it holds nothing against a version that
-    rewrites a widget the reviewer never acted on."""
+    rewrites a widget the user never acted on."""
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
             "<h2>Plan</h2>",
@@ -3220,7 +3208,7 @@ def test_media_names_a_file_by_its_bytes_and_serves_it(page_dir, tmp_path, serve
     model and a screenshot is a megabyte of base64 it cannot type. The name is the
     hash of the bytes, which is what lets the page directory keep its promise while
     holding content: two versions showing the same screenshot share the one file, and
-    a name the reviewer has already approved can never come to mean different pixels."""
+    a name the user has already approved can never come to mean different pixels."""
     shot = tmp_path / "nav.png"
     shot.write_bytes(b"\x89PNG\r\n\x1a\n" + b"pretend pixels")
     (url,) = [u for _, u in interact.cmd_media(page_dir, [shot])]
@@ -3420,7 +3408,7 @@ def server(page_dir):
 
 
 def fetch(url, data=None, token=TOKEN):
-    """A request arriving the way a reviewer's does: the key in the query, and a
+    """A request arriving the way a user's does: the key in the query, and a
     cookie jar to carry it onward — `/` redirects to the latest version, and the
     followed request is authorized by the cookie the redirect set, not by the query
     it drops. Pass token=None for the reader who never had the link."""
@@ -3484,7 +3472,7 @@ def test_server_round_trip(server, page_dir):
     status, body = fetch(f"{server}/api/state")
     state = json.loads(body)
     assert state["versions"] == [1]
-    assert state["cursor"] == 0  # no reviewer event acknowledged yet
+    assert state["cursor"] == 0  # no user event acknowledged yet
     assert state["events"][-1]["id"] == posted["id"]
     # A widget action rides the same channel; half-formed ones are refused at the edge.
     status, _ = fetch(
@@ -3565,7 +3553,7 @@ def test_server_keeps_approval_separate_from_ending_comments(server, page_dir):
     )
     assert status == 400
     assert json.loads(body)["error"] == (
-        "version 1 uses 'close' for ending its comments-only review"
+        "version 1 uses 'close' for ending its comments-only colloquy"
     )
 
     signoff = PAGE.replace(
@@ -3657,7 +3645,6 @@ def test_server_resolves_actions_from_claude_thread_widgets(server, page_dir):
     reply = CliRunner().invoke(
         interact.cli,
         [
-            "review",
             "reply",
             str(page_dir),
             "--to",
@@ -3822,7 +3809,7 @@ def test_a_reader_without_the_key_reads_and_writes_nothing(server, page_dir):
 def test_the_key_arrives_in_the_query_and_stays_in_the_cookie(server, page_dir):
     """What makes the key invisible: it is in the link once, and the cookie carries
     it from there. The runtime's own fetches are relative and hold no query, and a
-    reviewer who reloads the bare address is the same reviewer — so nothing has to
+    user who reloads the bare address is the same user — so nothing has to
     thread it through the page, and `colloquy.js` never learns there is one."""
     CliRunner().invoke(
         interact.cli,
@@ -3844,7 +3831,7 @@ def test_a_page_is_reached_where_the_ssh_session_reached_this_machine(
     page_dir, monkeypatch
 ):
     """SSH_CONNECTION is "client_ip client_port server_ip server_port" — the third
-    field is the address that carried the session, so it is a route the reviewer has
+    field is the address that carried the session, so it is a route the user has
     already used rather than a hostname guessed from this end. The server binds that
     address alone: the open port faces only the network the session crossed."""
     monkeypatch.setenv("SSH_CONNECTION", "10.1.1.9 51234 10.20.30.40 22")
@@ -3859,7 +3846,7 @@ def test_a_local_session_is_served_on_loopback(page_dir, monkeypatch):
 
 
 def test_a_stated_host_binds_every_interface_and_keeps_the_key(page_dir, monkeypatch):
-    """The name a reviewer routes to need not resolve to an address this machine
+    """The name a user routes to need not resolve to an address this machine
     could bind — a jump host or NAT is the case `--host` exists for — nor say
     which family they reach it by, so a stated name binds the wildcard of both
     families and goes in the URL as given. Re-stating keeps the key, and the URL
@@ -3878,7 +3865,7 @@ def test_a_stated_host_is_a_hostname_or_ip_and_nothing_else(page_dir):
     """A scheme, a port, or a path pasted into --host would mint a URL no browser
     resolves, recorded permanently and handed to the one reader who can't report
     it — so the record's one door refuses what was never a hostname. An IPv6
-    literal is a name a reviewer can route to, and it must not be mistaken for a
+    literal is a name a user can route to, and it must not be mistaken for a
     host:port."""
     for junk in ("devbox:8443", "http://devbox", "devbox/page", "devbox one"):
         with pytest.raises(SystemExit):
@@ -3891,7 +3878,7 @@ def test_a_stated_host_is_a_hostname_or_ip_and_nothing_else(page_dir):
 def test_the_stated_host_wildcard_serves_both_families(page_dir):
     """The URL promises whatever the stated name resolves to, so the socket must
     answer both: "::" with V6ONLY off reaches IPv4 as ::ffff:... — an AF_INET
-    0.0.0.0 would leave an IPv6-only reviewer a URL nothing listens on."""
+    0.0.0.0 would leave an IPv6-only user a URL nothing listens on."""
     httpd = interact.DualStackHTTPServer(
         ("::", 0), interact.handler_for(page_dir, TOKEN)
     )
@@ -3908,7 +3895,7 @@ def test_the_address_and_key_outlive_the_session_that_minted_them(
     page_dir, monkeypatch
 ):
     """`revive_server` restarts a dead server by re-running `server run`. The
-    reviewer's browser has been polling one URL since it died, so a fresh address or
+    user's browser has been polling one URL since it died, so a fresh address or
     key there would leave the page it reopens talking to nothing."""
     monkeypatch.setenv("SSH_CONNECTION", "10.1.1.9 51234 10.20.30.40 22")
     minted = interact.page_access(page_dir)
@@ -3919,7 +3906,7 @@ def test_the_address_and_key_outlive_the_session_that_minted_them(
 
 def test_two_pages_on_one_machine_get_their_own_cookie(page_dir, tmp_path):
     """Cookies are scoped by host and ignore the port, so two pages share a jar —
-    under one name the second page served would sign the reviewer out of the first."""
+    under one name the second page served would sign the user out of the first."""
     other = tmp_path / "other-page"
     other.mkdir()
     assert interact.access_cookie(page_dir) != interact.access_cookie(other)
@@ -3982,7 +3969,7 @@ def test_wait_prints_unacknowledged_user_events_and_flips_status(page_dir, capsy
     interact.cmd_ack(page_dir, 3)
     assert page_state(page_dir)["pending"] == 0
     # The wait status is marked a handoff, which dates the claim: the agent's own
-    # `review state` clears the mark, so the mark surviving is a pickup that never landed.
+    # `colloquy status` clears the mark, so the mark surviving is a pickup that never landed.
     status = interact.read_json(page_dir / "status.json")
     assert (status["state"], status["handoff"]) == ("working", True)
     interact.cmd_status(page_dir, "working", "revising the plan")
@@ -4002,17 +3989,17 @@ def test_ack_checks_its_target_and_advances_monotonically(page_dir):
     )
     runner = CliRunner()
 
-    missing = runner.invoke(interact.cli, ["review", "ack", str(page_dir), "4"])
+    missing = runner.invoke(interact.cli, ["ack", str(page_dir), "4"])
     assert missing.exit_code == 1
     assert "event 4 does not exist" in missing.output
 
-    agent_event = runner.invoke(interact.cli, ["review", "ack", str(page_dir), "1"])
+    agent_event = runner.invoke(interact.cli, ["ack", str(page_dir), "1"])
     assert agent_event.exit_code == 1
-    assert "event 1 is not a reviewer event" in agent_event.output
+    assert "event 1 is not a user event" in agent_event.output
 
-    first = runner.invoke(interact.cli, ["review", "ack", str(page_dir), "3"])
-    retry = runner.invoke(interact.cli, ["review", "ack", str(page_dir), "3"])
-    older = runner.invoke(interact.cli, ["review", "ack", str(page_dir), "2"])
+    first = runner.invoke(interact.cli, ["ack", str(page_dir), "3"])
+    retry = runner.invoke(interact.cli, ["ack", str(page_dir), "3"])
+    older = runner.invoke(interact.cli, ["ack", str(page_dir), "2"])
     assert first.exit_code == retry.exit_code == older.exit_code == 0
     assert interact.read_json(page_dir / "cursor.json") == {"seq": 3}
 
@@ -4037,9 +4024,9 @@ def test_wait_preserves_a_working_status_on_mid_work_output(page_dir, capsys):
 
 
 def test_wait_restarts_a_server_that_died_under_it(page_dir, capsys):
-    """A page whose server died is offline in the reviewer's browser and nowhere
-    else — so `review wait`, the one thing positioned to notice, brings it back
-    rather than exiting and leaving the discovery to the reviewer."""
+    """A page whose server died is offline in the user's browser and nowhere
+    else — so `colloquy wait`, the one thing positioned to notice, brings it back
+    rather than exiting and leaving the discovery to the user."""
 
     def comment_once_served():
         for _ in range(100):
@@ -4055,7 +4042,7 @@ def test_wait_restarts_a_server_that_died_under_it(page_dir, capsys):
         assert interact.cmd_wait(page_dir) == 0  # no server.json at all when it starts
         info = interact.running_server(page_dir)
         # The revived server has to answer on the URL it published, key included:
-        # the reviewer's browser has been polling that address since it died.
+        # the user's browser has been polling that address since it died.
         assert info
         state = urllib.parse.urlsplit(info["url"])
         assert (
@@ -4067,7 +4054,7 @@ def test_wait_restarts_a_server_that_died_under_it(page_dir, capsys):
         interact.cmd_stop(page_dir)
 
 
-def test_wait_leaves_a_closed_review_down(page_dir):
+def test_wait_leaves_a_closed_page_down(page_dir):
     """SessionEnd idles the page and stops its server, so a watcher still winding
     down must not put it straight back up."""
     interact.cmd_status(page_dir, "idle", "the session that opened this page has ended")
@@ -4076,9 +4063,9 @@ def test_wait_leaves_a_closed_review_down(page_dir):
 
 
 def test_wait_holds_a_page_nobody_has_opened(page_dir, capsys):
-    """Nothing the server can observe tells a page the reviewer hasn't opened yet
+    """Nothing the server can observe tells a page the user hasn't opened yet
     from one they can't reach, so the wait doesn't guess between them: over a page
-    no request has ever touched it holds for the reviewer exactly as it would for
+    no request has ever touched it holds for the user exactly as it would for
     one reading, and reports nothing of its own."""
     interact.write_json(
         page_dir / "server.json", {"port": 1, "pid": os.getpid(), "url": "x"}
@@ -4170,7 +4157,7 @@ def test_stop_hook_keeps_codex_inside_the_exact_wait_session(
     (page / "heartbeat.json").unlink()
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "codex-thread"})
     reason = json.loads(capsys.readouterr().out)["reason"]
-    assert "Start `colloquy review wait`" in reason
+    assert "Start `colloquy wait`" in reason
     assert "unified exec" in reason and "write_stdin" in reason
 
     # Pending output still has to cross context and be acknowledged before handling.
@@ -4178,7 +4165,7 @@ def test_stop_hook_keeps_codex_inside_the_exact_wait_session(
     interact.write_json(page / "heartbeat.json", {"t": time.time()})
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "codex-thread"})
     reason = json.loads(capsys.readouterr().out)["reason"]
-    assert "review ack" in reason and "address every one" in reason
+    assert "colloquy ack" in reason and "address every one" in reason
     assert interact.ACK_BATCH_INSTRUCTION in reason
 
     interact.cmd_ack(page, 1)
@@ -4189,7 +4176,7 @@ def test_stop_hook_keeps_codex_inside_the_exact_wait_session(
 
 def test_stop_hook_blocks_a_turn_that_leaves_a_page_unwatched(claimed, capsys):
     """Between turns a page is either watched or idle. The failure this prevents:
-    a `review wait` exits, its notification is buried behind the next thing the
+    a `colloquy wait` exits, its notification is buried behind the next thing the
     user types, and the page keeps saying "Claude is working" over nobody."""
     interact.cmd_status(claimed, "waiting", "")
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
@@ -4204,7 +4191,7 @@ def test_stop_hook_blocks_a_turn_that_leaves_a_page_unwatched(claimed, capsys):
     )
     assert capsys.readouterr().out == ""
 
-    # A live watcher, and a closed review, each end the turn cleanly.
+    # A live watcher, and a closed page, each end the turn cleanly.
     interact.write_json(claimed / "heartbeat.json", {"t": time.time()})
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
     assert capsys.readouterr().out == ""
@@ -4234,7 +4221,7 @@ def test_prompt_hook_surfaces_comments_claude_never_picked_up(claimed, capsys):
     assert "1 user event you haven't picked up" in context
 
     # Not while a watcher is live: it prints them itself, and sending Claude to start a
-    # second `review wait` would print every unacknowledged event twice.
+    # second `colloquy wait` would print every unacknowledged event twice.
     interact.write_json(claimed / "heartbeat.json", {"t": time.time()})
     interact.cmd_hook({"hook_event_name": "UserPromptSubmit", "session_id": "s1"})
     assert capsys.readouterr().out == ""
@@ -4245,8 +4232,8 @@ def test_only_serving_or_watching_a_page_puts_the_session_under_the_guard(
 ):
     """Verifying a change to the page layer means driving throwaway pages, and the
     guard must not read a handful of test fixtures as a handful of abandoned
-    reviews. A directory this session only built and linted was handed to nobody.
-    Listening on one is what puts a reviewer on the other end, and from there the
+    pages. A directory this session only built and linted was handed to nobody.
+    Listening on one is what puts a user on the other end, and from there the
     guard holds the session to it."""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "s7")
     monkeypatch.setenv("CLAUDE_PID", str(os.getpid()))
@@ -4262,10 +4249,7 @@ def test_only_serving_or_watching_a_page_puts_the_session_under_the_guard(
     assert capsys.readouterr().out == ""
 
     interact.append_event(page_dir, {"kind": "comment", "author": "user", "text": "hi"})
-    assert (
-        CliRunner().invoke(interact.cli, ["review", "wait", str(page_dir)]).exit_code
-        == 0
-    )
+    assert CliRunner().invoke(interact.cli, ["wait", str(page_dir)]).exit_code == 0
     assert interact.session_pages("s7") == [page_dir.resolve()]
 
     # If wait's process finished without its output entering model context, the event
@@ -4278,7 +4262,7 @@ def test_only_serving_or_watching_a_page_puts_the_session_under_the_guard(
     assert "no watcher" in json.loads(capsys.readouterr().out)["reason"]
 
 
-def test_review_guard_agrees_with_interact_on_state_home(tmp_path, monkeypatch):
+def test_loop_guard_agrees_with_interact_on_state_home(tmp_path, monkeypatch):
     """The plain-Python hook inlines the uv script's XDG state resolution."""
 
     def load(path):
@@ -4294,38 +4278,28 @@ def test_review_guard_agrees_with_interact_on_state_home(tmp_path, monkeypatch):
         monkeypatch.delenv("XDG_STATE_HOME", raising=False)
         for key, value in env.items():
             monkeypatch.setenv(key, value)
-        guard = load(PLUGIN_ROOT / "hooks" / "scripts" / "review-guard.py")
+        guard = load(PLUGIN_ROOT / "hooks" / "scripts" / "loop-guard.py")
         assert guard.SESSIONS == interact.state_home() / "sessions"
 
 
-def test_idle_cannot_close_a_review_over_events_nobody_read(claimed, capsys):
-    """`review state PAGE idle` is the way out of the guard's other case, so it
-    reads as the way out of this one too. The events are the reviewer's: a page
-    idled over them ends the review on someone still waiting for an answer, and
-    from the browser that looks exactly like a review that ran its course."""
+def test_idle_cannot_close_a_page_over_events_nobody_read(claimed, capsys):
+    """`colloquy status PAGE idle` is the way out of the guard's other case, so it
+    reads as the way out of this one too. The events are the user's: a page
+    idled over them ends the colloquy on someone still waiting for an answer, and
+    from the browser that looks exactly like one that ran its course."""
     interact.append_event(claimed, {"kind": "comment", "author": "user", "text": "hi"})
-    refused = CliRunner().invoke(
-        interact.cli, ["review", "state", str(claimed), "idle"]
-    )
+    refused = CliRunner().invoke(interact.cli, ["status", str(claimed), "idle"])
     assert refused.exit_code == 1
     assert "1 user event nobody has picked up" in refused.output
     assert interact.ACK_BATCH_INSTRUCTION in refused.output
     assert interact.read_json(claimed / "status.json")["state"] != "idle"
 
-    # `review wait` returns at once, and acknowledgement records that its output reached
-    # model context; only then can idle close the review.
+    # `colloquy wait` returns at once, and acknowledgement records that its output
+    # reached model context; only then can idle close the page.
+    assert CliRunner().invoke(interact.cli, ["wait", str(claimed)]).exit_code == 0
+    assert CliRunner().invoke(interact.cli, ["ack", str(claimed), "1"]).exit_code == 0
     assert (
-        CliRunner().invoke(interact.cli, ["review", "wait", str(claimed)]).exit_code
-        == 0
-    )
-    assert (
-        CliRunner().invoke(interact.cli, ["review", "ack", str(claimed), "1"]).exit_code
-        == 0
-    )
-    assert (
-        CliRunner()
-        .invoke(interact.cli, ["review", "state", str(claimed), "idle"])
-        .exit_code
+        CliRunner().invoke(interact.cli, ["status", str(claimed), "idle"]).exit_code
         == 0
     )
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
@@ -4650,7 +4624,6 @@ def test_reply_validates_widget_markup(page_dir):
     reply = lambda markup: CliRunner().invoke(
         interact.cli,
         [
-            "review",
             "reply",
             str(page_dir),
             "--to",
@@ -4692,7 +4665,6 @@ def test_widget_ids_are_one_universe_across_page_and_replies(page_dir):
     reply = lambda markup: CliRunner().invoke(
         interact.cli,
         [
-            "review",
             "reply",
             str(page_dir),
             "--to",
@@ -4722,7 +4694,7 @@ def test_widget_ids_are_one_universe_across_page_and_replies(page_dir):
     )
     assert selfdup.exit_code != 0 and "within itself" in selfdup.output
     # Text claims no ids however it quotes a tag — only the `markup` field does, and
-    # a reviewer's message never carries one (the log is append-only; a false claim
+    # a user's message never carries one (the log is append-only; a false claim
     # would deadlock every future version).
     interact.append_event(
         page_dir,
@@ -4768,7 +4740,6 @@ def test_the_runtimes_cq_id_namespace_is_off_limits(page_dir):
     reply = CliRunner().invoke(
         interact.cli,
         [
-            "review",
             "reply",
             str(page_dir),
             "--to",
@@ -4803,7 +4774,6 @@ def test_the_wire_ships_a_message_as_logged(page_dir):
     result = CliRunner().invoke(
         interact.cli,
         [
-            "review",
             "reply",
             str(page_dir),
             "--to",
@@ -4898,11 +4868,11 @@ def test_export_prints_threads_and_versions(page_dir):
             "detail": {"card": "card-x", "to": "col-done", "index": 0},
         },
     )
-    result = CliRunner().invoke(interact.cli, ["review", "transcript", str(page_dir)])
+    result = CliRunner().invoke(interact.cli, ["transcript", str(page_dir)])
     assert result.exit_code == 0, result.output
-    assert "## Review: Cutoff & backfill" in result.output
+    assert "## Colloquy: Cutoff & backfill" in result.output
     assert "- v1: first cut" in result.output
-    # The reviewer's direct edits are review outcomes, not just events.
+    # The user's direct edits are outcomes of the exchange, not just events.
     assert "### Edits" in result.output
     assert "- `b`: move card=card-x to=col-done index=0 (on v1)" in result.output
     assert "> “flip reads”  — resolved" in result.output
@@ -4923,7 +4893,6 @@ def test_markup_needs_the_registry_and_text_does_not(page_dir):
     plain = CliRunner().invoke(
         interact.cli,
         [
-            "review",
             "reply",
             str(page_dir),
             "--to",
@@ -4936,7 +4905,6 @@ def test_markup_needs_the_registry_and_text_does_not(page_dir):
     with_markup = CliRunner().invoke(
         interact.cli,
         [
-            "review",
             "reply",
             str(page_dir),
             "--to",
@@ -4992,7 +4960,7 @@ def published(page_dir):
 
 
 def comment(page_dir, *args):
-    return CliRunner().invoke(interact.cli, ["review", "comment", str(page_dir), *args])
+    return CliRunner().invoke(interact.cli, ["comment", str(page_dir), *args])
 
 
 def test_comment_anchors_on_a_quote_and_posts_as_claude(page_dir):
@@ -5063,7 +5031,7 @@ def test_a_comment_refuses_a_quote_the_version_does_not_hold(page_dir):
 
 def test_a_comment_refuses_a_quote_the_version_holds_twice(page_dir):
     """Which copy was meant is a question with an answer, and there is someone to ask.
-    The browser has to guess because the reviewer has already gone; this doesn't."""
+    The browser has to guess because the user has already gone; this doesn't."""
     twice = PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>\n  <p>Ship dark.</p>")
     (page_dir / "versions" / "v1.html").write_text(twice)
     result = comment(published(page_dir), "--quote", "Ship dark", "--text", "x")
@@ -5093,7 +5061,7 @@ def test_a_widgets_data_body_is_not_quotable_but_the_widget_is(page_dir):
 def test_a_quote_may_not_run_across_a_widgets_parts(page_dir):
     """A module can replace or insert words the file's reading cannot model. A quote
     spanning one of those joins would resolve to nothing in the
-    reviewer's browser, so it's refused here, where someone can still do something about
+    user's browser, so it's refused here, where someone can still do something about
     it. Either side of the join quotes fine."""
     fenced = PAGE.replace(
         '  <cq-diagram id="flow"><pre>\ngraph LR\n  A --> B\n  </pre></cq-diagram>',
@@ -5154,12 +5122,12 @@ def test_a_verbatim_body_is_quotable_where_a_source_body_is_not(page_dir):
     assert json.loads(result.output)["anchor"]["section"] == "note"
 
 
-def test_an_edited_draft_reads_as_the_reviewers_words(page_dir):
+def test_an_edited_draft_reads_as_the_users_words(page_dir):
     """An `edit` is absolute — the log carries the whole new body, and replay writes
     exactly that into the DOM the anchor pass searches — so the reading
-    `review comment` captures against holds the reviewer's words in the authored body's place:
-    quotable, collapsed like any passage, genuinely adjacent to the prose around
-    them (no fence — the screen shows that adjacency too)."""
+    `colloquy comment` captures against holds the user's words in the authored
+    body's place: quotable, collapsed like any passage, genuinely adjacent to the
+    prose around them (no fence — the screen shows that adjacency too)."""
     drafted(page_dir)
     edit(page_dir, "Adds --dry-run to purge\nand rebuild only.")
     result = comment(page_dir, "--quote", "purge and rebuild only", "--text", "x")
@@ -5170,7 +5138,7 @@ def test_an_edited_draft_reads_as_the_reviewers_words(page_dir):
 
 
 def test_a_quote_of_words_an_edit_replaced_is_refused_naming_the_edit(page_dir):
-    """The authored body is still in the file, but the reviewer is no longer reading
+    """The authored body is still in the file, but the user is no longer reading
     it — posted, the comment would detach in front of them. Refused at write time
     naming what removed the words, the retired slot's own treatment; a quote merely
     reaching into the replaced body from outside is the same detachment."""
@@ -5241,7 +5209,7 @@ def test_a_verb_the_registry_no_longer_speaks_moves_nothing(page_dir):
 
 
 def test_an_unhonored_edit_outlives_a_republish(page_dir):
-    """v2 re-emits the authored body with no `restated`, so the reviewer's words
+    """v2 re-emits the authored body with no `restated`, so the user's words
     still stand over it — replay carries them, and the reading follows: silence
     retracts nothing. This is the drift the whole mechanism closes: the file holds
     words the page stopped showing a version ago."""
@@ -5300,7 +5268,7 @@ def suggested(page_dir):
 
 
 def test_a_decision_retires_its_losing_slot_from_comments_reach(page_dir):
-    """The reviewer's accept removes cq-old from the page (the browser's anchor pass
+    """The user's accept removes cq-old from the page (the browser's anchor pass
     skips it), so a quote into it is refused naming the decision — posted, it would
     detach in front of them. The surviving slot quotes as ever, and a re-decision
     moves the line: the reading follows the log the way replay does, last word
@@ -5337,7 +5305,7 @@ def test_a_section_inside_a_retired_slot_is_refused(page_dir):
 
 def test_a_decision_that_empties_its_widget_takes_it_off_sections_reach(page_dir):
     """A deletion accepted and an insertion refused both settle to nothing: the
-    wrapper's markup is still in the file, but the reviewer's screen shows nothing
+    wrapper's markup is still in the file, but the user's screen shows nothing
     there, so an element anchor on it would read attached while outlining nothing.
     Pending, the wrapper answers like any element; settled empty, the refusal names
     the decision that emptied it."""
@@ -5374,7 +5342,7 @@ def test_a_settled_replacement_still_answers_an_element_anchor(page_dir):
 
 def test_a_decision_settles_which_copy_a_quote_names(page_dir):
     """The browser counts occurrences on the page as decided, so the file has to
-    count the same way — otherwise a passage unique in front of the reviewer reads
+    count the same way — otherwise a passage unique in front of the user reads
     as ambiguous here, and an anchor allowed on the wrong count would carry context
     from words they no longer see."""
     twice = SUGGESTED.replace(
@@ -5452,7 +5420,7 @@ def test_a_comment_points_at_something(page_dir):
 
 
 def test_the_agents_own_comment_is_not_printed_back_to_it(page_dir):
-    """`review wait` and the banner's unread count both turn on author, so a note
+    """`colloquy wait` and the banner's unread count both turn on author, so a note
     Claude leaves can't wake its own watcher or read as a comment nobody answered."""
     published(page_dir)
     assert comment(page_dir, "--quote", "Ship dark", "--text", "x").exit_code == 0
@@ -5482,7 +5450,6 @@ def test_a_comments_widget_markup_shares_one_id_universe_with_replies(page_dir):
     clash = CliRunner().invoke(
         interact.cli,
         [
-            "review",
             "reply",
             str(page_dir),
             "--to",

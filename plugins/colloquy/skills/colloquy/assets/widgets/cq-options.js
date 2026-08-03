@@ -17,7 +17,7 @@
  * where it was. Which word a mark wears is asked of the option rather than of the call
  * that changed it: picked and authored-chosen reads "chosen", picked otherwise reads
  * "your pick". Outside a `choose` group the same mark renders as a span — the document's
- * state, with nothing to press, and so a passage a reviewer can quote rather than a
+ * state, with nothing to press, and so a passage a user can quote rather than a
  * label anchoring skips.
  *
  * The pick is a set, whatever the group allows. `multiple` lets it hold more than one
@@ -112,7 +112,7 @@ customElements.define(
         // question, so the same test: did this click's mouseup leave the selection where
         // it is (its focus end)? Asking whether the selection contains the option instead
         // answers yes for any selection over the group, and the option stops taking picks
-        // until the reviewer clears it.
+        // until the user clears it.
         const sel = getSelection();
         const card = e.target.closest?.("cq-option");
         if (e.detail !== 0 && sel && !sel.isCollapsed && card?.contains(sel.focusNode))
@@ -201,7 +201,7 @@ customElements.define(
     // Which kind of word the label is travels with it, on both shapes of mark and on
     // every write: "choose" is a thing to do, so it leaves the printed page and no comment
     // lands on it, while a picked option's mark is the only place the page says where the
-    // pick sits — paper keeps that one and a reviewer can point at it. Asked of the label
+    // pick sits — paper keeps that one and a user can point at it. Asked of the label
     // rather than of the element, because one mark is both over its life and neither shape
     // is a <button> to tell them apart by.
     //

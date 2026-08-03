@@ -68,7 +68,7 @@ Each of those is a rule the pass keeps rather than a property it gets for free.
 
 ## The runtime's line lands inside widgets
 
-A comment can land anywhere the reviewer can select, so the hidden line announcing one
+A comment can land anywhere the user can select, so the hidden line announcing one
 lands inside widgets — and a widget reading its own light DOM back gets the runtime's
 words along with the author's. `.cq-ui` is no help there: it keeps chrome out of
 everything *the runtime* reads (the quote search, the capture, the version diff), and
@@ -76,16 +76,16 @@ everything *the runtime* reads (the quote search, the capture, the version diff)
 
 Two rules, because there are two failures. The line goes on a text block or on the element
 an anchor names, never on the inline run or body div between them: `cq-draft` seeds the
-editor a reviewer types into from its body div, and a line left there arrived in the
+editor the user types into from its body div, and a line left there arrived in the
 textarea and posted with their edit. And a widget asking what its own slot holds calls
 `says`, not `textContent` — a block inside a widget is still a block, so the line lands in
 it legitimately, and `cq-suggestion` labelled itself from the raw text and offered to
 accept "Retry three times. 1 comment". The first rule keeps the line out of a widget's
 content; the second is for where it belongs there anyway.
 
-## The page holds still under the reviewer's aim
+## The page holds still under the user's aim
 
-A reviewer works by pointing, and the gestures this product is made of are the long ones:
+The user works by pointing, and the gestures this product is made of are the long ones:
 a double-click that opens an editor, a drag across three lines, a press on a row hanging
 in the margin. Anything that moves between deciding where to point and arriving there is
 aim thrown away. So a state change may repaint whatever it likes and must move nothing,
@@ -111,7 +111,7 @@ draft's control row exists in both its views, so opening the editor adds no heig
 `choose` group holds the pick mark's strip on every card, because the pick can land on any
 of them; the version chooser states a width rather than taking one from the longest note
 Claude has yet published. Each spends something on a case that may not arrive, and that is
-the trade — the alternative is paid at the moment the reviewer had something to say.
+the trade — the alternative is paid at the moment the user had something to say.
 
 The rule has an edge, and it is the pressed control's own line. Below that line the page
 is content and may move, since a tab showing another panel is what the press was for. On
@@ -125,7 +125,7 @@ pick mark took the room for the word it says at the moment it was pressed, dragg
 row's § reference 54px out from under the pointer.
 
 News arriving has no gesture behind it, so there is no press to draw a line around and the
-edge falls around the whole of the chrome instead: its controls are addresses the reviewer
+edge falls around the whole of the chrome instead: its controls are addresses the user
 is holding whether or not they are looking at them, while the document below may still
 change, because a fact arriving is what they are here to see. The banner takes all of it,
 packed to the right against a spacer, and that decides who pays — a control that grows
@@ -165,7 +165,7 @@ first paint — so hiding them behind `:not(:defined)` would buy nothing and cos
 rendering of the vocabulary that carries no script. The one that doesn't is where the
 rule's lower edge is. A diagram arrives at 163ms against a 52ms first paint and grows its
 element 93px, so the page does move with something on it; it is still not jerk, because aim
-needs a target and a moment to reach it and at a tenth of a second the reviewer has
+needs a target and a moment to reach it and at a tenth of a second the user has
 neither. What would make it jerk is that number growing, and the number is a fact about the
 vendored bundle rather than about the widget: mermaid's fetch completes 12ms *before* first
 paint, and the 123ms after it is parsing and drawing 2.75MB, so nothing about when the load
@@ -176,11 +176,11 @@ itself, and the trade is bad. It buys that tenth of a second with a permanently 
 whenever anything between the hide and the reveal throws or hangs — for a product whose
 whole deliverable is the page, where the failure today is a readable page with broken
 chrome. The one arrival that does have aim behind it needs none of it: a version switch is
-a load the reviewer asked for, and the reading position is restored after the same
+a load the user asked for, and the reading position is restored after the same
 `settling` the SVG lands in, so it is re-found in the page that grew rather than in the one
 that was about to.
 
-And a change the reviewer asked for may change the page: accepting a suggestion replaces
+And a change the user asked for may change the page: accepting a suggestion replaces
 the words, and the paragraph below moves because the content did. What is forbidden is
 movement they did not ask for, and movement that answers a small gesture with a large
 rearrangement.
@@ -198,23 +198,23 @@ by grepping. The panel reconciles rather than rebuilds, so a message arriving ab
 grows the list over the reader's head and the browser's own anchoring is what holds the
 thread in front of them still. That is why the test pins that thread's box and not the
 scroll offset: the offset is the browser's to adjust, and asking it to stay put would be
-asserting the implementation rather than the fact the reviewer cares about.
+asserting the implementation rather than the fact the user cares about.
 
 A stale entry is the same mistake as a stray guard, so cut one the moment nothing uses it.
 And the list promises support, not uniform rendering: `::highlight()` takes a narrow,
 deliberately layout-free property set that engines implement unevenly, so a mark's tint
 carries its meaning and the underline is a bonus.
 
-## Everything the page says, the reviewer can point at
+## Everything the page says, the user can point at
 
-A reviewer selected a draft's text and commented on it, then tried the same on the label
-naming that draft and got nothing back. He read the asymmetry as a bug, and it is one: a
+The user selected a draft's text and commented on it, then tried the same on the label
+naming that draft and got nothing back. They read the asymmetry as a bug, and it is one: a
 label saying which draft you are looking at is exactly the thing to hang "this one's
 wrong" on. It was a `<strong>` in a row marked `.cq-ui`, which the anchor pass skips. Its
 author reached for that class meaning "this is chrome". What it means is "these are the
 runtime's words, not the page's".
 
-Chrome is a look, not a permission, and the reviewer has no such category — so the class
+Chrome is a look, not a permission, and the user has no such category — so the class
 cannot be the whole of anchoring's answer. Whose words these are is declared where they
 are written (`relabel`'s `says`, the same word paper reads), and the anchor pass takes the
 nearest answer: the class where nothing nearer speaks, the declaration where one does, so
@@ -269,7 +269,7 @@ pixels of its own padding, so the mouseup lands on chrome while the selection is
 page's, and the Comment button never came up. Whether the selection *contains* the control
 is not it either, and that one cost more — containment is a fact about the DOM, and a
 suggestion's row stands in the column between the block holding the change and the next
-one, so a reviewer who read across the change and then reached for Accept pressed a
+one, so a user who read across the change and then reached for Accept pressed a
 control that did nothing, and kept doing nothing, since a press that refuses a drag never
 collapses the selection deadening it. The question is whether this click's own mouseup is
 where the selection stopped, and the selection's focus end is that answer.
@@ -277,7 +277,7 @@ where the selection stopped, and the selection's focus end is that answer.
 The button raised by that same drag is the other way a press goes missing, and it needs no
 wrong question to do it: a selection fills the lines it covers, so the button placed beside
 it lands in the margin, on the line a change's row hangs. Nothing was deadened — the
-reviewer pressed the 💬 they could see and got a composer, because a press on it is not the
+user pressed the 💬 they could see and got a composer, because a press on it is not the
 outside click that dismisses it. Floating chrome steps aside from what stands on the page
 (`placeClear`), asked of `data-cq-offer` so it holds for any control any widget hangs.
 
@@ -299,7 +299,7 @@ something. `relabel` used to *clear* `offer`'s mark instead of adding its own, w
 that mark read "paper drops this" rather than "a widget injected this control" — so the
 two other passes that ask it went blind on exactly the controls this norm is about. A
 drag across a picked card's mark was a press again, and nothing but `cq-options`' own
-guard on the card stood between the reviewer selecting the word and losing their pick.
+guard on the card stood between the user selecting the word and losing their pick.
 
 `render_version` reads the page in both media and reports what the second drops — the
 whole page, not the widgets in it, because a printout losing a paragraph is no better
@@ -312,7 +312,7 @@ write.
 
 ## Three voices, because the page has three kinds of words
 
-What the page *says* is prose a reviewer reads closely and points at. What it *labels* —
+What the page *says* is prose the user reads closely and points at. What it *labels* —
 an eyebrow, a column heading, a chip, the headings across a table, a metric's caption —
 is apparatus, the page pointing at its own content. What it *shows* is evidence: code, diffs, trees,
 timestamps. The norms here already turn on that distinction; until the theme had more

@@ -38,7 +38,7 @@ customElements.define(
       // the strip's word though — it is the panel's name, and once the strip exists it
       // is the only place that name is written. So the name goes in its own span,
       // declared the page speaking, and the anchor pass reads it over the chrome around
-      // it: a reviewer points at a tab's name the way they point at a heading. Its own
+      // it: a user points at a tab's name the way they point at a heading. Its own
       // span rather than the tab's whole text, because the Δ badge lands here too and
       // that one is the runtime talking about the document.
       //

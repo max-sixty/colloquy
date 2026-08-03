@@ -4,7 +4,7 @@
 # dependencies = ["pillow>=11", "playwright>=1.52"]
 # ///
 """Record docs/demo.gif, and the landing page's two session stills, by driving the
-shipped runtime through one review round.
+shipped runtime through one round.
 
 The stills used to be shot by hand, which meant nothing regenerated them and nothing
 noticed when they stopped being true: a theme change left the landing page arguing for
@@ -236,7 +236,7 @@ def select_text(page: Page, selector: str, text: str) -> None:
 
 def start_waiter(page_dir: Path) -> subprocess.Popen[str]:
     return subprocess.Popen(
-        [str(COLLOQUY), "review", "wait", str(page_dir)],
+        [str(COLLOQUY), "wait", str(page_dir)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -246,18 +246,18 @@ def start_waiter(page_dir: Path) -> subprocess.Popen[str]:
 def receive(waiter: subprocess.Popen[str], page_dir: Path) -> list[dict]:
     """Read one complete wait result and acknowledge exactly what entered this driver.
 
-    Every way a wait ends without reviewer events is one it has already explained
-    on stderr — a review closed under it, a server it can't reach and won't
+    Every way a wait ends without user events is one it has already explained
+    on stderr — a page closed under it, a server it can't reach and won't
     restart twice — so the empty result is the symptom and that line is the
     reason."""
     stdout, stderr = waiter.communicate(timeout=10)
     events = [json.loads(line) for line in stdout.splitlines() if line.strip()]
     if not events:
         raise RuntimeError(
-            f"the demo waiter exited {waiter.returncode} with no reviewer events\n"
+            f"the demo waiter exited {waiter.returncode} with no user events\n"
             f"{stderr}".rstrip()
         )
-    run_colloquy("review", "ack", str(page_dir), str(events[-1]["seq"]))
+    run_colloquy("ack", str(page_dir), str(events[-1]["seq"]))
     return events
 
 
@@ -298,8 +298,7 @@ def record(
     comment_id = wait_for_comment(page_dir)
     receive(waiters[0], page_dir)
     run_colloquy(
-        "review",
-        "state",
+        "status",
         str(page_dir),
         "working",
         "answering the backfill question",
@@ -310,7 +309,6 @@ def record(
     shot(900)
 
     run_colloquy(
-        "review",
         "reply",
         str(page_dir),
         "--to",
@@ -328,7 +326,7 @@ def record(
         "--text",
         "Backfill stays online; rehearsal progress is now 3 of 4",
     )
-    run_colloquy("review", "state", str(page_dir), "waiting")
+    run_colloquy("status", str(page_dir), "waiting")
     waiters.append(start_waiter(page_dir))
     page.wait_for_url("**/v2.html", timeout=15_000)
     page.wait_for_function(
@@ -394,12 +392,12 @@ def shoot_stills(
 
     Getting the banner to say "Claude is listening" takes stating both halves of it.
     `record` has received and acknowledged the board action through the waiter it
-    started, so no reviewer event remains to make this fresh waiter return immediately.
+    started, so no user event remains to make this fresh waiter return immediately.
     State the scene, then start that waiter: its heartbeat is the proof the browser
     renders."""
-    run_colloquy("review", "state", str(page_dir), "waiting")
+    run_colloquy("status", str(page_dir), "waiting")
     waiters.append(start_waiter(page_dir))
-    # The reviewer's board move has to have landed in each shot, or it shows a page
+    # The user's board move has to have landed in each shot, or it shows a page
     # mid-replay — the same wait `version export` takes for the same reason. Counted
     # once: neither shot posts anything, so the log is the same for both.
     actions = sum(
@@ -512,7 +510,7 @@ def main() -> None:
             "--text",
             "Migration rehearsal started; 2 of 4 checks complete",
         )
-        run_colloquy("review", "state", str(page_dir), "waiting")
+        run_colloquy("status", str(page_dir), "waiting")
         # Piped rather than discarded, so `wait_for_server` has the server's own
         # account of a start that didn't take. Nothing drains these while it
         # serves, which is safe only because the handler logs nothing: the URL is

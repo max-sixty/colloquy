@@ -17,7 +17,7 @@ import { dataBody, once, failSoft, settle } from "/colloquy.js";
  * started in until reload — the same as the vendored highlight table, and unlike
  * the rest of the theme, which is tokens and follows live. Re-rendering every
  * diagram on a media-query change would be the alternative, and it buys a case
- * (the OS theme changing while a reviewer reads) that costs a reload to fix. */
+ * (the OS theme changing while a user reads) that costs a reload to fix. */
 const token = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
 
 let mermaidReady;

@@ -1,6 +1,6 @@
 # colloquy
 
-A page Claude hands the reviewer, and the loop that carries their comments back. The
+A page Claude hands the user, and the loop that carries their comments back. The
 README covers what it does; this covers how it is built, and the rules that keep it
 buildable.
 
@@ -8,7 +8,7 @@ buildable.
 
 Everything here serves a high-fidelity connection between the agent and the person it is
 working with. That is why the handover is a page. A terminal has one channel and one
-width; a page has as many as the subject needs — a diagram, a board the reviewer drags,
+width; a page has as many as the subject needs — a diagram, a board the user drags,
 two screenshots that flip in place — and it carries the reply back on the words that
 prompted it. The vocabulary is something to build with rather than a form to fill in: a
 shape colloquy hasn't got is one a project can add, since theme, registry and widget
@@ -88,7 +88,7 @@ Four bind both runtimes at once, and no one directory owns them.
 
 ### The document is the state, and the log outranks it
 
-A reviewer's edit (a dragged card, a pick) posts an `action`, and every action replays
+A user's edit (a dragged card, a pick) posts an `action`, and every action replays
 onto every version after the one it was made on. Nothing is stored as "the current
 board"; the log plus the version is the whole truth. Keep it that way — a second store
 is a second thing to reconcile.
@@ -96,17 +96,18 @@ is a second thing to reconcile.
 There was a second store once, unnamed: recorded state in the log and authored state in
 the markup, with the page's author expected to copy each decision from one to the other
 by hand. `version check` guaranteed ids survived a republish and nothing guaranteed the
-state on them did, so a forgotten copy silently un-made a decision. A reviewer
-re-approved the same drafts version after version, and no part of the system said a word.
+state on them did, so a forgotten copy silently un-made a decision. The user
+re-approved the same drafts version after version, and no part of the system said a
+word.
 
 One writer, then: markup states the initial condition, the log every transition after
 it. A version that says nothing about a decision leaves it standing. The cost lands
-where the old design hid it — a version can't quietly revise what a reviewer acted on,
+where the old design hid it — a version can't quietly revise what the user acted on,
 because replay would paint their state back over the revision — so `restated` on the
 rewritten element retracts what rested on it, and `version check` refuses a bare rewrite
 and an unearned `restated` alike (`restatement_errors`).
 
-Both failures are invisible to the reviewer, so the question was never which is worse
+Both failures are invisible to the user, so the question was never which is worse
 but who can see each. A dropped decision is visible to nobody. A stale decision standing
 over rewritten content is visible to the author as they rewrite it, and only they know
 whether the rewrite invalidates it. Route a failure to whoever can adjudicate it: the
@@ -127,25 +128,25 @@ A second representation earns its place only when the two things are genuinely d
 same thing reached by different code.
 
 Two readings of one element's words are the case that does earn it, because they answer
-different questions. `says` is what is on the screen for a reviewer to point at, so a
+different questions. `says` is what is on the screen for the user to point at, so a
 label a widget declared as the page's words is in it; `wrote` is what the author put
 there, so everything an upgrade generated is out. The version diff wants the second (the
 base version it compares against has no generated nodes at all) and so does a widget
 naming one of its own parts — a picked row's mark is the page speaking, which belongs in
-what a reviewer can quote and not in the row's name, or a question answered reads its own
+what the user can quote and not in the row's name, or a question answered reads its own
 answer back as part of what was asked. One reading with a flag would have been the same
 two answers with nothing saying which is which.
 
 ### The file's reading never claims more than the page's
 
 An anchor is captured in two places and resolved in one. `selectionAnchor` captures from
-the DOM, `review comment` captures from the version file, and `resolveAnchor` is still
+the DOM, `colloquy comment` captures from the version file, and `resolveAnchor` is still
 the only thing that searches. Two captures are not two answers to "what does the page say
 here": both write the same collapsed text under the same rules, so what the file's reading
 holds the page holds too — where a module replaces what the file holds, the reading skips
 it, and everywhere else a module only adds.
 
-The file alone is not enough, because the reviewer moves the page too: a decision retires a
+The file alone is not enough, because the user moves the page too: a decision retires a
 settled suggestion's losing slot, and an edit puts their words where the authored body was.
 So both readings follow the log rather than the markup, and each refuses a quote into what
 it dropped by naming the act that dropped it. The keys that carry this and the shape of
@@ -160,7 +161,7 @@ occurrence can ever confirm, which silently costs the comment its copy.
 
 So where the file can't model what a module writes, the reading stops rather than guesses.
 The registry declares what it can and a fence covers the rest, and a quote across a fence
-is refused when it is written instead of detaching later in front of the reviewer. The
+is refused when it is written instead of detaching later in front of the user. The
 browser indexes those same fences before upgrades run and clips captured context to them
 afterward, so neither capture claims neighbours the other cannot confirm. A widget that
 writes words of its own declares them or stays fenced.
@@ -168,7 +169,7 @@ writes words of its own declares them or stays fenced.
 Context identifies an occurrence only when exactly one candidate confirms it in full.
 If no candidate does, a quote that occurs once can still identify itself; a repeated quote
 cannot. It detaches instead of falling back to document order, because an offset or ordinal
-is not evidence that a revised copy is the one the reviewer meant.
+is not evidence that a revised copy is the one the user meant.
 
 ### The widget list is never closed
 
@@ -213,7 +214,7 @@ An `applyAction` implementation states an absolute placement, never a relative m
 because the poll replays it and the sender's own action must be a no-op. The verb, its
 detail schema, its fold unit, and its record form are declared in the registry
 (`x-state`), not known privately to the module: absoluteness is what makes the
-reviewer's standing state a fold over the log, and the declaration drives every consumer
+user's standing state a fold over the log, and the declaration drives every consumer
 of it without teaching any of them a widget by name.
 
 ## Working on it

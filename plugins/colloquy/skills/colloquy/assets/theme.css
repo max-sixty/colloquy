@@ -11,7 +11,7 @@
  *
  * Three voices, because the page already has three kinds of words and the norms
  * turn on telling them apart. What the page *says* is set in a text serif: prose
- * a reviewer reads closely and points at. What the page *labels* — an eyebrow, a
+ * a user reads closely and points at. What the page *labels* — an eyebrow, a
  * column heading, a chip, the headings across a table, a metric's caption — is
  * apparatus, set in the UI sans at small sizes with tracking, so it reads as
  * machinery around the argument rather than as part of it. What it *shows* is mono:
@@ -42,7 +42,7 @@
   --accent: #2f5480; --ok: #3f7d4e;   --warn: #b4741a;   --danger: #b4402f;
   --r: 6px;
   --sp-1: 4px; --sp-2: 8px; --sp-3: 16px; --sp-4: 24px;
-  --rail: 168px;     /* the review margin: the widest control row, plus its gap */
+  --rail: 168px;     /* the comment margin: the widest control row, plus its gap */
   /* The ladder, body at --t-4. Measured on Charter at 17px: 7.9px a character, so
      the column below holds about 74 of them. */
   --t-6: 11.5px; --t-5: 14px; --t-4: 17px; --t-3: 20px; --t-2: 24px; --t-1: 31px;
@@ -177,7 +177,7 @@ img, svg, video { max-width: 100%; height: auto; }
  * its content asks for it, wraps its cells when the content asks for more, and
  * scrolls inside itself — like pre, like cq-board — when even the wrapping
  * can't fit. Nothing narrower does all three: overflow on a table box is
- * ignored outright, and a table that spills lands in the review margin where a
+ * ignored outright, and a table that spills lands in the margin where a
  * suggestion's controls hang, having scrolled the page by nothing the render
  * gate can see at its own viewport width.
  *
@@ -228,7 +228,7 @@ dd { margin: 0 0 8px 0; }
  *
  * This is a look, not a permission — the anchoring norm's distinction exactly. A
  * chip a widget says (data-cq-said) is still the page's words and still something
- * a reviewer can select and quote; it is set in the sans because it reads as
+ * a user can select and quote; it is set in the sans because it reads as
  * machinery, not because it is the runtime's.
  *
  * Nothing a widget builds through `offer` belongs here, and the first draft had
@@ -278,21 +278,21 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0;
                         background: var(--accent); color: var(--card); font-size: 12px;
                         font-weight: 600; display: grid; place-items: center; }
 
-/* Something a version restated: it rewrote words the reviewer had decided on, so
+/* Something a version restated: it rewrote words the user had decided on, so
    the runtime dropped what they recorded and is asking again. Without the tint,
-   a decision undone looks exactly like one never made — the reviewer would find
+   a decision undone looks exactly like one never made — the user would find
    it by rereading sixty drafts. Why it was undone belongs in the changelog note,
    where a version explains itself. The runtime sets this, from the log; the
    author's word is `restated` on the element. */
 [data-cq-restated] { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
                      outline-offset: 3px; border-radius: 2px; }
 
-/* Something decided and not yet honored: the reviewer's recorded state differs
+/* Something decided and not yet honored: the user's recorded state differs
    from what this version's markup arrived showing — a moved card, an edited
    draft, a pick no version has marked. The runtime sets this from the log's
    fold (x-state in the registry), one pass for every widget alike, and it
    clears the moment a version carries the decision or a retraction hands the
-   state back. Green, the reviewer's color: their decision stands here in
+   state back. Green, the user's color: their decision stands here in
    replay, not yet in the page's own words. */
 [data-cq-pending] { outline: 2px solid color-mix(in srgb, var(--ok) 50%, transparent);
                     outline-offset: 3px; border-radius: 2px; }
@@ -301,7 +301,7 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0;
 
 /* Every attribute the registry marks x-says is written twice here. The runtime
  * renders the value as real text (renderSaid, in a span carrying data-cq-said),
- * because a pseudo-element paints glyphs that live in no text node — a reviewer
+ * because a pseudo-element paints glyphs that live in no text node — a user
  * can read them and can never select or comment on them. The pseudo-element
  * stays as the same words for a page carrying no script at all
  * (docs/how-it-works.html renders the whole vocabulary that way) and stands down
@@ -403,7 +403,7 @@ cq-compare:has(> cq-variant > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, dl, table, 
   & > :is(cq-option, cq-variant):last-child { margin-bottom: 0; }
   /* The rail docks right where the row has the width to spare, and stacks above the prose
    * where it hasn't — asked of the row itself, because how much room it has is a fact
-   * about the row and not about the window: the page gives 168px up to the review margin
+   * about the row and not about the window: the page gives 168px up to the margin
    * the moment a change wants deciding, and a viewport wide enough to dock in was still
    * one of those. A 10rem rail out of a narrower row leaves the argument three words to
    * the line, so the rail wins the row and the case it was docked beside loses it. */
@@ -469,7 +469,7 @@ cq-option .cq-pick::before { content: ""; width: 11px; height: 11px; flex: none;
                      font-size: 8px; line-height: 1; color: var(--card); }
 cq-option .cq-pick[role="button"] { cursor: pointer; }
 /* An offer says nothing, so it is not written — in either form. A picked mark's word is
- * the page's only statement of where the pick sits, which paper keeps and a reviewer can
+ * the page's only statement of where the pick sits, which paper keeps and a user can
  * quote; "choose" states nothing a reader could disagree with, and a card carrying it on
  * every member says the same nothing two to five times. The card form used to argue it
  * needed the word precisely because it had no column of dots to say it, and a choose group
@@ -506,7 +506,7 @@ cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-off
  * would be offering what the medium cannot take. Both get the page without the offer by
  * never being handed it rather than by undoing it — the bargain the box for words already
  * makes — so the cards come apart again and wear the rings they print. Not `settled` either, for the same reason in a different medium: a retired decision
- * is a line the reviewer opens, and drawing the group as a control around it would put one
+ * is a line the user opens, and drawing the group as a control around it would put one
  * box inside another and offer a question nobody is asking. Opened, its cards come back as
  * cards — with their rings, since the ring and the container are the same decision made
  * twice and a group that isn't joined has to say the offer itself. */
@@ -779,7 +779,7 @@ cq-metric[direction="up-good"][delta^="-"] > [data-cq-said="delta"],
 cq-metric[direction="up-bad"][delta^="+"] > [data-cq-said="delta"]
                     { background: var(--danger-tint); color: var(--danger-ink); }
 
-/* cq-board / cq-column / cq-card: the one widget the reviewer edits directly.
+/* cq-board / cq-column / cq-card: the one widget the user edits directly.
  * All presentation is CSS; the cq-board upgrade only wires dragging (grips,
  * dropzones) and reports each drop as a `move` action. Unupgraded it reads as a
  * static board. */
@@ -903,7 +903,7 @@ cq-shot .cq-shotpick input:focus-visible { outline: 2px solid var(--accent);
   cq-shot .cq-shotframe { visibility: visible !important; margin-bottom: var(--sp-2); }
 }
 
-/* cq-suggestion / cq-old / cq-new: a proposed change to reviewed content. The
+/* cq-suggestion / cq-old / cq-new: a proposed change to content the user has seen. The
  * wrapper generates no box, so a suggestion sits inline mid-sentence or wraps
  * whole sections without disturbing either flow; the slots carry the marks,
  * inline by default and block when they hold block content. A decision is the
@@ -949,7 +949,7 @@ cq-suggestion[data-cq-state="reject"]:not(:has(cq-old)) { display: none; }
 .cq-sug-actions .cq-sug-reject:hover { border-color: var(--danger); color: var(--danger-ink); }
 /* A page carrying a change to decide gives the rail up out of its own width,
  * rather than hanging the controls in whatever centring happens to leave over.
- * Leftovers ran out in the posture a reviewer actually reads in: the open comment
+ * Leftovers ran out in the posture a user actually reads in: the open comment
  * panel takes the right of the window, the margin thins below the row, and every
  * row docked above the change it decides — which reads as belonging to the
  * paragraph before it. Reserved here, the column simply centres in what remains,
@@ -959,7 +959,7 @@ cq-suggestion[data-cq-state="reject"]:not(:has(cq-old)) { display: none; }
  * row and not on cq-suggestion, so a page whose only changes are exhibits — a
  * specimen grows no controls — spends nothing on it, and a page that has settled
  * every change keeps the rail it started with rather than shifting under the
- * reviewer at the last decision. Below the breakpoint no strip is worth the
+ * user at the last decision. Below the breakpoint no strip is worth the
  * column it costs, and the widget docks as it always has; on paper the controls
  * are gone, so their room would be a blank margin.
  *
@@ -1084,7 +1084,7 @@ cq-code .cq-code-line::before { counter-increment: cq-code-line;
 cq-code .cq-code-line.hi { background: var(--hi-tint); }
 /* A note is the author's sentence about a line, so it leaves the mono the block
    is set in and comes back to the document's own voice — it is prose, and a
-   reviewer quotes it like any other. Stated here rather than in the apparatus
+   user quotes it like any other. Stated here rather than in the apparatus
    rule for that reason, and because it has a `pre`'s mono to escape either way. */
 cq-code .cq-code-note { margin: 4px 8px 6px 46px; padding: 6px 10px;
              background: var(--field); border: 1px solid var(--rule);
@@ -1092,7 +1092,7 @@ cq-code .cq-code-note { margin: 4px 8px 6px 46px; padding: 6px 10px;
              font-size: var(--t-5); white-space: normal; }
 cq-code cq-note { display: block; }
 
-/* cq-draft rendered form: a block of text the reviewer owns. The dashed border says
+/* cq-draft rendered form: a block of text the user owns. The dashed border says
    "editable"; the ✎ button is the accessible door (double-click is the fast path) and
    sharpens on hover or focus. Newlines in a draft are content, so the body preserves
    them. An edited-but-unhonored draft wears the runtime's data-cq-pending mark,

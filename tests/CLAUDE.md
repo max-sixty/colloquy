@@ -16,7 +16,7 @@ worse than failing outright.
 
 A render invariant belongs in `render_version` rather than in a test. That function is
 what `version check --render` runs at handover, and `test_example_renders` drives it over
-the examples, so the gate a reviewer's page passes and the suite the examples pass are one
+the examples, so the gate a user's page passes and the suite the examples pass are one
 implementation and cannot drift.
 
 ## A round trip is not over when its response lands
@@ -35,7 +35,7 @@ for, it returns at once.
 `open_page` puts that wrapper on every page: a test that had to ask for the counter first
 is a test that asserted straight through the trip instead, and counting costs a page
 nothing. `ROUND_TRIP` is the page's own sends coming back, which is what to wait on before
-reading the event log — a widget settles a decision in front of the reviewer before the
+reading the event log — a widget settles a decision in front of the user before the
 server has taken it, so the page reading done is not the log holding it. Polling the log
 instead only ever asks after the send it names, and a stray one from the widget that was
 supposed to stay quiet passes straight through it.

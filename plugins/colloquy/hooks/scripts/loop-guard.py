@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Stop / UserPromptSubmit / SessionEnd hook — keeps the review loop honest.
+"""Stop / UserPromptSubmit / SessionEnd hook — keeps the loop honest.
 
-The review loop asks the agent to restart `review wait` after every round, and a page
+The loop asks the agent to restart `colloquy wait` after every round, and a page
 whose watcher never came back is invisible from the browser: it looks exactly like a
-page whose reviewer has said nothing yet. These hooks make the loop the harness's
+page whose user has said nothing yet. These hooks make the loop the harness's
 business rather than the model's memory. Stop protects Claude Code's background wait
 and keeps Codex inside the active turn that polls its exact unified-exec session;
 UserPromptSubmit surfaces unacknowledged events; SessionEnd idles the pages and stops
@@ -19,7 +19,7 @@ falls through silently and the turn proceeds. A Stop hook is the worst possible
 place for a colloquy bug to strand the user.
 
 The sessions path assumes the hook's environment and the Bash tool's agree on
-XDG_STATE_HOME: `server run` and `review wait` write the registry from a shell
+XDG_STATE_HOME: `server run` and `colloquy wait` write the registry from a shell
 initialized by the user's profile, while this script reads it from the agent
 host's process environment.
 A value set only in the shell profile makes the guard silently stand down —

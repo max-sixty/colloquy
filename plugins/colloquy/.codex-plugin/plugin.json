@@ -1,6 +1,6 @@
 {
   "name": "colloquy",
-  "description": "Collaborate through a commentable HTML page in the browser: present plans, findings, and work in progress, then carry the reviewer's anchored feedback back into the session.",
+  "description": "Collaborate through a commentable HTML page in the browser: present plans, findings, and work in progress, then carry the user's anchored feedback back into the session.",
   "author": {
     "name": "Maximilian Roos",
     "url": "https://github.com/max-sixty"
@@ -11,7 +11,7 @@
   "keywords": ["plan-review", "review", "html", "annotation", "collaboration"],
   "interface": {
     "displayName": "Colloquy",
-    "shortDescription": "Review agent work in a commentable local page.",
+    "shortDescription": "Collaborate with your agent in a commentable local page.",
     "longDescription": "Present plans, findings, and work in progress as a local HTML page with anchored comments, interactive decisions, and live revisions.",
     "developerName": "Maximilian Roos",
     "category": "Productivity",
@@ -19,7 +19,7 @@
     "websiteURL": "https://github.com/max-sixty/colloquy",
     "defaultPrompt": [
       "Present this work as a Colloquy page.",
-      "Use Colloquy for a reviewable plan."
+      "Use Colloquy to put this plan on a page."
     ]
   }
 }

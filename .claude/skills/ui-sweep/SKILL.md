@@ -1,13 +1,13 @@
 ---
 name: ui-sweep
-description: Use the shipped examples like a reviewer in a real browser and fix the interaction defects the sweeps can't see — placement, tracking, legibility, crowding. Run after runtime or theme changes, or as a standing dispatch.
+description: Use the shipped examples like a user in a real browser and fix the interaction defects the sweeps can't see — placement, tracking, legibility, crowding. Run after runtime or theme changes, or as a standing dispatch.
 ---
 
 # UI sweep
 
 The suite holds the invariants somebody has already stated: render_version gates a
 page's rendering, and the press and poll sweeps hold it still under the aim. The
-defects that reach the reviewer first are the ones nobody has stated yet — a float
+defects that reach the user first are the ones nobody has stated yet — a float
 that parts from its passage on scroll, a diagram scaled below legibility, an input
 that stops growing at ten lines. Those are found by using the page. This skill is
 that use: drive, judge, fix, pin.

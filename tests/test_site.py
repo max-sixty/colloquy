@@ -102,8 +102,8 @@ def test_the_pages_fit_a_phone(site, browser):
     and a command too long for the column scrolls inside its own block.
 
     The site's own pages, not the examples it publishes: a page with a suggestion
-    on it hangs the accept/reject controls in the review margin, and at 390px
-    there is no margin to hang them in. That is the review page's question rather
+    on it hangs the accept/reject controls in the margin, and at 390px
+    there is no margin to hang them in. That is the live page's question rather
     than the site's, and it is not answered here."""
     page = browser.new_page(viewport=PHONE)
     try:

@@ -20,17 +20,17 @@ underneath", and "the doc is the API".
 
 |              | Workbench                                                                                                                | colloquy                                                                                                                                                                          |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Document     | Markdown with fenced components — board, chat, sheet, chart, custom widget — edited in place, with named versions to restore from | Authored HTML, any structure the page needs, changed by the agent publishing a new version — each with a changelog note to step back to — or by the reviewer working an affordance it offers |
+| Document     | Markdown with fenced components — board, chat, sheet, chart, custom widget — edited in place, with named versions to restore from | Authored HTML, any structure the page needs, changed by the agent publishing a new version — each with a changelog note to step back to — or by the user working an affordance it offers |
 | Home         | Hosted, at a private link                                                                                                  | A directory on your machine, served where your session reached it, behind a key                                                                                                     |
 | Return path  | An HTTP long-poll the agent holds open                                                                                     | A background task that wakes Claude Code; an exact unified-exec wait Codex polls inside the active turn                                                                             |
 | Reach        | Anything that speaks HTTP                                                                                                  | Claude Code and Codex                                                                                                                                                               |
-| Built for    | A team of agents and people coordinating                                                                                   | One session presenting to one reviewer                                                                                                                                              |
+| Built for    | A team of agents and people coordinating                                                                                   | One session presenting to one person                                                                                                                                                            |
 
 The two return paths are closer than the hosting difference suggests. An agent watches a
 Workbench doc by holding an HTTP long-poll open: `GET /api/docs/DOC_ID/events?since=SEQ&wait=55`,
-which "returns the moment an event lands past `since`". Colloquy's `review wait` tails the
+which "returns the moment an event lands past `since`". Colloquy's `wait` tails the
 page directory on disk and exits on the first event the agent hasn't seen. Different
-transport, same bargain: one call that blocks until the reviewer does something. Colloquy
+transport, same bargain: one call that blocks until the user does something. Colloquy
 acknowledges the event separately, only after a complete, untruncated wait result enters
 model context.
 Workbench also offers webhooks and a supervised watcher, for wake-ups that outlive the
@@ -57,18 +57,18 @@ live return path.
 
 ## When colloquy is the wrong choice
 
-- **More than one reviewer, or agents coordinating with each other.** A colloquy page is
-  one session presenting to one person. The log tells the agent from the reviewer and no
+- **More than one person, or agents coordinating with each other.** A colloquy page is
+  one session presenting to one person. The log tells the agent from the user and no
   further: two people commenting are one voice, there are no live cursors, and nothing
   merges concurrent edits.
 - **An agent that is only an HTTP client.** The loop is a command the agent runs and gets
   back into model context, so an agent that cannot run one cannot drive it — and the
   hooks that hold a session to the loop exist only in the two hosts.
 - **An artifact that has to last.** The server and the wait go down with the session. The
-  page directory stays on disk and `version export` makes a standalone copy, but the
-  review stops there, and a document a team will edit for months belongs in the
-  repository.
-- **Editing the document yourself.** A reviewer works the affordances the page offers —
+  page directory stays on disk and `version export` makes a standalone copy, but
+  nothing is live past the session, and a document a team will edit for months belongs
+  in the repository.
+- **Editing the document yourself.** The user works the affordances the page offers —
   comment, drag a card, pick an option, rewrite a draft, accept a proposed change — and
   prose the page didn't offer for change is the agent's until it publishes the next
   version. Where you would rather just fix the sentence, that round trip is the wrong
@@ -81,7 +81,7 @@ fuller note would have to reach, roughly in order of how badly the omission date
 one:
 
 - **Claude Code Artifacts** (June 2026) — first-party, same medium, versioned pages that
-  update in place, and the docs state there is no reply path: the reviewer presses "Copy
+  update in place, and the docs state there is no reply path: the user presses "Copy
   as prompt" and pastes into the terminal. The sharpest comparison available.
 - **crit** — a local single Go binary, bound to loopback, no config or login; the agent
   launches it and blocks on the review rather than serving a page and watching it.

@@ -312,7 +312,7 @@ REPLY_HOST_PAGE = """<!doctype html>
 
 # Claude answering with a question to put and, beside it, the framing that question
 # replaced — quoted, so the reply asks one thing rather than two. The words ride
-# `text` and the widgets ride `markup`, as `review reply` writes them.
+# `text` and the widgets ride `markup`, as `colloquy reply` writes them.
 SPECIMEN_TEXT = (
     "Two shapes for the same question — first the one I'd ship, then, for the "
     "record, the framing it replaces:"
@@ -329,7 +329,7 @@ SPECIMEN_MARKUP = """<cq-options id="rp-live" choose>
 </cq-specimen>
 """
 
-# Two decisions for a reviewer to take and a later version to honor, carry, or
+# Two decisions for a user to take and a later version to honor, carry, or
 # contradict: a pick and a move.
 IMPORTER_CARD = (
     '<cq-card id="card-importer"><strong>Wire the importer</strong></cq-card>'
@@ -703,7 +703,7 @@ def test_example_renders(browser, serve, example):
     widget that upgrades into a 1x1 box, or a heading painted by a pseudo-element,
     is the shape of failure a static lint cannot see. The invariants live in
     interact.render_version — the pass `version check --render` runs on agent-authored
-    pages — so this sweep also proves the gate a reviewer's page goes through."""
+    pages — so this sweep also proves the gate a user's page goes through."""
     assert interact.render_version(browser, serve(example.read_text())) == []
 
 
@@ -734,7 +734,7 @@ WIDE_TABLE_PAGE = """<!doctype html>
 )
 
 # A block wider than the column and narrower than the window: 70% of 1200px is
-# 840px against a 720px column, so it stands 120px out in the review margin with
+# 840px against a 720px column, so it stands 120px out in the margin with
 # the body not scrolling by a pixel. In vw rather than px because the static lint
 # counts pixels and would have caught it before a browser ever saw it.
 SPILLING_PAGE = LONG_PAGE.replace(
@@ -746,7 +746,7 @@ def test_a_table_too_wide_to_wrap_scrolls_inside_the_column(browser, serve):
     """The theme's answer for a table with more in it than the column holds. Its
     columns hold what is in them, so it takes the measure only when it needs to
     and wraps its cells past that; when even wrapping can't fit it scrolls inside
-    itself — like pre, like cq-board — rather than out into the review margin
+    itself — like pre, like cq-board — rather than out into the margin
     where a suggestion's controls hang. `width: 100%` had no third case: the
     table spilled, and at this viewport the window is wide enough that nothing
     scrolled to say so."""
@@ -775,7 +775,7 @@ def test_a_table_too_wide_to_wrap_scrolls_inside_the_column(browser, serve):
 def test_the_render_gate_reports_content_set_past_the_column(browser, serve):
     """The reading neither of the gate's older ones can give. The window is the
     wider of the two boxes — 1200px against a 720px column — so content can stand
-    out in the review margin with the body still not scrolling sideways, and the
+    out in the margin with the body still not scrolling sideways, and the
     static lint reads pinned pixels, which a vw width is not. The failure names
     the element and how far out it is, because "something overflows" sends its
     reader back to the browser to find out what."""
@@ -793,7 +793,7 @@ def test_the_render_gate_reports_content_set_past_the_column(browser, serve):
 
 # Two sets, because pointing at a control and pressing it are different questions.
 #
-# What must hold still is everything a reviewer aims at, however the widget that built
+# What must hold still is everything a user aims at, however the widget that built
 # one made it: the runtime's real buttons and selects, the spans `offer` builds, a tab, a
 # pick mark, a reference. Naming the ways a control is constructed rather than the widgets
 # that construct them is what lets a twelfth widget's join this sweep without editing it.
@@ -805,7 +805,7 @@ NEIGHBOUR = (
 # rather than about the control. A <select> opens a native popup the page cannot see and
 # the next click closes instead of pressing — which is how this sweep first passed while
 # pressing nothing at all, the shape of vacuous pass CLAUDE.md is about. A link is a
-# reviewer's control and its press is a scroll, so it belongs to the set above and has
+# user's control and its press is a scroll, so it belongs to the set above and has
 # nothing here to disturb.
 PRESS = "[data-cq-offer], [role=tab], [role=button], .cq-btn, .cq-pick, button, summary"
 
@@ -816,7 +816,7 @@ PRESS = "[data-cq-offer], [role=tab], [role=button], .cq-btn, .cq-pick, button, 
 # still lifted under the pointer reads as the nothing it is.
 #
 # On screen is the load-bearing half. A control inside a fold the press opens was nowhere
-# the reviewer could aim, and one the press puts away — a suggestion's ✗ Reject, once ✓
+# the user could aim, and one the press puts away — a suggestion's ✗ Reject, once ✓
 # Accept has settled the pair — is not a control that moved. Both are the press doing what
 # it was pressed for. `[hidden]` is asked separately because hidden="until-found", which is
 # what a folded region wears, measures zero and still reports itself visible.
@@ -872,16 +872,16 @@ SETTLED = """(hold) => {
     [
         pytest.param(
             "",
-            ".cq-end-review",
+            ".cq-end-colloquy",
             ".cq-signoff",
             "close",
-            "End this comments-only review",
+            "End this comments-only colloquy",
             id="comments-only",
         ),
         pytest.param(
             '<meta name="cq-review" content="sign-off">',
             ".cq-signoff",
-            ".cq-end-review",
+            ".cq-end-colloquy",
             "done",
             "Approve this work; the page stays open for follow-up",
             id="sign-off",
@@ -930,11 +930,11 @@ def displaced(before, boxes):
 def test_a_press_leaves_its_neighbours_where_they_were(browser, serve, example):
     """A press may change the page; it may not move the controls next to the one pressed.
 
-    A reviewer works by pointing, and the line a control stands on is where their next
+    A user works by pointing, and the line a control stands on is where their next
     gesture is already aimed. What a press changes below it is content — a tab shows a
     different panel, a fold opens, a suggestion resolves, and the page under it moves
-    because the reviewer asked it to. What must not move is the row itself, because
-    nothing was asked of it and it is the one thing the reviewer is still using.
+    because the user asked it to. What must not move is the row itself, because
+    nothing was asked of it and it is the one thing the user is still using.
 
     Three shipped controls broke this rule, each by changing a metric to say something:
     a selected tab set in 600 weight, since a bolder label is a wider one, so the strip
@@ -986,7 +986,7 @@ def test_a_press_leaves_its_neighbours_where_they_were(browser, serve, example):
             )
         page.evaluate(DEFINE_BOXES)
         control = page.locator(PRESS).nth(i)
-        # A control the reviewer can't press has no gesture to disturb anything. Both
+        # A control the user can't press has no gesture to disturb anything. Both
         # spellings, because a span press can only ever wear the attribute.
         if not control.is_visible() or not control.is_enabled():
             continue
@@ -1046,7 +1046,7 @@ AIM_POINT = """(el) => {
   }
   return null;
 }"""
-# The promise itself, read where the reviewer reads it. The item a click would take wears
+# The promise itself, read where the user reads it. The item a click would take wears
 # the outline the composer's own passage wears, so the same query answers before the press
 # and after it, and the two answers agreeing is the promise being kept.
 OUTLINED = """() => document.querySelector(".cq-mark-el.cq-pending")?.id ?? null"""
@@ -1078,7 +1078,7 @@ def test_an_aimed_press_does_only_what_the_outline_promised(browser, serve, exam
     The runtime used to read that press on the way back up, after every handler out on the
     page had already had it, so the press kept the promise and did something else besides:
     ⌥-clicking an option card opened the composer *and* picked the option, sending Claude a
-    decision the reviewer never made, while ⌥-clicking a tab's name aimed at the widget and
+    decision the user never made, while ⌥-clicking a tab's name aimed at the widget and
     switched the panel under it. Neither shows in the composer, which opens either way.
 
     So both halves are asserted together — the composer opens on the item that was
@@ -1091,7 +1091,7 @@ def test_an_aimed_press_does_only_what_the_outline_promised(browser, serve, exam
     total = page.locator(targets).count()
     pressed = aimed = 0
     for i in range(total):
-        # A control inside a fold or behind an unopened tab is nowhere a reviewer can aim,
+        # A control inside a fold or behind an unopened tab is nowhere a user can aim,
         # which is the press sweep's reading of the same question, and a point the banner
         # or a neighbour covers is not this target's press at all.
         target = page.locator(targets).nth(i)
@@ -1142,7 +1142,7 @@ def test_an_aimed_press_does_only_what_the_outline_promised(browser, serve, exam
     # vacuous pass this sweep is most exposed to.
     assert aimed, f"{example.name} outlined nothing, so no press was held to a promise"
     # The other half of "did nothing else", and the half the markup cannot show: a widget
-    # that acts tells Claude so, and a decision the reviewer never made is worse in the log
+    # that acts tells Claude so, and a decision the user never made is worse in the log
     # than on the page. The wait is the page's own sends coming back, so a stray one is in
     # the log to be read rather than still in flight.
     page.wait_for_function(ROUND_TRIP)
@@ -1158,7 +1158,7 @@ def test_a_key_still_reaches_its_control_after_an_aimed_press(browser, serve):
 
     `offer` supplies the keys a span doesn't come with by calling click(), so a control
     worked from the keyboard sends a click with no press behind it. Taken for the aim's
-    own, it goes nowhere at all: the reviewer presses Enter on a pick mark and nothing is
+    own, it goes nowhere at all: the user presses Enter on a pick mark and nothing is
     picked, on a page where the last thing they did with the mouse was aim."""
     page, errors = open_page(browser, serve(REPLAYED_PAGE))
     heading = page.locator("#t")
@@ -1186,7 +1186,7 @@ def test_the_chrome_keeps_its_presses_while_the_page_is_armed(browser, serve):
     """What ⌥ arms is the page, and the line around it is the chrome's container.
 
     An aim that reached in there would take the panel, the composer and the banner away
-    from a reviewer who happens to be holding the key — and there is nothing in the layer
+    from a user who happens to be holding the key — and there is nothing in the layer
     to aim at anyway, since an anchor names an element of the page."""
     page, errors = open_page(browser, serve(LONG_PAGE))
     comments = page.locator(".cq-comments")
@@ -1206,7 +1206,7 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
 
     A press has a line — the row the pressed control stands on, where the next gesture
     is already aimed — and below it the page is content and may move. News arriving on
-    the poll has no gesture at all, so there is no line to draw: the reviewer was
+    the poll has no gesture at all, so there is no line to draw: the user was
     somewhere else entirely, and every control in the chrome is an address they are
     holding. The document may still change under them, because a fact arriving is what
     they are here to see; the address it arrives at may not.
@@ -1214,13 +1214,13 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
     The banner is where all of it lands, and it is packed to the right against a spacer,
     which decides who pays. A control that grows moves itself and everything to its
     *left*; everything to its right keeps its place. So `Comments (9)` becoming
-    `Comments (10)` — a comment posted from the terminal while the reviewer reads —
+    `Comments (10)` — a comment posted from the terminal while the user reads —
     slid the version chooser 6px left, and the ✓ Accept all a second tab's decision puts
     away took the New-version chip with it.
 
     Driven by writing the events a real one would leave, since that is what the page
     reads either way, and there is no other way to reach this half: every gesture the
-    press sweep above can make is one the reviewer made, and none of these are."""
+    press sweep above can make is one the user made, and none of these are."""
     # Three pending suggestions, so the ✓ Accept all count has somewhere to go before it
     # runs out; sign-off asked, so the row is the full one; nine comments already, so the
     # tenth crosses a digit; and pinned, so a v2 landing leaves the page where it is and
@@ -1245,7 +1245,7 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
         )
 
     # The same events a second tab's presses would have posted, which is the only way one
-    # reviewer's browser hears about another's decisions.
+    # user's browser hears about another's decisions.
     def decide(*widgets):
         for widget in widgets:
             interact.append_event(
@@ -1413,13 +1413,13 @@ def test_examples_have_no_serious_wcag_a_or_aa_violations(
 ):
     """Axe covers semantic failures the render gate cannot see: an unnamed control,
     an invalid role relationship, or a contrast failure can occupy a perfectly good
-    box and still shut a reviewer out. Keep the scope to WCAG A/AA and actionable
+    box and still shut a user out. Keep the scope to WCAG A/AA and actionable
     serious/critical findings; layout and accessibility-tree snapshots belong to
     specific regressions, not a corpus baseline that changes with every restyle.
 
     A phone's width because what a box does there is a different question and not a
     smaller one: the column is 372px, so a block that had room at a desk starts
-    scrolling, and a scrolling box with no way into it from the keyboard is a reviewer
+    scrolling, and a scrolling box with no way into it from the keyboard is a user
     reading half of every line of code. Nothing at 1200 says a word about it."""
     page, errors = open_page(browser, serve(example.read_text()))
     resized(page, width, 900)
@@ -1461,7 +1461,7 @@ def test_examples_have_no_serious_wcag_a_or_aa_violations(
 
 def test_the_gate_passes_a_page_that_carries_a_comment(browser, serve):
     """The gate refuses words under `.cq-ui` inside a widget, because a widget reaching for
-    that marker is how a reviewer ends up unable to comment on a heading they can see. The
+    that marker is how a user ends up unable to comment on a heading they can see. The
     line saying how many comments are on a passage wears the same marker and sits wherever
     the passage does — inside the widget, when that is where the comment was made. Unless
     the gate knows the difference, one comment on an option is a page nobody can hand over,
@@ -1538,10 +1538,10 @@ def test_the_gate_passes_a_page_whose_collapsed_cards_lie_on_each_other(browser,
 
 def test_check_render_refuses_what_only_a_browser_can_see(serve):
     """`version check --render` end to end, as the agent runs it: the static lint
-    passes both versions, and only the one that renders clean may reach a reviewer.
+    passes both versions, and only the one that renders clean may reach a user.
     The broken version is deliberately unpublished — refusing it before
     `version publish` exposes it is the gate's whole job, so the preview server
-    has to expose what no reviewer-facing server would."""
+    has to expose what no user-facing server would."""
     serve(LONG_PAGE)
     d = serve.page_dir
 
@@ -1634,7 +1634,7 @@ PRINT_LOSS_PAGE = CARRIED_PAGE.replace(
 
 
 def test_render_reports_a_word_the_printed_page_loses(browser, serve):
-    """A reviewer prints the page, or saves it to PDF for someone who wasn't in the
+    """A user prints the page, or saves it to PDF for someone who wasn't in the
     loop, and whatever the screen said had better still be there. Ways it isn't, all
     silent: a control that is a statement as well as a thing to press (the pick mark,
     which is the only place a group says which option it carries) and a rule that
@@ -1704,7 +1704,7 @@ def test_a_shot_shows_one_frame_and_flips_between_them(browser, serve):
     """The comparison cq-shot makes is a flip: two registered frames in one grid cell,
     one of them showing. What the gate covers on the way past is the rest of the
     widget's bargain — the captions naming each frame are the page's words and stay
-    selectable, the radios are chrome and take no space in the reviewer's reading, and
+    selectable, the radios are chrome and take no space in the user's reading, and
     a printed copy keeps both frames and both captions."""
     url = serve(SHOT_PAGE)
     for name, data in SHOTS.items():
@@ -1795,7 +1795,7 @@ OUT_OF_REACH_PAGE = CARRIED_PAGE.replace(
 
 
 def test_render_reports_words_a_widget_puts_out_of_reach(browser, serve):
-    """The reviewer's half of the gate. A reviewer selected a draft's heading, tried to
+    """The user's half of the gate. A user selected a draft's heading, tried to
     comment on it, and got nothing back — twice, months apart, on the same page. The
     heading was the page's word in a row its author had marked as the runtime's, and
     `.cq-ui` is a look rather than a permission, so the class alone can't be the answer:
@@ -1804,7 +1804,7 @@ def test_render_reports_words_a_widget_puts_out_of_reach(browser, serve):
 
     The second one no marker can fix, which is why it reads differently: a word inside a
     form control is unselectable in every engine, so a widget that reaches for <button>
-    has put its label somewhere the reviewer cannot go. `offer` builds a press as a span
+    has put its label somewhere the user cannot go. `offer` builds a press as a span
     for exactly this reason, and this is what says so when a widget doesn't use it."""
     assert interact.render_version(browser, serve(CARRIED_PAGE)) == [], (
         "the same page without the two mistakes has nothing to report"
@@ -2097,7 +2097,7 @@ def test_a_sent_comment_is_revealed_in_the_panel(browser, serve):
     """A send is the one gesture that produces a thread, so it gets the same answer a
     click on a page mark does: the panel scrolls the new thread into its scrollport.
     On a list long enough to scroll, the old rebuild appended the comment below the
-    fold and put the scroll back where it was — the reviewer's own words landed out of
+    fold and put the scroll back where it was — the user's own words landed out of
     sight, silently. Both send routes then end in the composer the words left, where
     the rebuild sent a button click's focus somewhere else than ⌘⏎'s."""
     page, errors = open_page(browser, serve(LONG_PAGE, comments=12))
@@ -2180,7 +2180,7 @@ def test_an_arriving_reply_leaves_the_list_where_the_reader_put_it(browser, serv
     page.close()
 
 
-def test_an_arrival_interrupts_nothing_the_reviewer_holds(browser, serve):
+def test_an_arrival_interrupts_nothing_the_user_holds(browser, serve):
     """The nodes themselves survive the poll: the thread being typed in is the same
     element afterwards, still focused, caret where the typing left it — even when the
     arrival lands inside that very thread, right above the reply box. The rebuild
@@ -2220,7 +2220,7 @@ def test_an_arrival_interrupts_nothing_the_reviewer_holds(browser, serve):
             && window.__probe === document.querySelector('.cq-threads > .cq-thread')
             && ta.value === 'half a thought'
             && ta.selectionStart === 4 && ta.selectionEnd === 4;
-    }"""), "the poll replaced or disturbed the node the reviewer was typing into"
+    }"""), "the poll replaced or disturbed the node the user was typing into"
     assert errors == []
     page.close()
 
@@ -2230,7 +2230,7 @@ def test_resolving_an_early_thread_renumbers_the_rest_in_place(browser, serve):
     resolved disclosure and renumbers every thread after it — the reply box's armed
     chip and its placeholder address together, on nodes that are kept rather than
     remade. The
-    disclosure itself is kept too, so the reviewer's open toggle survives the next
+    disclosure itself is kept too, so the user's open toggle survives the next
     resolution instead of snapping shut on every arrival, which is what the rebuild
     did."""
     page, errors = open_page(browser, serve(LONG_PAGE, comments=3))
@@ -2533,7 +2533,7 @@ def test_a_row_too_narrow_to_dock_a_rail_stacks_it_instead(browser, serve):
     stands beside is still an argument. Out of a row narrower than about 30rem it is not:
     the case gets three or four words to the line and the row reads as a rail with some
     text jammed down its left. So the row is asked, and not the window — how much width a
-    row has is a fact about the row, and a page gives 168px up to the review margin the
+    row has is a fact about the row, and a page gives 168px up to the margin the
     moment it carries a change to decide, which no viewport query knows about."""
     page = browser.new_page(
         viewport={"width": 460, "height": 900}, color_scheme="light"
@@ -2610,7 +2610,7 @@ def test_settled_options_collapse_without_going_out_of_reach(browser, serve):
     # the row comes first in document order, which is where a search on the quote alone
     # would put it.
     #
-    # Dropping the selection first is the reviewer's own next move: a press that lands
+    # Dropping the selection first is the user's own next move: a press that lands
     # inside a live selection is that selection's, so the row would not open under it.
     page.locator("#lede").click()
     row.click()
@@ -2708,7 +2708,7 @@ def test_a_pick_the_page_only_reports_can_still_be_pointed_at(browser, serve):
 
     It shipped the other way round. The mark is one element in two shapes — a
     press where there is a pick to make, an inert span where there isn't — and the
-    inert one wore the press's `.cq-ui`, which anchoring skipped, so a reviewer
+    inert one wore the press's `.cq-ui`, which anchoring skipped, so a user
     could read "chosen" and not point at it. Every shipped example declares
     `choose`, so the render suite never rendered the inert shape and nothing said
     so. The press was out of reach for longer and for a different reason, which
@@ -2744,7 +2744,7 @@ def test_a_pick_the_page_only_reports_can_still_be_pointed_at(browser, serve):
 
     # A second version rewording the option nobody picked. The mark is written by
     # the runtime and stands in no version file, so the anchor on it has to be
-    # found again in the page the reviewer now has — and read as no change,
+    # found again in the page the user now has — and read as no change,
     # since the base version this diff loads has no mark in it at all.
     d = serve.page_dir
     (d / "versions" / "v2.html").write_text(
@@ -2830,7 +2830,7 @@ def test_a_pick_offered_can_be_pointed_at_too(browser, serve):
     # And the card it lands on is the same box after the pick as before it: the room a
     # picked mark's word needs is held on every card in the group, so the word grows into
     # space already reserved. That is the fact the matching mark boxes above used to stand
-    # in for, and the one the reviewer feels — a card that resized under the pointer takes
+    # in for, and the one the user feels — a card that resized under the pointer takes
     # the next gesture's aim with it.
     #
     # Measured across an empty group rather than across a swap. Moving the pick from one
@@ -2981,7 +2981,7 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
     assert page.locator(".cq-error").count() == 0
 
     # The exhibit rendered: the gutter's caption, and cards with real size. The label is
-    # the page's own word, so the runtime says it as text a reviewer can quote; only the
+    # the page's own word, so the runtime says it as text a user can quote; only the
     # "specimen · " in front of it is the theme's, and only that is still pseudo-content.
     label = page.locator('#spec > [data-cq-said="label"]')
     assert label.text_content() == "a decision"
@@ -3671,7 +3671,7 @@ SUGGESTION_PAGE = """<!doctype html>
 
 
 def test_suggestion_controls_stay_out_of_the_column(browser, serve):
-    """Review chrome hangs in the page margin, so the prose keeps the full column
+    """Suggestion chrome hangs in the page margin, so the prose keeps the full column
     and reads as it will once the change is settled. The row is the column's own
     child and takes its line from an anchor inside the change, so how deep the
     change sits costs it nothing: one inside a card — a positioned ancestor, which
@@ -3681,7 +3681,7 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     into flow, under the block it decides rather than overlapping the page.
 
     The margin the row hangs in is reserved, not left over, and the posture that
-    proves it is the one a reviewer reads in: with the comment panel open, a
+    proves it is the one a user reads in: with the comment panel open, a
     centred column left too little beside it and every row docked — above the
     change it decides, which reads as the paragraph before's."""
     page, errors = open_page(browser, serve(SUGGESTION_PAGE))
@@ -3707,7 +3707,7 @@ def test_suggestion_controls_stay_out_of_the_column(browser, serve):
     # what the anchor buys, and what a static position never could.
     in_card = page.locator("[data-cq-for='sug-in-card']").evaluate(box)
     assert in_card["left"] > column and in_card["right"] <= room, (
-        "a change inside a widget is still a change the reviewer decides in the margin"
+        "a change inside a widget is still a change the user decides in the margin"
     )
     assert (
         abs(in_card["top"] - page.locator("#sug-in-card cq-old").evaluate(box)["top"])
@@ -3755,7 +3755,7 @@ def test_a_moved_change_takes_its_controls_with_it(browser, serve):
     """The row is the column's child, not the change's, so the subtree a card
     travels in no longer carries it: a card dragged to another column, or moved by
     the replay of someone else's drag, leaves and re-enters the document with its
-    row unhooked. Re-connection has to hang it again, or the reviewer loses the
+    row unhooked. Re-connection has to hang it again, or the user loses the
     only way to decide a change that is still plainly pending on the page. Replayed
     rather than dragged, because that is the same move with no gesture in the way."""
     url = serve(SUGGESTION_PAGE)
@@ -3878,8 +3878,8 @@ def test_the_rail_survives_every_script_being_removed(browser, serve, tmp_path):
 def test_accepting_a_suggestion_settles_it_and_reaches_claude(browser, serve):
     """Accepting collapses the change to the proposal as ordinary prose — no
     tint, no strike, no leftover chrome — because the live view is the version
-    plus the reviewer's actions, and the honoring version only has to catch up.
-    The outcome has to reach the log too: what the reviewer sees settle and what
+    plus the user's actions, and the honoring version only has to catch up.
+    The outcome has to reach the log too: what the user sees settle and what
     Claude is told must be the same event."""
     page, _errors = open_page(browser, serve(SUGGESTION_PAGE))
     accept = page.locator("[data-cq-for='sug-refill'] .cq-sug-accept")
@@ -3946,7 +3946,7 @@ def test_a_widget_naming_its_own_words_does_not_read_the_runtimes(
     and offered to accept “Retry three times. 1 comment”. It reads the slot the way the
     page is read instead, which is what `says` is for — read before deciding, because a
     reject retires the very slot the label comes from, and a retired slot says nothing:
-    the toast then named the widget's id instead of the words the reviewer judged. Short
+    the toast then named the widget's id instead of the words the user judged. Short
     on purpose: the label cuts at 48 characters, which hid this on every shipped example."""
     url = serve(SHORT_SUGGESTION, anchored=[("now", "Retry three times")])
     page, errors = open_page(browser, url)
@@ -3962,7 +3962,7 @@ def test_a_widget_naming_its_own_words_does_not_read_the_runtimes(
 
 
 def test_accept_all_decides_every_pending_suggestion(browser, serve):
-    """The banner's button is a shortcut for the reviewer who has read the page
+    """The banner's button is a shortcut for the user who has read the page
     and wants all of it, so it has to reach the ones their eye didn't: the
     suggestion inside a widget, whose controls dock in flow rather than hang in
     the margin. Each is decided individually, so the log records what was
@@ -3998,10 +3998,10 @@ def test_accept_all_decides_every_pending_suggestion(browser, serve):
 
 
 def test_a_decision_the_server_never_took_goes_back_to_pending(browser, serve):
-    """The page settles a decision before the server has taken it, so the reviewer
+    """The page settles a decision before the server has taken it, so the user
     sees their own click land. That optimism is only honest if a send that fails
     puts it back: a suggestion that reads as settled while the log has nothing is
-    a change the next version won't carry and the reviewer won't know to repeat."""
+    a change the next version won't carry and the user won't know to repeat."""
     page, errors = open_page(browser, serve(SUGGESTION_PAGE))
     page.route("**/api/event", lambda route: route.abort())
     page.locator("[data-cq-for='sug-refill'] .cq-sug-accept").click()
@@ -4047,7 +4047,7 @@ def test_a_decision_travels_between_tabs_and_the_log_has_the_last_word(browser, 
     expect(second.get_by_role("button", name="Accept all (2)")).to_be_visible()
 
     # Now the race the controls make possible: a window cut off from the log still
-    # shows both buttons, so the reviewer can decide the other way there. Two
+    # shows both buttons, so the user can decide the other way there. Two
     # decisions on one change, and the log's order — not either tab's belief —
     # settles it for both once the cut-off one catches up.
     third, third_errors = open_page(browser, url)
@@ -4076,7 +4076,7 @@ def test_render_reports_markup_the_log_replays_over(browser, serve):
     """The static gate refuses a version that rewords what a decision rests on,
     but `chosen`, a card's column, and their kind say nothing a text diff can
     see — a version asserting them against the log used to lose silently, replay
-    painting the reviewer's state back over the author's intent. The render gate
+    painting the user's state back over the author's intent. The render gate
     reports exactly that: an id the author changed since the previous version
     and replay then wrote. Silence (carrying the old markup forward) and honor
     (authoring the decided state) both stay clean, because silence changes no
@@ -4170,7 +4170,7 @@ def test_replay_signatures_distinguish_widget_state_from_runtime_paint(browser, 
 
 
 def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
-    """A move outlives its toast: the card the reviewer moved stays visibly
+    """A move outlives its toast: the card the user moved stays visibly
     marked as recorded-but-unwritten and its grip says so, in the tab that moved
     it and in a fresh replay alike, because the runtime compares the page's state
     against the version's own snapshot rather than remembering who wrote what.
@@ -4214,7 +4214,7 @@ def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
         == "solid"
     )
 
-    # The honoring version authors the card where the reviewer put it; replay
+    # The honoring version authors the card where the user put it; replay
     # no-ops against it and the mark has nothing left to say.
     d = serve.page_dir
     honored = REPLAYED_PAGE.replace(IMPORTER_CARD, "").replace(
@@ -4241,7 +4241,7 @@ def test_a_moved_card_wears_its_pending_state_until_honored(browser, serve):
 
 
 def test_a_pending_suggestion_can_be_discussed_instead_of_decided(browser, serve):
-    """✓ and ✗ are the visible affordances, but a proposal a reviewer half-agrees
+    """✓ and ✗ are the visible affordances, but a proposal a user half-agrees
     with wants a sentence, not a verdict: the proposed words are ordinary page
     text, so selecting them and commenting works like anywhere else. Then the
     decision they eventually take has to reach the thread — rejecting retires the
@@ -4274,20 +4274,20 @@ def test_a_pending_suggestion_can_be_discussed_instead_of_decided(browser, serve
     page.locator("[data-cq-for='sug-refill'] .cq-sug-reject").click()
     expect(thread).to_have_class(re.compile(r"\bdetached\b"))
     assert painted(page, "cq-mark") == "", (
-        "a mark stayed painted on text the reviewer's own decision removed"
+        "a mark stayed painted on text the user's own decision removed"
     )
     assert errors == []
     page.close()
 
 
 def test_a_decision_already_in_the_log_retires_its_slot_at_load(browser, serve):
-    """The test above takes the decision in front of the reviewer, on a page that has
+    """The test above takes the decision in front of the user, on a page that has
     been up long enough for everything to have arrived. Here the log holds it before
     the page opens, which is what puts the anchor pass's skip list on the clock: the
     registry names the slot a decision retires (x-retired-when), and the registry
     arrives over the network, after the module that reads it has evaluated. Replay
     settles the suggestion on the first poll, so the pass that runs with it has to be
-    skipping cq-old already — or the page opens with a live mark on words the reviewer
+    skipping cq-old already — or the page opens with a live mark on words the user
     accepted away."""
     url = serve(
         SUGGESTION_PAGE, anchored=[("replace", "Refill every feeder each morning.")]
@@ -4309,7 +4309,7 @@ def test_a_decision_already_in_the_log_retires_its_slot_at_load(browser, serve):
         re.compile(r"\bdetached\b")
     )
     assert painted(page, "cq-mark") == "", (
-        "the first pass anchored inside a slot the reviewer's decision had retired"
+        "the first pass anchored inside a slot the user's decision had retired"
     )
     assert errors == []
     page.close()
@@ -4348,9 +4348,9 @@ RETIRED_WIDGET_PAGE = """<!doctype html>
 def test_a_label_in_a_retired_slot_leaves_the_page_with_the_slot(browser, serve):
     """A decided suggestion's losing slot is off the page, and a label inside it goes
     too. The label is the one thing that reads back over chrome — a pick mark says
-    "chosen" and declares those words the page's, which is what lets a reviewer point at
+    "chosen" and declares those words the page's, which is what lets a user point at
     it anywhere else — so the rule has to stop at the slot: a marker that outranks a look
-    must not outrank a decision, or a quote lands in the half the reviewer removed."""
+    must not outrank a decision, or a quote lands in the half the user removed."""
     url = serve(RETIRED_WIDGET_PAGE, anchored=[("sug-swap", "chosen")])
     interact.append_event(
         serve.page_dir,
@@ -4372,7 +4372,7 @@ def test_a_label_in_a_retired_slot_leaves_the_page_with_the_slot(browser, serve)
         re.compile(r"\bdetached\b")
     )
     assert painted(page, "cq-mark") == "", (
-        "a quote matched inside the half the reviewer accepted away, because the "
+        "a quote matched inside the half the user accepted away, because the "
         "label there declared itself the page speaking"
     )
     assert errors == []
@@ -4380,7 +4380,7 @@ def test_a_label_in_a_retired_slot_leaves_the_page_with_the_slot(browser, serve)
 
 
 def test_a_decision_that_empties_its_widget_detaches_the_element_anchor(browser, serve):
-    """An element anchor asks whether its section is still on the reviewer's page,
+    """An element anchor asks whether its section is still on the user's page,
     and for a suggestion that settles to nothing — an insertion refused — the
     markup's presence is the wrong answer: the thread read as attached while its
     outline drew nothing. Pending, the wrapper is a thing to point at; refused, the
@@ -4428,10 +4428,10 @@ def test_a_reply_renders_the_markdown_it_was_written_in(browser, serve):
     """A message's text is Markdown, rendered here by the page's own vendored layer —
     the wire carries the log's words and nothing else. Every raw tag renders as the
     characters it was written in: prose says Vec<T>, and swallowing it into an element
-    would lose the words in front of the reviewer with nothing saying so. What the
+    would lose the words in front of the user with nothing saying so. What the
     panel adds is the page's own dress: the theme's element rules are at document level
     and reach in, a fenced block colors from the tokenizer a version's <pre><code>
-    uses, and a bare URL arrives as the link the reviewer will want to follow."""
+    uses, and a bare URL arrives as the link the user will want to follow."""
     url = serve(REPLY_HOST_PAGE)
     d = serve.page_dir
     interact.append_event(
@@ -4463,7 +4463,7 @@ def test_a_reply_renders_the_markdown_it_was_written_in(browser, serve):
     expect(body.locator('pre code [data-cq-syn="kw"]').first).to_have_text("def")
     expect(body.locator('a[href="https://example.com/notes"]')).to_have_count(1)
     # The paragraph's asterisks are gone from the words, not merely hidden, and the
-    # raw tag's characters are still among them: what the reviewer can select is what
+    # raw tag's characters are still among them: what the user can select is what
     # the message says.
     text = body.inner_text()
     assert "**" not in text and "Vec<T>" in text
@@ -4473,7 +4473,7 @@ def test_a_reply_renders_the_markdown_it_was_written_in(browser, serve):
 
 def test_a_suggestion_shows_the_characters_it_proposes(browser, serve):
     """A suggestion's words are bound for the page verbatim, so the panel shows them
-    as typed. Rendering them would promise the reviewer an italic where the next
+    as typed. Rendering them would promise the user an italic where the next
     version carries the asterisks they wrote."""
     url = serve(REPLY_HOST_PAGE)
     interact.append_event(
@@ -4839,11 +4839,11 @@ def test_a_commented_block_says_so_to_a_screen_reader(browser, serve):
         "a poll that changed nothing still rewrote the block, so a screen reader re-reads it"
     )
 
-    # The line belongs to the runtime, not the document: a reviewer dragging across it
+    # The line belongs to the runtime, not the document: a user dragging across it
     # neither copies it nor quotes it.
     page.locator("#p1").click(click_count=3)
     assert "comment" not in page.evaluate("() => getSelection().toString()"), (
-        "the hidden line came along in the reviewer's own selection"
+        "the hidden line came along in the user's own selection"
     )
     page.locator(".cq-fab").click()
     assert "comment" not in composer_quote(page)["text"], (
@@ -5014,7 +5014,7 @@ def test_escape_on_a_declaring_control_does_exactly_what_it_says(browser, serve)
     """keyHint's contract: a control that declares its own Esc row consumes the
     press, so one press is one action. The draft editor's Esc used to be two — the
     edit cancelled and the runtime's ladder closed the panel behind it — and the
-    cancel discarded the reviewer's words against the never-lose-text norm. Now the
+    cancel discarded the user's words against the never-lose-text norm. Now the
     editor closes keeping the edit, the panel stands, and a grabbed card's Esc
     cancels the move and nothing else."""
     html = BOARD_PAGE.replace(
@@ -5148,7 +5148,7 @@ def test_the_composer_stands_in_the_margin_beside_the_passage(browser, serve):
     """Where the column leaves room, the box goes into the margin rather than onto the
     page: a 320px card over a 720px column stands on somebody's words wherever it
     lands, and the margin holds none by construction. The passage and its neighbours
-    stay fully readable while the reviewer writes about them."""
+    stay fully readable while the user writes about them."""
     page, errors = open_page(browser, serve(LONG_PAGE))
     resized(page, 1440, 900)
     page.locator("#p30").scroll_into_view_if_needed()
@@ -5213,7 +5213,7 @@ def test_a_float_the_panel_displaces_hands_the_page_no_sideways_scroll(browser, 
 
 
 def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser, serve):
-    """A draft survives the version it was written against — the reviewer opens the new
+    """A draft survives the version it was written against — the user opens the new
     one with unsent text — and the passage it was about may not have. The mark is what
     normally says which passage the box is on, so where there is no passage left to mark
     the quote is the only record there is, and it comes back: dashed and muted, the same
@@ -5231,7 +5231,7 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
 
     # Claude ships a version that rewrites the passage out. The page holds still — a
     # draft is mid-composition — and offers the new version as a chip, which the
-    # reviewer takes.
+    # user takes.
     d = serve.page_dir
     (d / "versions" / "v2.html").write_text(
         INLINE_PAGE.replace(
@@ -5267,7 +5267,7 @@ def test_a_draft_that_outlives_its_passage_still_says_what_it_was_about(browser,
     )
 
     # A stranded quote is the last copy of that passage anywhere on the page, so it is text
-    # a reviewer selects to keep. The anchor pass reruns on every arriving comment, and a
+    # a user selects to keep. The anchor pass reruns on every arriving comment, and a
     # rewritten node takes the selection with it.
     page.evaluate("""() => {
         const q = document.getElementById('cq-composer-quote');
@@ -5386,7 +5386,7 @@ def test_every_passage_in_a_real_page_can_be_quoted(browser, serve, example):
 def test_every_x_says_attribute_reaches_the_page_as_text(browser, serve, example):
     """The other half of what interact.UNREACHABLE_WORDS asks of a page — that half is
     in the gate, because a page-local widget is where a heading goes out of reach and the
-    gate is what a reviewer's page passes through; test_example_renders drives it over
+    gate is what a user's page passes through; test_example_renders drives it over
     these same examples.
 
     What the gate can't ask is whether the words arrived at all: it works from the
@@ -5459,7 +5459,7 @@ def test_a_widgets_attribute_takes_a_comment_like_any_other_passage(browser, ser
 
     # A second version reworking one card's prose and nothing else. The page follows it,
     # and the anchor is on a word only the runtime puts there, so it has to be found
-    # again in the version the reviewer now has.
+    # again in the version the user now has.
     d = serve.page_dir
     (d / "versions" / "v2.html").write_text(
         SAID_PAGE.replace("Waiting on the importer.", "Unblocked; starting Thursday.")
@@ -5606,9 +5606,9 @@ def test_a_widgets_label_takes_a_comment_inside_the_control_it_labels(browser, s
     """The other half of the pair above: a word the page says that the widget renders
     into a control. A tab's name is the case with nowhere else to go — the panel heading
     the theme paints stands down the moment the strip exists — so if the strip's button
-    can't be quoted, the reviewer can read the tab's name and never point at it.
+    can't be quoted, the user can read the tab's name and never point at it.
 
-    That is what a reviewer hit, twice, on a draft's heading: the words were the page's
+    That is what a user hit, twice, on a draft's heading: the words were the page's
     and the row holding them was marked as the runtime's. `.cq-ui` is a look, and
     anchoring's question is whose words these are — so the label answers it where it is
     written (relabel), and the nearest answer wins over the box around it.
@@ -5665,7 +5665,7 @@ def test_a_widgets_label_takes_a_comment_inside_the_control_it_labels(browser, s
 
 
 def test_a_selection_around_a_control_does_not_deaden_it(browser, serve):
-    """The other side of the guard above, and the one that cost more. A reviewer reads
+    """The other side of the guard above, and the one that cost more. A user reads
     the sentence a suggestion sits in, drags across it, and then presses Accept — a
     fresh press, long after that drag's own mouseup.
 
@@ -5707,7 +5707,7 @@ def test_the_comment_button_stands_on_no_control(browser, serve):
     """And the other way the same press is lost: not deadened but covered. A selection
     fills its lines, so the button placed beside it goes out to the column's right edge —
     into the margin, on the line the change starts, which is exactly where the row
-    deciding that change hangs. The reviewer's own gesture put the 💬 over the Accept
+    deciding that change hangs. The user's own gesture put the 💬 over the Accept
     they made it to reach, and the press did the one thing worse than nothing: it hit the
     button and opened a composer, because a press on the 💬 is not the outside click that
     dismisses it.
@@ -5849,7 +5849,7 @@ def test_a_quote_finds_its_passage_whatever_its_whitespace(browser, serve):
 
 def test_the_captured_quote_is_prose_a_file_can_hold(browser, serve):
     """A quote is read back as prose — seeded into the suggestion box, printed in the
-    panel, emitted into a Markdown blockquote by `review transcript` — and written to a
+    panel, emitted into a Markdown blockquote by `colloquy transcript` — and written to a
     UTF-8 file on the way. Source text is neither: it carries the author's line wraps,
     which break a blockquote open, and cutting it to length by UTF-16 unit can halve a
     character, which no UTF-8 file can hold. The server refuses that write and the
@@ -6030,13 +6030,13 @@ def test_code_is_colored_without_a_word_moving(browser, serve):
     """Colouring is spans, and the anchor pass is what spans break: the version file holds
     one run of characters where the DOM now holds a dozen nodes. A <span> is no text block,
     so both readings collapse to the same string — which is what lets the runtime color a
-    block the file knows nothing about, and what keeps `review comment` able to quote
+    block the file knows nothing about, and what keeps `colloquy comment` able to quote
     into one.
 
     One pass serves both shapes a page has for code, cq-code's `language` and a plain
     <pre><code class="language-*">, and neither guesses: a cq-code with no `language` stays
-    the color of its own ink. The quote below is written the way `review comment` writes
-    one — against the file — and spans a token boundary on its way back."""
+    the color of its own ink. The quote below is written the way `colloquy comment`
+    writes one — against the file — and spans a token boundary on its way back."""
     url = serve(CODE_PAGE)
     page, errors = open_page(browser, url)
     page.wait_for_function(
@@ -6608,7 +6608,7 @@ def test_a_repeated_passage_at_an_edge_anchors_where_it_was_picked(
 ):
     """A passage closing its section used to store a suffix clipped at the section's
     edge — one character, a bar the identical copy above it also cleared, so the mark
-    painted there while the reviewer was still composing. The neighbours now come from
+    painted there while the user was still composing. The neighbours now come from
     the whole document and the section only filters where the search may land, so the
     closing copy is told apart by the words of the section after it.
 
@@ -6844,7 +6844,7 @@ def test_one_neighbour_is_not_enough_to_identify_a_revised_comment(browser, serv
 
 def test_the_picker_runs_in_number_order_past_v9(browser, serve):
     """A version stays an integer from the server through runtime state; only the
-    picker and URL boundary render its file name. Order a review by those names
+    picker and URL boundary render its file name. Order the versions by those names
     instead and v10 lands between v1 and v2: the picker reads out of sequence,
     the diff offers the wrong base, and a reader on the newest version is told a
     newer one is waiting."""
@@ -6878,7 +6878,7 @@ def test_the_picker_runs_in_number_order_past_v9(browser, serve):
 
 def test_a_diff_anchors_to_the_side_it_was_read_on(browser, serve):
     """The case this exists for, and the one a section cannot narrow: a diff carries the
-    same line added and removed under a single id, so the reviewer commenting on the fix
+    same line added and removed under a single id, so the user commenting on the fix
     had their comment marked against the bug — stored that way, and shown to Claude that
     way in the next round.
 
@@ -6939,7 +6939,7 @@ def test_a_diff_anchors_to_the_side_it_was_read_on(browser, serve):
 # edit. In v2 the commented paragraph moves below the notes heading — same text,
 # new position — so the anchor has to re-find its passage rather than replay a
 # location. The draft's source lines are indented like any other child content;
-# the widget owes the reviewer the text without them.
+# the widget owes the user the text without them.
 SENTENCE = "The version stamp never lands, so migration 0041 replays on every deploy."
 DRAFT_TEXT = "Run the migration before deploying.\nIt is online."
 DRAFT_EDITED = "Run the migration before deploying. It takes about a minute."
@@ -6992,7 +6992,7 @@ def _draft_says(html, text, attrs=""):
 
 def _publish(page_dir, version, html, note):
     """Write a version and publish it through `version publish`, which lints it
-    and records a `note` event with what it says about the reviewer's decisions."""
+    and records a `note` event with what it says about the user's decisions."""
     (page_dir / "versions" / f"v{version}.html").write_text(html)
     result = CliRunner().invoke(
         interact.cli,
@@ -7010,11 +7010,11 @@ def _publish(page_dir, version, html, note):
     assert result.exit_code == 0, result.output
 
 
-def test_review_round_trip(browser, serve):
+def test_page_round_trip(browser, serve):
     """The loop the product is, driven through the real UI: select a passage and
     comment on it, drag a card to another column, rewrite a draft in place, then
     follow the next version and find the comment still anchored to its
-    (relocated) passage and the draft still wearing the reviewer's words. The
+    (relocated) passage and the draft still wearing the user's words. The
     final assertion is the event log — the trail Claude reads — down to the
     anchor's quote, the move's placement, and the edit's text."""
     page, errors = open_page(browser, serve(JOURNEY_V1))
@@ -7091,7 +7091,7 @@ def test_review_round_trip(browser, serve):
         "document.querySelector('.cq-thread .cq-quote').classList.contains('detached')"
     ), "the passage moved and the comment lost it"
     # v2's markup carries the original draft text — Claude hasn't honored the
-    # edit — so the reviewer's words must arrive by replay, not visibly revert.
+    # edit — so the user's words must arrive by replay, not visibly revert.
     page.wait_for_function(
         "t => document.querySelector('#draft-ops .cq-draft-body').textContent === t",
         arg=DRAFT_EDITED,
@@ -7133,7 +7133,7 @@ def test_review_round_trip(browser, serve):
 
 def test_a_comment_inside_a_widget_stays_out_of_what_the_widget_reads(browser, serve):
     """The line that tells a screen reader a block carries a comment is chrome, and chrome
-    inside a widget's own content is chrome in the reviewer's text: cq-draft seeds the
+    inside a widget's own content is chrome in the user's text: cq-draft seeds the
     editor they type into from its body div, so a line left in there arrives in the
     textarea and posts with the edit. It goes on the block the passage sits in, or on the
     element the anchor names — never on the inline run or body div in between."""
@@ -7147,7 +7147,7 @@ def test_a_comment_inside_a_widget_stays_out_of_what_the_widget_reads(browser, s
     )
     page.locator("#draft-ops .cq-draft-body").dblclick()
     assert page.locator("#draft-ops textarea").input_value() == DRAFT_TEXT, (
-        "the reviewer's editor opened on text the runtime had written into"
+        "the user's editor opened on text the runtime had written into"
     )
     assert errors == []
     page.close()
@@ -7156,16 +7156,16 @@ def test_a_comment_inside_a_widget_stays_out_of_what_the_widget_reads(browser, s
 def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
     """Two halves of one gesture, both of them invisible to a static lint.
 
-    The box: reading and editing are the same box, so the words a reviewer
+    The box: reading and editing are the same box, so the words a user
     double-clicked are still under the pointer when the editor opens. They were
     not — the runtime's general textarea rule wraps text in padding and a border
     and floors it at 64px, which moved the first character 9px right and 6px down
     and stretched a two-line draft — and text that jumps out from under a
-    double-click is the reviewer's aim thrown away.
+    double-click is the user's aim thrown away.
 
     The gesture: the word the browser would select is selected by the second
     mousedown and painted before dblclick arrives, so the handler that cleared it
-    afterwards ran a frame late and the reviewer saw a flash. That frame is
+    afterwards ran a frame late and the user saw a flash. That frame is
     timing, and no assertion here reaches it; what is assertable is the outcome
     on either side of it. Nothing on the page ends up selected, and the word the
     gesture named opens selected in the box — which is what a double-click means
@@ -7193,7 +7193,7 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
     # A 4px band above the box, and the box's own top-left corner. The band is where
     # the answer to "did the frame move" lives and no measurement of geometry can
     # reach it: an outset ring is paint, so every rect stayed exactly as asserted
-    # below while the frame the reviewer sees grew 2px on every side, corners
+    # below while the frame the user sees grew 2px on every side, corners
     # rounding wider to match. Bytes, not pixels — the same encoder over the same
     # content gives the same file, so identical files are identical paint.
     band = {
@@ -7256,7 +7256,7 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
     # Closing states both properties in reverse, and the focus half is a question
     # only because the ✎ is CSS-hidden for as long as the editor is there: #close
     # reaches for it the instant the editor goes, so a style that hadn't caught up
-    # would drop a keyboard reviewer back at the top of the page.
+    # would drop a keyboard user back at the top of the page.
     page.keyboard.press("Escape")
     expect(page.locator("#draft-ops .cq-draft-pencil")).to_be_focused()
     assert page.locator("#draft-ops").bounding_box() == host, (
@@ -7278,7 +7278,7 @@ def test_double_clicking_a_draft_leaves_every_word_where_it_was(browser, serve):
 
 
 def test_a_foreign_edit_waits_for_a_live_draft_and_replays_in_order(browser, serve):
-    """Replay never replaces words while the reviewer is typing them.
+    """Replay never replaces words while the user is typing them.
 
     Deferring one edit must also hold later edits for that draft: otherwise the
     later absolute value lands first and the deferred earlier value overwrites it
@@ -7718,14 +7718,14 @@ def test_action_history_is_bounded_by_the_pinned_version(browser, serve):
 def test_an_acknowledged_decision_still_survives_the_next_version(browser, serve):
     """The round trip above, differing in one fact: the agent has acknowledged the
     actions before v2 publishes. That is the ordinary case — the agent writes a
-    version *because* it was handed the reviewer's edits — and it used to be the
+    version *because* it was handed the user's edits — and it used to be the
     one that lost them: replay stopped at the handoff cursor, on the premise
     that a version written after seeing an action encodes it. Nothing checks that
     premise, so a version that quietly omits the state re-emitted the widget as
-    untouched and the reviewer's work vanished with no error anywhere.
+    untouched and the user's work vanished with no error anywhere.
 
     Acknowledgement is not assent. Only the next version's markup can say what the
-    agent did with an edit, and until it says otherwise the log is what the reviewer
+    agent did with an edit, and until it says otherwise the log is what the user
     did."""
     url = serve(JOURNEY_V1)
     d = serve.page_dir
@@ -7751,7 +7751,7 @@ def test_an_acknowledged_decision_still_survives_the_next_version(browser, serve
             "detail": {"text": DRAFT_EDITED},
         },
     )
-    # The highest reviewer event reached context, so everything so far is ours to answer.
+    # The highest user event reached context, so everything so far is ours to answer.
     interact.cmd_ack(d, interact.read_events(d)[-1]["seq"])
     # And the agent answers with a version that carries neither — the page generator
     # emitting its own idea of the board and the draft, as one did for five
@@ -7772,12 +7772,12 @@ def test_an_acknowledged_decision_still_survives_the_next_version(browser, serve
 
 
 def test_a_comment_written_on_an_edited_draft_lands_on_their_words(browser, serve):
-    """`review comment` reads the version file plus the log; the reviewer's tab reads
+    """`colloquy comment` reads the version file plus the log; the user's tab reads
     the DOM replay builds from the same two. An edited draft is where those readings
     used to drift — the file holds words the page stopped showing — so write the anchor
-    blind, on the reviewer's own words, and prove the page paints it. The words the edit
+    blind, on the user's own words, and prove the page paints it. The words the edit
     replaced are refused at the CLI, naming the edit, because posted they would detach
-    in front of the reviewer."""
+    in front of the user."""
     url = serve(JOURNEY_V1)
     d = serve.page_dir
     interact.append_event(
@@ -7793,13 +7793,12 @@ def test_a_comment_written_on_an_edited_draft_lands_on_their_words(browser, serv
     )
     refused = CliRunner().invoke(
         interact.cli,
-        ["review", "comment", str(d), "--quote", "It is online.", "--text", "x"],
+        ["comment", str(d), "--quote", "It is online.", "--text", "x"],
     )
     assert refused.exit_code != 0 and "rewrote § draft-ops" in refused.output
     written = CliRunner().invoke(
         interact.cli,
         [
-            "review",
             "comment",
             str(d),
             "--quote",
@@ -7852,12 +7851,12 @@ def test_a_press_takes_the_keys_a_button_came_with(browser, serve):
     is one test rather than a leg in each widget's own. What it has to get right is the
     two things a real <button> did for free.
 
-    Activation: the ✎ on a draft is the door a keyboard reviewer uses, and if a span
+    Activation: the ✎ on a draft is the door a keyboard user uses, and if a span
     swallowed Enter there would be no way in at all.
 
     And once per press however long the key is held. A real button fired on keyup; a
     keydown listener hears the key repeat, and a mark that toggles per repeat posts a
-    `choose` per repeat — a stuck key filling the log with decisions the reviewer never
+    `choose` per repeat — a stuck key filling the log with decisions the user never
     made. Repeats are dispatched rather than driven, because no automation holds a key
     down; what the browser delivers is exactly this event with `repeat` set."""
     page, errors = open_page(browser, serve(KEYS_PAGE))
@@ -8017,7 +8016,7 @@ def test_the_half_page_keys_move_the_region_the_reader_is_scrolling(browser, ser
     breakpoint the sheet covers the page and the page hands scrolling over with it — one
     gesture moves one region, and while the sheet is up that region is its thread list.
     A key is no different from a wheel there: a page scrolling behind the sheet shows
-    the reviewer nothing, so the key reads as dead, and the document is somewhere else
+    the user nothing, so the key reads as dead, and the document is somewhere else
     when the sheet closes."""
     page, errors = open_page(browser, serve(LONG_PAGE, comments=12))
     page.get_by_role("button", name="Comments", exact=False).click()
@@ -8059,7 +8058,7 @@ def test_the_half_page_keys_move_the_region_the_reader_is_scrolling(browser, ser
     panel_settled(page)
     (page_was, threads_was), (page_now, threads_now) = press_d()
     assert page_now == page_was, (
-        "the page moved behind the covering sheet, where the reviewer cannot see it"
+        "the page moved behind the covering sheet, where the user cannot see it"
     )
     assert threads_now > threads_was, "the sheet did not move for the key it now owns"
     assert errors == []
@@ -8086,10 +8085,10 @@ def test_the_version_diff_answers_v(browser, serve):
 
 def test_restating_a_widget_is_how_a_version_takes_the_pen_back(browser, serve):
     """The other end of the rule above. Since the log outranks the markup, a
-    version cannot revise a draft the reviewer has rewritten — replay would paint
+    version cannot revise a draft the user has rewritten — replay would paint
     their words straight back over it, and Claude's correction would reach nobody.
     `restated` is the one way markup wins: it retracts what came before it, so
-    the new words render and the reviewer sees the widget marked as one whose
+    the new words render and the user sees the widget marked as one whose
     decision this version undid.
 
     It costs a word, where losing a decision used to cost nothing, which is the
@@ -8119,7 +8118,7 @@ def test_restating_a_widget_is_how_a_version_takes_the_pen_back(browser, serve):
     page, errors = open_page(browser, url.replace("v1.html", "v2.html"))
     body = page.locator("#draft-ops .cq-draft-body")
     expect(body).to_have_text(corrected)
-    # And the reviewer is told, rather than left to notice: their edit is gone,
+    # And the user is told, rather than left to notice: their edit is gone,
     # which without a mark reads exactly like a draft they never touched.
     expect(page.locator("#draft-ops[data-cq-restated]")).to_have_count(1)
     assert errors == []
@@ -8131,7 +8130,7 @@ def test_a_retraction_outlives_the_version_that_made_it(browser, serve):
     v3 has nothing to declare, because it is not the one taking anything back.
 
     So the retraction cannot live in the markup, or v3's silence would read as
-    "carry the decision" and hand the reviewer's edit straight back — the same
+    "carry the decision" and hand the user's edit straight back — the same
     resurrection the branch removed, one version later and just as quiet.
     Publishing records it in the log instead, where it is a fact with a version
     on it and every later version inherits it for free."""
@@ -8192,7 +8191,7 @@ def test_a_decision_not_yet_honored_wears_the_pending_mark(browser, serve):
     widget — choose had its mark, edit its tint, and move had nothing, which is
     how a dragged card's fate stayed invisible once the toast faded. The mark
     clears the moment a version carries the decision, and the diff stays quiet
-    about an honored move: the reviewer's own drag is not news to them."""
+    about an honored move: the user's own drag is not news to them."""
     page, errors = open_page(browser, serve(JOURNEY_V1))
 
     # A real drag — the pointer path, where the gesture gate and the poll meet.
@@ -8239,7 +8238,7 @@ def test_a_decision_not_yet_honored_wears_the_pending_mark(browser, serve):
     )
     assert not page.evaluate(
         "document.getElementById('card-x').classList.contains('cq-ins-block')"
-    ), "the reviewer's own honored drag marked as a change"
+    ), "the user's own honored drag marked as a change"
     assert errors == []
     page.close()
 
@@ -8248,7 +8247,7 @@ def test_the_diff_marks_a_card_the_author_relocated(browser, serve):
     """A pure state change has no text of its own, so the content diff was blind
     to it: a card in a new column read as nothing changed. The state half
     compares declared facets, so the author moving a card between versions —
-    with no reviewer action behind it — marks the card itself. The card alone:
+    with no user action behind it — marks the card itself. The card alone:
     an id'd element nested inside it rode along rather than changing columns,
     and marking it too would double-tint one move."""
     noted = _CARD.replace(
@@ -8485,7 +8484,7 @@ def dead_pid():
 
 @contextmanager
 def live_watcher(page_dir, page):
-    """Bump heartbeat.json for the duration of the block, as `review wait` does.
+    """Bump heartbeat.json for the duration of the block, as `colloquy wait` does.
 
     Both ends wait for the poll that carries them, so the assertions on either side
     read a page that has already been told a watcher arrived or left. The first beat
@@ -8512,7 +8511,7 @@ def live_watcher(page_dir, page):
 def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, dead_pid):
     """The banner may claim no more than the page directory can prove. A watch that
     has stopped must read differently from a watch with nothing to report, because
-    otherwise the reviewer's only way to tell them apart is to ask."""
+    otherwise the user's only way to tell them apart is to ask."""
     page, _ = open_page(browser, serve(LONG_PAGE, comments=1))
     d = tmp_path / "page"
     text, dot = page.locator(".cq-status-text"), page.locator(".cq-dot")
@@ -8557,7 +8556,7 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
         "Claude isn't watching right now. 1 update waiting. It picks them up next turn."
     )
 
-    # The failure the whole mechanism exists for: `review wait` printed, set this
+    # The failure the whole mechanism exists for: `colloquy wait` printed, set this
     # status, and Claude never came back. The handoff mark is what dates it.
     declare("working", "picking up 1 update", handoff=True, quiet_for=20 * 60)
     expect(text).to_have_text(
@@ -8572,7 +8571,7 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
     # A dead session needs no timeout at all — the owning pid is simply gone.
     declare("working", "running the migration", session_pid=dead_pid)
     expect(text).to_have_text(
-        "The Claude session reviewing this page has ended. 1 update waiting."
+        "The Claude session behind this page has ended. 1 update waiting."
         " Start one in the terminal to pick it up."
     )
 
@@ -8580,19 +8579,20 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
     expect(text).to_have_text(re.compile(r"^Codex is working — revising the plan"))
 
     declare("idle")
-    expect(text).to_have_text("Review closed")
+    expect(text).to_have_text("Colloquy closed")
     page.close()
 
 
 # ---------- anchors written without a browser ----------
-# `review comment` writes an anchor by reading the version file; the runtime resolves it
-# against the DOM that file becomes. Nothing static can check that those two readings
-# agree, and every way they can come apart — a widget's upgrade, an attribute rendered
-# as text, the space a block boundary stands for — only exists once the page is loaded.
+# `colloquy comment` writes an anchor by reading the version file; the runtime
+# resolves it against the DOM that file becomes. Nothing static can check that those
+# two readings agree, and every way they can come apart — a widget's upgrade, an
+# attribute rendered as text, the space a block boundary stands for — only exists
+# once the page is loaded.
 
 
 def written_anchors(page_dir, html, limit=40):
-    """Anchors `review comment` would write for windows over a page's own prose. A
+    """Anchors `colloquy comment` would write for windows over a page's own prose. A
     window the page says twice, or one crossing a fence, is refused on purpose —
     skipping those here is that refusal, and what survives is exactly what the command
     promises to place."""
@@ -8617,7 +8617,7 @@ def written_anchors(page_dir, html, limit=40):
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda p: p.stem)
 def test_an_anchor_written_from_the_file_lands_on_the_page(browser, serve, example):
-    """The claim `review comment` makes is that a quote read out of the version file
+    """The claim `colloquy comment` makes is that a quote read out of the version file
     names the same passage in the browser. Checked on the pages people actually write,
     because the ways it can fail are all theirs: a diagram that renders to a picture, an
     attribute the runtime turns into text, two paragraphs whose join is a space in one
@@ -8704,7 +8704,6 @@ def test_a_written_anchor_keeps_its_copy_when_the_page_grows_another(browser, se
     result = CliRunner().invoke(
         interact.cli,
         [
-            "review",
             "comment",
             str(d),
             "--quote",
@@ -8736,7 +8735,7 @@ def test_a_written_anchor_keeps_its_copy_when_the_page_grows_another(browser, se
 
 
 def test_a_written_comment_keeps_its_originating_agent(browser, serve):
-    """An agent's side of a thread is the reviewer's side with the author flipped.
+    """An agent's side of a thread is the user's side with the author flipped.
     Its label belongs to the message, so another host claiming the page later
     cannot rewrite who said it."""
     url = serve(TWIN_V1)
@@ -8750,7 +8749,6 @@ def test_a_written_comment_keeps_its_originating_agent(browser, serve):
         .invoke(
             interact.cli,
             [
-                "review",
                 "comment",
                 str(d),
                 "--quote",
@@ -8963,7 +8961,7 @@ def test_the_handed_over_url_opens_the_latest_version(browser, serve):
 
     # The version switcher and the latest chip leave the document by assigning
     # location.href, which is a fresh top-level navigation carrying no query. A cookie
-    # the browser withheld from it would land the reviewer on a refusal.
+    # the browser withheld from it would land the user on a refusal.
     page.evaluate("() => { location.href = '/' }")
     page.wait_for_url(url.rsplit("?", 1)[0])
     expect(page.locator(".cq-banner")).to_be_visible()

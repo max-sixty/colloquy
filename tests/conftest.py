@@ -43,7 +43,7 @@ def isolated_session(tmp_path_factory, monkeypatch):
     """Keep the developer's session out of every fixture. Their real
     ~/.config/colloquy overlay would otherwise change what init vendors and check
     measures, and a page tagged with the session running the tests is a page the
-    review-guard hook reports as an unattended review at the end of every turn —
+    loop-guard hook reports as an unattended page at the end of every turn —
     a dozen throwaway fixtures per run. An untagged page is nobody's, which is
     what a fixture should be."""
     monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))

@@ -6,7 +6,7 @@
  * status dot are theme CSS.
  *
  * The chips are real text for the same reason every x-says attribute is: the
- * reviewer has to be able to select and quote a word the page says. They aren't
+ * user has to be able to select and quote a word the page says. They aren't
  * x-says because that pass renders one run of words at an edge a pseudo-element
  * could have reached, while this row is a list placed after the title — which is
  * the line past which a widget needs a module of its own. */

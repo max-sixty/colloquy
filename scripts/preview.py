@@ -9,7 +9,7 @@ this builds the directory the runtime expects and hands it to `server run`, the 
 path a session takes.
 
 The result is a page, not a picture of one: it takes comments. Served from an
-agent session, `review wait` on the same directory carries them to the agent and the
+agent session, `colloquy wait` on the same directory carries them to the agent and the
 example gets revised like any other page; run from a bare shell, they queue in
 the log until an agent next reads it. Which of those happens follows from the
 host identity the launcher puts in the environment.

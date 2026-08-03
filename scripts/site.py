@@ -178,7 +178,7 @@ def build(out: Path) -> None:
     # whoever is running the build. An empty config home is what withholds it —
     # HOME stays, because uv keeps its cache there and a moved HOME re-downloads
     # Playwright on every build. Dropping the session leaves these throwaway page
-    # directories nobody's, and so out of the review guard.
+    # directories nobody's, and so out of the watch guard.
     env = {k: v for k, v in os.environ.items() if not k.startswith("COLLOQUY_")}
     env.pop("CLAUDE_CODE_SESSION_ID", None)
     with tempfile.TemporaryDirectory() as config_home:

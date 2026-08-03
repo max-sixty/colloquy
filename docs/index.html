@@ -67,13 +67,13 @@
             src="session-light.png"
             width="1280"
             height="953"
-            alt="A colloquy session in the browser: a migration plan with a comment anchored
+            alt="A live colloquy in the browser: a migration plan with a comment anchored
 to a highlighted passage, Claude's reply in the thread, a version picker reading
 v2 (latest), and a banner reading 'Claude is listening'."
           />
         </picture>
         <figcaption>
-          A session mid-review. The reviewer asked about a rollback edge case; Claude
+          A colloquy in flight. The user asked about a rollback edge case; Claude
           replied in the thread and shipped v2 covering it. The picker holds each
           immutable version with its changelog, the Δ toggle marks what changed, and the
           banner tracks whether Claude is working or listening.
@@ -143,8 +143,8 @@ v2 (latest), and a banner reading 'Claude is listening'."
           </li>
           <li id="loop-wake">
             <strong>Your comment reaches the session.</strong> On Claude Code, a
-            background <code>review wait</code> wakes or joins the agent. On Codex, the
-            agent keeps the handover turn active and polls the exact wait session.
+            background <code>colloquy wait</code> wakes or joins the agent. On Codex,
+            the agent keeps the handover turn active and polls the exact wait session.
             Either way it acknowledges only after a complete, untruncated batch is in
             model context, so "printed" cannot masquerade as "seen".
           </li>
@@ -156,12 +156,12 @@ v2 (latest), and a banner reading 'Claude is listening'."
           </li>
           <li id="loop-signoff">
             <strong>Conclude deliberately.</strong> Pages seeking approval offer "✓
-            Looks good"; comments-only pages offer a neutral "End review" instead.
+            Looks good"; comments-only pages offer a neutral "End colloquy" instead.
             Approval records assent and can leave the page live for follow-up; ending
             comments is a separate event. After either complete batch is received, an
             explicit idle state closes the agent loop when its work there is finished.
-            <code>review transcript</code> prints the whole thread as Markdown for a PR
-            description.
+            <code>colloquy transcript</code> prints the whole thread as Markdown for a
+            PR description.
           </li>
         </ol>
       </section>
@@ -171,9 +171,9 @@ v2 (latest), and a banner reading 'Claude is listening'."
           src="demo.gif"
           width="1120"
           height="700"
-          alt="A live colloquy review. The reviewer selects Backfill history and writes a
+          alt="A live colloquy page. The user selects Backfill history and writes a
 comment while the passage stays highlighted. The agent replies, publishes a new version
-whose rehearsal count advances, and the reviewer drags an on-call task to During."
+whose rehearsal count advances, and the user drags an on-call task to During."
         />
         <figcaption>
           The real loop, recorded by <code>scripts/record-demo.sh</code>: comment on a
@@ -185,8 +185,8 @@ whose rehearsal count advances, and the reviewer drags an on-call task to During
         <h2>Example: Re-prioritize a queue</h2>
         <p id="interact-setup">
           The <a href="../examples/triage-board.html">release-triage example</a> hands
-          the ordering to the reviewer. Run the shipped page from a checkout, then drag
-          “CSV export quotes numerics” from “Fix in 2.4.1” to “Blocking release”:
+          the ordering to the user. Run the shipped page from a checkout, then drag “CSV
+          export quotes numerics” from “Fix in 2.4.1” to “Blocking release”:
         </p>
         <pre><code>scripts/preview.py triage-board</code></pre>
         <figure>

@@ -6,12 +6,12 @@
  *
  * Loaded after theme.css by every page under docs/, so the pages open the same
  * from a checkout as from the web. The examples the build exports carry the
- * theme inlined and do not link this file; a copy of a review page is that page,
+ * theme inlined and do not link this file; a copy of a colloquy page is that page,
  * not a page of this site. */
 
 /* ---------- what a phone changes ---------- */
 
-/* A review page is served to the machine its session runs on, so the theme sizes
+/* A colloquy page is served to the machine its session runs on, so the theme sizes
  * for a desktop and lets a token like `$XDG_CONFIG_HOME/colloquy/` set the width
  * of the cell holding it. The site is read wherever the link is opened, and on a
  * 390px column that one token is wider than the page: it takes the table with
@@ -26,7 +26,7 @@ code { overflow-wrap: anywhere; }
  * than the words under it would be a second column to read, and there is one
  * thing here to read. Nothing in it changes metrics on hover or on the current
  * page — a nav that reflows under the pointer is the one gesture a nav exists
- * for, thrown away (see "The page holds still under the reviewer's aim"). */
+ * for, thrown away (see "The page holds still under the user's aim"). */
 nav.sitenav { display: flex; flex-wrap: wrap; align-items: baseline;
               gap: var(--sp-2) var(--sp-3); margin: 0 0 40px;
               padding-bottom: 10px; border-bottom: 1px solid var(--rule);

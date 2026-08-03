@@ -100,7 +100,7 @@ function parseDiff(text) {
 // the deleted `if x:` and the added `if x is None:` are consecutive. The old side is
 // ctx+del and the new side ctx+add; each is a version of the file that really existed.
 // A context line is written twice and the new side lands last, because the new side is
-// the text the reviewer is being asked to approve.
+// the text the user is being asked to approve.
 //
 // Without the +/−/space column. The prefix is the diff's word about the line, not the
 // file's, and a tokenizer reads it as the file's: yaml calls a leading `-` a sequence
