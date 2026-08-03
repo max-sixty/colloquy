@@ -2,7 +2,7 @@
  * per line, children indented further than their parent, a trailing slash (or
  * having children) marking a directory, and trailing +N/-N tokens rendering as
  * change badges. The PR-walkthrough and architecture-map shape. */
-import { once, failSoft } from "/colloquy.js";
+import { dataBody, once, failSoft } from "/colloquy.js";
 
 const BADGE = /^[+-]\d+$/;
 
@@ -58,7 +58,7 @@ customElements.define(
   class extends HTMLElement {
     connectedCallback() {
       if (!once(this)) return;
-      const source = this.textContent.replace(/^\n+/, "").replace(/\s+$/, "");
+      const source = dataBody(this).replace(/^\n+/, "").replace(/\s+$/, "");
       try {
         const nodes = parseTree(source);
         if (!nodes.length) throw new Error("empty tree");

@@ -1,306 +1,505 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>how colloquy works</title>
-<meta name="description" content="The mechanism behind colloquy: one uv script, an append-only event log, host-specific review loops, and a vendored theme-and-widget layer.">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-<meta property="og:type" content="website">
-<meta property="og:title" content="how colloquy works">
-<meta property="og:description" content="One uv script, an append-only event log, host-specific review loops, and a vendored theme-and-widget layer.">
-<meta property="og:url" content="https://max-sixty.github.io/colloquy/how-it-works.html">
-<meta property="og:image" content="https://max-sixty.github.io/colloquy/session-light.png">
-<meta name="twitter:card" content="summary_large_image">
-<link rel="stylesheet" href="../plugins/colloquy/skills/colloquy/assets/theme.css">
-<link rel="stylesheet" href="site.css">
-</head>
-<body>
-<main>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>how colloquy works</title>
+    <meta
+      name="description"
+      content="The mechanism behind colloquy: one uv script, an append-only event log, host-specific review loops, and a vendored theme-and-widget layer."
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="how colloquy works" />
+    <meta
+      property="og:description"
+      content="One uv script, an append-only event log, host-specific review loops, and a vendored theme-and-widget layer."
+    />
+    <meta
+      property="og:url"
+      content="https://max-sixty.github.io/colloquy/how-it-works.html"
+    />
+    <meta
+      property="og:image"
+      content="https://max-sixty.github.io/colloquy/session-light.png"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link
+      rel="stylesheet"
+      href="../plugins/colloquy/skills/colloquy/assets/theme.css"
+    />
+    <link rel="stylesheet" href="site.css" />
+  </head>
+  <body>
+    <main>
+      <nav class="sitenav" aria-label="Site">
+        <a class="brand" href="index.html">colloquy</a>
+        <a href="examples.html">Examples</a>
+        <a href="how-it-works.html" aria-current="page">How it works</a>
+        <a href="customizing.html">Customize</a>
+        <a href="https://github.com/max-sixty/colloquy">GitHub</a>
+      </nav>
 
-<nav class="sitenav" aria-label="Site">
-<a class="brand" href="index.html">colloquy</a>
-<a href="examples.html">Examples</a>
-<a href="how-it-works.html" aria-current="page">How it works</a>
-<a href="customizing.html">Customize</a>
-<a href="https://github.com/max-sixty/colloquy">GitHub</a>
-</nav>
+      <header id="top">
+        <p class="eyebrow">how it works</p>
+        <h1>How colloquy works</h1>
+        <p class="lede" id="lede">
+          No daemon, no database, no build step: the server starts with the session and
+          stops with it. One <code>uv</code> script serves the page and mediates an
+          append-only event log; an ES-module runtime renders the widgets and injects
+          the comments, threads, banner, and version picker.
+        </p>
+      </header>
 
-<header id="top">
-<p class="eyebrow">how it works</p>
-<h1>How colloquy works</h1>
-<p class="lede" id="lede">No daemon, no database, no build step: the server starts with
-the session and stops with it. One
-<code>uv</code> script serves the page and mediates an append-only event log; an
-ES-module runtime renders the widgets and injects the comments, threads, banner,
-and version picker.</p>
-</header>
+      <section id="wake">
+        <h2>The loop</h2>
 
-<section id="wake">
-<h2>The loop</h2>
+        <svg
+          class="arch"
+          id="arch"
+          viewBox="0 0 720 190"
+          role="img"
+          aria-labelledby="arch-title"
+        >
+          <title id="arch-title">
+            The agent writes version files and runs colloquy commands, both reaching the
+            browser through interact.py's loopback server; review wait carries a comment
+            back into the agent's context.
+          </title>
+          <defs>
+            <marker
+              id="arr"
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0 0 L8 4 L0 8 z" fill="var(--muted-2)"></path>
+            </marker>
+            <marker
+              id="arr-accent"
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0 0 L8 4 L0 8 z" fill="var(--accent)"></path>
+            </marker>
+          </defs>
+          <g>
+            <rect
+              x="8"
+              y="44"
+              width="180"
+              height="68"
+              rx="8"
+              fill="var(--card)"
+              stroke="var(--rule)"
+            ></rect>
+            <text
+              x="98"
+              y="72"
+              text-anchor="middle"
+              font-size="14"
+              font-weight="600"
+              fill="var(--ink)"
+            >
+              agent session
+            </text>
+            <text
+              x="98"
+              y="93"
+              text-anchor="middle"
+              font-size="11.5"
+              fill="var(--muted)"
+            >
+              version files · commands
+            </text>
+          </g>
+          <g>
+            <rect
+              x="270"
+              y="44"
+              width="180"
+              height="68"
+              rx="8"
+              fill="var(--card)"
+              stroke="var(--rule)"
+            ></rect>
+            <text
+              x="360"
+              y="72"
+              text-anchor="middle"
+              font-size="14"
+              font-weight="600"
+              fill="var(--ink)"
+            >
+              interact.py
+            </text>
+            <text
+              x="360"
+              y="93"
+              text-anchor="middle"
+              font-size="11.5"
+              fill="var(--muted)"
+            >
+              loopback port · event log
+            </text>
+          </g>
+          <g>
+            <rect
+              x="532"
+              y="44"
+              width="180"
+              height="68"
+              rx="8"
+              fill="var(--card)"
+              stroke="var(--rule)"
+            ></rect>
+            <text
+              x="622"
+              y="72"
+              text-anchor="middle"
+              font-size="14"
+              font-weight="600"
+              fill="var(--ink)"
+            >
+              your browser
+            </text>
+            <text
+              x="622"
+              y="93"
+              text-anchor="middle"
+              font-size="11.5"
+              fill="var(--muted)"
+            >
+              comments, drags, picks
+            </text>
+          </g>
+          <line
+            x1="192"
+            y1="78"
+            x2="264"
+            y2="78"
+            stroke="var(--muted-2)"
+            stroke-width="1.5"
+            marker-end="url(#arr)"
+          ></line>
+          <line
+            x1="454"
+            y1="78"
+            x2="526"
+            y2="78"
+            stroke="var(--muted-2)"
+            stroke-width="1.5"
+            marker-end="url(#arr)"
+          ></line>
+          <path
+            d="M622 116 L622 160 L98 160 L98 122"
+            fill="none"
+            stroke="var(--accent)"
+            stroke-width="1.5"
+            marker-end="url(#arr-accent)"
+          ></path>
+          <text
+            x="360"
+            y="152"
+            text-anchor="middle"
+            font-size="12"
+            fill="var(--accent)"
+          >
+            review wait carries a comment into the agent's context
+          </text>
+        </svg>
 
-<svg class="arch" id="arch" viewBox="0 0 720 190" role="img"
-     aria-labelledby="arch-title">
-<title id="arch-title">The agent writes version files and runs colloquy commands,
-both reaching the browser through interact.py's loopback server; review wait carries
-a comment back into the agent's context.</title>
-<defs>
-<marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7"
-        markerHeight="7" orient="auto-start-reverse">
-  <path d="M0 0 L8 4 L0 8 z" fill="var(--muted-2)"></path>
-</marker>
-<marker id="arr-accent" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7"
-        markerHeight="7" orient="auto-start-reverse">
-  <path d="M0 0 L8 4 L0 8 z" fill="var(--accent)"></path>
-</marker>
-</defs>
-<g>
-<rect x="8" y="44" width="180" height="68" rx="8" fill="var(--card)"
-      stroke="var(--rule)"></rect>
-<text x="98" y="72" text-anchor="middle" font-size="14" font-weight="600"
-      fill="var(--ink)">agent session</text>
-<text x="98" y="93" text-anchor="middle" font-size="11.5"
-      fill="var(--muted)">version files · commands</text>
-</g>
-<g>
-<rect x="270" y="44" width="180" height="68" rx="8" fill="var(--card)"
-      stroke="var(--rule)"></rect>
-<text x="360" y="72" text-anchor="middle" font-size="14" font-weight="600"
-      fill="var(--ink)">interact.py</text>
-<text x="360" y="93" text-anchor="middle" font-size="11.5"
-      fill="var(--muted)">loopback port · event log</text>
-</g>
-<g>
-<rect x="532" y="44" width="180" height="68" rx="8" fill="var(--card)"
-      stroke="var(--rule)"></rect>
-<text x="622" y="72" text-anchor="middle" font-size="14" font-weight="600"
-      fill="var(--ink)">your browser</text>
-<text x="622" y="93" text-anchor="middle" font-size="11.5"
-      fill="var(--muted)">comments, drags, picks</text>
-</g>
-<line x1="192" y1="78" x2="264" y2="78" stroke="var(--muted-2)"
-      stroke-width="1.5" marker-end="url(#arr)"></line>
-<line x1="454" y1="78" x2="526" y2="78" stroke="var(--muted-2)"
-      stroke-width="1.5" marker-end="url(#arr)"></line>
-<path d="M622 116 L622 160 L98 160 L98 122" fill="none" stroke="var(--accent)"
-      stroke-width="1.5" marker-end="url(#arr-accent)"></path>
-<text x="360" y="152" text-anchor="middle" font-size="12"
-      fill="var(--accent)">review wait carries a comment into the agent's context</text>
-</svg>
+        <p id="wait-trick">
+          The two hosts carry that context through different loops. On Claude Code,
+          <code>review wait</code> is a background task whose completion joins the same
+          queue as a terminal message: an idle session takes it as a new turn, and a
+          working one folds it in between tool calls. On Codex, the wait runs in a
+          unified-exec session inside the turn that handed over the URL; the agent keeps
+          that turn active and polls that exact session until it returns. A detached
+          Codex command has no completion that can start a future turn, which is why the
+          loop stays active there.
+        </p>
+        <p id="wait-ack">
+          After either host puts a complete, untruncated JSON batch in model context,
+          the agent explicitly acknowledges its highest sequence before acting. A
+          truncated batch is acknowledged not at all and retrieved again with enough
+          room for the whole result. Until acknowledgement the next wait prints the
+          events again. That small separation makes “the process printed it” and “the
+          agent saw it” two different facts, so an abandoned wait cannot silently
+          consume a reviewer's words.
+        </p>
+        <p id="wait-stateless">
+          The server and the wait both go down with the session, and the page directory
+          is the whole state.
+        </p>
+      </section>
 
-<p id="wait-trick">The two hosts carry that context through different loops. On Claude
-Code, <code>review wait</code> is a background task whose completion joins the same queue
-as a terminal message: an idle session takes it as a new turn, and a working one folds
-it in between tool calls. On Codex, the wait runs in a unified-exec session inside the
-turn that handed over the URL; the agent keeps that turn active and polls that exact
-session until it returns. A detached Codex command has no completion that can start a
-future turn, which is why the loop stays active there.</p>
-<p id="wait-ack">After either host puts a complete, untruncated JSON batch in model
-context, the agent explicitly acknowledges its highest sequence before acting. A
-truncated batch is acknowledged not at all and retrieved again with enough room for the
-whole result. Until acknowledgement the next wait prints the events again. That small
-separation makes “the process printed it” and “the agent saw it” two different facts,
-so an abandoned wait cannot silently consume a reviewer's words.</p>
-<p id="wait-stateless">The server and the wait both go down with the session, and the page
-directory is the whole state.</p>
-</section>
+      <section id="agent">
+        <h2>A command never edits the document</h2>
+        <p id="agent-split">
+          The agent has two ways in, and only one of them is HTML. A version is a file:
+          the agent writes the whole document into the page directory, an ordinary file
+          write with nothing mediating it. Everything it has to <em>say</em> goes
+          through the <code>colloquy</code> command instead — a reply in a thread, a
+          comment it opens on a passage of its own, the changelog note that publishes a
+          version — and each of those appends one event to the log. The log takes a
+          command rather than a file write because it isn't the agent's alone: the
+          browser appends to it too, and one writer is what gives every event an id to
+          reply to and a place in the order.
+        </p>
+        <p id="agent-render">
+          So the agent's words reach the screen without the document changing. What the
+          reviewer looks at is the version composed with the log, recomposed on a
+          two-second poll: the reply appears in a thread in the injected panel, the
+          passage it answers is lit by the browser's highlight registry — which paints a
+          range and touches no nodes — and the banner's line is whatever
+          <code>review state</code> last wrote. Nothing in the document was rewritten to
+          put any of it there, and it is the same composition that shows the reviewer
+          their own edits before a version carries them.
+        </p>
+        <p id="agent-versions">
+          The HTML changes once per version, and even then nothing is edited in place: a
+          revision is a new file beside the last one, <code>v2.html</code> next to
+          <code>v1.html</code>, and <code>version publish</code> publishes it. Until the
+          publication note lands the file is on disk and unreachable, and publishing
+          lints it first, so a broken version is never exposed. The next poll moves the
+          tab onto the new version, keeping the reader's place, and holds while the
+          reviewer is mid-comment or mid-drag. Coming back the other way,
+          <code>review wait</code> starts after the last acknowledged reviewer event, so
+          a comment posted between a wait and its acknowledgement remains beyond the
+          cursor and still lands.
+        </p>
+      </section>
 
-<section id="agent">
-<h2>A command never edits the document</h2>
-<p id="agent-split">The agent has two ways in, and only one of them is HTML. A
-version is a file: the agent writes the whole document into the page directory, an
-ordinary file write with nothing mediating it. Everything it has to
-<em>say</em> goes through the <code>colloquy</code> command instead — a reply in
-a thread, a comment it opens on a passage of its own, the changelog note that
-publishes a version — and each of those appends one event to the log. The log
-takes a command rather than a file write because it isn't the agent's alone: the
-browser appends to it too, and one writer is what gives every event an id to
-reply to and a place in the order.</p>
-<p id="agent-render">So the agent's words reach the screen without the document changing.
-What the reviewer looks at is the version composed with the log, recomposed on a
-two-second poll: the reply appears in a thread in the injected panel, the
-passage it answers is lit by the browser's highlight registry — which paints a
-range and touches no nodes — and the banner's line is whatever
-<code>review state</code> last wrote. Nothing in the document was rewritten to put any
-of it there, and it is the same composition that shows the reviewer their own
-edits before a version carries them.</p>
-<p id="agent-versions">The HTML changes once per version, and even then nothing
-is edited in place: a revision is a new file beside the last one,
-<code>v2.html</code> next to <code>v1.html</code>, and <code>version publish</code>
-publishes it. Until the publication note lands the file is on disk and unreachable,
-and publishing lints it first, so a broken version is never exposed. The next poll
-moves the tab onto the new version, keeping the reader's place, and holds while the
-reviewer is mid-comment or mid-drag. Coming back the other way, <code>review wait</code>
-starts after the last acknowledged reviewer event, so a comment posted between a wait
-and its acknowledgement remains beyond the cursor and still lands.</p>
-</section>
+      <section id="pages">
+        <h2>What a page is made of</h2>
+        <p id="scaffold">
+          A version is one complete HTML document, and the required scaffold is two
+          lines: the theme stylesheet and the runtime module. Everything between them is
+          the agent's, drawn from the four sources below in ascending order of
+          specialization; each earns its place only where the one before it has no way
+          to carry what the page needs.
+        </p>
+        <ol class="steps" id="sources">
+          <li id="src-html">
+            <strong>Plain semantic HTML.</strong> The theme styles bare elements, so
+            headings, prose, tables, code, and <code>details</code> carry the page's
+            voice unclassed. Most of any page is this.
+          </li>
+          <li id="src-idioms">
+            <strong>Class idioms.</strong> A small closed set the theme defines for
+            shapes HTML has no element for, among them <code>.eyebrow</code>,
+            <code>.lede</code>, <code>.tag</code>, <code>.callout</code>,
+            <code>.facts</code>, and <code>ol.steps</code>, which numbers this list.
+          </li>
+          <li id="src-widgets">
+            <strong><code>cq-*</code> widgets.</strong> Custom elements that say what
+            things are: <code>&lt;cq-options&gt;</code> for a question the reader
+            answers, <code>&lt;cq-board&gt;</code> for work in columns. Attributes carry
+            scalars, children carry prose, a leading <code>&lt;strong&gt;</code> is an
+            item's title, and a JSON-Schema registry keeps the renderer, the linter, and
+            the agent's documentation agreeing about the vocabulary.
+          </li>
+          <li id="src-bespoke">
+            <strong>Bespoke presentation.</strong> A page-local
+            <code>&lt;style&gt;</code> and hand-drawn inline SVG, both riding the
+            theme's tokens; the architecture diagram above is one. This is the escape
+            hatch for presentation only this page needs, never a second palette.
+          </li>
+        </ol>
+        <p id="boundaries">
+          Each language has one owner. HTML is the author's whole medium: pages carry
+          markup and never script, and interactivity is authored as markup too, so
+          writing <code>&lt;cq-board&gt;</code> is what adds dragging. CSS is the
+          theme's: it renders every widget's look, and many widgets need nothing else.
+          JS is the runtime's, opt-in per widget: a registry flag
+          (<code>x-upgrade</code>) names the tags whose behavior module loads, and the
+          behavior attaches to markup that has already rendered, so a module that fails
+          to load leaves a readable page rather than a blank one.
+        </p>
+        <p id="review-meta">
+          The head's meta channel carries what the page asks of its reader: one that
+          seeks approval declares
+          <code>&lt;meta name="cq-review" content="sign-off"&gt;</code>, and only then
+          does the banner offer "✓ Looks good". The declaration versions with the
+          document; without it the banner offers a neutral "End review" for a
+          comments-only page.
+        </p>
+        <p id="dogfood">
+          This page is set in the plugin's own <code>theme.css</code>, and the widgets
+          below are rendering in it right now, with no script involved. Each sits in a
+          <code>cq-specimen</code> — the gutter that marks quoted material — so an
+          example decision never reads as one the page is asking you to make.
+        </p>
 
-<section id="pages">
-<h2>What a page is made of</h2>
-<p id="scaffold">A version is one complete HTML document, and the required
-scaffold is two lines: the theme stylesheet and the runtime module. Everything
-between them is the agent's, drawn from the four sources below in ascending order of
-specialization; each earns its place only where the one before it has no way to
-carry what the page needs.</p>
-<ol class="steps" id="sources">
-<li id="src-html"><strong>Plain semantic HTML.</strong> The theme styles bare
-elements, so headings, prose, tables, code, and <code>details</code> carry the
-page's voice unclassed. Most of any page is this.</li>
-<li id="src-idioms"><strong>Class idioms.</strong> A small closed set the theme
-defines for shapes HTML has no element for, among them <code>.eyebrow</code>,
-<code>.lede</code>, <code>.tag</code>, <code>.callout</code>,
-<code>.facts</code>, and <code>ol.steps</code>, which numbers this list.</li>
-<li id="src-widgets"><strong><code>cq-*</code> widgets.</strong> Custom
-elements that say what things are: <code>&lt;cq-options&gt;</code> for a
-question the reader answers, <code>&lt;cq-board&gt;</code> for work in columns.
-Attributes carry scalars, children carry prose, a leading
-<code>&lt;strong&gt;</code> is an item's title, and a JSON-Schema registry
-keeps the renderer, the linter, and the agent's documentation agreeing about
-the vocabulary.</li>
-<li id="src-bespoke"><strong>Bespoke presentation.</strong> A page-local
-<code>&lt;style&gt;</code> and hand-drawn inline SVG, both riding the theme's
-tokens; the architecture diagram above is one. This is the escape hatch for
-presentation only this page needs, never a second palette.</li>
-</ol>
-<p id="boundaries">Each language has one owner. HTML is the author's whole
-medium: pages carry markup and never script, and interactivity is authored as
-markup too, so writing <code>&lt;cq-board&gt;</code> is what adds dragging.
-CSS is the theme's: it renders every widget's look, and many widgets need
-nothing else. JS is the runtime's, opt-in per widget: a registry flag
-(<code>x-upgrade</code>) names the tags whose behavior module loads, and the
-behavior attaches to markup that has already rendered, so a module that fails
-to load leaves a readable page rather than a blank one.</p>
-<p id="review-meta">The head's meta channel carries what the page asks of its
-reader: one that seeks approval declares
-<code>&lt;meta name="cq-review" content="sign-off"&gt;</code>, and only then does
-the banner offer "✓ Looks good". The declaration versions with the document;
-without it the banner offers a neutral "End review" for a comments-only page.</p>
-<p id="dogfood">This page is set in the plugin's own <code>theme.css</code>, and
-the widgets below are rendering in it right now, with no script involved. Each
-sits in a <code>cq-specimen</code> — the gutter that marks quoted material — so
-an example decision never reads as one the page is asking you to make.</p>
+        <figure>
+          <cq-specimen id="spec-options-frame" label="cq-options">
+            <cq-options id="spec-options">
+              <cq-option id="so-rewrite"
+                ><cq-chip>effort: high</cq-chip><cq-chip>risk: med</cq-chip
+                ><strong>Rewrite the importer</strong> A clean slate on the new schema;
+                the old importer keeps running until parity.</cq-option
+              >
+              <cq-option id="so-shim"
+                ><cq-chip>effort: low</cq-chip><cq-chip>risk: high</cq-chip
+                ><strong>Shim the old schema</strong> Fastest to ship; every future
+                field pays the translation tax.</cq-option
+              >
+              <cq-option id="so-stage" recommended
+                ><cq-chip>effort: med</cq-chip><cq-chip>risk: low</cq-chip
+                ><strong>Migrate in stages</strong> New fields land on the new schema
+                while reads fall back, table by table.</cq-option
+              >
+            </cq-options>
+            <p id="spec-jobs-ask">
+              Whichever way that goes, which of the three jobs behind it are worth
+              starting now?
+            </p>
+            <cq-options id="spec-jobs">
+              <cq-option id="sj-backfill">Backfill last month's rows</cq-option>
+              <cq-option id="sj-contract"
+                >Contract tests against the old schema</cq-option
+              >
+              <cq-option id="sj-fallback">A read fallback behind a flag</cq-option>
+            </cq-options>
+          </cq-specimen>
+          <figcaption>
+            The form follows the options, and nothing declares it: options that argue
+            their own case render as cards, bare labels as rows — a question about the
+            page, where each row can name the section that makes its case. In a session
+            either form takes your pick by click, the next version ships with your
+            choice marked, and a box under the group takes anything the options don't
+            cover.
+          </figcaption>
+        </figure>
 
-<figure>
-<cq-specimen id="spec-options-frame" label="cq-options">
-<cq-options id="spec-options">
-  <cq-option id="so-rewrite"><cq-chip>effort: high</cq-chip><cq-chip>risk: med</cq-chip><strong>Rewrite the
-  importer</strong> A clean slate on the new schema; the old importer keeps
-  running until parity.</cq-option>
-  <cq-option id="so-shim"><cq-chip>effort: low</cq-chip><cq-chip>risk: high</cq-chip><strong>Shim the old
-  schema</strong> Fastest to ship; every future field pays the translation
-  tax.</cq-option>
-  <cq-option id="so-stage" recommended><cq-chip>effort: med</cq-chip><cq-chip>risk: low</cq-chip><strong>Migrate in
-  stages</strong> New fields land on the new schema while reads fall back,
-  table by table.</cq-option>
-</cq-options>
-<p id="spec-jobs-ask">Whichever way that goes, which of the three jobs behind it are
-worth starting now?</p>
-<cq-options id="spec-jobs">
-  <cq-option id="sj-backfill">Backfill last month's rows</cq-option>
-  <cq-option id="sj-contract">Contract tests against the old schema</cq-option>
-  <cq-option id="sj-fallback">A read fallback behind a flag</cq-option>
-</cq-options>
-</cq-specimen>
-<figcaption>The form follows the options, and nothing declares it: options that argue
-their own case render as cards, bare labels as rows — a question about the page, where
-each row can name the section that makes its case. In a session either form takes your
-pick by click, the next version ships with your choice marked, and a box under the
-group takes anything the options don't cover.</figcaption>
-</figure>
+        <figure>
+          <cq-specimen id="spec-board-frame" label="cq-board">
+            <cq-board id="spec-board">
+              <cq-column id="sb-incoming" label="Incoming">
+                <cq-card id="sc-flaky"
+                  ><strong>Flaky auth test</strong> Fails one run in twenty on CI
+                  only.</cq-card
+                >
+                <cq-card id="sc-contrast"
+                  ><strong>Dark-mode contrast pass</strong></cq-card
+                >
+              </cq-column>
+              <cq-column id="sb-sprint" label="This week">
+                <cq-card id="sc-ratelimit"
+                  ><strong>Rate-limit the export</strong></cq-card
+                >
+              </cq-column>
+              <cq-column id="sb-done" label="Done">
+                <cq-card id="sc-tokens"><strong>Tokenize the palette</strong></cq-card>
+              </cq-column>
+            </cq-board>
+          </cq-specimen>
+          <figcaption>
+            In a session, cards drag between columns by a grip, and each drop reaches
+            the agent as a structured move.
+          </figcaption>
+        </figure>
 
-<figure>
-<cq-specimen id="spec-board-frame" label="cq-board">
-<cq-board id="spec-board">
-  <cq-column id="sb-incoming" label="Incoming">
-    <cq-card id="sc-flaky"><strong>Flaky auth test</strong> Fails one run in
-    twenty on CI only.</cq-card>
-    <cq-card id="sc-contrast"><strong>Dark-mode contrast pass</strong></cq-card>
-  </cq-column>
-  <cq-column id="sb-sprint" label="This week">
-    <cq-card id="sc-ratelimit"><strong>Rate-limit the export</strong></cq-card>
-  </cq-column>
-  <cq-column id="sb-done" label="Done">
-    <cq-card id="sc-tokens"><strong>Tokenize the palette</strong></cq-card>
-  </cq-column>
-</cq-board>
-</cq-specimen>
-<figcaption>In a session, cards drag between columns by a grip, and each drop
-reaches the agent as a structured move.</figcaption>
-</figure>
+        <p id="catalog">
+          The committed catalog runs wider: mermaid diagrams, unified diffs with
+          per-file collapse, annotated code walkthroughs, file trees, timelines, metric
+          rows, plans with milestones, and tabbed parallel workstreams. The
+          <a href="https://github.com/max-sixty/colloquy/tree/main/examples"
+            >examples gallery</a
+          >
+          holds complete pages showing the range.
+        </p>
+      </section>
 
-<p id="catalog">The committed catalog runs wider: mermaid diagrams, unified
-diffs with per-file collapse, annotated code walkthroughs, file trees,
-timelines, metric rows, plans with milestones, and tabbed parallel
-workstreams. The
-<a href="https://github.com/max-sixty/colloquy/tree/main/examples">examples
-gallery</a> holds complete pages showing the range.</p>
-</section>
+      <section id="edits">
+        <h2>Edits are events; the document stays the state</h2>
+        <p>
+          Dragging a card or clicking an option reaches the agent as a structured action
+          on the same channel as comments, and the next version ships with the board as
+          you left it and your pick marked. Until it ships, the page shows the version
+          plus your own edits; a reload replays them, and a second tab follows along
+          live.
+        </p>
+        <p id="decline">
+          Declining is a version too. When the agent disagrees with an edit, it ships
+          the next version without the change, says why in the changelog, and the page
+          rolls back to the authored state as that version lands.
+        </p>
+      </section>
 
-<section id="edits">
-<h2>Edits are events; the document stays the state</h2>
-<p>Dragging a card or clicking an option reaches the agent as a structured action
-on the same channel as comments, and the next version ships with the board as
-you left it and your pick marked. Until it ships, the page shows the version
-plus your own edits; a reload replays them, and a second tab follows along
-live.</p>
-<p id="decline">Declining is a version too. When the agent disagrees with an edit,
-it ships the next version without the change, says why in the changelog, and the
-page rolls back to the authored state as that version lands.</p>
-</section>
+      <section id="layer">
+        <h2>Each page owns its layer</h2>
+        <p>
+          <code>page init</code> vendors the whole layer (runtime, theme, registry,
+          widget modules) into the page's directory, overlaying the shipped defaults
+          with <code>~/.config/colloquy/</code> and the project's
+          <code>.colloquy/</code>. Theme rules cascade over the defaults; registry
+          entries add or replace widgets; modules replace by filename. The
+          <a href="customizing.html">customization guide</a> shows how to scaffold each
+          shape. Because pages are self-contained, a version you approved can't change
+          under you when the defaults do.
+        </p>
+      </section>
 
-<section id="layer">
-<h2>Each page owns its layer</h2>
-<p><code>page init</code> vendors the whole layer (runtime, theme, registry, widget
-modules) into the page's directory, overlaying the shipped defaults with
-<code>~/.config/colloquy/</code> and the project's
-<code>.colloquy/</code>. Theme rules cascade over the defaults; registry
-entries add or replace widgets; modules replace by filename. The
-<a href="customizing.html">customization guide</a> shows how to scaffold each
-shape. Because pages are self-contained, a version you approved can't change
-under you when the defaults do.</p>
-</section>
+      <section id="gate">
+        <h2>Nothing broken goes live</h2>
+        <p>
+          Before a version is published, <code>version check</code> lints it
+          deterministically, with no browser: the HTML parses with balanced tags, the
+          scaffold is exactly the theme link and the runtime module, every
+          <code>cq-*</code> element validates against the page's registry along with the
+          head's <code>cq-*</code> metas, ids stay unique and every comment anchor from
+          the previous version survives, and nothing is wider than the readable column.
+          The changelog note runs the lint and refuses a failing version, so an open
+          browser never sees one. Before a page's URL first goes out,
+          <code>version check --render</code> also loads it in the machine's own Chrome
+          and refuses what only a layout engine can see — a console error, a widget
+          rendered into a box of no size, a sideways scroll — in both color schemes.
+        </p>
+      </section>
 
-<section id="gate">
-<h2>Nothing broken goes live</h2>
-<p>Before a version is published, <code>version check</code> lints it
-deterministically, with no browser: the HTML parses with balanced tags, the
-scaffold is exactly the theme link and the runtime module, every
-<code>cq-*</code> element validates against the page's registry along with the
-head's <code>cq-*</code> metas, ids stay unique
-and every comment anchor from the previous version survives, and nothing is
-wider than the readable column. The changelog note runs the lint and refuses
-a failing version, so an open browser never sees one. Before a page's URL first
-goes out, <code>version check --render</code> also loads it in the machine's own Chrome
-and refuses what only a layout engine can see — a console error, a widget
-rendered into a box of no size, a sideways scroll — in both color schemes.</p>
-</section>
+      <section id="local">
+        <h2>Served where you are</h2>
+        <p>
+          A page is served on the address its session arrived on: over SSH, the one your
+          client just reached the machine on; otherwise <code>127.0.0.1</code>. The URL
+          colloquy prints opens as-is either way, with no port to forward and nothing to
+          configure. It carries a key, and the browser keeps that key in a cookie from
+          the first request, so the open port is still a page only whoever holds the
+          link can read or comment on.
+        </p>
+        <p>
+          When a jump host or NAT leaves that address unroutable from your browser, say
+          so and the agent re-serves the page with
+          <code>server run --host NAME</code> on a hostname you do reach (a tailnet name
+          works). The key still gates every request, and colloquy serves only networks
+          the machine is already on: there is no public tunnel.
+        </p>
+      </section>
 
-<section id="local">
-<h2>Served where you are</h2>
-<p>A page is served on the address its session arrived on: over SSH, the one
-your client just reached the machine on; otherwise <code>127.0.0.1</code>. The
-URL colloquy prints opens as-is either way, with no port to forward and nothing
-to configure. It carries a key, and the browser keeps that key in a cookie from
-the first request, so the open port is still a page only whoever holds the link
-can read or comment on.</p>
-<p>When a jump host or NAT leaves that address unroutable from your browser, say
-so and the agent re-serves the page with <code>server run --host NAME</code> on
-a hostname you do reach (a tailnet name works). The key still gates every
-request, and colloquy serves only networks the machine is already on: there is
-no public tunnel.</p>
-</section>
-
-<footer id="colophon">
-<p id="links"><a href="index.html">Tour</a> ·
-<a href="examples.html">Examples</a> ·
-<a href="how-it-works.html">How it works</a> ·
-<a href="customizing.html">Customize</a> ·
-<a href="https://github.com/max-sixty/colloquy">GitHub</a> ·
-<a href="https://github.com/max-sixty/colloquy/blob/main/LICENSE">MIT license</a></p>
-<p>This page is a static render of the theme and widgets it describes; the comment
-layer joins in when a live session serves a page.</p>
-</footer>
-
-</main>
-</body>
+      <footer id="colophon">
+        <p id="links">
+          <a href="index.html">Tour</a> · <a href="examples.html">Examples</a> ·
+          <a href="how-it-works.html">How it works</a> ·
+          <a href="customizing.html">Customize</a> ·
+          <a href="https://github.com/max-sixty/colloquy">GitHub</a> ·
+          <a href="https://github.com/max-sixty/colloquy/blob/main/LICENSE"
+            >MIT license</a
+          >
+        </p>
+        <p>
+          This page is a static render of the theme and widgets it describes; the
+          comment layer joins in when a live session serves a page.
+        </p>
+      </footer>
+    </main>
+  </body>
 </html>

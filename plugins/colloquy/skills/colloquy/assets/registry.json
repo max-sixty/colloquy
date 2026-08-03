@@ -155,7 +155,7 @@
     "x-upgrade": false
   },
   "cq-diff": {
-    "description": "A unified diff rendered with per-file collapse, add/del tints, and per-file +/− counts. The body is data: the diff verbatim, at column 0 (context lines keep their leading space), with < and > escaped as &lt; and &gt;. Comments anchor to the required id. Takes no language: each file's own path is read for one ($languages), so keep the `diff --git` or ---/+++ headers rather than pasting bare hunks, and a path naming no language leaves that file plain.",
+    "description": "A unified diff rendered with per-file collapse, add/del tints, and per-file +/− counts. The body is data: the diff verbatim inside its <pre>, at column 0 (context lines keep their leading space), with < and > escaped as &lt; and &gt;. Comments anchor to the required id. Takes no language: each file's own path is read for one ($languages), so keep the `diff --git` or ---/+++ headers rather than pasting bare hunks, and a path naming no language leaves that file plain.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
@@ -164,10 +164,10 @@
     "additionalProperties": false,
     "x-content": "data",
     "x-upgrade": true,
-    "x-example": "<cq-diff id=\"mount-diff\">\ndiff --git a/feeders/mount.py b/feeders/mount.py\n--- a/feeders/mount.py\n+++ b/feeders/mount.py\n@@ -1,3 +1,3 @@\n def bracket():\n-    return \"plastic\"\n+    return \"steel\"\n</cq-diff>"
+    "x-example": "<cq-diff id=\"mount-diff\"><pre>\ndiff --git a/feeders/mount.py b/feeders/mount.py\n--- a/feeders/mount.py\n+++ b/feeders/mount.py\n@@ -1,3 +1,3 @@\n def bracket():\n-    return \"plastic\"\n+    return \"steel\"\n</pre></cq-diff>"
   },
   "cq-tree": {
-    "description": "A file tree from an indent-notation body: one node per line, children indented deeper, a trailing / marking a directory, trailing +N/-N tokens rendering as change badges. Body is data — text only.",
+    "description": "A file tree from an indent-notation body: one node per line, children indented deeper, a trailing / marking a directory, trailing +N/-N tokens rendering as change badges. Body is data — text inside its <pre>.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
@@ -176,10 +176,10 @@
     "additionalProperties": false,
     "x-content": "data",
     "x-upgrade": true,
-    "x-example": "<cq-tree id=\"feeder-tree\">\nfeeders/\n  mount.py  +2 -2\n  schedule.py  +1\n  sites/\n    north.toml\n</cq-tree>"
+    "x-example": "<cq-tree id=\"feeder-tree\"><pre>\nfeeders/\n  mount.py  +2 -2\n  schedule.py  +1\n  sites/\n    north.toml\n</pre></cq-tree>"
   },
   "cq-code": {
-    "description": "An annotated code block — the walkthrough shape. The body is the code verbatim (data, < and > escaped, column 0); `language` colors it, naming one of $languages; `hi` highlights line ranges (\"3-5,8\"); cq-note children anchor remarks at lines. Leave `language` off where the body isn't source (a transcript, command output) — nothing guesses, so an undeclared block stays plain.",
+    "description": "An annotated code block — the walkthrough shape. The body is the code verbatim inside its <pre> (data, < and > escaped, column 0); `language` colors it, naming one of $languages; `hi` highlights line ranges (\"3-5,8\"); cq-note children sit beside that <pre> and anchor remarks at lines by number. Leave `language` off where the body isn't source (a transcript, command output) — nothing guesses, so an undeclared block stays plain.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
@@ -191,7 +191,7 @@
     "x-content": "data",
     "x-language": "language",
     "x-upgrade": true,
-    "x-example": "<cq-code id=\"bracket-walk\" language=\"python\" hi=\"2\">\ndef bracket(temp):\n    if temp &lt; 0:\n        return \"steel\"\n    return \"cedar\"\n<cq-note at=\"2\">Freezing is the only threshold that matters.</cq-note>\n</cq-code>"
+    "x-example": "<cq-code id=\"bracket-walk\" language=\"python\" hi=\"2\"><pre>\ndef bracket(temp):\n    if temp &lt; 0:\n        return \"steel\"\n    return \"cedar\"\n</pre>\n  <cq-note at=\"2\">Freezing is the only threshold that matters.</cq-note>\n</cq-code>"
   },
   "cq-note": {
     "description": "A remark anchored at a line of its cq-code parent. Prose content; `at` is the 1-based line number.",
@@ -207,7 +207,7 @@
     "x-upgrade": false
   },
   "cq-diagram": {
-    "description": "A diagram rendered from a mermaid-source body (flowchart, sequence, state…). The body is data, not prose: text only, angle brackets escaped as &lt; and &gt;. Comments anchor to the required id, not to text inside the SVG.",
+    "description": "A diagram rendered from a mermaid-source body (flowchart, sequence, state…). The body is data, not prose: text inside its <pre>, angle brackets escaped as &lt; and &gt;. Comments anchor to the required id, not to text inside the SVG.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
@@ -217,7 +217,7 @@
     "x-content": "data",
     "x-upgrade": true,
     "x-visual": true,
-    "x-example": "<cq-diagram id=\"checkout-flow\">\ngraph LR\n  Cart --> Pay\n  Pay --> Receipt\n</cq-diagram>"
+    "x-example": "<cq-diagram id=\"checkout-flow\"><pre>\ngraph LR\n  Cart --> Pay\n  Pay --> Receipt\n</pre></cq-diagram>"
   },
   "cq-shot": {
     "description": "A before/after pair of screenshots of one view, shown one at a time in a single frame: the reader clicks between them and the change is the only thing on screen that moves. `before` and `after` are served image paths — `colloquy page media <page> <file>…` copies files into the page directory and prints the path to write, which is the only way an image gets onto a page (a screenshot is far too many bytes to inline). `alt` says what the pair shows, for a reader who can't see it. The element takes no content: what the page has to say about the change is ordinary prose written around it, where the reviewer can quote it. Reach for it when the change reads at page scale — layout, spacing, a component swapped out. Below that scale the column's width is against you: crop the pair to the part that moved, or show the element itself before and after at real size.",
@@ -354,7 +354,7 @@
     "x-retired-when": "reject"
   },
   "cq-draft": {
-    "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach the agent as an `edit` action naming the element. After the first edit, Changes shows a bounded, lossless word-aligned difference from this version, every recorded body in order, and a Restore control for each older body; very large divergent middles appear as one replacement rather than freezing the page. Restoring posts another ordinary `edit`, so it converges across tabs and later versions instead of creating private undo state. The body is the draft text verbatim (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off approve the page as a whole. Usable anywhere prose flows. The agent rewriting prose of its own goes in a cq-suggestion instead; a draft is the reviewer's own words, so there is nothing for them to accept. Once they have edited one those words are theirs: re-emit the body you wrote and their edit still stands over it — and `review comment` reads it their way, quoting the words their edit left and refusing the ones it replaced. To take the pen back — a fact of yours to fix in a sentence they rewrote — write the new text and mark the element `restated` (see $restated in `page catalog`).",
+    "description": "A block of text the reviewer owns: they double-click it (or its ✎ button) to rewrite it in place, and the exact words reach the agent as an `edit` action naming the element. After the first edit, Changes shows a bounded, lossless word-aligned difference from this version, every recorded body in order, and a Restore control for each older body; very large divergent middles appear as one replacement rather than freezing the page. Restoring posts another ordinary `edit`, so it converges across tabs and later versions instead of creating private undo state. The body is the draft text verbatim inside its <pre> (data, < and > escaped; newlines preserved). It carries no decision chrome of its own — put a draft inside a cq-card where the column is the verdict, or let page sign-off approve the page as a whole. Usable anywhere prose flows. The agent rewriting prose of its own goes in a cq-suggestion instead; a draft is the reviewer's own words, so there is nothing for them to accept. Once they have edited one those words are theirs: re-emit the body you wrote and their edit still stands over it — and `review comment` reads it their way, quoting the words their edit left and refusing the ones it replaced. To take the pen back — a fact of yours to fix in a sentence they rewrote — write the new text and mark the element `restated` (see $restated in `page catalog`).",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
@@ -372,7 +372,7 @@
         "record": {"kind": "body", "value": "text"}
       }
     },
-    "x-example": "<cq-draft id=\"note-cli\">\nAdds --dry-run to every mutating command.\n</cq-draft>"
+    "x-example": "<cq-draft id=\"note-cli\"><pre>\nAdds --dry-run to every mutating command.\n</pre></cq-draft>"
   },
   "cq-specimen": {
     "description": "Quoted material: a region the page exhibits rather than speaks — a sample decision, a demo board, markup shown as an example. Renders as quotation: a hairline left gutter under a small-caps \"specimen\" line (`label` extends it — \"specimen · a decision\"). Content is open and renders at full fidelity, but it is a mention, not a use: interactive widgets inside are inert — a choose group takes no clicks, a board no drags, a suggestion no decision. Keep the content visibly fictional, and let the gutter do the marking: a caption explaining that the region is an example is the page narrating a widget it could just use.",
@@ -423,7 +423,7 @@
     "why": "A move, pick, edit or accept is recorded in the log against the version it was made on, and the page replays every recorded action onto every later version. A decision therefore survives a republish on its own — you never carry one into the next version's markup, and re-emitting a widget as you first wrote it does not undo it. The cost is that your markup cannot quietly overrule them either, which is what this attribute is for.",
     "when": "Only where a later version has to change what the reviewer decided about: an error you found in a draft they rewrote, a picked option whose prose was wrong. Write the new words, mark that element, and say why in the note — to the reviewer this reads as a decision undone, and the note is where a version explains itself. `version check` refuses a version that changes those words without it and a `restated` that retracts nothing, so it can be neither forgotten nor spent as a reflex; when it names the wrong element, the error says which one it wanted.",
     "once": "It belongs to the one version that does the rewriting. Publishing records the retraction in the log, so it holds for good — later versions leave the attribute off, and `version check` refuses one that repeats it.",
-    "example": "<cq-draft id=\"note-cli\" restated>\nAdds --dry-run to every mutating command. It defaults on for `purge`.\n</cq-draft>"
+    "example": "<cq-draft id=\"note-cli\" restated><pre>\nAdds --dry-run to every mutating command. It defaults on for `purge`.\n</pre></cq-draft>"
   },
   "$tones": {
     "description": "The semantic tints this layer paints, and the whole vocabulary an author may declare: what the lint refuses a word outside, and what the theme has a rule for. It is a property of the page rather than of any widget, which is why it lives here and not under the schema of whichever tag happens to take a `tone` — a widget declares that one of its attributes names one (x-tone) and the lint reads the list from here, so a second tag taking a tone costs a declaration and no new reader. The list is short on purpose: a page that can paint anything paints nothing, and three is what the palette already answers for. Which facts earn a tint is never the theme's to decide — `ok` on one page's chip and `danger` on another's may be the same word, because the author is the only one who knows whether the answer is good news.",

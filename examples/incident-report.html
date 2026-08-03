@@ -1,82 +1,101 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Incident: export queue backlog</title>
-<link rel="stylesheet" href="/theme.css">
-<script type="module" src="/colloquy.js"></script>
-</head>
-<body>
-<main>
-<p class="eyebrow">incident report · sev-2</p>
-<h1>Export queue backlog, 12 June</h1>
-<p class="lede" id="incident-lede">A retry storm from one malformed workspace held the export
-queue for 94 minutes. No exports were lost; the oldest was delayed 81 minutes.</p>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Incident: export queue backlog</title>
+    <link rel="stylesheet" href="/theme.css" />
+    <script type="module" src="/colloquy.js"></script>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">incident report · sev-2</p>
+      <h1>Export queue backlog, 12 June</h1>
+      <p class="lede" id="incident-lede">
+        A retry storm from one malformed workspace held the export queue for 94 minutes.
+        No exports were lost; the oldest was delayed 81 minutes.
+      </p>
 
-<dl class="facts">
-  <dt>Detected</dt><dd>09:14, queue-depth alert</dd>
-  <dt>Resolved</dt><dd>10:48, poison job quarantined</dd>
-  <dt>Blast radius</dt><dd>exports only; imports and sync unaffected</dd>
-</dl>
+      <dl class="facts">
+        <dt>Detected</dt>
+        <dd>09:14, queue-depth alert</dd>
+        <dt>Resolved</dt>
+        <dd>10:48, poison job quarantined</dd>
+        <dt>Blast radius</dt>
+        <dd>exports only; imports and sync unaffected</dd>
+      </dl>
 
-<cq-metrics id="impact">
-  <cq-metric id="m-delayed" value="1,204" delta="+1,204" direction="up-bad">exports delayed</cq-metric>
-  <cq-metric id="m-oldest" value="81 min">oldest delay</cq-metric>
-  <cq-metric id="m-lost" value="0">exports lost</cq-metric>
-</cq-metrics>
+      <cq-metrics id="impact">
+        <cq-metric id="m-delayed" value="1,204" delta="+1,204" direction="up-bad"
+          >exports delayed</cq-metric
+        >
+        <cq-metric id="m-oldest" value="81 min">oldest delay</cq-metric>
+        <cq-metric id="m-lost" value="0">exports lost</cq-metric>
+      </cq-metrics>
 
-<section id="timeline">
-<h2>Timeline</h2>
-<cq-timeline id="incident-timeline">
-  <cq-event id="e-alert" at="09:14" kind="warning">
-    <strong>Queue-depth alert fires</strong> Depth crosses 500; normal peak is 60.
-  </cq-event>
-  <cq-event id="e-triage" at="09:26" kind="action">
-    <strong>On-call confirms a single hot job</strong> The same export id retrying at
-    the head of the queue, every 45 seconds.
-  </cq-event>
-  <cq-event id="e-wrong" at="09:51" kind="failure">
-    <strong>First fix doesn't hold</strong> Raising worker count clears depth briefly;
-    the retry storm refills it because the head job still fails first.
-  </cq-event>
-  <cq-event id="e-quarantine" at="10:32" kind="action">
-    <strong>Poison job quarantined</strong> The workspace's export is parked in a
-    dead-letter table; the queue drains at normal rate.
-  </cq-event>
-  <cq-event id="e-resolved" at="10:48" kind="info">
-    <strong>Backlog cleared</strong> Depth back under 60; delayed exports delivered.
-  </cq-event>
-</cq-timeline>
-</section>
+      <section id="timeline">
+        <h2>Timeline</h2>
+        <cq-timeline id="incident-timeline">
+          <cq-event id="e-alert" at="09:14" kind="warning">
+            <strong>Queue-depth alert fires</strong> Depth crosses 500; normal peak is
+            60.
+          </cq-event>
+          <cq-event id="e-triage" at="09:26" kind="action">
+            <strong>On-call confirms a single hot job</strong> The same export id
+            retrying at the head of the queue, every 45 seconds.
+          </cq-event>
+          <cq-event id="e-wrong" at="09:51" kind="failure">
+            <strong>First fix doesn't hold</strong> Raising worker count clears depth
+            briefly; the retry storm refills it because the head job still fails first.
+          </cq-event>
+          <cq-event id="e-quarantine" at="10:32" kind="action">
+            <strong>Poison job quarantined</strong> The workspace's export is parked in
+            a dead-letter table; the queue drains at normal rate.
+          </cq-event>
+          <cq-event id="e-resolved" at="10:48" kind="info">
+            <strong>Backlog cleared</strong> Depth back under 60; delayed exports
+            delivered.
+          </cq-event>
+        </cq-timeline>
+      </section>
 
-<section id="cause">
-<h2>Root cause</h2>
-<p id="p-cause">The export worker treats any failure as retryable. One workspace
-carried an attachment with a declared size of −1, which fails serialization every
-time; with retries capped by attempt count but not by queue position, the job returned
-to the head on each attempt and starved everything behind it.</p>
-<cq-diagram id="failure-path">
+      <section id="cause">
+        <h2>Root cause</h2>
+        <p id="p-cause">
+          The export worker treats any failure as retryable. One workspace carried an
+          attachment with a declared size of −1, which fails serialization every time;
+          with retries capped by attempt count but not by queue position, the job
+          returned to the head on each attempt and starved everything behind it.
+        </p>
+        <cq-diagram id="failure-path">
+          <pre>
 graph LR
   Q[queue head] --> W[worker]
   W -->|serialize fails| R[retry in 45s]
   R --> Q
   Q -.->|starved| B[1,204 jobs behind]
-</cq-diagram>
-<aside class="callout" id="fix-note">The fix is one classification: serialization
-errors are permanent, not retryable. Retryable failures also now re-enqueue at the
-tail, so no single job can hold the head again.</aside>
-</section>
+</pre>
+        </cq-diagram>
+        <aside class="callout" id="fix-note">
+          The fix is one classification: serialization errors are permanent, not
+          retryable. Retryable failures also now re-enqueue at the tail, so no single
+          job can hold the head again.
+        </aside>
+      </section>
 
-<section id="actions">
-<h2>Follow-ups</h2>
-<ol class="steps" id="follow-ups">
-  <li>Classify worker failures as permanent vs. retryable; dead-letter permanents on
-  first failure.</li>
-  <li>Re-enqueue retries at the tail.</li>
-  <li>Alert on a single job id exceeding five attempts, not only on queue depth.</li>
-</ol>
-</section>
-</main>
-</body>
+      <section id="actions">
+        <h2>Follow-ups</h2>
+        <ol class="steps" id="follow-ups">
+          <li>
+            Classify worker failures as permanent vs. retryable; dead-letter permanents
+            on first failure.
+          </li>
+          <li>Re-enqueue retries at the tail.</li>
+          <li>
+            Alert on a single job id exceeding five attempts, not only on queue depth.
+          </li>
+        </ol>
+      </section>
+    </main>
+  </body>
 </html>

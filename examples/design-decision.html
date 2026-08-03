@@ -1,97 +1,131 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Decision: where sessions live</title>
-<link rel="stylesheet" href="/theme.css">
-<script type="module" src="/colloquy.js"></script>
-</head>
-<body>
-<main>
-<p class="eyebrow">design decision</p>
-<h1>Where sessions live</h1>
-<p class="lede" id="decision-lede">The monolith split leaves session state homeless: today it
-rides the app server's memory and dies with it. Three candidates, one recommendation —
-Redis with a signed-cookie fallback. Click an option — or Tab to its mark and press
-Enter — to decide; your pick reaches the agent directly.</p>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Decision: where sessions live</title>
+    <link rel="stylesheet" href="/theme.css" />
+    <script type="module" src="/colloquy.js"></script>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">design decision</p>
+      <h1>Where sessions live</h1>
+      <p class="lede" id="decision-lede">
+        The monolith split leaves session state homeless: today it rides the app
+        server's memory and dies with it. Three candidates, one recommendation — Redis
+        with a signed-cookie fallback. Click an option — or Tab to its mark and press
+        Enter — to decide; your pick reaches the agent directly.
+      </p>
 
-<section id="constraints">
-<h2>Constraints</h2>
-<ul id="constraint-list">
-  <li>Logout must revoke immediately — support runs "log out all devices" during
-  account-takeover response.</li>
-  <li>Session writes happen on every request (rolling expiry), so the store sees
-  full request volume.</li>
-  <li>The team already operates Redis for rate limiting; nobody runs Dynamo-style
-  infrastructure today.</li>
-</ul>
-</section>
+      <section id="constraints">
+        <h2>Constraints</h2>
+        <ul id="constraint-list">
+          <li>
+            Logout must revoke immediately — support runs "log out all devices" during
+            account-takeover response.
+          </li>
+          <li>
+            Session writes happen on every request (rolling expiry), so the store sees
+            full request volume.
+          </li>
+          <li>
+            The team already operates Redis for rate limiting; nobody runs Dynamo-style
+            infrastructure today.
+          </li>
+        </ul>
+      </section>
 
-<section id="settled-transport">
-<h2>Settled last week</h2>
-<p id="transport-note">How the session id travels was decided before this page and the
-client change is merged, so it reads as one line — open it if you want the alternatives.</p>
-<cq-options id="cookie-transport" choose settled>
-  <cq-option id="opt-lax-cookie" recommended chosen><cq-chip>effort: low</cq-chip><cq-chip tone="ok">risk: low</cq-chip>
-    <strong>Host-only cookie, SameSite=Lax</strong> Set by the auth origin, sent on
-    top-level navigations; nothing to store client-side and nothing for a script to read.
-  </cq-option>
-  <cq-option id="opt-strict-cookie"><cq-chip>effort: low</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
-    <strong>SameSite=Strict</strong> Tighter, but a session started by following a link
-    from email arrives logged out — support saw this on the last trial.
-  </cq-option>
-  <cq-option id="opt-bearer"><cq-chip>effort: high</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
-    <strong>Bearer header from local storage</strong> Works for the mobile client without
-    a cookie jar; puts the id somewhere every script on the page can read.
-  </cq-option>
-</cq-options>
-</section>
+      <section id="settled-transport">
+        <h2>Settled last week</h2>
+        <p id="transport-note">
+          How the session id travels was decided before this page and the client change
+          is merged, so it reads as one line — open it if you want the alternatives.
+        </p>
+        <cq-options id="cookie-transport" choose settled>
+          <cq-option id="opt-lax-cookie" recommended chosen
+            ><cq-chip>effort: low</cq-chip><cq-chip tone="ok">risk: low</cq-chip>
+            <strong>Host-only cookie, SameSite=Lax</strong> Set by the auth origin, sent
+            on top-level navigations; nothing to store client-side and nothing for a
+            script to read.
+          </cq-option>
+          <cq-option id="opt-strict-cookie"
+            ><cq-chip>effort: low</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
+            <strong>SameSite=Strict</strong> Tighter, but a session started by following
+            a link from email arrives logged out — support saw this on the last trial.
+          </cq-option>
+          <cq-option id="opt-bearer"
+            ><cq-chip>effort: high</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
+            <strong>Bearer header from local storage</strong> Works for the mobile
+            client without a cookie jar; puts the id somewhere every script on the page
+            can read.
+          </cq-option>
+        </cq-options>
+      </section>
 
-<section id="options">
-<h2>Options</h2>
-<cq-options id="session-options" choose>
-  <cq-option id="opt-jwt"><cq-chip>effort: low</cq-chip><cq-chip tone="danger">risk: high</cq-chip>
-    <strong>Stateless JWT</strong>
-    <dl class="facts">
-      <dt>Revoke</dt><dd>build a denylist</dd>
-      <dt>Outage</dt><dd>unaffected</dd>
-      <dt>New ops</dt><dd>none, at first</dd>
-    </dl>
-    <p>Sessions become signed tokens; no store at all. Revocation requires a
-    denylist, which quietly reintroduces the store — with the hard parts
-    (replication, expiry) still attached, and the account-takeover response
-    waiting on them.</p>
-  </cq-option>
-  <cq-option id="opt-redis" recommended><cq-chip>effort: med</cq-chip><cq-chip tone="ok">risk: low</cq-chip>
-    <strong>Redis, cookie fallback</strong>
-    <dl class="facts">
-      <dt>Revoke</dt><dd>delete the key</dd>
-      <dt>Outage</dt><dd>reads ride the cookie</dd>
-      <dt>New ops</dt><dd>what we already do</dd>
-    </dl>
-    <p>Sessions in the Redis we already run, keyed by an opaque id; a
-    short-lived signed cookie covers Redis outages for reads, so a blip doesn't
-    log everyone out. Revocation is a delete — which is the shape support's
-    "log out all devices" needs.</p>
-  </cq-option>
-  <cq-option id="opt-db"><cq-chip>effort: low</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
-    <strong>Postgres table</strong>
-    <dl class="facts">
-      <dt>Revoke</dt><dd>delete the row</dd>
-      <dt>Outage</dt><dd>shares the database's fate</dd>
-      <dt>New ops</dt><dd>vacuum pressure</dd>
-    </dl>
-    <p>One table, no new moving parts. Every request writes a row (rolling
-    expiry), so at our volume that's the primary's headroom spent on expiry
-    bookkeeping — and a session outage becomes a database outage.</p>
-  </cq-option>
-</cq-options>
-</section>
+      <section id="options">
+        <h2>Options</h2>
+        <cq-options id="session-options" choose>
+          <cq-option id="opt-jwt"
+            ><cq-chip>effort: low</cq-chip><cq-chip tone="danger">risk: high</cq-chip>
+            <strong>Stateless JWT</strong>
+            <dl class="facts">
+              <dt>Revoke</dt>
+              <dd>build a denylist</dd>
+              <dt>Outage</dt>
+              <dd>unaffected</dd>
+              <dt>New ops</dt>
+              <dd>none, at first</dd>
+            </dl>
+            <p>
+              Sessions become signed tokens; no store at all. Revocation requires a
+              denylist, which quietly reintroduces the store — with the hard parts
+              (replication, expiry) still attached, and the account-takeover response
+              waiting on them.
+            </p>
+          </cq-option>
+          <cq-option id="opt-redis" recommended
+            ><cq-chip>effort: med</cq-chip><cq-chip tone="ok">risk: low</cq-chip>
+            <strong>Redis, cookie fallback</strong>
+            <dl class="facts">
+              <dt>Revoke</dt>
+              <dd>delete the key</dd>
+              <dt>Outage</dt>
+              <dd>reads ride the cookie</dd>
+              <dt>New ops</dt>
+              <dd>what we already do</dd>
+            </dl>
+            <p>
+              Sessions in the Redis we already run, keyed by an opaque id; a short-lived
+              signed cookie covers Redis outages for reads, so a blip doesn't log
+              everyone out. Revocation is a delete — which is the shape support's "log
+              out all devices" needs.
+            </p>
+          </cq-option>
+          <cq-option id="opt-db"
+            ><cq-chip>effort: low</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
+            <strong>Postgres table</strong>
+            <dl class="facts">
+              <dt>Revoke</dt>
+              <dd>delete the row</dd>
+              <dt>Outage</dt>
+              <dd>shares the database's fate</dd>
+              <dt>New ops</dt>
+              <dd>vacuum pressure</dd>
+            </dl>
+            <p>
+              One table, no new moving parts. Every request writes a row (rolling
+              expiry), so at our volume that's the primary's headroom spent on expiry
+              bookkeeping — and a session outage becomes a database outage.
+            </p>
+          </cq-option>
+        </cq-options>
+      </section>
 
-<section id="flow">
-<h2>Request path with the recommendation</h2>
-<cq-diagram id="session-flow">
+      <section id="flow">
+        <h2>Request path with the recommendation</h2>
+        <cq-diagram id="session-flow">
+          <pre>
 graph LR
   R[request] --> C{cookie valid?}
   C -->|yes| S[read session from Redis]
@@ -99,41 +133,67 @@ graph LR
   S -->|miss/outage| F[verify signed fallback]
   F --> H
   C -->|no| L[login]
-</cq-diagram>
-<p id="cookie-pair-note">The recommendation rides two cookies with different
-jobs:</p>
-<cq-compare id="cookie-pair">
-  <cq-variant id="var-session-cookie"><cq-chip>revocable</cq-chip><cq-chip tone="ok">nothing readable in it</cq-chip><strong>Session cookie</strong> An opaque
-  id; the store says everything else.</cq-variant>
-  <cq-variant id="var-fallback-cookie"><cq-chip tone="warn">outlives a revocation</cq-chip><cq-chip>survives a Redis blip</cq-chip><strong>Fallback cookie</strong> A signed
-  snapshot; outlives a blip, never a revocation.</cq-variant>
-</cq-compare>
-<p id="fallback-intro">One revision is waiting on you below: accept or reject it with
-the controls in the margin, and the next version carries whichever you chose.</p>
-<cq-suggestion id="sug-fallback-window">
-  <cq-old><aside class="callout" id="fallback-note">The fallback cookie is read-only: it can
-  keep a session alive through a Redis blip, but revocation, rolling expiry, and new
-  logins all require the store. A revoked session survives at most the cookie's
-  5-minute lifetime.</aside></cq-old>
-  <cq-new><aside class="callout">The fallback cookie is read-only: it can keep a session
-  alive through a Redis blip, but revocation, rolling expiry, and new logins all require
-  the store. A revoked session survives at most the cookie's 90-second lifetime — short
-  enough that support's "log out all devices" reads as immediate.</aside></cq-new>
-</cq-suggestion>
-</section>
+</pre>
+        </cq-diagram>
+        <p id="cookie-pair-note">
+          The recommendation rides two cookies with different jobs:
+        </p>
+        <cq-compare id="cookie-pair">
+          <cq-variant id="var-session-cookie"
+            ><cq-chip>revocable</cq-chip
+            ><cq-chip tone="ok">nothing readable in it</cq-chip
+            ><strong>Session cookie</strong> An opaque id; the store says everything
+            else.</cq-variant
+          >
+          <cq-variant id="var-fallback-cookie"
+            ><cq-chip tone="warn">outlives a revocation</cq-chip
+            ><cq-chip>survives a Redis blip</cq-chip><strong>Fallback cookie</strong> A
+            signed snapshot; outlives a blip, never a revocation.</cq-variant
+          >
+        </cq-compare>
+        <p id="fallback-intro">
+          One revision is waiting on you below: accept or reject it with the controls in
+          the margin, and the next version carries whichever you chose.
+        </p>
+        <cq-suggestion id="sug-fallback-window">
+          <cq-old
+            ><aside class="callout" id="fallback-note">
+              The fallback cookie is read-only: it can keep a session alive through a
+              Redis blip, but revocation, rolling expiry, and new logins all require the
+              store. A revoked session survives at most the cookie's 5-minute lifetime.
+            </aside></cq-old
+          >
+          <cq-new
+            ><aside class="callout">
+              The fallback cookie is read-only: it can keep a session alive through a
+              Redis blip, but revocation, rolling expiry, and new logins all require the
+              store. A revoked session survives at most the cookie's 90-second lifetime
+              — short enough that support's "log out all devices" reads as immediate.
+            </aside></cq-new
+          >
+        </cq-suggestion>
+      </section>
 
-<section id="next-up">
-<h2>What I pick up next</h2>
-<p id="next-intro">Whichever store wins, three jobs stand behind it, and each is argued
-somewhere above rather than in a card of its own. Pick the ones worth starting — click a
-row, or Tab to its mark and press Enter — and the box takes anything the rows don't
-cover, including "none of these".</p>
-<cq-options id="next-jobs" choose multiple>
-  <cq-option id="nx-revoke" for="constraints">A revocation drill at support's volume</cq-option>
-  <cq-option id="nx-fallback" for="flow">Key rotation for the fallback cookie</cq-option>
-  <cq-option id="nx-load" for="options">A write load test at request rate</cq-option>
-</cq-options>
-</section>
-</main>
-</body>
+      <section id="next-up">
+        <h2>What I pick up next</h2>
+        <p id="next-intro">
+          Whichever store wins, three jobs stand behind it, and each is argued somewhere
+          above rather than in a card of its own. Pick the ones worth starting — click a
+          row, or Tab to its mark and press Enter — and the box takes anything the rows
+          don't cover, including "none of these".
+        </p>
+        <cq-options id="next-jobs" choose multiple>
+          <cq-option id="nx-revoke" for="constraints"
+            >A revocation drill at support's volume</cq-option
+          >
+          <cq-option id="nx-fallback" for="flow"
+            >Key rotation for the fallback cookie</cq-option
+          >
+          <cq-option id="nx-load" for="options"
+            >A write load test at request rate</cq-option
+          >
+        </cq-options>
+      </section>
+    </main>
+  </body>
 </html>

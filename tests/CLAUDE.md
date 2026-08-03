@@ -109,6 +109,25 @@ ordinary busy run, and being that machine on purpose found seven more standing o
 margin: the ones that go red are only ever those with the least room, so fixing them
 without running this again hands the next loaded run a different victim.
 
+## A page's source is formatted, so ask what it says
+
+Prettier formats the `.html` under `docs/` and `examples/`, and it re-derives every line
+break in a paragraph — half of the corpus's, measured. So a sentence asserted as a
+substring of a file is a sentence that fails the day it gets a word longer, somewhere
+else. Collapse whitespace first, which is what a test about what a page *says* meant
+anyway; the page's own reading (`spoken`) is the same answer where a test already has a
+registry to hand.
+
+Markup is the same rule for the same reason. A whole tag written out as a literal
+encodes a formatter's opinion about attribute order and line breaks: prettier writes a
+void element `<link … />` and splits a long one over four lines. Match the attribute
+that carries the meaning, or a pattern that admits any tag around it. What made this
+expensive once was that the literal lived in `scripts/site.py` rather than in a test —
+it silently stopped matching, a generic path rule took the stylesheet href instead, and
+every published page linked a GitHub source view in place of its CSS. The link resolved,
+so the build's dead-link check said nothing; what noticed was a palette test reading
+colours off the rendered page.
+
 ## A sweep that walks controls by index must prove it pressed them
 
 A list read before the runtime injects its banner is a short list, and a short list skips

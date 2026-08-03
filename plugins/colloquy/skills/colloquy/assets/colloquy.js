@@ -147,6 +147,15 @@ export function once(el) {
   return true;
 }
 
+// A data widget's body: the <pre> the content model requires, never the element's own
+// textContent. The two used to be the same string and are not once the element holds a
+// child — an HTML formatter is free to put the <pre> on its own line, and the newline
+// and indent before it are the element's text too. Line one is load-bearing in every
+// notation here, so that indent is not untidiness downstream: a diff's file header, a
+// tree's root and mermaid's graph type stop parsing, and a walkthrough's `hi` ranges
+// and note anchors all point one line off.
+export const dataBody = (el) => el.querySelector(":scope > pre").textContent;
+
 // A failed upgrade becomes a visible error box rather than a blank page.
 export function failSoft(el, err, source) {
   const box = document.createElement("div");

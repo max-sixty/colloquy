@@ -15,11 +15,15 @@
  *    the text-node tree, so anything inside one is invisible to comment anchoring and
  *    to the version diff. So the body is a plain div — generated, but deliberately NOT
  *    marked .cq-ui or data-cq-gen, because those are exactly the markers that tell the
- *    anchor pass and the diff to look away. The textarea exists only while an edit is
- *    open, and its result is written back as text. Read mode is the resting state;
- *    comments and Δ work there. The capture also strips the indentation the HTML
- *    source gave every line, so an agent can indent a draft like any other child
- *    content without the indentation becoming part of the text under review.
+ *    anchor pass and the diff to look away. A div and not the <pre> the markup wrote,
+ *    which would be the tidier swap: <pre> is a text block, and the runtime's comment
+ *    line lands on the nearest one, so keeping it puts that line inside the words the
+ *    editor is seeded from — the exact failure the marker rules exist for. The textarea
+ *    exists only while an edit is open, and its result is written back as text. Read
+ *    mode is the resting state; comments and Δ work there. The capture also strips the
+ *    indentation the HTML source gave every line, so an agent can indent a draft like
+ *    any other child content without the indentation becoming part of the text under
+ *    review.
  * 2. applyAction states absolute values — the whole body, never a patch — so replay is
  *    idempotent, two tabs converge on the last write, and an edit no version has
  *    honored yet re-applies to each new version instead of visibly reverting. Until
@@ -69,6 +73,7 @@
  */
 import {
   agentName,
+  dataBody,
   once,
   offer,
   quoted,
@@ -142,7 +147,7 @@ function wordAt(body, x, y) {
 // newline after the open tag, trailing whitespace before the close tag, and the
 // common indentation the source gave every line.
 function capture(el) {
-  const raw = el.textContent.replace(/^\n/, "").replace(/\s+$/, "");
+  const raw = dataBody(el).replace(/^\n/, "").replace(/\s+$/, "");
   const lines = raw.split("\n");
   const indents = lines
     .filter((l) => l.trim())

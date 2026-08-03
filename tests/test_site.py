@@ -41,10 +41,23 @@ def site(tmp_path_factory):
 def test_the_pages_link_the_theme_the_site_serves(site):
     for page in sorted(DOCS.glob("*.html")):
         published = (site / page.name).read_text()
-        assert '<link rel="stylesheet" href="theme.css">' in published
+        assert 'href="theme.css"' in published
         for attribute in ('href="../', 'src="../'):
             assert attribute not in published, f"{page.name} kept a checkout path"
     assert (site / "theme.css").read_text() == (ASSETS / "theme.css").read_text()
+
+
+def test_only_the_stylesheet_link_becomes_the_served_copy(site):
+    """customizing.html links the theme twice — once as the page's stylesheet, once as
+    source to read — and the two have to land in different places. Rewriting on the path
+    alone sends a reader after the token block to the CSS the site serves, which is a
+    resolving link the dead-link check has nothing to say about and the wrong file."""
+    published = (site / "customizing.html").read_text()
+    source = (
+        f"{site_build.REPO}/blob/main/plugins/colloquy/skills/colloquy/assets/theme.css"
+    )
+    assert f'href="{source}"' in published
+    assert published.count('href="theme.css"') == 1
 
 
 def test_every_example_is_published_standalone(site):

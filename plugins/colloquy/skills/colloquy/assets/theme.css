@@ -919,11 +919,22 @@ cq-specimen cq-options[choose] > cq-option[chosen]:hover {
 
 /* Upgraded widgets: pre-upgrade presentation, so a page degrades readably. */
 cq-diagram, cq-diff, cq-tree, cq-code { display: block; margin: 14px 0;
-             white-space: pre; font-family: var(--mono); font-size: 13px;
+             font-family: var(--mono); font-size: 13px;
              color: var(--muted); overflow-x: auto; }
 cq-diagram.cq-rendered, cq-diff.cq-rendered, cq-tree.cq-rendered,
 cq-code.cq-rendered {
-             white-space: normal; font: inherit; color: inherit; overflow: visible; }
+             font: inherit; color: inherit; overflow: visible; }
+/* The authored body, before its module replaces it. Nothing here says white-space: the
+   body is a <pre>, which is the whole reason it is one. Everything here undoes the rule
+   near the top that dresses a <pre> as evidence the page is showing — a box, a rule, a
+   mono face, an inset. This <pre> is not that: it is the widget's own content, about to
+   be rendered or edited, inside an element that has already said how it looks and how
+   far it stands off. The rendered <pre> a module builds is evidence again, and keeps
+   the dressing. */
+cq-diagram:not(.cq-rendered) > pre, cq-diff:not(.cq-rendered) > pre,
+cq-tree:not(.cq-rendered) > pre, cq-code:not(.cq-rendered) > pre, cq-draft > pre {
+             background: none; border: 0; border-radius: 0; padding: 0; margin: 0;
+             font: inherit; line-height: inherit; overflow: visible; }
 cq-diagram svg { display: block; margin: 0 auto; }
 
 /* cq-diff rendered form: one details per file, lines colored by kind. */

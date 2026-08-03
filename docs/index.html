@@ -1,211 +1,292 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>colloquy · collaborate with your agent in HTML</title>
-<meta name="description" content="colloquy is a Claude Code and Codex plugin: your agent presents plans, findings, and work in progress as a commentable web page, your comments reach the session, and revised versions ship with changelogs.">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-<meta property="og:type" content="website">
-<meta property="og:title" content="colloquy · collaborate with your agent in HTML">
-<meta property="og:description" content="Your agent presents plans, findings, and work in progress as a commentable web page. Your comments reach the session, and revised versions ship with changelogs.">
-<meta property="og:url" content="https://max-sixty.github.io/colloquy/">
-<meta property="og:image" content="https://max-sixty.github.io/colloquy/session-light.png">
-<meta name="twitter:card" content="summary_large_image">
-<link rel="stylesheet" href="../plugins/colloquy/skills/colloquy/assets/theme.css">
-<link rel="stylesheet" href="site.css">
-</head>
-<body>
-<main>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>colloquy · collaborate with your agent in HTML</title>
+    <meta
+      name="description"
+      content="colloquy is a Claude Code and Codex plugin: your agent presents plans, findings, and work in progress as a commentable web page, your comments reach the session, and revised versions ship with changelogs."
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:title"
+      content="colloquy · collaborate with your agent in HTML"
+    />
+    <meta
+      property="og:description"
+      content="Your agent presents plans, findings, and work in progress as a commentable web page. Your comments reach the session, and revised versions ship with changelogs."
+    />
+    <meta property="og:url" content="https://max-sixty.github.io/colloquy/" />
+    <meta
+      property="og:image"
+      content="https://max-sixty.github.io/colloquy/session-light.png"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link
+      rel="stylesheet"
+      href="../plugins/colloquy/skills/colloquy/assets/theme.css"
+    />
+    <link rel="stylesheet" href="site.css" />
+  </head>
+  <body>
+    <main>
+      <nav class="sitenav" aria-label="Site">
+        <span class="brand">colloquy</span>
+        <a href="examples.html">Examples</a>
+        <a href="how-it-works.html">How it works</a>
+        <a href="customizing.html">Customize</a>
+        <a href="https://github.com/max-sixty/colloquy">GitHub</a>
+      </nav>
 
-<nav class="sitenav" aria-label="Site">
-<span class="brand">colloquy</span>
-<a href="examples.html">Examples</a>
-<a href="how-it-works.html">How it works</a>
-<a href="customizing.html">Customize</a>
-<a href="https://github.com/max-sixty/colloquy">GitHub</a>
-</nav>
+      <header class="hero" id="top">
+        <p class="eyebrow">a Claude Code and Codex plugin</p>
+        <h1>Collaborate with your agent in HTML.</h1>
+        <p class="lede" id="lede">
+          Your agent builds you a page rather than a scroll of terminal text: diagrams,
+          boards you drag, a list of work that ticks over as it goes. Select any line
+          and comment on it like a shared doc; the comment reaches the session, and a
+          revised version arrives with the change.
+        </p>
+        <p id="scope">
+          It works for anything that would otherwise land as a wall of terminal text: a
+          migration plan, an architecture write-up, an incident diagnosis, a PR
+          walkthrough, a review, or a list of things to work through that ticks over as
+          the agent does them. <a href="#install">Two commands install it</a>. No
+          accounts, no daemon, no config; you need
+          <a href="https://docs.astral.sh/uv/"><code>uv</code></a> on your PATH and a
+          browser on the same machine.
+        </p>
+      </header>
 
-<header class="hero" id="top">
-<p class="eyebrow">a Claude Code and Codex plugin</p>
-<h1>Collaborate with your agent in HTML.</h1>
-<p class="lede" id="lede">Your agent builds you a page rather than a scroll of terminal
-text: diagrams, boards you drag, a list of work that ticks over as it goes. Select any
-line and comment on it like a shared doc; the comment reaches the session, and a revised
-version arrives with the change.</p>
-<p id="scope">It works for anything that would otherwise land as a wall of terminal
-text: a migration plan, an architecture write-up, an incident diagnosis, a PR
-walkthrough, a review, or a list of things to work through that ticks over as the agent
-does them. <a href="#install">Two commands install it</a>. No accounts,
-no daemon, no config; you need <a href="https://docs.astral.sh/uv/"><code>uv</code></a>
-on your PATH and a browser on the same machine.</p>
-</header>
-
-<figure class="shot" id="session-shot">
-<picture>
-<source media="(prefers-color-scheme: dark)" srcset="session-dark.png">
-<img src="session-light.png" width="1280" height="953"
-     alt="A colloquy session in the browser: a migration plan with a comment anchored
+      <figure class="shot" id="session-shot">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="session-dark.png" />
+          <img
+            src="session-light.png"
+            width="1280"
+            height="953"
+            alt="A colloquy session in the browser: a migration plan with a comment anchored
 to a highlighted passage, Claude's reply in the thread, a version picker reading
-v2 (latest), and a banner reading 'Claude is listening'.">
-</picture>
-<figcaption>A session mid-review. The reviewer asked about a rollback edge case;
-Claude replied in the thread and shipped v2 covering it. The picker holds each
-immutable version with its changelog, the Δ toggle marks what changed, and the
-banner tracks whether Claude is working or listening.</figcaption>
-</figure>
+v2 (latest), and a banner reading 'Claude is listening'."
+          />
+        </picture>
+        <figcaption>
+          A session mid-review. The reviewer asked about a rollback edge case; Claude
+          replied in the thread and shipped v2 covering it. The picker holds each
+          immutable version with its changelog, the Δ toggle marks what changed, and the
+          banner tracks whether Claude is working or listening.
+        </figcaption>
+      </figure>
 
-<section id="range">
-<h2>What a page can do</h2>
-<ul>
-<li id="range-explain"><strong>Explain.</strong> Everything HTML has to offer, in place
-of everything a terminal doesn't: mermaid diagrams, a code walkthrough with remarks
-anchored at the line each is about, a unified diff, a file tree, two screenshots that
-flip between before and after, a row of measurements, evidence collapsed under the claim
-it backs, and real links out to the source line or the ticket. It prints, too.</li>
-<li id="range-collaborate"><strong>Collaborate.</strong> Ask about one part of the page
-rather than the whole of it. Every passage carries its own thread, so several
-conversations run at once and each stays anchored to the words it is about: yours and
-the agent's alike, since it opens threads on the page the same way you do.</li>
-<li id="range-interact"><strong>Interact.</strong> The page takes input back. Drag cards
-to re-prioritize a board, click an option to decide it, accept or reject a proposed
-edit, or rewrite a draft (an email, a release note) in your own words. Each edit reaches
-the agent as a structured action and holds its place on every later version. A question
-can be answered off its own menu too: a group that takes a pick carries a box for words,
-so "none of these — do X instead" goes where the question was asked.</li>
-<li id="range-track"><strong>Track.</strong> A page can be a working dashboard rather
-than a document: the state of the resources you asked about, a queue draining, a
-checklist ticking over. The agent republishes as the work moves and your browser follows on
-its own, so you watch it happen rather than reading a summary afterwards.</li>
-</ul>
-<p id="more">The <a href="examples.html">examples</a> are complete pages, one per kind of
-write-up, published here as the browser draws them.
-<a href="how-it-works.html">How it works</a> shows the widget system rendering live, and
-<a href="customizing.html">Customize</a> covers theme overlays and project widgets.</p>
-</section>
+      <section id="range">
+        <h2>What a page can do</h2>
+        <ul>
+          <li id="range-explain">
+            <strong>Explain.</strong> Everything HTML has to offer, in place of
+            everything a terminal doesn't: mermaid diagrams, a code walkthrough with
+            remarks anchored at the line each is about, a unified diff, a file tree, two
+            screenshots that flip between before and after, a row of measurements,
+            evidence collapsed under the claim it backs, and real links out to the
+            source line or the ticket. It prints, too.
+          </li>
+          <li id="range-collaborate">
+            <strong>Collaborate.</strong> Ask about one part of the page rather than the
+            whole of it. Every passage carries its own thread, so several conversations
+            run at once and each stays anchored to the words it is about: yours and the
+            agent's alike, since it opens threads on the page the same way you do.
+          </li>
+          <li id="range-interact">
+            <strong>Interact.</strong> The page takes input back. Drag cards to
+            re-prioritize a board, click an option to decide it, accept or reject a
+            proposed edit, or rewrite a draft (an email, a release note) in your own
+            words. Each edit reaches the agent as a structured action and holds its
+            place on every later version. A question can be answered off its own menu
+            too: a group that takes a pick carries a box for words, so "none of these —
+            do X instead" goes where the question was asked.
+          </li>
+          <li id="range-track">
+            <strong>Track.</strong> A page can be a working dashboard rather than a
+            document: the state of the resources you asked about, a queue draining, a
+            checklist ticking over. The agent republishes as the work moves and your
+            browser follows on its own, so you watch it happen rather than reading a
+            summary afterwards.
+          </li>
+        </ul>
+        <p id="more">
+          The <a href="examples.html">examples</a> are complete pages, one per kind of
+          write-up, published here as the browser draws them.
+          <a href="how-it-works.html">How it works</a> shows the widget system rendering
+          live, and <a href="customizing.html">Customize</a> covers theme overlays and
+          project widgets.
+        </p>
+      </section>
 
-<section id="loop">
-<h2>Example: Review a plan</h2>
-<ol class="steps">
-<li id="loop-ask"><strong>Ask.</strong> "Write up the migration options as a page"
-triggers it, as does <code>/colloquy</code> in Claude Code or
-<code>$colloquy</code> in Codex. The agent writes the page, serves it on a
-loopback port, and prints the URL.</li>
-<li id="loop-comment"><strong>Mark it up.</strong> Select any passage and comment; the
-passage stays lit while you write, and the comment anchors to it and stays anchored as
-versions change — to the passage you picked, even where the page says the same thing
-twice. Diagrams and images take comments by click, and a suggestion mode proposes
-replacement text that the agent takes verbatim or answers with why not. The agent opens
-threads the same way — a question about one sentence arrives in the margin beside
-it, not in the terminal.</li>
-<li id="loop-wake"><strong>Your comment reaches the session.</strong> On Claude Code, a
-background <code>review wait</code> wakes or joins the agent. On Codex, the agent keeps
-the handover turn active and polls the exact wait session. Either way it acknowledges
-only after a complete, untruncated batch is in model context, so "printed" cannot
-masquerade as "seen".</li>
-<li id="loop-revise"><strong>A revision ships.</strong> Versions are immutable,
-each with a one-line changelog. The page follows the newest while keeping your
-place on it, and the Δ toggle marks every passage that changed since the version
-before.</li>
-<li id="loop-signoff"><strong>Conclude deliberately.</strong> Pages seeking approval offer
-"✓ Looks good"; comments-only pages offer a neutral "End review" instead. Approval
-records assent and can leave the page live for follow-up; ending comments is a separate
-event. After either complete batch is received, an explicit idle state closes the agent
-loop when its work there is finished.
-<code>review transcript</code> prints the whole thread as Markdown for a PR
-description.</li>
-</ol>
-</section>
+      <section id="loop">
+        <h2>Example: Review a plan</h2>
+        <ol class="steps">
+          <li id="loop-ask">
+            <strong>Ask.</strong> "Write up the migration options as a page" triggers
+            it, as does <code>/colloquy</code> in Claude Code or
+            <code>$colloquy</code> in Codex. The agent writes the page, serves it on a
+            loopback port, and prints the URL.
+          </li>
+          <li id="loop-comment">
+            <strong>Mark it up.</strong> Select any passage and comment; the passage
+            stays lit while you write, and the comment anchors to it and stays anchored
+            as versions change — to the passage you picked, even where the page says the
+            same thing twice. Diagrams and images take comments by click, and a
+            suggestion mode proposes replacement text that the agent takes verbatim or
+            answers with why not. The agent opens threads the same way — a question
+            about one sentence arrives in the margin beside it, not in the terminal.
+          </li>
+          <li id="loop-wake">
+            <strong>Your comment reaches the session.</strong> On Claude Code, a
+            background <code>review wait</code> wakes or joins the agent. On Codex, the
+            agent keeps the handover turn active and polls the exact wait session.
+            Either way it acknowledges only after a complete, untruncated batch is in
+            model context, so "printed" cannot masquerade as "seen".
+          </li>
+          <li id="loop-revise">
+            <strong>A revision ships.</strong> Versions are immutable, each with a
+            one-line changelog. The page follows the newest while keeping your place on
+            it, and the Δ toggle marks every passage that changed since the version
+            before.
+          </li>
+          <li id="loop-signoff">
+            <strong>Conclude deliberately.</strong> Pages seeking approval offer "✓
+            Looks good"; comments-only pages offer a neutral "End review" instead.
+            Approval records assent and can leave the page live for follow-up; ending
+            comments is a separate event. After either complete batch is received, an
+            explicit idle state closes the agent loop when its work there is finished.
+            <code>review transcript</code> prints the whole thread as Markdown for a PR
+            description.
+          </li>
+        </ol>
+      </section>
 
-<figure class="shot" id="loop-demo">
-<img src="demo.gif" width="1120" height="700"
-     alt="A live colloquy review. The reviewer selects Backfill history and writes a
+      <figure class="shot" id="loop-demo">
+        <img
+          src="demo.gif"
+          width="1120"
+          height="700"
+          alt="A live colloquy review. The reviewer selects Backfill history and writes a
 comment while the passage stays highlighted. The agent replies, publishes a new version
-whose rehearsal count advances, and the reviewer drags an on-call task to During.">
-<figcaption>The real loop, recorded by <code>scripts/record-demo.sh</code>: comment on
-a passage, watch a new version advance the work, then move a card.</figcaption>
-</figure>
+whose rehearsal count advances, and the reviewer drags an on-call task to During."
+        />
+        <figcaption>
+          The real loop, recorded by <code>scripts/record-demo.sh</code>: comment on a
+          passage, watch a new version advance the work, then move a card.
+        </figcaption>
+      </figure>
 
-<section id="interact-example">
-<h2>Example: Re-prioritize a queue</h2>
-<p id="interact-setup">The
-<a href="../examples/triage-board.html">release-triage example</a> hands the ordering
-to the reviewer. Run the shipped page from a checkout, then drag “CSV export quotes
-numerics” from “Fix in 2.4.1” to “Blocking release”:</p>
-<pre><code>scripts/preview.py triage-board</code></pre>
-<figure>
-<cq-specimen id="tour-board-specimen" label="release triage">
-<cq-board id="tour-board">
-  <cq-column id="tour-col-blocking" label="Blocking release">
-    <cq-card id="tour-card-migration"><strong>Migration reruns on every deploy</strong>
-    The version stamp never lands.</cq-card>
-    <cq-card id="tour-card-logout"><strong>Logout fails with an expired session</strong>
-    The session key is deleted twice.</cq-card>
-  </cq-column>
-  <cq-column id="tour-col-next" label="Fix in 2.4.1">
-    <cq-card id="tour-card-export"><strong>CSV export quotes numerics</strong>
-    Breaks one downstream import.</cq-card>
-  </cq-column>
-</cq-board>
-</cq-specimen>
-<figcaption>The browser sends the placement as structured detail:
-<code>{"widget":"release-board","action":"move","detail":{"card":"card-export",
-"to":"col-blocking","index":2}}</code>. The move appears immediately, reaches the
-agent as an action, and remains on later versions.</figcaption>
-</figure>
-</section>
+      <section id="interact-example">
+        <h2>Example: Re-prioritize a queue</h2>
+        <p id="interact-setup">
+          The <a href="../examples/triage-board.html">release-triage example</a> hands
+          the ordering to the reviewer. Run the shipped page from a checkout, then drag
+          “CSV export quotes numerics” from “Fix in 2.4.1” to “Blocking release”:
+        </p>
+        <pre><code>scripts/preview.py triage-board</code></pre>
+        <figure>
+          <cq-specimen id="tour-board-specimen" label="release triage">
+            <cq-board id="tour-board">
+              <cq-column id="tour-col-blocking" label="Blocking release">
+                <cq-card id="tour-card-migration"
+                  ><strong>Migration reruns on every deploy</strong> The version stamp
+                  never lands.</cq-card
+                >
+                <cq-card id="tour-card-logout"
+                  ><strong>Logout fails with an expired session</strong> The session key
+                  is deleted twice.</cq-card
+                >
+              </cq-column>
+              <cq-column id="tour-col-next" label="Fix in 2.4.1">
+                <cq-card id="tour-card-export"
+                  ><strong>CSV export quotes numerics</strong> Breaks one downstream
+                  import.</cq-card
+                >
+              </cq-column>
+            </cq-board>
+          </cq-specimen>
+          <figcaption>
+            The browser sends the placement as structured detail:
+            <code
+              >{"widget":"release-board","action":"move","detail":{"card":"card-export",
+              "to":"col-blocking","index":2}}</code
+            >. The move appears immediately, reaches the agent as an action, and remains
+            on later versions.
+          </figcaption>
+        </figure>
+      </section>
 
-<section id="track-example">
-<h2>Example: Watch work finish</h2>
-<p id="track-setup">The
-<a href="../examples/live-progress.html">cutover-rehearsal example</a> is a page the
-agent keeps current while it works. It names what is running now, separates blocked
-work from the critical path, and records completed checks. Run it like any other
-example:</p>
-<pre><code>scripts/preview.py live-progress</code></pre>
-<ol class="steps" id="track-versions">
-<li><strong>v4:</strong> 11 of 18 checks are done; traffic has just moved to the new
-checkout service.</li>
-<li><strong>v5:</strong> 14 are done; rollback is running, so that milestone becomes
-active and the event timeline gains the cutover result.</li>
-<li><strong>v6:</strong> rollback is done; the report becomes active and the browser
-follows the version without a reload.</li>
-</ol>
-<p id="track-source">The published example is the middle state, with metrics,
-milestones, a blocker, and an event log for the next version to update in place.</p>
-</section>
+      <section id="track-example">
+        <h2>Example: Watch work finish</h2>
+        <p id="track-setup">
+          The <a href="../examples/live-progress.html">cutover-rehearsal example</a> is
+          a page the agent keeps current while it works. It names what is running now,
+          separates blocked work from the critical path, and records completed checks.
+          Run it like any other example:
+        </p>
+        <pre><code>scripts/preview.py live-progress</code></pre>
+        <ol class="steps" id="track-versions">
+          <li>
+            <strong>v4:</strong> 11 of 18 checks are done; traffic has just moved to the
+            new checkout service.
+          </li>
+          <li>
+            <strong>v5:</strong> 14 are done; rollback is running, so that milestone
+            becomes active and the event timeline gains the cutover result.
+          </li>
+          <li>
+            <strong>v6:</strong> rollback is done; the report becomes active and the
+            browser follows the version without a reload.
+          </li>
+        </ol>
+        <p id="track-source">
+          The published example is the middle state, with metrics, milestones, a
+          blocker, and an event log for the next version to update in place.
+        </p>
+      </section>
 
-<section id="install">
-<h2>Install</h2>
-<div class="hosts">
-<div>
-<h3>Claude Code</h3>
-<pre><code>/plugin marketplace add max-sixty/colloquy
+      <section id="install">
+        <h2>Install</h2>
+        <div class="hosts">
+          <div>
+            <h3>Claude Code</h3>
+            <pre><code>/plugin marketplace add max-sixty/colloquy
 /plugin install colloquy@colloquy</code></pre>
-</div>
-<div>
-<h3>Codex</h3>
-<pre><code>codex plugin marketplace add max-sixty/colloquy
+          </div>
+          <div>
+            <h3>Codex</h3>
+            <pre><code>codex plugin marketplace add max-sixty/colloquy
 codex plugin add colloquy@colloquy</code></pre>
-</div>
-</div>
-<p>Then ask the agent to "write it up as a page", run <code>/colloquy</code> in
-Claude Code, or run <code>$colloquy</code> in Codex. The agent also reaches for it
-on its own when a plan or write-up would be easier to
-review as a page than as terminal text.</p>
-</section>
+          </div>
+        </div>
+        <p>
+          Then ask the agent to "write it up as a page", run <code>/colloquy</code> in
+          Claude Code, or run <code>$colloquy</code> in Codex. The agent also reaches
+          for it on its own when a plan or write-up would be easier to review as a page
+          than as terminal text.
+        </p>
+      </section>
 
-<footer id="colophon">
-<p id="links"><a href="index.html">Tour</a> ·
-<a href="examples.html">Examples</a> ·
-<a href="how-it-works.html">How it works</a> ·
-<a href="customizing.html">Customize</a> ·
-<a href="https://github.com/max-sixty/colloquy">GitHub</a> ·
-<a href="https://github.com/max-sixty/colloquy/blob/main/LICENSE">MIT license</a></p>
-<p>This page is a static render of colloquy's own theme; the comment layer joins
-in when a live session serves a page.</p>
-</footer>
-
-</main>
-</body>
+      <footer id="colophon">
+        <p id="links">
+          <a href="index.html">Tour</a> · <a href="examples.html">Examples</a> ·
+          <a href="how-it-works.html">How it works</a> ·
+          <a href="customizing.html">Customize</a> ·
+          <a href="https://github.com/max-sixty/colloquy">GitHub</a> ·
+          <a href="https://github.com/max-sixty/colloquy/blob/main/LICENSE"
+            >MIT license</a
+          >
+        </p>
+        <p>
+          This page is a static render of colloquy's own theme; the comment layer joins
+          in when a live session serves a page.
+        </p>
+      </footer>
+    </main>
+  </body>
 </html>

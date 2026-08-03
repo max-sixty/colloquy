@@ -151,9 +151,10 @@ and the comment layer left behind.
 - **Widgets are `cq-*` elements**, validated against the vendored registry: attributes
   carry scalars (enums, flags), children carry prose, an item's title is a leading
   `<strong>` child. Every `cq-*` element takes an explicit end tag — `<cq-diagram id="flow"/>` is
-  rejected because HTML ignores the slash. A `data`-bodied widget (`cq-diagram`) takes
-  text in its notation with `<` and `>` escaped. The catalog is the authority; don't
-  invent tags or attributes.
+  rejected because HTML ignores the slash. A `data`-bodied widget (`cq-diagram`) holds
+  its notation in a `<pre>`, with `<` and `>` escaped — the whitespace is load-bearing,
+  and `<pre>` is the only thing in HTML that says so to a tool with no stylesheet to
+  read. The catalog is the authority; don't invent tags or attributes.
 - Give every section, major block, and widget item a stable, meaningful `id`: comments
   anchor to the nearest `id`, and an anchor survives into a new version only where its
   id does. The reader's place on the page falls back to those same ids when the text

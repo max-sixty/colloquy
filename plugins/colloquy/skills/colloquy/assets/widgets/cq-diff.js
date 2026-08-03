@@ -13,6 +13,7 @@
  * What gets tokenized is a hunk, one side at a time, with the +/−/space column
  * cut off. Each of those is load-bearing; see colorHunks. */
 import {
+  dataBody,
   failSoft,
   langForPath,
   once,
@@ -194,7 +195,9 @@ customElements.define(
     async render() {
       // Only blank edge lines are trimmed: diff content is column-sensitive
       // (a leading space means context), so the body is authored at column 0.
-      const source = this.textContent.replace(/^\n+/, "").replace(/\n\s*$/, "");
+      const source = dataBody(this)
+        .replace(/^\n+/, "")
+        .replace(/\n\s*$/, "");
       try {
         const files = parseDiff(source);
         if (!files.length) throw new Error("empty diff");

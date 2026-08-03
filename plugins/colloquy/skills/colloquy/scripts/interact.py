@@ -98,8 +98,12 @@ entry is JSON Schema over the instance built from the element's attributes
 vocabulary for rides in the custom keywords below:
     x-parent    the tags this element may be a direct child of
     x-content   the content model: "prose" (flow content, widgets welcome),
-                "items" (element children only, no loose text), "data" (a text
-                body in the notation the description names), "none" (empty).
+                "items" (element children only, no loose text), "data" (one <pre>
+                holding text in the notation the description names), "none"
+                (empty). <pre> because a data body's whitespace is load-bearing
+                and that tag is HTML's only way to say so — otherwise it is a CSS
+                fact, and a tool reading the markup alone collapses what it
+                cannot see the rule for.
                 Children that name this tag in x-parent are admissible under
                 any model — that is what x-parent means. A list because one
                 element can belong to two holders: a chip is written in a
@@ -2234,7 +2238,9 @@ CATALOG_PREAMBLE = """\
 # <cq-foo/>. Ids are authored (lowercase kebab), unique, stable across
 # versions. Each entry is JSON Schema over the attributes; x-parent names the
 # required parent, x-content the content model (prose | items | data | none).
-# A "data" body is text in the notation the description names, < > escaped.
+# A "data" body is one <pre> holding text in the notation the description
+# names, < > escaped — <pre> because that is the only thing in HTML that says
+# whitespace is load-bearing without a stylesheet to read.
 # x-upgrade marks tags a JS module enhances in the browser — the interactive
 # widgets and the data-body renderers; x-says names the attributes whose values
 # the reader sees as words, and the edge each renders at, so the reviewer can
@@ -3830,19 +3836,25 @@ def widget_errors(cq_elements: list, registry: dict) -> list:
             wanted = " or ".join(f"<{p}>" for p in want_parents)
             errors.append(f"{where}: must be a direct child of {wanted}{actual}")
         # Tags declaring this one as x-parent are admissible children under any
-        # content model — that is what x-parent means. "data" forbids all others
-        # (the body is text in a notation), "items" also forbids loose text,
-        # "none" forbids everything.
+        # content model — that is what x-parent means. "data" takes one <pre> and
+        # those, "items" element children only, "none" nothing at all.
         content = entry["x-content"]
         allowed = children_of.get(tag, set())
         stray = sorted({c for c in rec["children"] if c not in allowed})
         if content == "none" and (rec["children"] or rec["text"]):
             errors.append(f"{where}: takes no content — write <{tag} …></{tag}>")
-        elif content == "data" and stray:
-            errors.append(
-                f"{where}: its body is data (text only; escape < and >), "
-                f"found element children: {stray}"
-            )
+        elif content == "data":
+            others = [c for c in stray if c != "pre"]
+            if rec["children"].count("pre") != 1 or others:
+                found = ", ".join(f"<{c}>" for c in rec["children"]) or "nothing"
+                errors.append(
+                    f"{where}: its body is one <pre> holding the text "
+                    f"(escape < and >), found {found}"
+                )
+            if rec["text"]:
+                errors.append(
+                    f"{where}: text outside its <pre> — the whole body goes inside it"
+                )
         elif content == "items":
             if stray:
                 errors.append(

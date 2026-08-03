@@ -21,87 +21,121 @@ any text to comment on the example it belongs to.</p>
 
 <cq-tab id="gal-design-decision" label="Design decision">
 <h1>Where sessions live</h1>
-<p class="lede" id="decision-lede">The monolith split leaves session state homeless: today it
-rides the app server's memory and dies with it. Three candidates, one recommendation —
-Redis with a signed-cookie fallback. Click an option — or Tab to its mark and press
-Enter — to decide; your pick reaches the agent directly.</p>
+      <p class="lede" id="decision-lede">
+        The monolith split leaves session state homeless: today it rides the app
+        server's memory and dies with it. Three candidates, one recommendation — Redis
+        with a signed-cookie fallback. Click an option — or Tab to its mark and press
+        Enter — to decide; your pick reaches the agent directly.
+      </p>
 
-<section id="constraints">
-<h2>Constraints</h2>
-<ul id="constraint-list">
-  <li>Logout must revoke immediately — support runs "log out all devices" during
-  account-takeover response.</li>
-  <li>Session writes happen on every request (rolling expiry), so the store sees
-  full request volume.</li>
-  <li>The team already operates Redis for rate limiting; nobody runs Dynamo-style
-  infrastructure today.</li>
-</ul>
-</section>
+      <section id="constraints">
+        <h2>Constraints</h2>
+        <ul id="constraint-list">
+          <li>
+            Logout must revoke immediately — support runs "log out all devices" during
+            account-takeover response.
+          </li>
+          <li>
+            Session writes happen on every request (rolling expiry), so the store sees
+            full request volume.
+          </li>
+          <li>
+            The team already operates Redis for rate limiting; nobody runs Dynamo-style
+            infrastructure today.
+          </li>
+        </ul>
+      </section>
 
-<section id="settled-transport">
-<h2>Settled last week</h2>
-<p id="transport-note">How the session id travels was decided before this page and the
-client change is merged, so it reads as one line — open it if you want the alternatives.</p>
-<cq-options id="cookie-transport" choose settled>
-  <cq-option id="opt-lax-cookie" recommended chosen><cq-chip>effort: low</cq-chip><cq-chip tone="ok">risk: low</cq-chip>
-    <strong>Host-only cookie, SameSite=Lax</strong> Set by the auth origin, sent on
-    top-level navigations; nothing to store client-side and nothing for a script to read.
-  </cq-option>
-  <cq-option id="opt-strict-cookie"><cq-chip>effort: low</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
-    <strong>SameSite=Strict</strong> Tighter, but a session started by following a link
-    from email arrives logged out — support saw this on the last trial.
-  </cq-option>
-  <cq-option id="opt-bearer"><cq-chip>effort: high</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
-    <strong>Bearer header from local storage</strong> Works for the mobile client without
-    a cookie jar; puts the id somewhere every script on the page can read.
-  </cq-option>
-</cq-options>
-</section>
+      <section id="settled-transport">
+        <h2>Settled last week</h2>
+        <p id="transport-note">
+          How the session id travels was decided before this page and the client change
+          is merged, so it reads as one line — open it if you want the alternatives.
+        </p>
+        <cq-options id="cookie-transport" choose settled>
+          <cq-option id="opt-lax-cookie" recommended chosen
+            ><cq-chip>effort: low</cq-chip><cq-chip tone="ok">risk: low</cq-chip>
+            <strong>Host-only cookie, SameSite=Lax</strong> Set by the auth origin, sent
+            on top-level navigations; nothing to store client-side and nothing for a
+            script to read.
+          </cq-option>
+          <cq-option id="opt-strict-cookie"
+            ><cq-chip>effort: low</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
+            <strong>SameSite=Strict</strong> Tighter, but a session started by following
+            a link from email arrives logged out — support saw this on the last trial.
+          </cq-option>
+          <cq-option id="opt-bearer"
+            ><cq-chip>effort: high</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
+            <strong>Bearer header from local storage</strong> Works for the mobile
+            client without a cookie jar; puts the id somewhere every script on the page
+            can read.
+          </cq-option>
+        </cq-options>
+      </section>
 
-<section id="options">
-<h2>Options</h2>
-<cq-options id="session-options" choose>
-  <cq-option id="opt-jwt"><cq-chip>effort: low</cq-chip><cq-chip tone="danger">risk: high</cq-chip>
-    <strong>Stateless JWT</strong>
-    <dl class="facts">
-      <dt>Revoke</dt><dd>build a denylist</dd>
-      <dt>Outage</dt><dd>unaffected</dd>
-      <dt>New ops</dt><dd>none, at first</dd>
-    </dl>
-    <p>Sessions become signed tokens; no store at all. Revocation requires a
-    denylist, which quietly reintroduces the store — with the hard parts
-    (replication, expiry) still attached, and the account-takeover response
-    waiting on them.</p>
-  </cq-option>
-  <cq-option id="opt-redis" recommended><cq-chip>effort: med</cq-chip><cq-chip tone="ok">risk: low</cq-chip>
-    <strong>Redis, cookie fallback</strong>
-    <dl class="facts">
-      <dt>Revoke</dt><dd>delete the key</dd>
-      <dt>Outage</dt><dd>reads ride the cookie</dd>
-      <dt>New ops</dt><dd>what we already do</dd>
-    </dl>
-    <p>Sessions in the Redis we already run, keyed by an opaque id; a
-    short-lived signed cookie covers Redis outages for reads, so a blip doesn't
-    log everyone out. Revocation is a delete — which is the shape support's
-    "log out all devices" needs.</p>
-  </cq-option>
-  <cq-option id="opt-db"><cq-chip>effort: low</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
-    <strong>Postgres table</strong>
-    <dl class="facts">
-      <dt>Revoke</dt><dd>delete the row</dd>
-      <dt>Outage</dt><dd>shares the database's fate</dd>
-      <dt>New ops</dt><dd>vacuum pressure</dd>
-    </dl>
-    <p>One table, no new moving parts. Every request writes a row (rolling
-    expiry), so at our volume that's the primary's headroom spent on expiry
-    bookkeeping — and a session outage becomes a database outage.</p>
-  </cq-option>
-</cq-options>
-</section>
+      <section id="options">
+        <h2>Options</h2>
+        <cq-options id="session-options" choose>
+          <cq-option id="opt-jwt"
+            ><cq-chip>effort: low</cq-chip><cq-chip tone="danger">risk: high</cq-chip>
+            <strong>Stateless JWT</strong>
+            <dl class="facts">
+              <dt>Revoke</dt>
+              <dd>build a denylist</dd>
+              <dt>Outage</dt>
+              <dd>unaffected</dd>
+              <dt>New ops</dt>
+              <dd>none, at first</dd>
+            </dl>
+            <p>
+              Sessions become signed tokens; no store at all. Revocation requires a
+              denylist, which quietly reintroduces the store — with the hard parts
+              (replication, expiry) still attached, and the account-takeover response
+              waiting on them.
+            </p>
+          </cq-option>
+          <cq-option id="opt-redis" recommended
+            ><cq-chip>effort: med</cq-chip><cq-chip tone="ok">risk: low</cq-chip>
+            <strong>Redis, cookie fallback</strong>
+            <dl class="facts">
+              <dt>Revoke</dt>
+              <dd>delete the key</dd>
+              <dt>Outage</dt>
+              <dd>reads ride the cookie</dd>
+              <dt>New ops</dt>
+              <dd>what we already do</dd>
+            </dl>
+            <p>
+              Sessions in the Redis we already run, keyed by an opaque id; a short-lived
+              signed cookie covers Redis outages for reads, so a blip doesn't log
+              everyone out. Revocation is a delete — which is the shape support's "log
+              out all devices" needs.
+            </p>
+          </cq-option>
+          <cq-option id="opt-db"
+            ><cq-chip>effort: low</cq-chip><cq-chip tone="warn">risk: med</cq-chip>
+            <strong>Postgres table</strong>
+            <dl class="facts">
+              <dt>Revoke</dt>
+              <dd>delete the row</dd>
+              <dt>Outage</dt>
+              <dd>shares the database's fate</dd>
+              <dt>New ops</dt>
+              <dd>vacuum pressure</dd>
+            </dl>
+            <p>
+              One table, no new moving parts. Every request writes a row (rolling
+              expiry), so at our volume that's the primary's headroom spent on expiry
+              bookkeeping — and a session outage becomes a database outage.
+            </p>
+          </cq-option>
+        </cq-options>
+      </section>
 
-<section id="flow">
-<h2>Request path with the recommendation</h2>
-<cq-diagram id="session-flow">
+      <section id="flow">
+        <h2>Request path with the recommendation</h2>
+        <cq-diagram id="session-flow">
+          <pre>
 graph LR
   R[request] --> C{cookie valid?}
   C -->|yes| S[read session from Redis]
@@ -109,156 +143,238 @@ graph LR
   S -->|miss/outage| F[verify signed fallback]
   F --> H
   C -->|no| L[login]
-</cq-diagram>
-<p id="cookie-pair-note">The recommendation rides two cookies with different
-jobs:</p>
-<cq-compare id="cookie-pair">
-  <cq-variant id="var-session-cookie"><cq-chip>revocable</cq-chip><cq-chip tone="ok">nothing readable in it</cq-chip><strong>Session cookie</strong> An opaque
-  id; the store says everything else.</cq-variant>
-  <cq-variant id="var-fallback-cookie"><cq-chip tone="warn">outlives a revocation</cq-chip><cq-chip>survives a Redis blip</cq-chip><strong>Fallback cookie</strong> A signed
-  snapshot; outlives a blip, never a revocation.</cq-variant>
-</cq-compare>
-<p id="fallback-intro">One revision is waiting on you below: accept or reject it with
-the controls in the margin, and the next version carries whichever you chose.</p>
-<cq-suggestion id="sug-fallback-window">
-  <cq-old><aside class="callout" id="fallback-note">The fallback cookie is read-only: it can
-  keep a session alive through a Redis blip, but revocation, rolling expiry, and new
-  logins all require the store. A revoked session survives at most the cookie's
-  5-minute lifetime.</aside></cq-old>
-  <cq-new><aside class="callout">The fallback cookie is read-only: it can keep a session
-  alive through a Redis blip, but revocation, rolling expiry, and new logins all require
-  the store. A revoked session survives at most the cookie's 90-second lifetime — short
-  enough that support's "log out all devices" reads as immediate.</aside></cq-new>
-</cq-suggestion>
-</section>
+</pre>
+        </cq-diagram>
+        <p id="cookie-pair-note">
+          The recommendation rides two cookies with different jobs:
+        </p>
+        <cq-compare id="cookie-pair">
+          <cq-variant id="var-session-cookie"
+            ><cq-chip>revocable</cq-chip
+            ><cq-chip tone="ok">nothing readable in it</cq-chip
+            ><strong>Session cookie</strong> An opaque id; the store says everything
+            else.</cq-variant
+          >
+          <cq-variant id="var-fallback-cookie"
+            ><cq-chip tone="warn">outlives a revocation</cq-chip
+            ><cq-chip>survives a Redis blip</cq-chip><strong>Fallback cookie</strong> A
+            signed snapshot; outlives a blip, never a revocation.</cq-variant
+          >
+        </cq-compare>
+        <p id="fallback-intro">
+          One revision is waiting on you below: accept or reject it with the controls in
+          the margin, and the next version carries whichever you chose.
+        </p>
+        <cq-suggestion id="sug-fallback-window">
+          <cq-old
+            ><aside class="callout" id="fallback-note">
+              The fallback cookie is read-only: it can keep a session alive through a
+              Redis blip, but revocation, rolling expiry, and new logins all require the
+              store. A revoked session survives at most the cookie's 5-minute lifetime.
+            </aside></cq-old
+          >
+          <cq-new
+            ><aside class="callout">
+              The fallback cookie is read-only: it can keep a session alive through a
+              Redis blip, but revocation, rolling expiry, and new logins all require the
+              store. A revoked session survives at most the cookie's 90-second lifetime
+              — short enough that support's "log out all devices" reads as immediate.
+            </aside></cq-new
+          >
+        </cq-suggestion>
+      </section>
 
-<section id="next-up">
-<h2>What I pick up next</h2>
-<p id="next-intro">Whichever store wins, three jobs stand behind it, and each is argued
-somewhere above rather than in a card of its own. Pick the ones worth starting — click a
-row, or Tab to its mark and press Enter — and the box takes anything the rows don't
-cover, including "none of these".</p>
-<cq-options id="next-jobs" choose multiple>
-  <cq-option id="nx-revoke" for="constraints">A revocation drill at support's volume</cq-option>
-  <cq-option id="nx-fallback" for="flow">Key rotation for the fallback cookie</cq-option>
-  <cq-option id="nx-load" for="options">A write load test at request rate</cq-option>
-</cq-options>
-</section>
+      <section id="next-up">
+        <h2>What I pick up next</h2>
+        <p id="next-intro">
+          Whichever store wins, three jobs stand behind it, and each is argued somewhere
+          above rather than in a card of its own. Pick the ones worth starting — click a
+          row, or Tab to its mark and press Enter — and the box takes anything the rows
+          don't cover, including "none of these".
+        </p>
+        <cq-options id="next-jobs" choose multiple>
+          <cq-option id="nx-revoke" for="constraints"
+            >A revocation drill at support's volume</cq-option
+          >
+          <cq-option id="nx-fallback" for="flow"
+            >Key rotation for the fallback cookie</cq-option
+          >
+          <cq-option id="nx-load" for="options"
+            >A write load test at request rate</cq-option
+          >
+        </cq-options>
+      </section>
 </cq-tab>
 
 <cq-tab id="gal-incident-report" label="Incident report">
 <h1>Export queue backlog, 12 June</h1>
-<p class="lede" id="incident-lede">A retry storm from one malformed workspace held the export
-queue for 94 minutes. No exports were lost; the oldest was delayed 81 minutes.</p>
+      <p class="lede" id="incident-lede">
+        A retry storm from one malformed workspace held the export queue for 94 minutes.
+        No exports were lost; the oldest was delayed 81 minutes.
+      </p>
 
-<dl class="facts">
-  <dt>Detected</dt><dd>09:14, queue-depth alert</dd>
-  <dt>Resolved</dt><dd>10:48, poison job quarantined</dd>
-  <dt>Blast radius</dt><dd>exports only; imports and sync unaffected</dd>
-</dl>
+      <dl class="facts">
+        <dt>Detected</dt>
+        <dd>09:14, queue-depth alert</dd>
+        <dt>Resolved</dt>
+        <dd>10:48, poison job quarantined</dd>
+        <dt>Blast radius</dt>
+        <dd>exports only; imports and sync unaffected</dd>
+      </dl>
 
-<cq-metrics id="impact">
-  <cq-metric id="m-delayed" value="1,204" delta="+1,204" direction="up-bad">exports delayed</cq-metric>
-  <cq-metric id="m-oldest" value="81 min">oldest delay</cq-metric>
-  <cq-metric id="m-lost" value="0">exports lost</cq-metric>
-</cq-metrics>
+      <cq-metrics id="impact">
+        <cq-metric id="m-delayed" value="1,204" delta="+1,204" direction="up-bad"
+          >exports delayed</cq-metric
+        >
+        <cq-metric id="m-oldest" value="81 min">oldest delay</cq-metric>
+        <cq-metric id="m-lost" value="0">exports lost</cq-metric>
+      </cq-metrics>
 
-<section id="timeline">
-<h2>Timeline</h2>
-<cq-timeline id="incident-timeline">
-  <cq-event id="e-alert" at="09:14" kind="warning">
-    <strong>Queue-depth alert fires</strong> Depth crosses 500; normal peak is 60.
-  </cq-event>
-  <cq-event id="e-triage" at="09:26" kind="action">
-    <strong>On-call confirms a single hot job</strong> The same export id retrying at
-    the head of the queue, every 45 seconds.
-  </cq-event>
-  <cq-event id="e-wrong" at="09:51" kind="failure">
-    <strong>First fix doesn't hold</strong> Raising worker count clears depth briefly;
-    the retry storm refills it because the head job still fails first.
-  </cq-event>
-  <cq-event id="e-quarantine" at="10:32" kind="action">
-    <strong>Poison job quarantined</strong> The workspace's export is parked in a
-    dead-letter table; the queue drains at normal rate.
-  </cq-event>
-  <cq-event id="e-resolved" at="10:48" kind="info">
-    <strong>Backlog cleared</strong> Depth back under 60; delayed exports delivered.
-  </cq-event>
-</cq-timeline>
-</section>
+      <section id="timeline">
+        <h2>Timeline</h2>
+        <cq-timeline id="incident-timeline">
+          <cq-event id="e-alert" at="09:14" kind="warning">
+            <strong>Queue-depth alert fires</strong> Depth crosses 500; normal peak is
+            60.
+          </cq-event>
+          <cq-event id="e-triage" at="09:26" kind="action">
+            <strong>On-call confirms a single hot job</strong> The same export id
+            retrying at the head of the queue, every 45 seconds.
+          </cq-event>
+          <cq-event id="e-wrong" at="09:51" kind="failure">
+            <strong>First fix doesn't hold</strong> Raising worker count clears depth
+            briefly; the retry storm refills it because the head job still fails first.
+          </cq-event>
+          <cq-event id="e-quarantine" at="10:32" kind="action">
+            <strong>Poison job quarantined</strong> The workspace's export is parked in
+            a dead-letter table; the queue drains at normal rate.
+          </cq-event>
+          <cq-event id="e-resolved" at="10:48" kind="info">
+            <strong>Backlog cleared</strong> Depth back under 60; delayed exports
+            delivered.
+          </cq-event>
+        </cq-timeline>
+      </section>
 
-<section id="cause">
-<h2>Root cause</h2>
-<p id="p-cause">The export worker treats any failure as retryable. One workspace
-carried an attachment with a declared size of −1, which fails serialization every
-time; with retries capped by attempt count but not by queue position, the job returned
-to the head on each attempt and starved everything behind it.</p>
-<cq-diagram id="failure-path">
+      <section id="cause">
+        <h2>Root cause</h2>
+        <p id="p-cause">
+          The export worker treats any failure as retryable. One workspace carried an
+          attachment with a declared size of −1, which fails serialization every time;
+          with retries capped by attempt count but not by queue position, the job
+          returned to the head on each attempt and starved everything behind it.
+        </p>
+        <cq-diagram id="failure-path">
+          <pre>
 graph LR
   Q[queue head] --> W[worker]
   W -->|serialize fails| R[retry in 45s]
   R --> Q
   Q -.->|starved| B[1,204 jobs behind]
-</cq-diagram>
-<aside class="callout" id="fix-note">The fix is one classification: serialization
-errors are permanent, not retryable. Retryable failures also now re-enqueue at the
-tail, so no single job can hold the head again.</aside>
-</section>
+</pre>
+        </cq-diagram>
+        <aside class="callout" id="fix-note">
+          The fix is one classification: serialization errors are permanent, not
+          retryable. Retryable failures also now re-enqueue at the tail, so no single
+          job can hold the head again.
+        </aside>
+      </section>
 
-<section id="actions">
-<h2>Follow-ups</h2>
-<ol class="steps" id="follow-ups">
-  <li>Classify worker failures as permanent vs. retryable; dead-letter permanents on
-  first failure.</li>
-  <li>Re-enqueue retries at the tail.</li>
-  <li>Alert on a single job id exceeding five attempts, not only on queue depth.</li>
-</ol>
-</section>
+      <section id="actions">
+        <h2>Follow-ups</h2>
+        <ol class="steps" id="follow-ups">
+          <li>
+            Classify worker failures as permanent vs. retryable; dead-letter permanents
+            on first failure.
+          </li>
+          <li>Re-enqueue retries at the tail.</li>
+          <li>
+            Alert on a single job id exceeding five attempts, not only on queue depth.
+          </li>
+        </ol>
+      </section>
 </cq-tab>
 
 <cq-tab id="gal-pr-walkthrough" label="PR walkthrough">
 <h1>Per-token rate limits</h1>
-<p class="lede" id="pr-lede">Moves rate limiting from per-IP to per-token, so one office
-NAT can't exhaust the budget for every client behind it. Three files, one new bucket
-table, no behavior change for untokened requests.</p>
+      <p class="lede" id="pr-lede">
+        Moves rate limiting from per-IP to per-token, so one office NAT can't exhaust
+        the budget for every client behind it. Three files, one new bucket table, no
+        behavior change for untokened requests.
+      </p>
 
-<section id="shape">
-<h2>Shape of the change</h2>
-<cq-tree id="files">
+      <section id="shape">
+        <h2>Shape of the change</h2>
+        <cq-tree id="files">
+          <pre>
 gateway/
   limits.py  +38 -9
   middleware.py  +6 -2
   migrations/
     0042_token_buckets.sql  +11
-</cq-tree>
-<p id="p-shape">The interesting part is
-<a href="https://github.com/example/gateway/blob/main/gateway/limits.py#L41"><code>gateway/limits.py:41</code></a>:
-the bucket key changes from the remote address to the token id when one is present.
-Everything else is plumbing that key through.</p>
-</section>
+</pre>
+        </cq-tree>
+        <p id="p-shape">
+          The interesting part is
+          <a href="https://github.com/example/gateway/blob/main/gateway/limits.py#L41"
+            ><code>gateway/limits.py:41</code></a
+          >: the bucket key changes from the remote address to the token id when one is
+          present. Everything else is plumbing that key through.
+        </p>
+      </section>
 
-<section id="limits">
-<h2>The ceilings themselves</h2>
-<p id="p-limits">None of these numbers move. What moves is what they are counted
-against: a plan's ceiling used to be spent by every client behind one address, and is
-now spent per token.</p>
-<table id="tiers">
-<caption>Ceilings per plan, and what each is counted against after this change.</caption>
-<thead>
-<tr><th>Plan</th><th class="num">A minute</th><th class="num">Burst</th><th>Counted against</th></tr>
-</thead>
-<tbody>
-<tr><th scope="row">Free</th><td class="num">60</td><td class="num">120</td><td>the token</td></tr>
-<tr><th scope="row">Team</th><td class="num">600</td><td class="num">1,200</td><td>the token</td></tr>
-<tr><th scope="row">Enterprise</th><td class="num">6,000</td><td class="num">12,000</td><td>the token, per environment</td></tr>
-<tr><th scope="row">Untokened</th><td class="num">60</td><td class="num">60</td><td>the remote address, as before</td></tr>
-</tbody>
-</table>
-</section>
+      <section id="limits">
+        <h2>The ceilings themselves</h2>
+        <p id="p-limits">
+          None of these numbers move. What moves is what they are counted against: a
+          plan's ceiling used to be spent by every client behind one address, and is now
+          spent per token.
+        </p>
+        <table id="tiers">
+          <caption>
+            Ceilings per plan, and what each is counted against after this change.
+          </caption>
+          <thead>
+            <tr>
+              <th>Plan</th>
+              <th class="num">A minute</th>
+              <th class="num">Burst</th>
+              <th>Counted against</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Free</th>
+              <td class="num">60</td>
+              <td class="num">120</td>
+              <td>the token</td>
+            </tr>
+            <tr>
+              <th scope="row">Team</th>
+              <td class="num">600</td>
+              <td class="num">1,200</td>
+              <td>the token</td>
+            </tr>
+            <tr>
+              <th scope="row">Enterprise</th>
+              <td class="num">6,000</td>
+              <td class="num">12,000</td>
+              <td>the token, per environment</td>
+            </tr>
+            <tr>
+              <th scope="row">Untokened</th>
+              <td class="num">60</td>
+              <td class="num">60</td>
+              <td>the remote address, as before</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
 
-<section id="core">
-<h2>The core diff</h2>
-<cq-diff id="limits-diff">
+      <section id="core">
+        <h2>The core diff</h2>
+        <cq-diff id="limits-diff">
+          <pre>
 diff --git a/gateway/limits.py b/gateway/limits.py
 --- a/gateway/limits.py
 +++ b/gateway/limits.py
@@ -273,318 +389,424 @@ diff --git a/gateway/limits.py b/gateway/limits.py
      def allow(self, request):
          key = self.bucket_key(request)
          return self.buckets[key].take()
-</cq-diff>
-</section>
+</pre>
+        </cq-diff>
+      </section>
 
-<section id="walkthrough">
-<h2>Why the prefixes matter</h2>
-<cq-code id="key-walk" language="python" hi="3-4">
+      <section id="walkthrough">
+        <h2>Why the prefixes matter</h2>
+        <cq-code id="key-walk" language="python" hi="3-4">
+          <pre>
 def bucket_key(self, request):
     if request.token:
         return f"tok:{request.token.id}"
     return f"ip:{request.remote_addr}"
-<cq-note at="3">Unprefixed, a token id that happens to look like an IP would share a
-bucket with that address. The prefixes make the two namespaces disjoint.</cq-note>
-</cq-code>
-<aside class="callout" id="migration-note">Existing buckets are keyed by bare address,
-so the migration renames them once at deploy; mixed keys never coexist.</aside>
-</section>
+</pre>
+          <cq-note at="3"
+            >Unprefixed, a token id that happens to look like an IP would share a bucket
+            with that address. The prefixes make the two namespaces disjoint.</cq-note
+          >
+        </cq-code>
+        <aside class="callout" id="migration-note">
+          Existing buckets are keyed by bare address, so the migration renames them once
+          at deploy; mixed keys never coexist.
+        </aside>
+      </section>
 
-<section id="testing">
-<h2>Testing</h2>
-<ul id="test-list">
-  <li>Unit: bucket key for tokened, untokened, and both-present requests.</li>
-  <li>Integration: two tokens behind one address each get a full budget; two
-  addresses on one token share one.</li>
-</ul>
-<p id="test-run">Both suites run under the rate-limit marker:</p>
-<pre id="test-cmd"><code class="language-bash"># the integration half needs the migration applied first
+      <section id="testing">
+        <h2>Testing</h2>
+        <ul id="test-list">
+          <li>Unit: bucket key for tokened, untokened, and both-present requests.</li>
+          <li>
+            Integration: two tokens behind one address each get a full budget; two
+            addresses on one token share one.
+          </li>
+        </ul>
+        <p id="test-run">Both suites run under the rate-limit marker:</p>
+        <pre
+          id="test-cmd"
+        ><code class="language-bash"># the integration half needs the migration applied first
 cd gateway &amp;&amp; alembic upgrade head
 pytest tests/ -m ratelimit --maxfail=1</code></pre>
-</section>
+      </section>
 </cq-tab>
 
 <cq-tab id="gal-status-report" label="Status report">
 <h1>Search relaunch, week 6</h1>
-<p class="lede" id="status-lede">Indexing is done and dark-launched; relevance is the open
-question. The shadow comparison puts the new engine ahead on head queries and behind
-on long-tail, which is the expected trade at this stage.</p>
+      <p class="lede" id="status-lede">
+        Indexing is done and dark-launched; relevance is the open question. The shadow
+        comparison puts the new engine ahead on head queries and behind on long-tail,
+        which is the expected trade at this stage.
+      </p>
 
-<cq-metrics id="kpis">
-  <cq-metric id="k-p95" value="118 ms" delta="-64" direction="up-bad">p95 latency</cq-metric>
-  <cq-metric id="k-ndcg" value="0.71" delta="+0.05" direction="up-good">ndcg@10, head</cq-metric>
-  <cq-metric id="k-tail" value="0.58" delta="-0.03" direction="up-good">ndcg@10, tail</cq-metric>
-  <cq-metric id="k-coverage" value="99.4%">index coverage</cq-metric>
-</cq-metrics>
+      <cq-metrics id="kpis">
+        <cq-metric id="k-p95" value="118 ms" delta="-64" direction="up-bad"
+          >p95 latency</cq-metric
+        >
+        <cq-metric id="k-ndcg" value="0.71" delta="+0.05" direction="up-good"
+          >ndcg@10, head</cq-metric
+        >
+        <cq-metric id="k-tail" value="0.58" delta="-0.03" direction="up-good"
+          >ndcg@10, tail</cq-metric
+        >
+        <cq-metric id="k-coverage" value="99.4%">index coverage</cq-metric>
+      </cq-metrics>
 
-<section id="milestones">
-<h2>Milestones</h2>
-<cq-milestones id="relaunch-milestones">
-  <cq-milestone id="ms-index" status="done" when="weeks 1-4">
-    <strong>Reindex on the new schema</strong> Full corpus, verified against the old
-    index by document count and spot checks.
-  </cq-milestone>
-  <cq-milestone id="ms-shadow" status="active" when="weeks 5-7" tags="relevance">
-    <strong>Shadow traffic comparison</strong> Every production query runs on both
-    engines; judgments collected on the diffs.
-  </cq-milestone>
-  <cq-milestone id="ms-tail" status="blocked" when="week 7" tags="relevance,data">
-    <strong>Long-tail recovery</strong> Blocked on the synonym table export from the
-    old engine — owner found, ETA Tuesday.
-  </cq-milestone>
-  <cq-milestone id="ms-cutover" status="planned" when="week 9">
-    <strong>Cutover behind a flag</strong> 5% of traffic, then doubling daily if
-    guardrails hold.
-  </cq-milestone>
-</cq-milestones>
-</section>
+      <section id="milestones">
+        <h2>Milestones</h2>
+        <cq-milestones id="relaunch-milestones">
+          <cq-milestone id="ms-index" status="done" when="weeks 1-4">
+            <strong>Reindex on the new schema</strong> Full corpus, verified against the
+            old index by document count and spot checks.
+          </cq-milestone>
+          <cq-milestone
+            id="ms-shadow"
+            status="active"
+            when="weeks 5-7"
+            tags="relevance"
+          >
+            <strong>Shadow traffic comparison</strong> Every production query runs on
+            both engines; judgments collected on the diffs.
+          </cq-milestone>
+          <cq-milestone
+            id="ms-tail"
+            status="blocked"
+            when="week 7"
+            tags="relevance,data"
+          >
+            <strong>Long-tail recovery</strong> Blocked on the synonym table export from
+            the old engine — owner found, ETA Tuesday.
+          </cq-milestone>
+          <cq-milestone id="ms-cutover" status="planned" when="week 9">
+            <strong>Cutover behind a flag</strong> 5% of traffic, then doubling daily if
+            guardrails hold.
+          </cq-milestone>
+        </cq-milestones>
+      </section>
 
-<section id="detail">
-<h2>The long-tail gap</h2>
-<p id="p-tail">The old engine's synonym table carries fifteen years of manual
-curation; the new engine currently ships without it. On tail queries where a synonym
-was the match, we lose the document entirely, which is most of the −0.03.</p>
-<details id="ev-tail">
-  <summary>Evidence: 61% of tail regressions disappear with the table patched in</summary>
-  <p>A one-hour experiment loading the March export into the new engine's synonym
-  slot recovered 214 of 349 regressed queries. The remainder split between stemming
-  differences and genuine ranking changes.</p>
-</details>
-</section>
+      <section id="detail">
+        <h2>The long-tail gap</h2>
+        <p id="p-tail">
+          The old engine's synonym table carries fifteen years of manual curation; the
+          new engine currently ships without it. On tail queries where a synonym was the
+          match, we lose the document entirely, which is most of the −0.03.
+        </p>
+        <details id="ev-tail">
+          <summary>
+            Evidence: 61% of tail regressions disappear with the table patched in
+          </summary>
+          <p>
+            A one-hour experiment loading the March export into the new engine's synonym
+            slot recovered 214 of 349 regressed queries. The remainder split between
+            stemming differences and genuine ranking changes.
+          </p>
+        </details>
+      </section>
 
-<section id="next">
-<h2>Next week</h2>
-<ol class="steps" id="next-steps">
-  <li>Import the synonym table export when it lands Tuesday.</li>
-  <li>Re-run the shadow comparison on the tail set.</li>
-  <li>Draft the cutover guardrails (error rate, zero-result rate, p95).</li>
-</ol>
-</section>
+      <section id="next">
+        <h2>Next week</h2>
+        <ol class="steps" id="next-steps">
+          <li>Import the synonym table export when it lands Tuesday.</li>
+          <li>Re-run the shadow comparison on the tail set.</li>
+          <li>Draft the cutover guardrails (error rate, zero-result rate, p95).</li>
+        </ol>
+      </section>
 </cq-tab>
 
 <cq-tab id="gal-live-progress" label="Live progress">
 <h1>Checkout cutover rehearsal</h1>
-<p class="lede" id="lp-lede">The agent republishes this page as each check finishes.
-The browser is following the newest version, so statuses and counts change without a
-refresh. The rollback drill is running now.</p>
+      <p class="lede" id="lp-lede">
+        The agent republishes this page as each check finishes. The browser is following
+        the newest version, so statuses and counts change without a refresh. The
+        rollback drill is running now.
+      </p>
 
-<cq-metrics id="lp-metrics">
-  <cq-metric id="lp-k-done" value="14 of 18" delta="+3" direction="up-good">checks complete</cq-metric>
-  <cq-metric id="lp-k-running" value="2">running now</cq-metric>
-  <cq-metric id="lp-k-blocked" value="1">blocked</cq-metric>
-  <cq-metric id="lp-k-elapsed" value="31 min">elapsed</cq-metric>
-</cq-metrics>
+      <cq-metrics id="lp-metrics">
+        <cq-metric id="lp-k-done" value="14 of 18" delta="+3" direction="up-good"
+          >checks complete</cq-metric
+        >
+        <cq-metric id="lp-k-running" value="2">running now</cq-metric>
+        <cq-metric id="lp-k-blocked" value="1">blocked</cq-metric>
+        <cq-metric id="lp-k-elapsed" value="31 min">elapsed</cq-metric>
+      </cq-metrics>
 
-<section id="lp-now">
-<h2>Right now</h2>
-<aside class="callout" id="lp-active">
-<strong>Rollback drill is on step 3 of 4.</strong> Traffic is back on the old
-checkout service. The agent is comparing order counts before it marks the drill done.
-</aside>
-</section>
+      <section id="lp-now">
+        <h2>Right now</h2>
+        <aside class="callout" id="lp-active">
+          <strong>Rollback drill is on step 3 of 4.</strong> Traffic is back on the old
+          checkout service. The agent is comparing order counts before it marks the
+          drill done.
+        </aside>
+      </section>
 
-<section id="lp-work">
-<h2>Work</h2>
-<cq-milestones id="lp-milestones">
-  <cq-milestone id="lp-ms-baseline" status="done" when="14:02">
-    <strong>Capture the baseline</strong> Error rate, p95, order count, and queue depth
-    recorded before the rehearsal.
-  </cq-milestone>
-  <cq-milestone id="lp-ms-shadow" status="done" when="14:08">
-    <strong>Shadow production traffic</strong> New and old services agreed on 2,000
-    sampled checkouts.
-  </cq-milestone>
-  <cq-milestone id="lp-ms-cutover" status="done" when="14:19">
-    <strong>Cut traffic to the new service</strong> Guardrails held for ten minutes at
-    100% traffic.
-  </cq-milestone>
-  <cq-milestone id="lp-ms-rollback" status="active" when="running" tags="rollback">
-    <strong>Prove rollback</strong> Old service is live again; order-count comparison
-    is still running.
-  </cq-milestone>
-  <cq-milestone id="lp-ms-report" status="planned" when="next">
-    <strong>Publish the rehearsal report</strong> Attach timings and name the one
-    blocked follow-up.
-  </cq-milestone>
-</cq-milestones>
-</section>
+      <section id="lp-work">
+        <h2>Work</h2>
+        <cq-milestones id="lp-milestones">
+          <cq-milestone id="lp-ms-baseline" status="done" when="14:02">
+            <strong>Capture the baseline</strong> Error rate, p95, order count, and
+            queue depth recorded before the rehearsal.
+          </cq-milestone>
+          <cq-milestone id="lp-ms-shadow" status="done" when="14:08">
+            <strong>Shadow production traffic</strong> New and old services agreed on
+            2,000 sampled checkouts.
+          </cq-milestone>
+          <cq-milestone id="lp-ms-cutover" status="done" when="14:19">
+            <strong>Cut traffic to the new service</strong> Guardrails held for ten
+            minutes at 100% traffic.
+          </cq-milestone>
+          <cq-milestone
+            id="lp-ms-rollback"
+            status="active"
+            when="running"
+            tags="rollback"
+          >
+            <strong>Prove rollback</strong> Old service is live again; order-count
+            comparison is still running.
+          </cq-milestone>
+          <cq-milestone id="lp-ms-report" status="planned" when="next">
+            <strong>Publish the rehearsal report</strong> Attach timings and name the
+            one blocked follow-up.
+          </cq-milestone>
+        </cq-milestones>
+      </section>
 
-<section id="lp-blocker">
-<h2>Blocked</h2>
-<p id="lp-blocked-copy"><strong>Finance export reconciliation</strong> needs a fixture
-with a partially refunded order. The rest of the rehearsal does not depend on it; the
-agent left the check open and moved on.</p>
-</section>
+      <section id="lp-blocker">
+        <h2>Blocked</h2>
+        <p id="lp-blocked-copy">
+          <strong>Finance export reconciliation</strong> needs a fixture with a
+          partially refunded order. The rest of the rehearsal does not depend on it; the
+          agent left the check open and moved on.
+        </p>
+      </section>
 
-<section id="lp-events">
-<h2>Latest events</h2>
-<cq-timeline id="lp-timeline">
-  <cq-event id="lp-e-cutover" at="14:19" kind="action">
-    <strong>Cutover complete</strong> New checkout took 100% of traffic.
-  </cq-event>
-  <cq-event id="lp-e-guardrails" at="14:29" kind="info">
-    <strong>Guardrails held</strong> Error rate 0.08%; p95 181 ms.
-  </cq-event>
-  <cq-event id="lp-e-rollback" at="14:31" kind="action">
-    <strong>Rollback started</strong> Traffic returned to the old service in 42 seconds.
-  </cq-event>
-</cq-timeline>
-</section>
+      <section id="lp-events">
+        <h2>Latest events</h2>
+        <cq-timeline id="lp-timeline">
+          <cq-event id="lp-e-cutover" at="14:19" kind="action">
+            <strong>Cutover complete</strong> New checkout took 100% of traffic.
+          </cq-event>
+          <cq-event id="lp-e-guardrails" at="14:29" kind="info">
+            <strong>Guardrails held</strong> Error rate 0.08%; p95 181 ms.
+          </cq-event>
+          <cq-event id="lp-e-rollback" at="14:31" kind="action">
+            <strong>Rollback started</strong> Traffic returned to the old service in 42
+            seconds.
+          </cq-event>
+        </cq-timeline>
+      </section>
 </cq-tab>
 
 <cq-tab id="gal-triage-board" label="Triage board">
 <h1>Release triage</h1>
-<p class="lede" id="triage-lede">Everything open against the v2.4 release. Drag cards to
-re-triage — or Tab to a grip and press Enter, then arrows: each move reaches the agent
-as an action, and the next version of this page ships with the board as you left
-it.</p>
+      <p class="lede" id="triage-lede">
+        Everything open against the v2.4 release. Drag cards to re-triage — or Tab to a
+        grip and press Enter, then arrows: each move reaches the agent as an action, and
+        the next version of this page ships with the board as you left it.
+      </p>
 
-<cq-board id="release-board">
-  <cq-column id="col-blocking" label="Blocking release">
-    <cq-card id="card-migration"><strong>Migration reruns on every deploy</strong>
-    The version stamp never lands, so 0041 replays; idempotent today, not once 0042
-    ships.</cq-card>
-    <cq-card id="card-logout"><strong>Logout 500s with an expired session</strong>
-    Double-delete on the session key; needs a guard, one line.</cq-card>
-  </cq-column>
-  <cq-column id="col-next" label="Fix in 2.4.1">
-    <cq-card id="card-tz"><strong>Digest email uses server timezone</strong>
-    Cosmetic for most, wrong-day for UTC+13.</cq-card>
-    <cq-card id="card-search"><strong>Search ignores archived items toggle</strong>
-    Filter dropped in the query builder rewrite.</cq-card>
-    <cq-card id="card-export"><strong>CSV export quotes numerics</strong>
-    Breaks one customer's downstream import.</cq-card>
-  </cq-column>
-  <cq-column id="col-wont" label="Won't fix for 2.4">
-    <cq-card id="card-ie"><strong>Layout breaks on IE mode</strong>
-    Out of support matrix; documented instead.</cq-card>
-  </cq-column>
-</cq-board>
+      <cq-board id="release-board">
+        <cq-column id="col-blocking" label="Blocking release">
+          <cq-card id="card-migration"
+            ><strong>Migration reruns on every deploy</strong> The version stamp never
+            lands, so 0041 replays; idempotent today, not once 0042 ships.</cq-card
+          >
+          <cq-card id="card-logout"
+            ><strong>Logout 500s with an expired session</strong> Double-delete on the
+            session key; needs a guard, one line.</cq-card
+          >
+        </cq-column>
+        <cq-column id="col-next" label="Fix in 2.4.1">
+          <cq-card id="card-tz"
+            ><strong>Digest email uses server timezone</strong> Cosmetic for most,
+            wrong-day for UTC+13.</cq-card
+          >
+          <cq-card id="card-search"
+            ><strong>Search ignores archived items toggle</strong> Filter dropped in the
+            query builder rewrite.</cq-card
+          >
+          <cq-card id="card-export"
+            ><strong>CSV export quotes numerics</strong> Breaks one customer's
+            downstream import.</cq-card
+          >
+        </cq-column>
+        <cq-column id="col-wont" label="Won't fix for 2.4">
+          <cq-card id="card-ie"
+            ><strong>Layout breaks on IE mode</strong> Out of support matrix; documented
+            instead.</cq-card
+          >
+        </cq-column>
+      </cq-board>
 
-<section id="notes">
-<h2>Triage notes</h2>
-<p id="p-notes">The migration stamp bug is the only one with data risk; it blocks the
-release even if the fix slips a day. The logout fix is trivial but touches the auth
-path, so it rides the same release train rather than a hotfix.</p>
-</section>
+      <section id="notes">
+        <h2>Triage notes</h2>
+        <p id="p-notes">
+          The migration stamp bug is the only one with data risk; it blocks the release
+          even if the fix slips a day. The logout fix is trivial but touches the auth
+          path, so it rides the same release train rather than a hotfix.
+        </p>
+      </section>
 </cq-tab>
 
 <cq-tab id="gal-release-notes" label="Release notes">
 <h1>Release notes, drafted</h1>
-<p class="lede" id="rn-lede">Three notes cover everything user-visible in 3.2. Each is a
-draft you own: double-click one (or its ✎) and rewrite it until it reads right — the
-exact wording reaches me, and the next version of this page carries it. The framing lines
-are mine, and one of them is a rewrite I'm proposing: accept or reject it in the margin,
-or select it and comment if it needs discussing first. When the set reads well, sign off;
-if a note shouldn't ship at all, say so in a comment.</p>
+      <p class="lede" id="rn-lede">
+        Three notes cover everything user-visible in 3.2. Each is a draft you own:
+        double-click one (or its ✎) and rewrite it until it reads right — the exact
+        wording reaches me, and the next version of this page carries it. The framing
+        lines are mine, and one of them is a rewrite I'm proposing: accept or reject it
+        in the margin, or select it and comment if it needs discussing first. When the
+        set reads well, sign off; if a note shouldn't ship at all, say so in a comment.
+      </p>
 
-<section id="rn-cli-section">
-<h2>CLI</h2>
-<cq-draft id="rn-cli">
+      <section id="rn-cli-section">
+        <h2>CLI</h2>
+        <cq-draft id="rn-cli">
+          <pre>
 Adds --dry-run to every mutating command. Running without it is unchanged, so
 existing scripts keep working.
-</cq-draft>
-</section>
+</pre>
+        </cq-draft>
+      </section>
 
-<section id="rn-api-section">
-<h2>API</h2>
-<p id="rn-api-why">Kept deliberately dry — the Sunset header does the announcing, and
-the migration guide carries the detail.</p>
-<cq-draft id="rn-api">
+      <section id="rn-api-section">
+        <h2>API</h2>
+        <p id="rn-api-why">
+          Kept deliberately dry — the Sunset header does the announcing, and the
+          migration guide carries the detail.
+        </p>
+        <cq-draft id="rn-api">
+          <pre>
 Deprecates the v1 auth header. It keeps working until the next major, and the
 server now sets a Sunset header on every v1 response.
-</cq-draft>
-</section>
+</pre>
+        </cq-draft>
+      </section>
 
-<section id="rn-ops-section">
-<h2>Operations</h2>
-<cq-suggestion id="rn-sug-ops">
-  <cq-old><p id="rn-ops-why">The minute figure is from staging (1.1M rows) — rounded rather than
-  promised.</p></cq-old>
-  <cq-new><p>The minute figure is from staging (1.1M rows) on a warm cache — rounded rather
-  than promised. If operators will book a window around it, the note should give a range
-  instead.</p></cq-new>
-</cq-suggestion>
-<cq-draft id="rn-migration">
+      <section id="rn-ops-section">
+        <h2>Operations</h2>
+        <cq-suggestion id="rn-sug-ops">
+          <cq-old
+            ><p id="rn-ops-why">
+              The minute figure is from staging (1.1M rows) — rounded rather than
+              promised.
+            </p></cq-old
+          >
+          <cq-new
+            ><p>
+              The minute figure is from staging (1.1M rows) on a warm cache — rounded
+              rather than promised. If operators will book a window around it, the note
+              should give a range instead.
+            </p></cq-new
+          >
+        </cq-suggestion>
+        <cq-draft id="rn-migration">
+          <pre>
 Run the schema migration before deploying. It is online and takes about a
 minute on a million rows.
-</cq-draft>
-</section>
+</pre>
+        </cq-draft>
+      </section>
 
-<section id="rn-omitted">
-<h2>Left out on purpose</h2>
-<p id="rn-omitted-body">The dependency bumps and the flaky-test fixes stay in the
-changelog only — nothing a user would change behavior over. If one of them deserves a
-note after all, say so in a comment and a draft for it arrives in the next version.</p>
-</section>
+      <section id="rn-omitted">
+        <h2>Left out on purpose</h2>
+        <p id="rn-omitted-body">
+          The dependency bumps and the flaky-test fixes stay in the changelog only —
+          nothing a user would change behavior over. If one of them deserves a note
+          after all, say so in a comment and a draft for it arrives in the next version.
+        </p>
+      </section>
 </cq-tab>
 
 <cq-tab id="gal-parallel-workstreams" label="Parallel workstreams">
 <h1>Aviary projects, week 3</h1>
-<p class="lede" id="workstreams-lede">Three mini-projects run side by side; each tab below is
-one project's full context — status, board, decisions. Which tab is open is your
-view alone: switching isn't a comment and doesn't reach the agent.</p>
+      <p class="lede" id="workstreams-lede">
+        Three mini-projects run side by side; each tab below is one project's full
+        context — status, board, decisions. Which tab is open is your view alone:
+        switching isn't a comment and doesn't reach the agent.
+      </p>
 
-<cq-tabs id="projects">
-  <cq-tab id="tab-feeders" label="Feeders">
-    <cq-metrics id="feeder-kpis">
-      <cq-metric id="k-mounted" value="2 of 4" delta="+1" direction="up-good">feeders mounted</cq-metric>
-      <cq-metric id="k-visits" value="312" delta="+41" direction="up-good">daily visits</cq-metric>
-      <cq-metric id="k-refills" value="2.1/wk" delta="+0.4" direction="up-bad">refills</cq-metric>
-    </cq-metrics>
-    <p id="feeder-note">The south pair is up and drawing traffic; the north pair
-    waits on brackets. Drag cards to reprioritize — your edits reach the agent
-    directly.</p>
-    <cq-board id="feeder-board">
-      <cq-column id="col-todo" label="To do">
-        <cq-card id="card-brackets"><strong>Steel brackets</strong> Order for the north pair.</cq-card>
-        <cq-card id="card-baffle"><strong>Squirrel baffle</strong></cq-card>
-      </cq-column>
-      <cq-column id="col-doing" label="Doing">
-        <cq-card id="card-heater"><strong>Heated perch</strong> Wire the south feeder.</cq-card>
-      </cq-column>
-      <cq-column id="col-done" label="Done">
-        <cq-card id="card-mounts"><strong>South mounts</strong></cq-card>
-      </cq-column>
-    </cq-board>
-  </cq-tab>
+      <cq-tabs id="projects">
+        <cq-tab id="tab-feeders" label="Feeders">
+          <cq-metrics id="feeder-kpis">
+            <cq-metric id="k-mounted" value="2 of 4" delta="+1" direction="up-good"
+              >feeders mounted</cq-metric
+            >
+            <cq-metric id="k-visits" value="312" delta="+41" direction="up-good"
+              >daily visits</cq-metric
+            >
+            <cq-metric id="k-refills" value="2.1/wk" delta="+0.4" direction="up-bad"
+              >refills</cq-metric
+            >
+          </cq-metrics>
+          <p id="feeder-note">
+            The south pair is up and drawing traffic; the north pair waits on brackets.
+            Drag cards to reprioritize — your edits reach the agent directly.
+          </p>
+          <cq-board id="feeder-board">
+            <cq-column id="col-todo" label="To do">
+              <cq-card id="card-brackets"
+                ><strong>Steel brackets</strong> Order for the north pair.</cq-card
+              >
+              <cq-card id="card-baffle"><strong>Squirrel baffle</strong></cq-card>
+            </cq-column>
+            <cq-column id="col-doing" label="Doing">
+              <cq-card id="card-heater"
+                ><strong>Heated perch</strong> Wire the south feeder.</cq-card
+              >
+            </cq-column>
+            <cq-column id="col-done" label="Done">
+              <cq-card id="card-mounts"><strong>South mounts</strong></cq-card>
+            </cq-column>
+          </cq-board>
+        </cq-tab>
 
-  <cq-tab id="tab-bath" label="Bird bath">
-    <p id="bath-status">The basin is level and holding water; the open question
-    is how to keep it liquid through January. Click an option to decide.</p>
-    <cq-options id="bath-heat" choose>
-      <cq-option id="heat-immersion"><cq-chip>£18</cq-chip><cq-chip>a cord across the lawn</cq-chip><cq-chip tone="ok">liquid all winter</cq-chip>
-        <strong>Immersion heater</strong> Drops into the basin; needs a cord run
-        across the lawn.
-      </cq-option>
-      <cq-option id="heat-solar" recommended><cq-chip>£70</cq-chip><cq-chip>swap the basin</cq-chip><cq-chip tone="ok">liquid but the hardest frosts</cq-chip>
-        <strong>Solar basin</strong> Replace the basin with the heated model;
-        no cord, reversible.
-      </cq-option>
-      <cq-option id="heat-none"><cq-chip>£0</cq-chip><cq-chip>nothing to install</cq-chip><cq-chip tone="danger">liquid on thaw days</cq-chip>
-        <strong>Let it freeze</strong> Refill on thaw days only.
-      </cq-option>
-    </cq-options>
-  </cq-tab>
+        <cq-tab id="tab-bath" label="Bird bath">
+          <p id="bath-status">
+            The basin is level and holding water; the open question is how to keep it
+            liquid through January. Click an option to decide.
+          </p>
+          <cq-options id="bath-heat" choose>
+            <cq-option id="heat-immersion"
+              ><cq-chip>£18</cq-chip><cq-chip>a cord across the lawn</cq-chip
+              ><cq-chip tone="ok">liquid all winter</cq-chip>
+              <strong>Immersion heater</strong> Drops into the basin; needs a cord run
+              across the lawn.
+            </cq-option>
+            <cq-option id="heat-solar" recommended
+              ><cq-chip>£70</cq-chip><cq-chip>swap the basin</cq-chip
+              ><cq-chip tone="ok">liquid but the hardest frosts</cq-chip>
+              <strong>Solar basin</strong> Replace the basin with the heated model; no
+              cord, reversible.
+            </cq-option>
+            <cq-option id="heat-none"
+              ><cq-chip>£0</cq-chip><cq-chip>nothing to install</cq-chip
+              ><cq-chip tone="danger">liquid on thaw days</cq-chip>
+              <strong>Let it freeze</strong> Refill on thaw days only.
+            </cq-option>
+          </cq-options>
+        </cq-tab>
 
-  <cq-tab id="tab-camera" label="Camera">
-    <p id="camera-note">The feed has been stable since the battery swap; one
-    open follow-up on storage.</p>
-    <cq-timeline id="camera-log">
-      <cq-event id="e-offline" at="Mon 09:14" kind="warning">
-        <strong>Camera offline</strong> Battery alert from the north post.
-      </cq-event>
-      <cq-event id="e-swap" at="Mon 09:40" kind="action">
-        <strong>Battery swapped</strong>
-      </cq-event>
-      <cq-event id="e-ok" at="Mon 09:41" kind="info">
-        <strong>Feed resumed</strong> Stable since.
-      </cq-event>
-    </cq-timeline>
-    <p id="camera-next">Next: rotate clips to the shed NAS before the card
-    fills, likely week 4.</p>
-  </cq-tab>
-</cq-tabs>
+        <cq-tab id="tab-camera" label="Camera">
+          <p id="camera-note">
+            The feed has been stable since the battery swap; one open follow-up on
+            storage.
+          </p>
+          <cq-timeline id="camera-log">
+            <cq-event id="e-offline" at="Mon 09:14" kind="warning">
+              <strong>Camera offline</strong> Battery alert from the north post.
+            </cq-event>
+            <cq-event id="e-swap" at="Mon 09:40" kind="action">
+              <strong>Battery swapped</strong>
+            </cq-event>
+            <cq-event id="e-ok" at="Mon 09:41" kind="info">
+              <strong>Feed resumed</strong> Stable since.
+            </cq-event>
+          </cq-timeline>
+          <p id="camera-next">
+            Next: rotate clips to the shed NAS before the card fills, likely week 4.
+          </p>
+        </cq-tab>
+      </cq-tabs>
 </cq-tab>
 
 </cq-tabs>

@@ -1357,12 +1357,12 @@ UNBREAKABLE_PAGE = """<!doctype html>
 </cq-metrics>
 <p id="p-token">The one it fails on is
 gateway_middleware_authentication_token_bucket_refill_strategy.py, every time.</p>
-<cq-tree id="tree">
+<cq-tree id="tree"><pre>
 gateway/
   middleware/
     authentication/
       token_bucket_refill_strategy.py    +6 -2
-</cq-tree>
+</pre></cq-tree>
 </main>
 </body>
 </html>
@@ -1784,7 +1784,7 @@ def test_render_reports_words_a_widget_puts_out_of_reach(browser, serve):
 
 UNPARSABLE_DIAGRAM = LONG_PAGE.replace(
     "</main>",
-    "<cq-diagram id='d-broken'>\nflowchart LR\n  A[Start --&gt; B{{{ ]]] broken\n</cq-diagram>\n</main>",
+    "<cq-diagram id='d-broken'><pre>\nflowchart LR\n  A[Start --&gt; B{{{ ]]] broken\n</pre></cq-diagram>\n</main>",
 )
 
 
@@ -4858,7 +4858,7 @@ def test_escape_on_a_declaring_control_does_exactly_what_it_says(browser, serve)
     editor closes keeping the edit, the panel stands, and a grabbed card's Esc
     cancels the move and nothing else."""
     html = BOARD_PAGE.replace(
-        "</main>", '<cq-draft id="plan">Ship it.</cq-draft></main>'
+        "</main>", '<cq-draft id="plan"><pre>Ship it.</pre></cq-draft></main>'
     )
     url = serve(html)
     interact.append_event(
@@ -5744,19 +5744,20 @@ CODE_PAGE = """<!doctype html>
 <h1 id="t">Code</h1>
 <section id="walk">
 <p id="lede">The key changes shape:</p>
-<cq-code id="walk-code" language="python" hi="2">
+<cq-code id="walk-code" language="python" hi="2"><pre>
 def bucket_key(request):
     if request.token:
         return f"tok:{request.token.id}"
     return "anon"
+</pre>
 <cq-note at="2">A token id shaped like an address would collide.</cq-note>
 </cq-code>
 <pre><code class="language-bash"># apply the migration, then run the marked suite
 cd gateway &amp;&amp; alembic upgrade head</code></pre>
-<cq-code id="plain-code">
+<cq-code id="plain-code"><pre>
 $ colloquy version check ./page --render
 v1.html: renders clean
-</cq-code>
+</pre></cq-code>
 </section>
 </main>
 </body>
@@ -5899,7 +5900,7 @@ DIFF_PAGE = """<!doctype html>
 <body>
 <main>
 <h1 id="t">Diff</h1>
-<cq-diff id="patch">
+<cq-diff id="patch"><pre>
 diff --git a/gateway/limits.py b/gateway/limits.py
 --- a/gateway/limits.py
 +++ b/gateway/limits.py
@@ -5931,7 +5932,7 @@ diff --git a/deploy/Dockerfile b/deploy/Dockerfile
 @@ -9,2 +9,2 @@ COPY gateway /srv/gateway
 -RUN pip install -r requirements.txt
 +RUN pip install --no-cache-dir -r requirements.txt
-</cq-diff>
+</pre></cq-diff>
 </main>
 </body>
 </html>
@@ -6095,7 +6096,7 @@ TWICE_PAGE = """<!doctype html>
 <p>Something else entirely, so the two copies do not touch each other.</p>
 <p>A second copy follows. The version stamp never lands. And a second tail after it.</p>
 </section>
-<cq-diff id="patch">
+<cq-diff id="patch"><pre>
 diff --git a/gateway/cache.py b/gateway/cache.py
 --- a/gateway/cache.py
 +++ b/gateway/cache.py
@@ -6104,7 +6105,7 @@ diff --git a/gateway/cache.py b/gateway/cache.py
 -    return request.path
 +    return request.path, request.headers.get("Accept")
  def store(self, request):
-</cq-diff>
+</pre></cq-diff>
 </main>
 </body>
 </html>
@@ -6699,10 +6700,10 @@ JOURNEY_SCAFFOLD = """<!doctype html>
   </cq-column>
   <cq-column id="col-done" label="Done"></cq-column>
 </cq-board>
-<cq-draft id="draft-ops">
+<cq-draft id="draft-ops"><pre>
     Run the migration before deploying.
     It is online.
-</cq-draft>
+</pre></cq-draft>
 <h2 id="notes">Notes</h2>
 {after}
 </main>
@@ -6722,9 +6723,9 @@ def _draft_says(html, text, attrs=""):
     """The journey page with its draft rewritten — the source's indentation and
     all, since that is what the widget dedents back out."""
     return html.replace(
-        '<cq-draft id="draft-ops">\n'
+        '<cq-draft id="draft-ops"><pre>\n'
         + "\n".join(f"    {l}" for l in DRAFT_TEXT.split("\n")),
-        f'<cq-draft id="draft-ops"{attrs}>\n    {text}',
+        f'<cq-draft id="draft-ops"{attrs}><pre>\n    {text}',
     )
 
 
@@ -7575,9 +7576,9 @@ KEYS_PAGE = """<!doctype html>
   <cq-option id="opt-keep"><strong>Keep the store</strong> Sessions stay where they are.</cq-option>
   <cq-option id="opt-token"><strong>Signed tokens</strong> No store at all.</cq-option>
 </cq-options>
-<cq-draft id="draft-ops">
+<cq-draft id="draft-ops"><pre>
     Run the migration before deploying.
-</cq-draft>
+</pre></cq-draft>
 </main>
 </body>
 </html>
@@ -8183,7 +8184,7 @@ def test_the_help_overlay_answers_to_one_owner(browser, serve):
     registrations deduplicate without making display text a lossy identity."""
     html = JOURNEY_V1.replace(
         "</main>",
-        '<cq-draft id="draft-second">A second editable draft.</cq-draft></main>',
+        '<cq-draft id="draft-second"><pre>A second editable draft.</pre></cq-draft></main>',
     )
     page, errors = open_page(browser, serve(html))
     page.evaluate(
@@ -8575,14 +8576,14 @@ PICTURE_PAGE = """<!doctype html>
 <main>
 <h1 id="t">Pictures</h1>
 <p id="p">Two renderings, neither of them the page's own words.</p>
-<cq-diagram id="flow">
+<cq-diagram id="flow"><pre>
 graph LR
   A --> B
-</cq-diagram>
-<cq-tree id="tree">
+</pre></cq-diagram>
+<cq-tree id="tree"><pre>
 feeders/
   mount.py  +2 -2
-</cq-tree>
+</pre></cq-tree>
 </main>
 </body>
 </html>

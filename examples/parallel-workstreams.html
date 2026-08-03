@@ -1,80 +1,104 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Aviary projects, week 3</title>
-<link rel="stylesheet" href="/theme.css">
-</head>
-<body>
-<main>
-<p class="eyebrow">parallel workstreams</p>
-<h1>Aviary projects, week 3</h1>
-<p class="lede" id="workstreams-lede">Three mini-projects run side by side; each tab below is
-one project's full context — status, board, decisions. Which tab is open is your
-view alone: switching isn't a comment and doesn't reach the agent.</p>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aviary projects, week 3</title>
+    <link rel="stylesheet" href="/theme.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">parallel workstreams</p>
+      <h1>Aviary projects, week 3</h1>
+      <p class="lede" id="workstreams-lede">
+        Three mini-projects run side by side; each tab below is one project's full
+        context — status, board, decisions. Which tab is open is your view alone:
+        switching isn't a comment and doesn't reach the agent.
+      </p>
 
-<cq-tabs id="projects">
-  <cq-tab id="tab-feeders" label="Feeders">
-    <cq-metrics id="feeder-kpis">
-      <cq-metric id="k-mounted" value="2 of 4" delta="+1" direction="up-good">feeders mounted</cq-metric>
-      <cq-metric id="k-visits" value="312" delta="+41" direction="up-good">daily visits</cq-metric>
-      <cq-metric id="k-refills" value="2.1/wk" delta="+0.4" direction="up-bad">refills</cq-metric>
-    </cq-metrics>
-    <p id="feeder-note">The south pair is up and drawing traffic; the north pair
-    waits on brackets. Drag cards to reprioritize — your edits reach the agent
-    directly.</p>
-    <cq-board id="feeder-board">
-      <cq-column id="col-todo" label="To do">
-        <cq-card id="card-brackets"><strong>Steel brackets</strong> Order for the north pair.</cq-card>
-        <cq-card id="card-baffle"><strong>Squirrel baffle</strong></cq-card>
-      </cq-column>
-      <cq-column id="col-doing" label="Doing">
-        <cq-card id="card-heater"><strong>Heated perch</strong> Wire the south feeder.</cq-card>
-      </cq-column>
-      <cq-column id="col-done" label="Done">
-        <cq-card id="card-mounts"><strong>South mounts</strong></cq-card>
-      </cq-column>
-    </cq-board>
-  </cq-tab>
+      <cq-tabs id="projects">
+        <cq-tab id="tab-feeders" label="Feeders">
+          <cq-metrics id="feeder-kpis">
+            <cq-metric id="k-mounted" value="2 of 4" delta="+1" direction="up-good"
+              >feeders mounted</cq-metric
+            >
+            <cq-metric id="k-visits" value="312" delta="+41" direction="up-good"
+              >daily visits</cq-metric
+            >
+            <cq-metric id="k-refills" value="2.1/wk" delta="+0.4" direction="up-bad"
+              >refills</cq-metric
+            >
+          </cq-metrics>
+          <p id="feeder-note">
+            The south pair is up and drawing traffic; the north pair waits on brackets.
+            Drag cards to reprioritize — your edits reach the agent directly.
+          </p>
+          <cq-board id="feeder-board">
+            <cq-column id="col-todo" label="To do">
+              <cq-card id="card-brackets"
+                ><strong>Steel brackets</strong> Order for the north pair.</cq-card
+              >
+              <cq-card id="card-baffle"><strong>Squirrel baffle</strong></cq-card>
+            </cq-column>
+            <cq-column id="col-doing" label="Doing">
+              <cq-card id="card-heater"
+                ><strong>Heated perch</strong> Wire the south feeder.</cq-card
+              >
+            </cq-column>
+            <cq-column id="col-done" label="Done">
+              <cq-card id="card-mounts"><strong>South mounts</strong></cq-card>
+            </cq-column>
+          </cq-board>
+        </cq-tab>
 
-  <cq-tab id="tab-bath" label="Bird bath">
-    <p id="bath-status">The basin is level and holding water; the open question
-    is how to keep it liquid through January. Click an option to decide.</p>
-    <cq-options id="bath-heat" choose>
-      <cq-option id="heat-immersion"><cq-chip>£18</cq-chip><cq-chip>a cord across the lawn</cq-chip><cq-chip tone="ok">liquid all winter</cq-chip>
-        <strong>Immersion heater</strong> Drops into the basin; needs a cord run
-        across the lawn.
-      </cq-option>
-      <cq-option id="heat-solar" recommended><cq-chip>£70</cq-chip><cq-chip>swap the basin</cq-chip><cq-chip tone="ok">liquid but the hardest frosts</cq-chip>
-        <strong>Solar basin</strong> Replace the basin with the heated model;
-        no cord, reversible.
-      </cq-option>
-      <cq-option id="heat-none"><cq-chip>£0</cq-chip><cq-chip>nothing to install</cq-chip><cq-chip tone="danger">liquid on thaw days</cq-chip>
-        <strong>Let it freeze</strong> Refill on thaw days only.
-      </cq-option>
-    </cq-options>
-  </cq-tab>
+        <cq-tab id="tab-bath" label="Bird bath">
+          <p id="bath-status">
+            The basin is level and holding water; the open question is how to keep it
+            liquid through January. Click an option to decide.
+          </p>
+          <cq-options id="bath-heat" choose>
+            <cq-option id="heat-immersion"
+              ><cq-chip>£18</cq-chip><cq-chip>a cord across the lawn</cq-chip
+              ><cq-chip tone="ok">liquid all winter</cq-chip>
+              <strong>Immersion heater</strong> Drops into the basin; needs a cord run
+              across the lawn.
+            </cq-option>
+            <cq-option id="heat-solar" recommended
+              ><cq-chip>£70</cq-chip><cq-chip>swap the basin</cq-chip
+              ><cq-chip tone="ok">liquid but the hardest frosts</cq-chip>
+              <strong>Solar basin</strong> Replace the basin with the heated model; no
+              cord, reversible.
+            </cq-option>
+            <cq-option id="heat-none"
+              ><cq-chip>£0</cq-chip><cq-chip>nothing to install</cq-chip
+              ><cq-chip tone="danger">liquid on thaw days</cq-chip>
+              <strong>Let it freeze</strong> Refill on thaw days only.
+            </cq-option>
+          </cq-options>
+        </cq-tab>
 
-  <cq-tab id="tab-camera" label="Camera">
-    <p id="camera-note">The feed has been stable since the battery swap; one
-    open follow-up on storage.</p>
-    <cq-timeline id="camera-log">
-      <cq-event id="e-offline" at="Mon 09:14" kind="warning">
-        <strong>Camera offline</strong> Battery alert from the north post.
-      </cq-event>
-      <cq-event id="e-swap" at="Mon 09:40" kind="action">
-        <strong>Battery swapped</strong>
-      </cq-event>
-      <cq-event id="e-ok" at="Mon 09:41" kind="info">
-        <strong>Feed resumed</strong> Stable since.
-      </cq-event>
-    </cq-timeline>
-    <p id="camera-next">Next: rotate clips to the shed NAS before the card
-    fills, likely week 4.</p>
-  </cq-tab>
-</cq-tabs>
-</main>
-<script type="module" src="/colloquy.js"></script>
-</body>
+        <cq-tab id="tab-camera" label="Camera">
+          <p id="camera-note">
+            The feed has been stable since the battery swap; one open follow-up on
+            storage.
+          </p>
+          <cq-timeline id="camera-log">
+            <cq-event id="e-offline" at="Mon 09:14" kind="warning">
+              <strong>Camera offline</strong> Battery alert from the north post.
+            </cq-event>
+            <cq-event id="e-swap" at="Mon 09:40" kind="action">
+              <strong>Battery swapped</strong>
+            </cq-event>
+            <cq-event id="e-ok" at="Mon 09:41" kind="info">
+              <strong>Feed resumed</strong> Stable since.
+            </cq-event>
+          </cq-timeline>
+          <p id="camera-next">
+            Next: rotate clips to the shed NAS before the card fills, likely week 4.
+          </p>
+        </cq-tab>
+      </cq-tabs>
+    </main>
+    <script type="module" src="/colloquy.js"></script>
+  </body>
 </html>

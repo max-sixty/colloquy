@@ -55,10 +55,10 @@ PAGE = """<!doctype html>
       <strong>Backfill first</strong> Verify, then flip.
     </cq-option>
   </cq-options>
-  <cq-diagram id="flow">
+  <cq-diagram id="flow"><pre>
 graph LR
   A --> B
-  </cq-diagram>
+  </pre></cq-diagram>
 </section>
 </main>
 <script type="module" src="/colloquy.js"></script>
@@ -1711,7 +1711,8 @@ def test_check_rejects_widget_violations(page_dir):
             '<cq-timeline id="bad-timeline">'
             '<cq-event id="stray-event" kind="medium">S</cq-event></cq-timeline>'
             '<cq-option id="stray"><strong>S</strong></cq-option>'
-            '<cq-diagram id="Bad_ID"><em>x</em></cq-diagram>',
+            '<cq-diagram id="Bad_ID"><pre>graph LR</pre><em>x</em></cq-diagram>'
+            '<cq-diagram id="bare-body">graph LR</cq-diagram>',
         ).replace('<cq-option id="flag-first"', "<cq-option")
     )
     result = check(page_dir)
@@ -1725,7 +1726,10 @@ def test_check_rejects_widget_violations(page_dir):
     assert "must be a direct child of <cq-options>" in out
     assert "'id' is a required property" in out
     assert "does not match" in out  # id pattern
-    assert "its body is data" in out
+    # A stray element beside the <pre>, and a body that never opened one: both are
+    # the same rule, since the <pre> is what carries the whitespace the notation needs.
+    assert out.count("its body is one <pre> holding the text") == 2
+    assert "text outside its <pre>" in out
 
 
 def test_check_rejects_duplicate_attributes_the_browser_reads_differently(page_dir):
@@ -1765,7 +1769,7 @@ def test_check_rejects_a_language_nothing_will_color(page_dir):
             "<h2>Plan</h2>\n"
             '<pre><code class="language-pythn">x = 1</code></pre>\n'
             '<div class="note language-python">not a code block</div>\n'
-            '<cq-code id="walk-bad" language="pythn">z = 3\n</cq-code>\n'
+            '<cq-code id="walk-bad" language="pythn"><pre>z = 3\n</pre></cq-code>\n'
             '<pre><code class="language-python">y = 2</code></pre>',
         )
     )
@@ -1794,7 +1798,7 @@ def test_a_widget_that_declares_a_language_is_checked_by_that_alone(page_dir):
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
             "<h2>Plan</h2>",
-            '<h2>Plan</h2>\n<cq-tree id="t" dialect="lisp">\nfeeders/\n</cq-tree>',
+            '<h2>Plan</h2>\n<cq-tree id="t" dialect="lisp"><pre>\nfeeders/\n</pre></cq-tree>',
         )
     )
     result = check(page_dir)
@@ -2263,7 +2267,8 @@ def _decided(page_dir, words):
     says so. Whatever v2 does about it, `version check` is what has to notice."""
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
-            "<h2>Plan</h2>", f'<h2>Plan</h2><cq-draft id="d1">{words}</cq-draft>'
+            "<h2>Plan</h2>",
+            f'<h2>Plan</h2><cq-draft id="d1"><pre>{words}</pre></cq-draft>',
         )
     )
     publish(page_dir)
@@ -2280,7 +2285,8 @@ def _decided(page_dir, words):
     )
     return lambda words, attrs="": (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace(
-            "<h2>Plan</h2>", f'<h2>Plan</h2><cq-draft id="d1"{attrs}>{words}</cq-draft>'
+            "<h2>Plan</h2>",
+            f'<h2>Plan</h2><cq-draft id="d1"{attrs}><pre>{words}</pre></cq-draft>',
         )
     )
 
@@ -2327,7 +2333,8 @@ def test_restating_on_the_first_version_is_refused(page_dir):
     of nothing into the log."""
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
-            "<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1" restated>Words.</cq-draft>'
+            "<h2>Plan</h2>",
+            '<h2>Plan</h2><cq-draft id="d1" restated><pre>Words.</pre></cq-draft>',
         )
     )
     result = check(page_dir)
@@ -2758,7 +2765,8 @@ def test_init_refuses_a_log_the_incoming_layer_no_longer_speaks(page_dir):
     version = page_dir / "versions" / "v1.html"
     version.write_text(
         version.read_text().replace(
-            "<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">A decision.</cq-draft>'
+            "<h2>Plan</h2>",
+            '<h2>Plan</h2><cq-draft id="d1"><pre>A decision.</pre></cq-draft>',
         )
     )
     publish(page_dir)
@@ -3172,14 +3180,15 @@ def test_a_widget_nobody_has_touched_is_not_the_gate_s_business(page_dir):
     rewrites a widget the reviewer never acted on."""
     (page_dir / "versions" / "v1.html").write_text(
         PAGE.replace(
-            "<h2>Plan</h2>", '<h2>Plan</h2><cq-draft id="d1">First words.</cq-draft>'
+            "<h2>Plan</h2>",
+            '<h2>Plan</h2><cq-draft id="d1"><pre>First words.</pre></cq-draft>',
         )
     )
     publish(page_dir)
     (page_dir / "versions" / "v2.html").write_text(
         PAGE.replace(
             "<h2>Plan</h2>",
-            '<h2>Plan</h2><cq-draft id="d1">Quite different words.</cq-draft>',
+            '<h2>Plan</h2><cq-draft id="d1"><pre>Quite different words.</pre></cq-draft>',
         )
     )
     assert check(page_dir, version=2).exit_code == 0
@@ -3714,7 +3723,8 @@ def test_server_rejects_an_action_from_a_widget_removed_by_revendoring(
     version.write_text(
         version.read_text().replace(
             "<h2>Plan</h2>",
-            '<h2>Plan</h2><cq-local-draft id="local-draft">Words.</cq-local-draft>',
+            '<h2>Plan</h2><cq-local-draft id="local-draft"><pre>Words.</pre>'
+            "</cq-local-draft>",
         )
     )
     noted = CliRunner().invoke(
@@ -4569,8 +4579,12 @@ def test_registry_examples_validate(page_dir):
 
 def test_registry_example_ids_are_independent_between_entries(page_dir):
     registry = interact.load_registry(page_dir)
-    registry["cq-diff"]["x-example"] = '<cq-diff id="shared">one changed line</cq-diff>'
-    registry["cq-tree"]["x-example"] = '<cq-tree id="shared">one/file.py</cq-tree>'
+    registry["cq-diff"]["x-example"] = (
+        '<cq-diff id="shared"><pre>one changed line</pre></cq-diff>'
+    )
+    registry["cq-tree"]["x-example"] = (
+        '<cq-tree id="shared"><pre>one/file.py</pre></cq-tree>'
+    )
 
     assert (
         interact.validate_registry_examples(registry, "independent examples")
@@ -4647,11 +4661,11 @@ def test_reply_validates_widget_markup(page_dir):
             markup,
         ],
     )
-    bad = reply('<cq-diagram id="f"><b>x</b></cq-diagram>')
+    bad = reply('<cq-diagram id="f"><pre>graph LR</pre><b>x</b></cq-diagram>')
     assert bad.exit_code != 0
-    assert "its body is data" in bad.output
+    assert "its body is one <pre> holding the text" in bad.output
     duplicate = reply(
-        '<cq-diagram id="browser-id" id="file-id">graph LR\nA --> B</cq-diagram>'
+        '<cq-diagram id="browser-id" id="file-id"><pre>graph LR\nA --> B</pre></cq-diagram>'
     )
     assert duplicate.exit_code != 0
     assert "duplicate attribute" in duplicate.output
@@ -4660,7 +4674,7 @@ def test_reply_validates_widget_markup(page_dir):
     prose = reply("just words")
     assert prose.exit_code != 0
     assert "carries no widget" in prose.output
-    good = reply('<cq-diagram id="f">\ngraph LR\n  A --> B\n</cq-diagram>')
+    good = reply('<cq-diagram id="f"><pre>\ngraph LR\n  A --> B\n</pre></cq-diagram>')
     assert good.exit_code == 0, good.output
     event = interact.read_events(page_dir)[-1]
     assert event["kind"] == "reply"
@@ -4797,7 +4811,7 @@ def test_the_wire_ships_a_message_as_logged(page_dir):
             "--text",
             "Fixed in `poll()`.",
             "--markup",
-            '<cq-diagram id="fix">\ngraph LR\n  A --> B\n</cq-diagram>',
+            '<cq-diagram id="fix"><pre>\ngraph LR\n  A --> B\n</pre></cq-diagram>',
         ],
     )
     assert result.exit_code == 0, result.output
@@ -4820,7 +4834,7 @@ def test_markup_enters_only_through_the_cli_gate(server, page_dir):
                 "kind": "comment",
                 "version": 1,
                 "text": "hi",
-                "markup": '<cq-diagram id="m">graph LR\n  A --> B</cq-diagram>',
+                "markup": '<cq-diagram id="m"><pre>graph LR\n  A --> B</pre></cq-diagram>',
             }
         ).encode(),
     )
@@ -4857,7 +4871,7 @@ def test_export_prints_threads_and_versions(page_dir):
             "agent": "Claude",
             "parent": "c1",
             "text": "reversibility",
-            "markup": '<cq-diagram id="why">graph LR\n  A --> B</cq-diagram>',
+            "markup": '<cq-diagram id="why"><pre>graph LR\n  A --> B</pre></cq-diagram>',
         },
     )
     interact.append_event(
@@ -4930,7 +4944,7 @@ def test_markup_needs_the_registry_and_text_does_not(page_dir):
             "--text",
             "See:",
             "--markup",
-            '<cq-diagram id="f">graph LR\n  A --> B</cq-diagram>',
+            '<cq-diagram id="f"><pre>graph LR\n  A --> B</pre></cq-diagram>',
         ],
     )
     assert with_markup.exit_code != 0
@@ -5025,7 +5039,7 @@ def test_a_quote_closing_its_section_stores_the_next_sections_words(page_dir):
     The section the anchor names scopes where the search may land, never what surrounds
     the passage."""
     two = PAGE.replace(
-        '  <cq-diagram id="flow">\ngraph LR\n  A --> B\n  </cq-diagram>\n',
+        '  <cq-diagram id="flow"><pre>\ngraph LR\n  A --> B\n  </pre></cq-diagram>\n',
         "  <p>Deploys pause overnight.</p>\n",
     ).replace(
         "</main>",
@@ -5082,9 +5096,9 @@ def test_a_quote_may_not_run_across_a_widgets_parts(page_dir):
     reviewer's browser, so it's refused here, where someone can still do something about
     it. Either side of the join quotes fine."""
     fenced = PAGE.replace(
-        '  <cq-diagram id="flow">\ngraph LR\n  A --> B\n  </cq-diagram>',
+        '  <cq-diagram id="flow"><pre>\ngraph LR\n  A --> B\n  </pre></cq-diagram>',
         "  <p>Before the diagram.</p>\n"
-        '  <cq-diagram id="flow">\ngraph LR\n  A --> B\n  </cq-diagram>\n'
+        '  <cq-diagram id="flow"><pre>\ngraph LR\n  A --> B\n  </pre></cq-diagram>\n'
         "  <p>After the diagram.</p>",
     )
     (page_dir / "versions" / "v1.html").write_text(fenced)
@@ -5106,7 +5120,7 @@ def test_a_quote_may_not_run_across_a_widgets_parts(page_dir):
 
 DRAFTED = PAGE.replace(
     "<h2>Plan</h2>",
-    '<h2>Plan</h2>\n  <cq-draft id="note">\nAdds --dry-run to every mutating command.\n  </cq-draft>',
+    '<h2>Plan</h2>\n  <cq-draft id="note"><pre>\nAdds --dry-run to every mutating command.\n  </pre></cq-draft>',
 )
 
 
@@ -5177,8 +5191,8 @@ def test_a_restated_draft_takes_the_pen_back_from_the_reading(page_dir):
     drafted(page_dir)
     edit(page_dir, "Adds --dry-run to purge and rebuild only.")
     revised = DRAFTED.replace(
-        '<cq-draft id="note">\nAdds --dry-run to every mutating command.',
-        '<cq-draft id="note" restated>\nOnly purge gets a dry-run; the rest apply live.',
+        '<cq-draft id="note"><pre>\nAdds --dry-run to every mutating command.',
+        '<cq-draft id="note" restated><pre>\nOnly purge gets a dry-run; the rest apply live.',
     )
     (page_dir / "versions" / "v2.html").write_text(revised)
     noted = CliRunner().invoke(
@@ -5476,7 +5490,7 @@ def test_a_comments_widget_markup_shares_one_id_universe_with_replies(page_dir):
             "--text",
             "See:",
             "--markup",
-            '<cq-diagram id="q1">\ngraph LR\n  A --> B\n</cq-diagram>',
+            '<cq-diagram id="q1"><pre>\ngraph LR\n  A --> B\n</pre></cq-diagram>',
         ],
     )
     assert clash.exit_code != 0 and "q1" in clash.output

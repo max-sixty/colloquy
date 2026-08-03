@@ -23,6 +23,7 @@ Usage: site.py  (no arguments; writes .tmp/site)
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -41,16 +42,29 @@ OUT = (
 )  # gitignored; the workflow uploads it as the Pages artifact
 
 REPO = "https://github.com/max-sixty/colloquy"
-THEME_LINK = f'<link rel="stylesheet" href="../{THEME.relative_to(ROOT)}">'
 
-# What a checkout path becomes once the site is one directory, in order: the
-# stylesheet is a path into the payload too, and it is the one the site serves
-# rather than sends to GitHub, so it is spelled as the whole tag and substituted
-# first. Everything else a page reaches into the payload for is source to read.
-# Both sides are literal, so a page naming something else keeps what it named and
-# the link check below is what notices.
+# The stylesheet is a path into the payload like any other, and the one exception to
+# what happens to those: the site serves its own copy rather than sending the reader to
+# GitHub. So it is rewritten first and on its own, and the rule has to say *the link
+# element's* href — `customizing.html` also links that same file as source to read, and
+# a match on the path alone would send a reader after the token block to the stylesheet
+# the site serves instead of to the source.
+#
+# A pattern rather than a literal, because the literal is the same rule with a
+# formatter's opinion baked into it. It read as the whole <link> tag until prettier
+# started writing the void element `<link … />` and splitting this one over four lines;
+# the literal quietly stopped matching, the generic ../plugins/ rule below took the href
+# instead, and every page shipped with its stylesheet pointing at a GitHub blob view —
+# a link that resolves, so the dead-link check has nothing to say, over a page with no
+# theme on it.
+THEME_LINK = re.compile(
+    rf'(<link\b[^>]*?)"\.\./{re.escape(str(THEME.relative_to(ROOT)))}"'
+)
+
+# What a checkout path becomes once the site is one directory, in order. Everything a
+# page reaches into the payload for is source to read. Both sides are literal, so a page
+# naming something else keeps what it named and the link check below is what notices.
 REWRITES = {
-    THEME_LINK: '<link rel="stylesheet" href="theme.css">',
     "../plugins/": f"{REPO}/blob/main/plugins/",
     "../examples/": "examples/",
 }
@@ -151,7 +165,7 @@ def build(out: Path) -> None:
     for source in sorted(DOCS.iterdir()):
         target = out / source.name
         if source.suffix == ".html":
-            text = source.read_text(encoding="utf-8")
+            text = THEME_LINK.sub(r'\1"theme.css"', source.read_text(encoding="utf-8"))
             for checkout, published in REWRITES.items():
                 text = text.replace(checkout, published)
             target.write_text(text, encoding="utf-8")

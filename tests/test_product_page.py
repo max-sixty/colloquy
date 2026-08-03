@@ -13,8 +13,13 @@ DOCS = ROOT / "docs"
 def test_docs_pages_link_the_shipped_theme():
     target = "../plugins/colloquy/skills/colloquy/assets/theme.css"
     assert (ASSETS / "theme.css").is_file()
+    # The <link> around the href, not the whole tag spelled out: customizing.html also
+    # links that same file as source to read, so the path alone would pass on a page
+    # that had dropped its stylesheet. Attributes in any order and on any number of
+    # lines, because a formatter decides that — prettier puts this one on four.
+    link = re.compile(rf'<link\b[^>]*?"{re.escape(target)}"')
     for page in DOCS.glob("*.html"):
-        assert f'<link rel="stylesheet" href="{target}">' in page.read_text()
+        assert link.search(page.read_text()), page.name
 
 
 def test_docs_pages_use_only_registered_widgets():
@@ -68,7 +73,10 @@ def test_tour_walks_the_interactive_and_live_workflows():
     assert 'src="demo.gif"' in tour
 
     live = (ROOT / "examples" / "live-progress.html").read_text()
-    assert "browser is following the newest version" in live.lower()
+    # Whitespace collapsed, because this asks what the page says and the source is
+    # formatted: prettier re-derives every line break in a paragraph, so a sentence
+    # asserted as source bytes is a sentence that fails the day it gets a word longer.
+    assert "browser is following the newest version" in " ".join(live.lower().split())
     for status in ("done", "active", "planned"):
         assert f'status="{status}"' in live
     assert "<h2>Blocked</h2>" in live
