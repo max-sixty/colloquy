@@ -52,7 +52,9 @@ A page directory holds:
                          the interface its server binds, and the key the URL carries.
                          Minted at the first `server run` and kept, because a restart
                          has to reproduce the URL an open browser is already polling
-    session.json         {"id", "pid", "agent"} of the agent session last working on the page
+    session.json         {"id", "host", "pid", "agent"} of the agent session last
+                         working on the page — the watcher the banner names, not
+                         necessarily the author of any given message
 
 status.json is a claim, and a claim never expires on its own: an agent that
 stopped watching renders exactly like one that is watching and has nothing to
@@ -153,8 +155,12 @@ per widget, version the edit was made against), note (agent; per-version
 changelog, carrying `restated`: the element ids whose decisions the publishing
 version took back). The server stamps every browser-posted event author=user;
 Agent-side `colloquy comment`, `colloquy reply`, and `version publish` stamp the wire
-role author=claude, and comments/replies also carry the originating host's display
-name. A message body is Markdown, stored as typed and
+role author=claude plus the posting session's own voice: `agent`, its display name,
+and `session`, its host session id. Several agent sessions can write to one page,
+so the voice is read from the poster's environment rather than from session.json,
+which names only the watcher — and identity is the session id, because a display
+name is anyone's to choose and two workers may share one.
+A message body is Markdown, stored as typed and
 rendered by the page's own vendored runtime — the browser is where the page's other
 rendering already lives, and vendoring the renderer beside the panel's styles is what
 keeps the two versioning together. Raw HTML in a body renders as its characters there,
@@ -274,13 +280,21 @@ BROWSER_EVENT_FIELDS = {
 # id/ts/author/kind and read_events' seq. A registry may grow this vocabulary,
 # but it cannot omit a word the producers beside it already speak.
 EVENT_VOCABULARY = {
-    "comment": {"version", "text", "anchor", "suggestion", "agent", "markup"},
-    "reply": {"parent", "version", "text", "agent", "markup"},
+    "comment": {
+        "version",
+        "text",
+        "anchor",
+        "suggestion",
+        "agent",
+        "session",
+        "markup",
+    },
+    "reply": {"parent", "version", "text", "agent", "session", "markup"},
     "resolve": {"parent"},
     "done": {"version", "text"},
     "close": {"version"},
     "action": {"widget", "action", "detail", "version"},
-    "note": {"version", "text", "restated"},
+    "note": {"version", "text", "restated", "agent", "session"},
 }
 ACK_BATCH_INSTRUCTION = (
     "If wait output is truncated, acknowledge nothing and rerun with enough output "
@@ -740,6 +754,41 @@ def state_home() -> Path:
     )
 
 
+def host_identity() -> dict | None:
+    """The identity the host session supplies through the environment, or None
+    outside an agent host: `id`, the session's own stable id; `host`, which
+    program is running it; `agent`, the display name the page shows for it.
+
+    The name is COLLOQUY_AGENT where the launch set one — naming a worker in its
+    environment needs no cooperation from the agent, so every command it runs
+    speaks as that voice — and the host's own name otherwise. `host` stays a
+    separate fact because behavior keys on it (unattended_pages prescribes
+    unified exec or background tasks by host) and a display name is anyone's to
+    choose. The COLLOQUY_* door is the launcher's mapping of Codex today; a
+    third host earns its own value when one arrives."""
+    if sid := os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        agent = os.environ.get("COLLOQUY_AGENT") or "Claude"
+        return {"id": sid, "host": "claude-code", "agent": agent}
+    if sid := os.environ.get("COLLOQUY_SESSION_ID"):
+        # The launcher sets COLLOQUY_AGENT beside the id; an environment built
+        # by hand that didn't is missing half the identity, so fail on it here.
+        return {"id": sid, "host": "codex", "agent": os.environ["COLLOQUY_AGENT"]}
+    return None
+
+
+def message_identity() -> dict:
+    """The voice an agent-authored event carries: the posting session's display
+    name and session id, read from its own environment rather than the page's
+    session.json — the claimant is whoever watches the page, and on a page
+    several sessions report to, that is usually not the poster. Empty outside a
+    host session: the readers' generic label covers an event with no voice, and
+    a stored placeholder would only impersonate a name."""
+    identity = host_identity()
+    if identity is None:
+        return {}
+    return {"agent": identity["agent"], "session": identity["id"]}
+
+
 def claim_page(page_dir: Path) -> bool:
     """Record that this agent session is the one working on the page, in
     both directions: the page names its session (so the server can see when that
@@ -754,20 +803,14 @@ def claim_page(page_dir: Path) -> bool:
     session only wrote to, like a throwaway page for testing the widget layer,
     owes nobody a watcher. Return whether this invocation made a claim, so a
     bare-shell server never inherits a stale claim's lifetime."""
-    sid = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get(
-        "COLLOQUY_SESSION_ID"
-    )
+    identity = host_identity()
     pid = os.environ.get("CLAUDE_PID") or os.environ.get("COLLOQUY_SESSION_PID")
-    if not sid or not pid:
+    if not identity or not pid:
         return False
-    agent = (
-        "Claude"
-        if os.environ.get("CLAUDE_CODE_SESSION_ID")
-        else os.environ["COLLOQUY_AGENT"]
-    )
+    sid = identity["id"]
     write_json(
         page_dir / "session.json",
-        {"id": sid, "pid": int(pid), "agent": agent, "ts": now_iso()},
+        {**identity, "pid": int(pid), "ts": now_iso()},
     )
     sessions = state_home() / "sessions"
     sessions.mkdir(parents=True, exist_ok=True)
@@ -831,6 +874,9 @@ def full_state(page_dir: Path, events: list, versions: list) -> dict:
         "cursor": cursor,
         "pending": len(unacknowledged(events, cursor)),
         "agent": session.get("agent", "Claude") if session else "Claude",
+        # The claimant's host program, for behavior that keys on it — the display
+        # name above is anyone's to choose, so nothing may dispatch on it.
+        "host": session.get("host") if session else None,
         # None when nothing claimed the page — interact.py run outside an agent host.
         "session_alive": pid_alive(session["pid"]) if session else None,
         # As logged: a message's text is Markdown the page's vendored runtime renders,
@@ -988,7 +1034,7 @@ class Handler(BaseHTTPRequestHandler):
         # Identity, authorship, and time belong to the server. Drop client copies
         # before checking the kind's declared payload, so none can be forged into
         # the append-only record.
-        for field in ("id", "author", "agent", "ts"):
+        for field in ("id", "author", "agent", "session", "ts"):
             event.pop(field, None)
         unexpected = (
             set(event) - {"kind"} - (EVENT_VOCABULARY[kind] - AGENT_ONLY_FIELDS)
@@ -2044,12 +2090,6 @@ def check_markup(page_dir: Path, kind: str, markup: str, events: list) -> None:
         )
 
 
-def message_agent(page_dir: Path) -> str:
-    """The agent originating a new message, or a generic label when no host
-    session has claimed the page."""
-    return (read_json(page_dir / "session.json") or {}).get("agent", "Agent")
-
-
 def cmd_comment(page_dir: Path, quote: str, section: str, text, markup: str) -> None:
     """Open a thread on a passage, as the user's own selection does. The anchor is
     captured against the version they are looking at — the newest published one, since a
@@ -2082,7 +2122,7 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text, markup: str) -> 
     event = {
         "kind": "comment",
         "author": "claude",
-        "agent": message_agent(page_dir),
+        **message_identity(),
         "version": version,
         "anchor": anchor,
         "text": body,
@@ -2103,7 +2143,7 @@ def cmd_reply(page_dir: Path, to: str, text, markup: str) -> None:
     event = {
         "kind": "reply",
         "author": "claude",
-        "agent": message_agent(page_dir),
+        **message_identity(),
         "parent": to,
         "text": body,
     }
@@ -2139,6 +2179,7 @@ def cmd_publish(page_dir: Path, version: int, text) -> None:
     event = {
         "kind": "note",
         "author": "claude",
+        **message_identity(),
         "version": version,
         "text": read_text_arg(text),
     }
@@ -2313,7 +2354,7 @@ def unattended_pages(session_id: str) -> list:
     for page_dir in owned_pages(session_id):
         events = read_events(page_dir)
         state = full_state(page_dir, events, published_versions(page_dir, events))
-        codex = state["agent"] == "Codex"
+        codex = state["host"] == "codex"
         if state["listening"] and not codex:
             # A live `colloquy wait` is the watch, and it prints what's pending on its
             # own. Reporting the page here would have Claude start a second one, and two

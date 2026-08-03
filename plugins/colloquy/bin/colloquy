@@ -12,11 +12,13 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 script=$root/skills/colloquy/scripts/interact.py
 
 # Codex exposes the thread id to shell tools. Carry it and the long-lived Codex
-# process into the same session record Claude Code supplies directly.
+# process into the same session record Claude Code supplies directly. The name is
+# a default, not the last word: a worker session launched with its own
+# COLLOQUY_AGENT keeps that voice.
 if [ -z "${CLAUDE_CODE_SESSION_ID:-}" ] && [ -n "${CODEX_THREAD_ID:-}" ]; then
   export COLLOQUY_SESSION_ID=$CODEX_THREAD_ID
   export COLLOQUY_SESSION_PID=$PPID
-  export COLLOQUY_AGENT=Codex
+  export COLLOQUY_AGENT=${COLLOQUY_AGENT:-Codex}
 fi
 
 if [ "${1-}" = "version" ] && [ "${2-}" = "export" ]; then

@@ -9209,16 +9209,15 @@ def test_a_written_anchor_keeps_its_copy_when_the_page_grows_another(browser, se
     page.close()
 
 
-def test_a_written_comment_keeps_its_originating_agent(browser, serve):
+def test_a_written_comment_keeps_its_originating_agent(browser, serve, monkeypatch):
     """An agent's side of a thread is the user's side with the author flipped.
-    Its label belongs to the message, so another host claiming the page later
-    cannot rewrite who said it."""
+    Its label belongs to the message — the poster's own environment stamps it as
+    the comment is written — so another host claiming the page later cannot
+    rewrite who said it."""
     url = serve(TWIN_V1)
     d = serve.page_dir
-    interact.write_json(
-        d / "session.json",
-        {"id": "codex", "pid": os.getpid(), "agent": "Codex", "ts": "t"},
-    )
+    monkeypatch.setenv("COLLOQUY_SESSION_ID", "codex")
+    monkeypatch.setenv("COLLOQUY_AGENT", "Codex")
     assert (
         CliRunner()
         .invoke(

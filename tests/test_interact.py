@@ -3144,7 +3144,7 @@ def test_init_requires_tones_to_be_a_list_membership_can_be_tested_against(
     assert "$tones.names must be a unique list of strings" in result.output
 
 
-@pytest.mark.parametrize("field", [None, "restated"])
+@pytest.mark.parametrize("field", [None, "restated", "session"])
 def test_init_requires_the_event_vocabulary_the_layer_writes(page_dir, tmp_path, field):
     overlay = tmp_path / ".colloquy"
     overlay.mkdir(parents=True)
@@ -3458,6 +3458,7 @@ def test_server_round_trip(server, page_dir):
                 "id": "c9",
                 "author": "claude",
                 "agent": "Codex",
+                "session": "s-forged",
                 "ts": "1900-01-01T00:00:00Z",
                 "version": 1,
                 "text": "hm",
@@ -3467,7 +3468,7 @@ def test_server_round_trip(server, page_dir):
     assert status == 200
     posted = interact.read_events(page_dir)[-1]
     assert posted["author"] == "user" and posted["id"] != "c9"
-    assert "agent" not in posted
+    assert "agent" not in posted and "session" not in posted
     assert posted["ts"] != "1900-01-01T00:00:00Z"
     status, body = fetch(f"{server}/api/state")
     state = json.loads(body)
@@ -4126,8 +4127,40 @@ def test_codex_launcher_claims_the_page_for_its_thread(codex_claimed_page):
     session = interact.read_json(codex_claimed_page / "session.json")
     assert session["id"] == "codex-thread"
     assert session["pid"] == os.getpid()
-    assert session["agent"] == "Codex"
+    assert session["agent"] == "Codex" and session["host"] == "codex"
     assert page_state(codex_claimed_page)["agent"] == "Codex"
+
+
+def test_the_launcher_defaults_the_name_but_a_worker_keeps_its_own(tmp_path):
+    """A Codex worker launched with COLLOQUY_AGENT set keeps that voice: the
+    launcher's Codex branch supplies the default name, not the last word."""
+    page = tmp_path / "worker-page"
+    launcher = PLUGIN_ROOT / "bin" / "colloquy"
+    env = os.environ | {"CODEX_THREAD_ID": "thread-9", "COLLOQUY_AGENT": "Indexer"}
+    subprocess.run([launcher, "page", "init", page], env=env, check=True)
+    interact.append_event(page, {"kind": "comment", "author": "user", "text": "hi"})
+    subprocess.run([launcher, "wait", page], env=env, check=True)
+    session = interact.read_json(page / "session.json")
+    assert session["id"] == "thread-9"
+    assert session["agent"] == "Indexer" and session["host"] == "codex"
+
+
+def test_hook_remedies_follow_the_host_not_the_display_name(
+    page_dir, monkeypatch, capsys
+):
+    """COLLOQUY_AGENT names the voice the banner and threads show; which
+    machinery the hook prescribes (unified exec vs background tasks) keys on the
+    recorded host, so a renamed Codex worker still gets Codex remedies."""
+    monkeypatch.setenv("COLLOQUY_SESSION_ID", "w1")
+    monkeypatch.setenv("COLLOQUY_SESSION_PID", str(os.getpid()))
+    monkeypatch.setenv("COLLOQUY_AGENT", "Indexer")
+    interact.claim_page(page_dir)
+    interact.cmd_status(page_dir, "waiting", "")
+
+    interact.cmd_hook({"hook_event_name": "Stop", "session_id": "w1"})
+    reason = json.loads(capsys.readouterr().out)["reason"]
+    assert "unified exec" in reason and "write_stdin" in reason
+    assert interact.read_json(page_dir / "session.json")["agent"] == "Indexer"
 
 
 def test_stop_hook_keeps_codex_inside_the_exact_wait_session(
@@ -4791,6 +4824,49 @@ def test_the_wire_ships_a_message_as_logged(page_dir):
     assert wire["reply"]["markup"].startswith("<cq-diagram")
 
 
+def test_each_agent_session_posts_as_its_own_voice(page_dir, monkeypatch):
+    """Several worker sessions report to one page. Each agent-authored event
+    carries its poster's display name and session id from the poster's own
+    environment, so the log tells the voices apart by id; the claim — the
+    watcher the banner names — stays the hub's, untouched by a worker's post."""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "hub")
+    monkeypatch.setenv("CLAUDE_PID", str(os.getpid()))
+    monkeypatch.setenv("COLLOQUY_AGENT", "Hub")
+    interact.claim_page(page_dir)
+    published(page_dir)
+    interact.append_event(
+        page_dir, {"kind": "comment", "id": "c1", "author": "user", "text": "status?"}
+    )
+
+    def reply(text):
+        return CliRunner().invoke(
+            interact.cli, ["reply", str(page_dir), "--to", "c1", "--text", text]
+        )
+
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "worker-1")
+    monkeypatch.setenv("COLLOQUY_AGENT", "Indexer")
+    assert reply("indexing done").exit_code == 0
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "worker-2")
+    monkeypatch.setenv("COLLOQUY_AGENT", "Crawler")
+    assert reply("crawl running").exit_code == 0
+
+    events = interact.read_events(page_dir)
+    note = next(e for e in events if e["kind"] == "note")
+    assert (note["agent"], note["session"]) == ("Hub", "hub")
+    replies = [e for e in events if e["kind"] == "reply"]
+    assert [(e["agent"], e["session"]) for e in replies] == [
+        ("Indexer", "worker-1"),
+        ("Crawler", "worker-2"),
+    ]
+    session = interact.read_json(page_dir / "session.json")
+    assert session["id"] == "hub" and session["agent"] == "Hub"
+    assert page_state(page_dir)["agent"] == "Hub"
+    # The reader meets each message under the name it carried.
+    transcript = CliRunner().invoke(interact.cli, ["transcript", str(page_dir)])
+    assert "- **Indexer**: indexing done" in transcript.output
+    assert "- **Crawler**: crawl running" in transcript.output
+
+
 def test_markup_enters_only_through_the_cli_gate(server, page_dir):
     """The browser door refuses the field rather than silently dropping it: everything
     the log holds under `markup` has been through `check_markup`, which is what lets
@@ -4974,7 +5050,10 @@ def test_comment_anchors_on_a_quote_and_posts_as_claude(page_dir):
         and event["author"] == "claude"
         and event["version"] == 1
     )
-    assert event["agent"] == "Agent"
+    # A bare run has no host session behind it, so the event carries no voice
+    # fields — readers' generic label covers it — rather than a stored
+    # placeholder wearing a name.
+    assert "agent" not in event and "session" not in event
     assert event["anchor"]["quote"] == "Ship dark"
     # The section is derived the way the browser derives it — the nearest enclosing id.
     assert event["anchor"]["section"] == "flag-first"
