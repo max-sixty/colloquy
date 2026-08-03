@@ -2167,7 +2167,7 @@ def test_covering_panel_keeps_toasts_on_screen_and_clear_of_the_footer(browser, 
         f"the toast covered the panel's persistent composer: {narrow}"
     )
 
-    resized(page, 721, 600)
+    resized(page, 841, 600)
     page.wait_for_function("""() => {
         const toast = document.querySelector(".cq-toast").getBoundingClientRect();
         const panel = document.querySelector(".cq-panel").getBoundingClientRect();
@@ -3617,17 +3617,17 @@ def test_a_specimen_in_a_reply_is_quoted_there_too(browser, serve):
 
 TABLE_REPLY = """The ceilings, unchanged:
 
-| Plan | A minute | Burst | Counted against |
-| --- | --- | --- | --- |
-| Free | 60 | 120 | the token |
-| Enterprise | 6,000 | 12,000 | the token, per environment |
+| Plan | A minute | Burst | Counted against | Reference |
+| --- | --- | --- | --- | --- |
+| Free | 60 | 120 | the token | GW-LIMITS-FREE-2026 |
+| Enterprise | 6,000 | 12,000 | the token, per environment | GW-LIMITS-ENTERPRISE-2026 |
 
 Taken from https://example.com/gateway/limits/reference/by-plan/current/table
 """
 
 
 def test_a_table_in_a_reply_keeps_its_figures_whole(browser, serve):
-    """A reply is Markdown, so it can hold a table, and the panel is 360px wide.
+    """A reply is Markdown, so it can hold a table, and the panel is 420px wide.
     Prose there breaks anywhere — the thing a reply overflows on is a URL no wrap
     can help — and a table caught the same rule: "12,000" came out as "12,0" over
     "00", in the column of figures the table was written to compare. Both halves
@@ -4859,6 +4859,107 @@ def test_a_reply_widget_replays_its_action_when_the_page_loads(browser, serve):
     page.get_by_role("button", name="Comments", exact=False).click()
     expect(page.locator("#rp-shim")).to_have_attribute("chosen", "")
     assert page.locator("#rp-live cq-option[chosen]").count() == 1
+    assert errors == []
+    page.close()
+
+
+THREAD_ASKS = [
+    {
+        "kind": "comment",
+        "id": "c-which",
+        "author": "claude",
+        "version": 1,
+        "text": "Which store?",
+        "markup": '<cq-options id="tq-one" choose>'
+        '<cq-option id="tq-redis">Redis</cq-option>'
+        '<cq-option id="tq-cookie">Signed cookie</cq-option>'
+        "</cq-options>",
+    },
+    {
+        "kind": "comment",
+        "id": "c-any",
+        "author": "claude",
+        "version": 1,
+        "text": "Pick any that apply.",
+        "markup": '<cq-options id="tq-set" choose multiple>'
+        '<cq-option id="tq-logs">Logs</cq-option>'
+        '<cq-option id="tq-metrics">Metrics</cq-option>'
+        "</cq-options>",
+    },
+]
+
+
+def test_a_thread_question_asks_until_answered(browser, serve):
+    """A question in a thread is one of the page's asks — a request to the reader
+    wherever it stands — and `a` opens the panel to reach it. A single-answer group
+    is answered by its pick, as on the page; a `multiple` group's toggles each
+    reach the agent live, so only its Done press closes it, as an `answer` action
+    the ask stands until (x-awaits.until). The thread's own reply box is the words'
+    home, so the group brings no box of its own — and an armed g leader keeps its
+    digits even from a mark, because the chord promised a thread."""
+    url = serve(REPLY_HOST_PAGE)
+    for event in THREAD_ASKS:
+        interact.append_event(serve.page_dir, event)
+    page, errors = open_page(browser, url)
+    asks = page.locator(".cq-asks")
+    expect(asks).to_have_text("Asks (2)")
+
+    page.keyboard.press("a")
+    expect(page.locator(".cq-panel")).to_be_visible()
+    expect(page.locator("#tq-one .cq-pick").first).to_be_focused()
+    expect(page.locator(".cq-thread .cq-say")).to_have_count(0)
+
+    page.locator("#tq-redis").click()
+    expect(asks).to_have_text("Asks (1)")
+
+    page.locator("#tq-logs").click()
+    expect(page.locator("#tq-logs")).to_have_attribute("chosen", "")
+    expect(asks).to_have_text("Asks (1)")
+    page.locator("#tq-set .cq-done").click()
+    expect(asks).to_be_hidden()
+    expect(page.locator("#tq-set")).to_have_attribute("answered", "")
+    page.wait_for_function(ROUND_TRIP)
+    actions = [e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"]
+    assert actions[-1]["widget"] == "tq-set" and actions[-1]["action"] == "answer"
+    assert actions[-1]["detail"] == {}
+
+    # The chord's promise holds from a mark: g then 1 reaches the first thread's
+    # reply box, and no pick is sent for the digit.
+    page.locator("#tq-one .cq-pick").first.focus()
+    page.keyboard.press("g")
+    page.keyboard.press("1")
+    expect(page.locator(".cq-thread textarea").first).to_be_focused()
+    sent = [e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"]
+    assert sent[-1]["action"] == "answer", "the leader's digit must not pick"
+    assert errors == []
+    page.close()
+
+
+def test_keys_answer_a_question_from_its_marks(browser, serve):
+    """From a mark — where `a` lands — ↑/↓ walk the options clamping at the ends, a
+    digit picks outright, and each option wears its digit only while a mark holds
+    keyboard focus, so nothing appears on a page nobody is answering."""
+    page, errors = open_page(browser, serve(ASKS_PAGE))
+    nums = page.locator("#live-question .cq-pick-num")
+    expect(nums.first).to_be_hidden()
+
+    page.keyboard.press("a")
+    marks = page.locator("#live-question .cq-pick")
+    expect(marks.first).to_be_focused()
+    expect(nums.first).to_be_visible()
+    expect(nums.nth(1)).to_have_text("2")
+
+    page.keyboard.press("ArrowDown")
+    expect(marks.nth(1)).to_be_focused()
+    page.keyboard.press("ArrowDown")
+    expect(marks.nth(1)).to_be_focused()
+
+    page.keyboard.press("1")
+    expect(page.locator("#lq-keep")).to_have_attribute("chosen", "")
+    page.wait_for_function(ROUND_TRIP)
+    acts = [e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"]
+    assert acts[-1]["widget"] == "live-question"
+    assert acts[-1]["detail"] == {"options": ["lq-keep"]}
     assert errors == []
     page.close()
 

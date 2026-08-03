@@ -486,6 +486,23 @@ cq-option[chosen] .cq-pick::before { content: "✓"; border-color: var(--ok);
                      background: var(--ok); }
 cq-option .cq-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px;
                      border-radius: 4px; }
+/* The digit a keyboard pick answers by: each option's corner chip, the same face as
+ * the g leader's thread chips, painted only while one of the group's marks holds
+ * keyboard focus — an address appears exactly when a key could use it, and a pointer
+ * pick never summons one. Positioned off the option's own corner, so its arrival
+ * moves nothing. */
+cq-option > .cq-pick-num { display: none; position: absolute; top: -8px; left: -8px;
+                     width: 17px; height: 17px; border: 1px solid var(--accent);
+                     border-radius: 50%; background: var(--card); color: var(--accent);
+                     font-size: 11px; line-height: 15px; text-align: center; z-index: 1; }
+cq-options[choose]:has(.cq-pick:focus-visible) > cq-option > .cq-pick-num { display: block; }
+/* The thread multi-question's submit (the module adds it there alone): one press
+ * stating the set is whole, since every toggle already reached the agent as it
+ * landed. Answered is paint, never a wider word — the pressed control's own line
+ * holds still. */
+cq-options > .cq-done { margin-top: 8px; }
+cq-options[answered] > .cq-done { color: var(--ok-ink); border-color: var(--ok);
+                     background: var(--ok-tint); }
 /* A card group under `choose` is one control, not a set of cards standing near each other.
  * Deleting the offer word left the question of what says a decision is waiting, and the
  * answer is the group rather than another thing drawn on every member: a group offers and

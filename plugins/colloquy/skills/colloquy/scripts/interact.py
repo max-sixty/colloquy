@@ -392,21 +392,33 @@ STATE_SCHEMA = {
 }
 # An ask is a standing request to the reader, and both halves of it are already
 # written down: `when` says which instances ask (attribute values, a flag's being
-# true and false), and x-state says what an answer looks like. See $awaits.
+# true and false), and x-state says what an answer looks like. See $awaits. One
+# condition shape serves both `when` and `until.when`, because they ask the same
+# question of the same attributes.
+ASK_CONDITION = {
+    "type": "object",
+    "minProperties": 1,
+    "propertyNames": {"pattern": f"^{HTML_NAME}$"},
+    "additionalProperties": {
+        "type": "array",
+        "items": {"type": ["string", "boolean"]},
+        "minItems": 1,
+    },
+}
 AWAITS_SCHEMA = {
     "type": "object",
     "properties": {
-        "when": {
-            "type": "object",
-            "minProperties": 1,
-            "propertyNames": {"pattern": f"^{HTML_NAME}$"},
-            "additionalProperties": {
-                "type": "array",
-                "items": {"type": ["string", "boolean"]},
-                "minItems": 1,
-            },
-        },
+        "when": ASK_CONDITION,
         "all": {"type": "string", "pattern": f"^{HTML_NAME}$"},
+        "until": {
+            "type": "object",
+            "properties": {
+                "verb": {"type": "string", "pattern": f"^{HTML_NAME}$"},
+                "when": ASK_CONDITION,
+            },
+            "required": ["verb", "when"],
+            "additionalProperties": False,
+        },
     },
     "additionalProperties": False,
 }
@@ -2193,31 +2205,32 @@ def check_markup(page_dir: Path, kind: str, markup: str, events: list) -> None:
 
 
 def cmd_comment(page_dir: Path, quote: str, section: str, text, markup: str) -> None:
-    """Open a thread on a passage, as the user's own selection does. The anchor is
-    captured against the version they are looking at — the newest published one, since a
-    version no `note` has released is a passage nobody can be pointed at — and read as
-    they see it: a slot their decision retired is off the page, and a draft they edited
-    holds their words, so a quote is met here the way it would land there."""
-    if not quote and not section:
-        sys.exit("a comment points at something: pass --quote, --section, or both")
+    """Open a thread, as the user's own gestures do: on a passage where --quote or
+    --section points at one, and on the page as a whole where neither does — the same
+    anchorless shape the browser's general box posts, which is where a question about
+    the work rather than a passage belongs. An anchor is captured against the version
+    they are looking at — the newest published one, since a version no `note` has
+    released is a passage nobody can be pointed at — and read as they see it: a slot
+    their decision retired is off the page, and a draft they edited holds their words,
+    so a quote is met here the way it would land there."""
     events = read_events(page_dir)
     published = published_versions(page_dir, events)
     if not published:
-        sys.exit(
-            "no published version to anchor in; run `colloquy version publish` first"
-        )
+        sys.exit("no published version; run `colloquy version publish` first")
     version = published[-1]
-    html = version_path(page_dir, version).read_text(encoding="utf-8")
-    registry = load_registry(page_dir)
-    if registry is None:
-        sys.exit(f"no registry.json in {page_dir}; run `colloquy page init` first")
-    fold, _, _ = page_fold(html, events, registry, version)
-    decided = decisions(fold, registry)
-    edited = rewritten_bodies(fold)
-    try:
-        anchor = capture_anchor(html, registry, quote, section, decided, edited)
-    except ValueError as err:
-        sys.exit(f"can't anchor in v{version}: {err}")
+    anchor = None
+    if quote or section:
+        html = version_path(page_dir, version).read_text(encoding="utf-8")
+        registry = load_registry(page_dir)
+        if registry is None:
+            sys.exit(f"no registry.json in {page_dir}; run `colloquy page init` first")
+        fold, _, _ = page_fold(html, events, registry, version)
+        decided = decisions(fold, registry)
+        edited = rewritten_bodies(fold)
+        try:
+            anchor = capture_anchor(html, registry, quote, section, decided, edited)
+        except ValueError as err:
+            sys.exit(f"can't anchor in v{version}: {err}")
     body = read_text_arg(text)
     if markup:
         check_markup(page_dir, "comment", markup, events)
@@ -2226,9 +2239,10 @@ def cmd_comment(page_dir: Path, quote: str, section: str, text, markup: str) -> 
         "author": "claude",
         **message_identity(),
         "version": version,
-        "anchor": anchor,
         "text": body,
     }
+    if anchor:
+        event["anchor"] = anchor
     if markup:
         event["markup"] = markup
     print(json.dumps(append_event(page_dir, event), ensure_ascii=False))
@@ -3776,7 +3790,10 @@ def validate_registry(registry: dict, source) -> dict:
         # there or it isn't, an enum admits what it lists — and a subschema that
         # states neither contradicts nothing.
         awaits = entry.get("x-awaits", {})
-        for attr, values in awaits.get("when", {}).items():
+        for attr, values in [
+            *awaits.get("when", {}).items(),
+            *awaits.get("until", {}).get("when", {}).items(),
+        ]:
             if attr not in properties:
                 sys.exit(
                     f"{path}: <{tag}> x-awaits names undeclared attribute `{attr}`"
@@ -3811,6 +3828,15 @@ def validate_registry(registry: dict, source) -> dict:
             sys.exit(
                 f"{path}: <{tag}> x-awaits answers every one at once with "
                 f"`{blanket}`, which it does not declare as an x-state verb"
+            )
+        # The until verb closes a thread ask, so it too is one of the widget's own
+        # verbs — same rule as `all`, same reason.
+        if (until := awaits.get("until")) and until["verb"] not in entry.get(
+            "x-state", {}
+        ):
+            sys.exit(
+                f"{path}: <{tag}> x-awaits holds asks open until `{until['verb']}`, "
+                "which it does not declare as an x-state verb"
             )
         needs_upgrade = [
             key
@@ -5672,14 +5698,16 @@ def ack(dir: str, seq: int) -> None:
     cmd_ack(resolve_dir(dir), seq)
 
 
-@cli.command(short_help="Open an agent thread on a page passage.")
+@cli.command(short_help="Open an agent thread — on a passage, or on the page whole.")
 @click.argument("dir", metavar="PAGE")
 @click.option("--quote", help="passage text from the published version")
 @click.option("--section", metavar="ID", help="element ID to anchor or scope --quote")
 @click.option("--text", help="comment text (default: stdin)")
 @click.option("--markup", help="widget markup to render after the text, validated here")
 def comment(dir: str, quote: str, section: str, text: str, markup: str) -> None:
-    """Open a thread on a passage as the agent (--text or stdin).
+    """Open a thread as the agent (--text or stdin): anchored where --quote or
+    --section points at a passage, general where neither does — a question about
+    the work as a whole.
 
     The user answers it in the browser and resolves it there. Refuses a quote the
     published version does not hold, or holds more than once.

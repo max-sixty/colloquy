@@ -485,15 +485,17 @@ export function sendAction(el, action, detail) {
 // put that without going hunting for a passage to select. What they type goes back as
 // an ordinary comment anchored on the widget, so it is a thread beside the question:
 // replied to in place, resolved like any other, and in the transcript with everything
-// else they said. One store, one channel; the placement of the *reply* is the open
-// question (TODO.md), and it is a question about where a thread renders, not about
-// where the words live.
+// else they said.
 //
 // Built here rather than in each widget, because everything that makes it safe is the
 // comment layer's: the draft written on each keystroke and cleared only by a
 // successful send, one send per click, ⌘⏎. A widget says where the box goes and what
-// it invites; nothing else.
+// it invites; nothing else — including whether a box belongs there at all, which is
+// why a widget standing in a thread gets null: the thread's own reply box is already
+// the words' home, and a box here would double it and open a second thread anchored
+// on an id no version holds.
 export function sayBox(el, hint) {
+  if (inChrome(el)) return null;
   const row = offer("div", "cq-say");
   const ta = offer("textarea");
   const send = offer("button", "cq-btn primary", "Send");
@@ -760,8 +762,10 @@ const POLL_MS = 2000;
 // under which yielding one is worse than being covered by it. One number, written
 // into the stylesheet below rather than read back off the panel: the two have to
 // agree, and the panel measures zero for as long as it is closed, which is exactly
-// when the page most needs to know how wide it will be.
-const PANEL_W = 360;
+// when the page most needs to know how wide it will be. 420 since threads carry
+// questions — option rows are the one thread content that can't scroll or scale
+// its width away, and 360 crowded them.
+const PANEL_W = 420;
 
 // ---------- styles ----------
 const style = document.createElement("style");
@@ -1975,7 +1979,7 @@ const inUi = (node) => {
 // what that container holds, and the reading position is a place in the page rather than
 // in the panel over it. `.cq-ui` reached those elements and a widget's own controls out
 // on the page besides, which is the look standing in for the place.
-const inChrome = (node) => Boolean(node?.closest(".cq-chrome"));
+export const inChrome = (node) => Boolean(node?.closest(".cq-chrome"));
 const TEXT_BLOCK =
   "p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dd,dt,figcaption,summary";
 // The two readings, each one predicate over a text node and named for the question it
@@ -3476,6 +3480,11 @@ endColloquyBtn.onclick = () => post({ kind: "close", version: VNUM });
 // the timeout, and focus entering a box disarm too.
 const LEADER_MS = 1500;
 let leaderTimer = null;
+// The armed window is a mode the whole keyboard is in, and a digit pressed inside it
+// belongs to the chord wherever focus sits. A widget's own digit keys ask this before
+// consuming, because its focus-scoped handler runs ahead of the dispatcher that owns
+// the window — state, not the chip's class, which is only the window's rendering.
+export const leaderArmed = () => Boolean(leaderTimer);
 function setLeader(on) {
   // Armed over a control that has claimed Escape (a grabbed grip), one press would
   // have two owners — the control consumes the key while the chord promises its
@@ -3975,29 +3984,46 @@ const asking = (el, when) =>
     ),
   );
 function answeredAsk(el, fold) {
-  const specs = Object.values(registry[el.tagName.toLowerCase()]["x-state"] ?? {});
-  return specs.some((spec) =>
+  const specs = Object.entries(registry[el.tagName.toLowerCase()]["x-state"] ?? {});
+  // The fold holds one entry per unit whatever the verb, so a recordless verb is
+  // answered only by an entry that is actually its own — a `choose` surviving in
+  // the slot says nothing about `answer`, and a cleared pick must ask again.
+  return specs.some(([verb, spec]) =>
     spec.record?.kind === "attribute"
       ? domFacet(el, spec.record) !== ""
-      : fold.has(el.id),
+      : fold.get(el.id)?.e.action === verb,
   );
 }
 const askTags = () => tagsDeclaring((entry) => entry["x-awaits"]);
 // In document order, because that is the order the page asks them in and the order
-// the reader walks. Quoted material asks nothing (an exhibited decision is a mention),
-// and neither does a widget in the comment layer: a reply's inline question belongs to
-// the discussion, which the panel already counts.
+// the reader walks — the chrome container sits after the page's blocks, so a thread's
+// question queues behind the page's own. Quoted material asks nothing (an exhibited
+// decision is a mention). A widget in a thread asks like one on the page: a question
+// is a request to the reader wherever it stands, and the panel's count is a different
+// fact — threads open, not answers owed.
 function openAsks() {
   const tags = askTags();
   if (!tags.length) return [];
   const fold = stateFold(VNUM);
-  return [...document.querySelectorAll(tags.join(","))].filter(
-    (el) =>
-      !quoted(el) &&
-      !inChrome(el) &&
-      asking(el, askEntry(el).when) &&
-      !answeredAsk(el, fold),
-  );
+  return [...document.querySelectorAll(tags.join(","))].filter((el) => {
+    if (quoted(el) || !asking(el, askEntry(el).when)) return false;
+    return !(inChrome(el) ? answeredThreadAsk(el, fold) : answeredAsk(el, fold));
+  });
+}
+// A thread ask has no version to answer it and no restated to retract it, so every
+// action on it stands and answered needs no floors. Only a widget with an action
+// channel asks in a thread at all — nothing there could ever answer one without —
+// and `x-awaits.until` (consulted only here, where no record can close a set) holds
+// a matching ask open until the reader has posted the verb it names.
+function answeredThreadAsk(el, fold) {
+  const entry = registry[el.tagName.toLowerCase()];
+  if (!Object.keys(entry["x-state"] ?? {}).length) return true;
+  const until = entry["x-awaits"].until;
+  if (until && asking(el, until.when))
+    return events.some(
+      (e) => e.kind === "action" && e.widget === el.id && e.action === until.verb,
+    );
+  return answeredAsk(el, fold);
 }
 
 // One blanket answer per verb a widget declares one for (x-awaits.all), each deciding
@@ -4080,6 +4106,9 @@ function stepAsk() {
   askAt = next.id;
   for (const marked of document.querySelectorAll(`[${PAGE_PAINT_ATTRIBUTE.ask}]`))
     marked.removeAttribute(PAGE_PAINT_ATTRIBUTE.ask);
+  // A thread's ask lives in the panel, which has no geometry while closed — the
+  // same reason reveal() opens a settled group before the scroll.
+  if (inChrome(next) && !panelOpen) setPanel(true);
   reveal(next); // a settled group or an inactive tab has no geometry until it opens
   next.setAttribute(PAGE_PAINT_ATTRIBUTE.ask, "1");
   const control =

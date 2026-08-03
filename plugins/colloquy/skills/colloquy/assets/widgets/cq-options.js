@@ -31,7 +31,20 @@
  * always be answered off its own menu — "none of these", or a pick's why — and without
  * a box that answer costs the reader a hunt for some passage to select. What they type
  * goes back as a comment anchored on the group, so it is a thread beside the question
- * rather than a channel of its own.
+ * rather than a channel of its own. In a thread the runtime returns no box (the
+ * thread's reply box is already the words' home), and a `multiple` group grows a Done
+ * press instead: every toggle reaches the agent as it lands, so the press is the one
+ * statement that the set is whole, posted as an `answer` action and held as the
+ * thread ask's closing condition (x-awaits.until). Answered is paint on the press,
+ * never a wider word, and the set can still change after — each later toggle still
+ * reaches the agent, who reads the log rather than the moment.
+ *
+ * The keyboard path: every mark is a press, so Tab reaches it and ⏎ toggles. From a
+ * mark, ↑/↓ walk the options (a clamp at the ends, not a wrap) and 1–9 pick outright —
+ * each option wears its digit as a corner chip, painted only while a mark holds
+ * keyboard focus, so nothing appears on a page nobody is answering, and an armed g
+ * leader keeps its own digits (leaderArmed). The rows are declared per mark through
+ * keyHint, so the key line and the ? overlay promise what a press does.
  *
  * `settled` retires the decision once it has been made and acted on: the group collapses
  * to one line naming the chosen option, with every option — the chosen one included —
@@ -56,6 +69,10 @@
 import {
   HIDDEN,
   agentName,
+  inChrome,
+  keyHelp,
+  keyHint,
+  leaderArmed,
   offer,
   once,
   quoted,
@@ -79,6 +96,15 @@ const AUTHORED = "chosen"; // the document arrived carrying the pick
 
 const SETTLED_KEY = "cq-settled:";
 
+// The module loads only where the page holds a group, which is the overlay's rule
+// for free: these rows appear exactly when there is a group to answer.
+keyHelp("In a question's options", [
+  ["⇥", "reach an option's mark"],
+  ["↑ / ↓", "walk the options"],
+  ["1–9", "pick the nth option"],
+  ["⏎ / space", "toggle the focused option"],
+]);
+
 customElements.define(
   "cq-options",
   class extends HTMLElement {
@@ -101,7 +127,9 @@ customElements.define(
         if (choosable || this.#authored.has(option.id)) this.#mark(option, choosable);
       if (choosable) {
         this.#say = sayBox(this, "Say something");
-        this.append(this.#say);
+        if (this.#say) this.append(this.#say);
+        if (this.hasAttribute("multiple") && inChrome(this)) this.#doneRow();
+        this.#keys();
       }
       if (this.hasAttribute("settled")) this.#settle();
       if (!choosable) return;
@@ -147,6 +175,7 @@ customElements.define(
 
     #authored = new Set(); // ids the document arrived carrying, so a mark words itself honestly
     #say = null; // the box for words, hidden with the options when the group is settled
+    #done = null; // the thread multi-question's submit; null everywhere else
 
     #options() {
       return this.querySelectorAll(":scope > cq-option");
@@ -154,6 +183,82 @@ customElements.define(
 
     #picked() {
       return new Set([...this.#options()].filter((o) => o.hasAttribute("chosen")));
+    }
+
+    #marks() {
+      return [...this.querySelectorAll(':scope > cq-option > .cq-pick[role="button"]')];
+    }
+
+    // The one statement a live channel can't derive: the set is whole. One press,
+    // one `answer` action, and the ask this group stands as is discharged
+    // (x-awaits.until). One-way — a later toggle still reaches the agent, so there
+    // is nothing to take back — and its state is paint on the press, so the
+    // pressed control's own line holds still.
+    #doneRow() {
+      this.#done = offer("button", "cq-btn cq-done", "Done");
+      this.#done.setAttribute("aria-label", "Done: my picks here are complete");
+      this.#done.setAttribute("aria-pressed", "false");
+      this.#done.onclick = () =>
+        sendAction(this, "answer", {}).then((ok) => {
+          if (!ok) return;
+          this.#answered(true);
+          toast(`Marked answered — sent to ${agentName()}`);
+        });
+      this.append(this.#done);
+    }
+
+    // Absolute: answered is the whole statement, so replaying this tab's own press
+    // is the same call again.
+    #answered(on) {
+      this.toggleAttribute("answered", on);
+      this.#done?.setAttribute("aria-pressed", String(on));
+      document.dispatchEvent(new CustomEvent("cq-answered"));
+    }
+
+    // The keyboard path past Tab-and-⏎: from a mark, ↑/↓ walk the options and a
+    // digit picks outright. Focus-scoped — the handler acts only on a press that
+    // lands on this group's own mark, so a digit typed in the box for words stays
+    // text and a nested group's marks stay its own — and an armed g leader keeps
+    // its digits: the chord's promise holds wherever focus sits, and this handler
+    // runs ahead of the dispatcher that owns the window. Each option wears its
+    // digit as a corner chip only while a mark holds keyboard focus (the theme's
+    // :focus-visible rule), so the address appears exactly when a key could use it.
+    #keys() {
+      const marks = this.#marks();
+      for (const [i, mark] of marks.entries()) {
+        if (i < 9) {
+          // Chrome like the § reference: a thing to work rather than a word the
+          // page says, so the gate, the anchor pass, and paper all read it as the
+          // control apparatus it is. The key line speaks the keys; this is the
+          // eye's copy, hence aria-hidden.
+          // Prepended, so the mark stays the row's last child: the digit is a
+          // corner badge wherever it sits in the DOM, and the apparatus keeps
+          // ending at the mark.
+          const num = offer("span", "cq-pick-num", String(i + 1));
+          num.setAttribute("aria-hidden", "true");
+          mark.parentElement.prepend(num);
+        }
+        keyHint(mark, [
+          [marks.length > 1 ? `1–${Math.min(9, marks.length)}` : "1", "pick"],
+          ["↑ ↓", "walk the options"],
+          ["⏎", "toggle"],
+        ]);
+      }
+      this.addEventListener("keydown", (e) => {
+        const mark = e.target.closest?.('.cq-pick[role="button"]');
+        if (!mark || mark.closest("cq-options") !== this) return;
+        const at = marks.indexOf(mark);
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault(); // a clamp at the ends, and the page must not scroll
+          marks[at + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
+        } else if (/^[1-9]$/.test(e.key) && !leaderArmed()) {
+          const target = marks[+e.key - 1];
+          if (!target) return;
+          e.preventDefault();
+          target.focus();
+          target.click();
+        }
+      });
     }
 
     // The block this option is about. A pointer, not a voice: its text is the id it
@@ -300,8 +405,11 @@ customElements.define(
     }
 
     // {options}: exactly these are this group's picks — an empty list for no pick at
-    // all, which is how clearing travels rather than a second verb.
+    // all, which is how clearing travels rather than a second verb. `answer` is the
+    // Done press's statement that the set is whole; empty detail, because answered
+    // is the whole of it.
     applyAction(action, detail) {
+      if (action === "answer") return this.#answered(true);
       if (action !== "choose") return;
       this.#pick(
         new Set(

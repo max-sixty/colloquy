@@ -3,36 +3,26 @@
 - (2026-07-30) The g leader shipped with digits only (`g 1` reaches the nth open
   thread's reply box) and the namespace open. Settle its shape before growing it:
   should the sequence carry a verb (`g r 1`, leaving `g` room for other nouns), or
-  stay flat? And how do widgets join — a board's grips, a group's pick marks, a
-  draft's ✎ have no addresses today; if they get them, the registry should
-  declare it (an `x-` key the leader dispatches on), not modules registering
-  keys, per the never-closed widget list. Bare `r` resolves the focused thread
-  now, so a verb vocabulary should keep the bare keys' meanings — `g r 1`
-  reading "reply" would give one letter two verbs.
-- (2026-08-03) `x-awaits` shipped: the page's open asks are one list, and `a` walks it
-  from wherever the reader is to the ask's own first control. What is still missing is
-  the last step of the same gesture — answering without a mouse once you are there.
-  Inside a group the affordance is half built, since each option's mark is a press, so
-  Tab reaches it and Enter picks; ↑/↓ between options and 1–9 to pick are what is
-  absent, the number riding the mark the option already carries so that nothing appears
-  on a page nobody is answering. That is the registry-declared address the leader item
-  above wants, reached from the other end, so the two want settling together — and
-  `a`'s landing is now the third party to it, since a walk that hands the reader a
-  focused control is already most of an address.
+  stay flat? Bare `r` resolves the focused thread now, so a verb vocabulary should
+  keep the bare keys' meanings — `g r 1` reading "reply" would give one letter two
+  verbs. A group's options answer to bare digits under focus now (`a` lands there),
+  which relieves the pressure for widget addresses; if the leader still grows them —
+  a board's grips, a draft's ✎ — the registry should declare the address (an `x-`
+  key the leader dispatches on), not modules registering keys, per the never-closed
+  widget list.
 
-- (2026-07-30) A widget can't own a conversation. The box for words a question group
-  carries posts an ordinary comment anchored on the widget, which is the right
-  transport — threading, draft persistence, resolve, and the transcript all come free,
-  and the log gains no second kind — but the panel is then the only place the words
-  appear. The answer to a question the page asked reads as a remark *about* the widget
-  rather than as the thing it asked for, and the box that asked shows nothing of what
-  was said in it. What closing it properly has to answer: that a thread rendered inside
-  a widget is a second *view* of one thread and never a second store, since two stores
-  is the bug this codebase keeps not having; what the panel shows for an owned thread,
-  because a reader scanning comments should still find every word they wrote; how
-  ownership is declared, which has to be a registry key rather than a tag any consumer
-  names, so the twelfth widget can claim a conversation without core hearing of it; and
-  whether ownership is a property of the anchor or of the widget, which decides what
+- (2026-07-30) A widget can't own a conversation — the page half. In a thread the
+  question and its words are one thread now, but a page group's box for words still
+  posts a comment only the panel shows: the answer to a question the page asked
+  reads as a remark *about* the widget rather than as the thing it asked for, and
+  the box that asked shows nothing of what was said in it. What closing it properly
+  has to answer: that a thread rendered inside a widget is a second *view* of one
+  thread and never a second store, since two stores is the bug this codebase keeps
+  not having; what the panel shows for an owned thread, because a reader scanning
+  comments should still find every word they wrote; how ownership is declared,
+  which has to be a registry key rather than a tag any consumer names, so the
+  twelfth widget can claim a conversation without core hearing of it; and whether
+  ownership is a property of the anchor or of the widget, which decides what
   happens to the thread when a later version drops the element it was anchored on.
 
 - (2026-07-31) An unsent draft dies with the tab. sessionStorage carries one through a

@@ -81,7 +81,7 @@ Options:
 
 Commands:
   ack         Acknowledge one complete, untruncated wait batch.
-  comment     Open an agent thread on a page passage.
+  comment     Open an agent thread — on a passage, or on the page whole.
   customize   Create theme and widget customizations.
   events      Print the event log as JSON lines.
   page        Create pages and add media.
@@ -3128,6 +3128,16 @@ def test_retirement_verbs_fold_by_the_parent_widget(page_dir):
             {"all": "approve"},
             "does not declare as an x-state verb",
         ),
+        (
+            "cq-options",
+            {"until": {"verb": "submit", "when": {"multiple": [True]}}},
+            "does not declare as an x-state verb",
+        ),
+        (
+            "cq-options",
+            {"until": {"verb": "answer", "when": {"batch": [True]}}},
+            "names undeclared attribute `batch`",
+        ),
     ],
 )
 def test_check_refuses_an_ask_no_page_could_carry(page_dir, tag, awaits, message):
@@ -3136,7 +3146,8 @@ def test_check_refuses_an_ask_no_page_could_carry(page_dir, tag, awaits, message
     never-closed vocabulary is worst at showing: the widget is simply absent from
     every count and every step, exactly as if the feature had never been wired up.
     Same for a blanket answer naming a verb the widget does not speak, whose button
-    would call a method nothing implements."""
+    would call a method nothing implements — and for an until verb, which would
+    hold a thread ask open for a press no widget renders."""
     registry = json.loads((page_dir / "registry.json").read_text())
     registry[tag]["x-awaits"] = awaits
     (page_dir / "registry.json").write_text(json.dumps(registry))
@@ -5579,10 +5590,14 @@ def test_a_comment_needs_a_published_version_to_point_at(page_dir):
     assert "no published version" in result.output
 
 
-def test_a_comment_points_at_something(page_dir):
+def test_a_comment_without_an_anchor_asks_the_page_whole(page_dir):
+    """Neither --quote nor --section is the browser's general box's own shape: a
+    thread on the page as a whole, where a question about the work belongs."""
     result = comment(published(page_dir), "--text", "just a thought")
-    assert result.exit_code != 0
-    assert "--quote" in result.output
+    assert result.exit_code == 0, result.output
+    event = json.loads(result.output)
+    assert event["kind"] == "comment" and event["author"] == "claude"
+    assert "anchor" not in event
 
 
 def test_the_agents_own_comment_is_not_printed_back_to_it(page_dir):

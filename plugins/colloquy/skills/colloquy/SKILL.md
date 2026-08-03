@@ -366,11 +366,15 @@ For each acknowledged batch:
      disagree in silence. It guards the other end too: a version may retire ids only
      where the log settled the suggestion holding them, so an undecided proposal is
      carried, withdrawn whole, or left alone, never quietly kept as settled content.
-   - **A thread-widget action**: a `cq-options choose` group in one of your replies
+   - **A thread-widget action**: a `cq-options choose` group in one of your messages
      is an inline question (announce it there too — "click an option to answer");
      the user's pick is the answer, so acknowledge it with a reply in the same
-     thread. Reply markup is frozen in the log — versions neither carry nor revert
-     it, and the picked state stays put on its own.
+     thread. Thread markup is frozen in the log — versions neither carry nor revert
+     it, and the picked state stays put on its own. A question opened this way
+     counts among the page's asks (the banner, the `a` key) until answered: one
+     pick answers a plain group, while a `multiple` group answers when the user
+     presses its Done control, arriving as an `answer` action — act on the set
+     then, though every toggle still reaches you live as it lands.
 3. Page changes go in the next version: Write `versions/v2.html` (incrementing; never
    rewrite a version the user has seen — the picker is the history), then run
    `version publish <page> --version 2 --text "<changelog>"`. Keep the changelog brief,
@@ -430,12 +434,33 @@ same Markdown, same reply box, labelled with the current agent instead of You. R
 about one passage and you can't settle it yourself: a sentence that reads two ways, an
 assumption the paragraph rests on, a line only they have the fact to fix. Anything you
 can settle, settle — ship the fix. In chat, the reader has to find the passage again;
-in the margin it is already beside them.
+in the margin it is already beside them. With neither `--quote` nor `--section` it
+opens a general thread — the shape the browser's own general box posts — which is
+where a question about the work rather than a passage belongs.
 
 ```bash
 colloquy comment <page> --quote "<passage from the version file>" --text "…"
 colloquy comment <page> --section <element-id> --text "…"  # diagram or image
+colloquy comment <page> --text "…"                         # the page as a whole
 ```
+
+A question with alternatives takes them as `--markup` — the AskUserQuestion shape,
+answered in the panel by click or by keys (`a` reaches it, digits pick):
+
+```bash
+colloquy comment <page> --text "Auth for the sync endpoint — which way?" \
+  --markup '<cq-options id="q-auth" choose>
+  <cq-option id="qa-jwt">JWT, verified per request</cq-option>
+  <cq-option id="qa-cookie">Session cookie, server-side store</cq-option>
+</cq-options>'
+```
+
+`multiple` makes the pick a set, and only the reader can say a set is whole: the
+group carries a Done press in a thread, and the ask stands until its `answer`
+action arrives. Ask on the page instead when the answer belongs in the record —
+a reader of the final page needs the question and its answer, honored `chosen`
+and later `settled`; a thread question is scaffolding for the work, and ends
+with the conversation.
 
 It anchors in the newest published version, deriving the section the way the browser
 does, and reads the version the way the user sees it: a slot their decision retired
