@@ -477,9 +477,9 @@
           A page is served on the address its session arrived on: over SSH, the one your
           client just reached the machine on; otherwise <code>127.0.0.1</code>. The URL
           colloquy prints opens as-is either way, with no port to forward and nothing to
-          configure. It carries a key, and the browser keeps that key in a cookie from
-          the first request, so the open port is still a page only whoever holds the
-          link can read or comment on.
+          configure. It carries a key — the machine's, shared by every page it serves —
+          and the browser keeps that key in a cookie from the first request, so the open
+          port is still a page nobody without a link can read or comment on.
         </p>
         <p>
           When a jump host or NAT leaves that address unroutable from your browser, say

@@ -51,10 +51,11 @@ A page directory holds:
                          lifetime is "session" when the launching `server run` claimed
                          the page and "standing" when nothing did — see below, since
                          it decides what is allowed to take the server down
-    access.json          {"host", "bind", "token"}: the name the page's URL carries,
-                         the interface its server binds, and the key the URL carries.
-                         Minted at the first `server run` and kept, because a restart
-                         has to reproduce the URL an open browser is already polling
+    access.json          {"host", "bind"}: the name the page's URL carries and the
+                         interface its server binds. Derived at the first `server run`
+                         and kept, because a restart has to reproduce the URL an open
+                         browser is already polling. The key that URL also carries is
+                         the machine's, not the page's, and lives in the state home
     session.json         {"id", "host", "pid", "agent"} of the agent session last
                          working on the page — the watcher the banner names, not
                          necessarily the author of any given message
@@ -475,7 +476,11 @@ MEDIA_TYPES = {
     ".webp": "image/webp",
     ".svg": "image/svg+xml",
 }
-NO_KEY = "open the link colloquy printed; it carries this page's key"
+NO_KEY = "open the link colloquy printed; it carries the key"
+# One name, because there is one key (`host_key`). Cookies are scoped by host and
+# blind to the port, so every page this machine serves shares a jar — on 127.0.0.1,
+# with every other server the user has running, which is what the prefix is for.
+KEY_COOKIE = "cq_key"
 PAGE_STATE_FILES = (
     "comments.jsonl",
     "status.json",
@@ -767,8 +772,8 @@ def stop_when_session_ends(httpd: ThreadingHTTPServer, page_dir: Path) -> None:
 
 
 def page_access(page_dir: Path, host: str | None = None) -> dict:
-    """How a page is reached: the name its URL carries, the interface its server
-    binds, and the key the URL carries.
+    """Where a page is reached: the name its URL carries and the interface its
+    server binds. The key that URL also carries is the machine's — `host_key`.
 
     Derived — no `host` — the address is read from SSH_CONNECTION, whose third
     field is this machine as the client just reached it: a route the session
@@ -788,21 +793,13 @@ def page_access(page_dir: Path, host: str | None = None) -> dict:
     interface. That widens exposure to the machine's other networks and no
     further — colloquy never creates a route that didn't exist.
 
-    Serving anywhere but loopback puts an unauthenticated writer on whatever
-    network reached us, and `POST /api/event` appends to a log that outranks the
-    document and replays onto every version after. So the address earns a key, and
-    the key is minted here rather than at the reader's cost: it rides in the URL
-    Claude hands over, and `authorized` puts it in a cookie on arrival.
-
-    Minted once and kept. `revive_server` restarts a dead server by re-running
-    `server run` bare, and a fresh address or key there would leave the
-    user's open page polling a URL that no longer answers — which is why a
-    stated host is recorded here rather than passed per run, and why re-stating
-    one keeps the key."""
+    Recorded once and kept. `revive_server` restarts a dead server by re-running
+    `server run` bare, and a fresh address there would leave the user's open page
+    polling a URL that no longer answers — which is why a stated host is recorded
+    here rather than passed per run."""
     access = read_json(page_dir / "access.json")
     if access and host is None:
         return access
-    token = access["token"] if access else secrets.token_urlsafe(16)
     if host:
         # The record's one door checks what it keeps: a scheme, a port, or a
         # path pasted into --host would mint a URL no browser resolves, handed
@@ -815,27 +812,55 @@ def page_access(page_dir: Path, host: str | None = None) -> dict:
                     f"--host {host}: not a hostname or IP address "
                     "(no scheme, no port — colloquy picks the port)"
                 )
-        access = {"host": host, "bind": "::", "token": token}
+        access = {"host": host, "bind": "::"}
     else:
         ssh = os.environ.get("SSH_CONNECTION", "").split()
         addr = ssh[2] if len(ssh) == 4 else "127.0.0.1"
-        access = {"host": addr, "bind": addr, "token": token}
+        access = {"host": addr, "bind": addr}
     write_json(page_dir / "access.json", access)
     return access
 
 
-def access_cookie(page_dir: Path) -> str:
-    """The cookie a page's key lives in. Cookies are scoped by host and ignore the
-    port, so two pages served from one machine share a jar and a shared name would
-    have the second overwrite the first."""
-    return "cq_" + hashlib.sha256(str(page_dir.resolve()).encode()).hexdigest()[:8]
+def host_key() -> str:
+    """The key every page this machine serves is read with, minted at the first
+    `server run` and kept in the state home. It rides in the URL Claude hands
+    over, and `authorized` puts it in a cookie on arrival.
+
+    The key exists because serving anywhere but loopback puts an unauthenticated
+    writer on whatever network reached us, and `POST /api/event` appends to a log
+    that outranks the document and replays onto every version after.
+
+    One key for the machine rather than one per page, because every page here
+    goes to the same reader — the one person the agent is working with. A page
+    has nothing to keep from another page's reader, which is what lets the
+    `others` menu link them, and what lets the cookie jar, scoped by host and
+    blind to the port, hold one key under one name.
+
+    The cost is that handing out any page's URL hands out every page on the
+    machine, present and future. Colloquy has one reader; giving it a second
+    means scoping the key back to the page first.
+
+    Linked into place rather than written over, so two first serves racing on a
+    fresh machine agree on whichever won. Each keeping its own would have their
+    servers overwrite the one shared cookie in turn, for as long as both ran."""
+    path = state_home() / "access.json"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        staged = path.with_name(f".{secrets.token_hex(8)}.tmp")
+        staged.write_bytes(json_bytes({"token": secrets.token_urlsafe(16)}))
+        try:
+            os.link(staged, path)
+        except FileExistsError:
+            pass  # someone minted first; theirs is the key, read below
+        staged.unlink()
+    return read_json(path)["token"]
 
 
-def page_url(access: dict, port: int) -> str:
+def page_url(host: str, port: int, token: str) -> str:
     """The handover URL. A bare IPv6 address is bracketed, since the authority
     already separates its port with a colon."""
-    host = f"[{access['host']}]" if ":" in access["host"] else access["host"]
-    return f"http://{host}:{port}/?t={access['token']}"
+    host = f"[{host}]" if ":" in host else host
+    return f"http://{host}:{port}/?t={token}"
 
 
 def config_home() -> Path:
@@ -847,9 +872,10 @@ def config_home() -> Path:
 
 def state_home() -> Path:
     """$XDG_STATE_HOME/colloquy (~/.local/state/colloquy/) — pages/ holds page
-    directories by convention, sessions/ the live-session registry. State, not
-    config: page directories carry pids, ports, and absolute paths, so they are
-    bound to this machine."""
+    directories by convention, sessions/ the live-session registry, access.json
+    the one key every page here is served with (`host_key`). State, not config:
+    page directories carry pids, ports, and absolute paths, so they are bound to
+    this machine, and so is the key that reaches them."""
     return (
         Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
         / "colloquy"
@@ -1050,7 +1076,6 @@ def full_state(page_dir: Path, events: list, versions: list) -> dict:
 class Handler(BaseHTTPRequestHandler):
     page_dir = None
     token = None
-    cookie = None
     # Set by `authorized` when the key arrived in the query, cleared by the one
     # writer that spends it.
     set_cookie = False
@@ -1075,8 +1100,8 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def authorized(self) -> bool:
-        """The page's key, from the handover URL or from the cookie an earlier
-        request set out of it. One arrival is enough: the runtime's own fetches are
+        """The key, from the handover URL or from the cookie an earlier request
+        set out of it. One arrival is enough: the runtime's own fetches are
         relative and carry no query, and a reader who reloads or bookmarks the bare
         address is the same reader. So nothing has to thread the key through the
         page, and `colloquy.js` never learns there is one."""
@@ -1086,8 +1111,8 @@ class Handler(BaseHTTPRequestHandler):
             self.set_cookie = True
         else:
             jar = SimpleCookie(self.headers.get("Cookie", ""))
-            if self.cookie not in jar or not secrets.compare_digest(
-                jar[self.cookie].value, self.token
+            if KEY_COOKIE not in jar or not secrets.compare_digest(
+                jar[KEY_COOKIE].value, self.token
             ):
                 return False
         return True
@@ -1098,7 +1123,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.set_cookie:
             self.send_header(
                 "Set-Cookie",
-                f"{self.cookie}={self.token}; Path=/; HttpOnly; SameSite=Strict",
+                f"{KEY_COOKIE}={self.token}; Path=/; HttpOnly; SameSite=Strict",
             )
             self.set_cookie = False
         super().end_headers()
@@ -1137,16 +1162,10 @@ class Handler(BaseHTTPRequestHandler):
             # state agrees with what it serves (identical when not previewing).
             events = read_events(self.page_dir)
             state = full_state(self.page_dir, events, self.versions_live(events))
-            # Every URL in `others` carries its page's key, so the list rides
-            # only a loopback bind, asked of the socket this server actually
-            # bound: this machine's reader could read the keys off disk anyway,
-            # where a network the server faces (--host, an SSH route) gets the
-            # way into every other page from the one URL it was handed.
-            state["others"] = (
-                other_colloquys(self.page_dir)
-                if ipaddress.ip_address(self.server.server_address[0]).is_loopback
-                else []
-            )
+            # Every URL in `others` carries the key this reader arrived on, since
+            # there is one key for the machine (`host_key`) — so the list is a
+            # way to the neighbours rather than a way past anything.
+            state["others"] = other_colloquys(self.page_dir)
             self._json(state)
             return
         # Browsers ask for this unprompted. Answering "no content" rather than
@@ -1314,7 +1333,6 @@ def handler_for(
         {
             "page_dir": page_dir,
             "token": token,
-            "cookie": access_cookie(page_dir),
             "preview_upto": preview_upto,
             "protocol_version": protocol_version,
         },
@@ -1967,6 +1985,7 @@ def cmd_serve(page_dir: Path, host: str | None = None) -> None:
         )
         return
     access = page_access(page_dir, host)
+    token = host_key()
     base = 41000 + zlib.crc32(str(page_dir.resolve()).encode()) % 4000
     server_cls = DualStackHTTPServer if ":" in access["bind"] else ThreadingHTTPServer
     httpd = None
@@ -1974,7 +1993,7 @@ def cmd_serve(page_dir: Path, host: str | None = None) -> None:
         try:
             httpd = server_cls(
                 (access["bind"], port),
-                handler_for(page_dir, access["token"], protocol_version="HTTP/1.1"),
+                handler_for(page_dir, token, protocol_version="HTTP/1.1"),
             )
             break
         except OSError as e:
@@ -1990,7 +2009,7 @@ def cmd_serve(page_dir: Path, host: str | None = None) -> None:
                 "address again from this one, or re-run with --host NAME to bind every "
                 "interface and put NAME in the URL."
             )
-    url = page_url(access, httpd.server_address[1])
+    url = page_url(access["host"], httpd.server_address[1], token)
     lifetime = "session" if claimed else "standing"
     write_json(
         page_dir / "server.json",
@@ -5345,8 +5364,11 @@ def preview_server(page_dir: Path, version: int):
     may not have (`version check --render` before its note lands, `version export`
     on any published one), and the preview window is what lets them: the server's
     own liveness rule is the user's, and this widens it for exactly one process."""
-    # Its own key, not the page's: this server is loopback-only and lives for the
-    # length of a `with`, so it neither needs nor should mint the page's access.
+    # Its own key, not the machine's: this server is loopback-only and lives for
+    # the length of a `with`, so it neither needs nor should mint the access every
+    # page here is read with. It sets that key under the one cookie name, which
+    # would sign a reader out of every page on 127.0.0.1 — except that both
+    # callers below drive Playwright, whose browser brings its own jar.
     token = secrets.token_urlsafe(16)
     httpd = ThreadingHTTPServer(
         ("127.0.0.1", 0), handler_for(page_dir, token, preview_upto=version)

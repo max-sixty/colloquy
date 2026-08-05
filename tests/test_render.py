@@ -1604,7 +1604,8 @@ def test_the_banner_links_the_machines_other_colloquys(browser, serve, other_col
     # The other server's own redirect lands the new tab on its newest published
     # version, authorized by the key the link carried.
     expect(opened.value).to_have_url(f"{other_colloquy}/versions/v1.html")
-    expect(page.locator(".cq-others-menu")).to_be_visible()  # the press left this tab alone
+    # The press left this tab alone.
+    expect(page.locator(".cq-others-menu")).to_be_visible()
     page.keyboard.press("Escape")
     expect(page.locator(".cq-others-menu")).not_to_be_visible()
     expect(btn).to_be_visible()  # closing the card keeps the standing button
@@ -10306,7 +10307,7 @@ def test_a_page_refuses_a_browser_that_never_had_the_link(browser, serve):
     page = browser.new_page()
     page.goto(url.rsplit("?", 1)[0], wait_until="load")
 
-    assert "carries this page's key" in page.locator("body").inner_text()
+    assert interact.NO_KEY in page.locator("body").inner_text()
     page.close()
 
 

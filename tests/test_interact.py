@@ -3435,8 +3435,8 @@ def test_check_reads_widths_where_the_document_states_them(page_dir):
     assert check(page_dir).exit_code == 0
 
 
-# A page's key is minted per page; fixed here so a test can build a URL for a
-# server it did not start.
+# The key is the machine's and minted on the first serve; fixed here so a test
+# can build a URL for a server it did not start.
 TOKEN = "test-page-key"
 
 
@@ -3889,19 +3889,18 @@ def test_a_local_session_is_served_on_loopback(page_dir, monkeypatch):
     assert (access["host"], access["bind"]) == ("127.0.0.1", "127.0.0.1")
 
 
-def test_a_stated_host_binds_every_interface_and_keeps_the_key(page_dir, monkeypatch):
+def test_a_stated_host_binds_every_interface_and_is_recorded(page_dir, monkeypatch):
     """The name a user routes to need not resolve to an address this machine
     could bind — a jump host or NAT is the case `--host` exists for — nor say
     which family they reach it by, so a stated name binds the wildcard of both
-    families and goes in the URL as given. Re-stating keeps the key, and the URL
-    a browser already holds stays keyed; a bare re-serve (`revive_server`) reads
-    the stated record back unchanged."""
+    families and goes in the URL as given. A bare re-serve (`revive_server`)
+    reads the stated record back unchanged, so the URL a browser already holds
+    keeps answering."""
     monkeypatch.setenv("SSH_CONNECTION", "10.1.1.9 51234 10.20.30.40 22")
-    derived = interact.page_access(page_dir)
+    interact.page_access(page_dir)
 
     stated = interact.page_access(page_dir, host="devbox.corp.example")
     assert (stated["host"], stated["bind"]) == ("devbox.corp.example", "::")
-    assert stated["token"] == derived["token"]
     assert interact.page_access(page_dir) == stated
 
 
@@ -3935,25 +3934,52 @@ def test_the_stated_host_wildcard_serves_both_families(page_dir):
         httpd.shutdown()
 
 
-def test_the_address_and_key_outlive_the_session_that_minted_them(
+def test_the_address_and_key_outlive_the_session_that_first_served(
     page_dir, monkeypatch
 ):
     """`revive_server` restarts a dead server by re-running `server run`. The
     user's browser has been polling one URL since it died, so a fresh address or
     key there would leave the page it reopens talking to nothing."""
     monkeypatch.setenv("SSH_CONNECTION", "10.1.1.9 51234 10.20.30.40 22")
-    minted = interact.page_access(page_dir)
+    recorded = interact.page_access(page_dir)
+    minted = interact.host_key()
 
     monkeypatch.setenv("SSH_CONNECTION", "10.1.1.9 51235 172.16.0.1 22")
-    assert interact.page_access(page_dir) == minted
+    assert interact.page_access(page_dir) == recorded
+    assert interact.host_key() == minted
 
 
-def test_two_pages_on_one_machine_get_their_own_cookie(page_dir, tmp_path):
-    """Cookies are scoped by host and ignore the port, so two pages share a jar —
-    under one name the second page served would sign the user out of the first."""
-    other = tmp_path / "other-page"
-    other.mkdir()
-    assert interact.access_cookie(page_dir) != interact.access_cookie(other)
+def test_one_key_reads_every_page_this_machine_serves(page_dir, tmp_path):
+    """The key is the machine's, so a reader admitted at one page is admitted at
+    the next with no second link — cookies are scoped by host and blind to the
+    port, so the jar the first arrival filled is the jar the second is read
+    from."""
+    second = tmp_path / "second-page"
+    assert (
+        CliRunner().invoke(interact.cli, ["page", "init", str(second)]).exit_code == 0
+    )
+    key = interact.host_key()
+
+    servers = [
+        ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(directory, key))
+        for directory in (page_dir, second)
+    ]
+    for httpd in servers:
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        first, other = (f"http://127.0.0.1:{h.server_address[1]}" for h in servers)
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+        )
+        with opener.open(f"{first}/api/state?t={key}") as arrival:
+            assert arrival.status == 200
+        # No query: the cookie the first page set is the whole of the second's
+        # authorization, and a 403 here raises rather than returns.
+        with opener.open(f"{other}/api/state") as onward:
+            assert onward.status == 200
+    finally:
+        for httpd in servers:
+            httpd.shutdown()
 
 
 def neighbour_page(directory, title=None, pid=None, published=True):
@@ -4027,24 +4053,22 @@ def wildcard_server(page_dir):
     httpd.shutdown()
 
 
-def test_others_ride_only_a_loopback_bind(wildcard_server):
-    """Every URL in `others` carries its page's key. A loopback server's reader is
-    on this machine, where the keys are theirs to read off disk; a network-facing
-    bind (--host, an SSH route) hands its whole network whatever it ships, so
-    there the state carries an empty list rather than the way into every page."""
+def test_others_ships_on_a_network_facing_bind_too(wildcard_server):
+    """The list is not gated on the bind. Every URL in it carries the key its
+    reader already arrived on, because there is one key for the machine — so a
+    `--host` reader sees the neighbours, and sees no key they were not already
+    holding. Gating it again is what to do if the key is ever scoped per page."""
     neighbour_page(interact.state_home() / "pages" / "live", title="The other page")
     state = json.loads(fetch(f"{wildcard_server}/api/state")[1])
-    assert state["others"] == []
+    assert [entry["title"] for entry in state["others"]] == ["The other page"]
 
 
 def test_a_bare_ipv6_address_is_bracketed_in_the_url():
     """A v6 address is colons all the way down, and the authority separates its port
     with one too."""
-    assert interact.page_url({"host": "fd00::1", "token": "k"}, 41999) == (
-        "http://[fd00::1]:41999/?t=k"
-    )
-    assert interact.page_url({"host": "10.20.30.40", "token": "k"}, 41999) == (
-        "http://10.20.30.40:41999/?t=k"
+    assert interact.page_url("fd00::1", 41999, "k") == "http://[fd00::1]:41999/?t=k"
+    assert (
+        interact.page_url("10.20.30.40", 41999, "k") == "http://10.20.30.40:41999/?t=k"
     )
 
 

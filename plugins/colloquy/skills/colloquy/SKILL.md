@@ -540,9 +540,11 @@ networks this machine is already on: there is no public tunnel — a tunnel woul
 log's one door on the open internet, and a fresh tunnel hostname each restart would strand
 the URL an open page is polling.
 
-Address, bind, and key are minted once and kept in `<page>/access.json` — `--host` is
-recorded there too — because a restart has to reproduce the URL an open browser is still
-polling. Deleting that file derives the address again from the session running now.
+Address and bind are recorded once in `<page>/access.json` — `--host` goes there too —
+because a restart has to reproduce the URL an open browser is still polling. Deleting that
+file derives the address again from the session running now. The key is the machine's
+rather than the page's, minted on the first serve and kept in the state home: handing out
+one page's URL hands out every page on this machine.
 
 ## A page that outlives the session
 
