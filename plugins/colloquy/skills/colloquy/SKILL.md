@@ -56,6 +56,16 @@ changes rather than at every step it took, and let
 that lands mid-flight ("skip that one") then reaches you at the next step rather than at
 the end, and the banner reads as working throughout.
 
+Where other sessions do the work — workers reporting to a page one orchestrator
+publishes — they move it with `colloquy report <page> <widget> <verb> name=value…`
+instead of a version: a declared state change (a `cq-task`'s `status`, per the widget's
+x-report entry) that the page paints live as provisional news, marked as a report until
+a version answers it. It wakes the page's watcher like a user event, and the next
+version adjudicates it: write the reported state and publishing absorbs the report by
+id; keep your own state by marking the element `overruled` (why in the note); leave the
+markup unchanged and the report keeps painting. `version check` refuses a version that
+contradicts a standing report it never names — `page catalog`'s `$report` has the rest.
+
 ## Setup
 
 The page lives in its own directory, conventionally
@@ -79,7 +89,9 @@ colloquy version publish <page> --version 1 --text "<changelog>"
 colloquy version export <page> -o <file>     # standalone HTML copy
 colloquy server run <page> [--host NAME]     # long-running; prints the URL
 colloquy status <page> working "<detail>"    # or: waiting, idle
-colloquy wait <page>                         # prints unacknowledged user events
+colloquy report <page> <widget> <verb> name=value…  # a worker's state change, e.g.
+                                             #   report <page> t-parser status status=review
+colloquy wait <page>                         # prints unacknowledged user events and reports
 colloquy ack <page> <seq>                    # complete, untruncated output reached context
 colloquy comment <page> --quote "<passage>" --text "…"
 colloquy reply <page> --to <id> --text "…"
@@ -308,7 +320,8 @@ from the turn in front of them.
 While `colloquy wait` runs, the banner names the current agent as listening. It can stay
 open as long as the user takes, and exits when they comment, reply, resolve,
 approve the page or end the colloquy, or edit an interactive widget (a drag on a
-`cq-board` arrives as an `action` event), printing the unacknowledged user events
+`cq-board` arrives as an `action` event) — or when a worker session posts a
+`colloquy report`, which joins the same batch — printing the unacknowledged events
 as JSON lines. Printing is deliberately not receipt: a
 detached process can finish without its output ever entering model context. As soon as
 a complete wait result enters context, run `colloquy ack <page> <highest-seq>` before
@@ -375,6 +388,13 @@ For each acknowledged batch:
      disagree in silence. It guards the other end too: a version may retire ids only
      where the log settled the suggestion holding them, so an undecided proposal is
      carried, withdrawn whole, or left alone, never quietly kept as settled content.
+   - **A worker's report** (`"kind": "report"`) is another session moving declared
+     state — provisional until a version answers it, so the next version you publish
+     adjudicates: carry the reported state into the markup (publishing then absorbs
+     the report by id), or keep your own state with `overruled` on the element and
+     the why in the note. Leaving the markup unchanged is legal silence — the report
+     keeps painting — but a page shouldn't end on one (`version check` reports it as
+     record debt).
    - **A thread-widget action**: a `cq-options choose` group in one of your messages
      is an inline question (announce it there too — "click an option to answer");
      the user's pick is the answer, so acknowledge it with a reply in the same

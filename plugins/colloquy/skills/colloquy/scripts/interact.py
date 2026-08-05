@@ -170,6 +170,16 @@ vocabulary for rides in the custom keywords below:
                 drives the POST and re-vendor contract gates, check's state gate,
                 the record-lag report, the runtime's pending mark, and the diff's
                 state half (see $state in the registry).
+    x-report    the widget's agent channel: report verbs a worker folds onto the
+                page through `colloquy report`, each with a detail schema, fold
+                unit, and *required* record form — declared state only, never
+                body words, so the passage reading is untouched by one. The
+                precedence is opposite to x-state's: an action outranks every
+                later version until `restated` retracts it, while a report is
+                provisional and stands only until a version answers it by id —
+                `reports` on the note, written by `version publish`; `overruled`
+                on the element is how a version keeps its own state over one.
+                See $report in the registry.
     x-awaits    an instance of this tag is a standing request to the reader:
                 `when` says which instances ask (attribute values, a flag's
                 being true and false), `all` names the verb one press answers
@@ -186,10 +196,15 @@ resolve (parent=id), done (user sign-off; the banner offers it only on a page
 declaring <meta name="cq-review" content="sign-off">), close (a neutral end to a
 comments-only colloquy), action (user; a widget reporting the
 user editing the document through it — widget=element id, action=verb, detail
-per widget, version the edit was made against), note (agent; per-version
-changelog, carrying `restated`: the element ids whose decisions the publishing
-version took back). The server stamps every browser-posted event author=user;
-Agent-side `colloquy comment`, `colloquy reply`, and `version publish` stamp the wire
+per widget, version the edit was made against), report (agent; a worker's
+provisional state change on a page widget — same widget/action/detail/version
+shape as an action, validated by the widget's x-report declaration at the
+`colloquy report` door, and standing only until a version answers it), note
+(agent; per-version changelog, carrying `restated`: the element ids whose
+decisions the publishing version took back, and `reports`: the report event ids
+the version absorbed or overruled). The server stamps every browser-posted event
+author=user; agent-side `colloquy comment`, `colloquy reply`, `colloquy report`,
+and `version publish` stamp the wire
 role author=claude plus the posting session's own voice: `agent`, its display name,
 and `session`, its host session id. Several agent sessions can write to one page,
 so the voice is read from the poster's environment rather than from session.json,
@@ -220,7 +235,7 @@ purpose is discharged by being read, and only the reader knows that happened;
 closing one from this side would file it away unread.
 
 Commands:
-    status, wait, ack, comment, reply, events, transcript
+    status, wait, ack, comment, reply, report, events, transcript
     page       init catalog media
     customize  theme widget
     version    check publish export
@@ -334,7 +349,8 @@ EVENT_VOCABULARY = {
     "done": {"version", "text"},
     "close": {"version"},
     "action": {"widget", "action", "detail", "version"},
-    "note": {"version", "text", "restated", "agent", "session"},
+    "report": {"widget", "action", "detail", "version", "agent", "session"},
+    "note": {"version", "text", "restated", "reports", "agent", "session"},
 }
 ACK_BATCH_INSTRUCTION = (
     "If wait output is truncated, acknowledge nothing and rerun with enough output "
@@ -349,53 +365,81 @@ AGENT_ONLY_FIELDS = {"markup"}
 EVENT_BASE_FIELDS = {"id", "ts", "author", "kind", "seq"}
 HTML_NAME = r"[a-z][a-z0-9-]*"
 WIDGET_NAME = r"cq-[a-z0-9]+(?:-[a-z0-9]+)*"
-STATE_SCHEMA = {
+# The record forms one vocabulary of declared state draws on ($state in the
+# registry): how a unit's state reads in markup, each dispatched on by the gate,
+# the runtime, and the diff without any of them knowing a widget by name.
+_RECORD_ATTRIBUTE = {
     "type": "object",
-    "minProperties": 1,
-    "propertyNames": {"pattern": f"^{HTML_NAME}$"},
-    "additionalProperties": {
-        "type": "object",
-        "properties": {
-            "detail": {"type": "object"},
-            "unit": {"type": "string", "minLength": 1},
-            "record": {
-                "oneOf": [
-                    {
-                        "type": "object",
-                        "properties": {
-                            "kind": {"const": "attribute"},
-                            "attr": {"type": "string", "pattern": f"^{HTML_NAME}$"},
-                            "value": {"type": "string", "minLength": 1},
-                        },
-                        "required": ["kind", "attr", "value"],
-                        "additionalProperties": False,
-                    },
-                    {
-                        "type": "object",
-                        "properties": {
-                            "kind": {"const": "position"},
-                            "within": {"type": "string", "pattern": f"^{WIDGET_NAME}$"},
-                            "value": {"type": "string", "minLength": 1},
-                        },
-                        "required": ["kind", "within", "value"],
-                        "additionalProperties": False,
-                    },
-                    {
-                        "type": "object",
-                        "properties": {
-                            "kind": {"const": "body"},
-                            "value": {"type": "string", "minLength": 1},
-                        },
-                        "required": ["kind", "value"],
-                        "additionalProperties": False,
-                    },
-                ]
-            },
-        },
-        "required": ["detail"],
-        "additionalProperties": False,
+    "properties": {
+        "kind": {"const": "attribute"},
+        "attr": {"type": "string", "pattern": f"^{HTML_NAME}$"},
+        "value": {"type": "string", "minLength": 1},
     },
+    "required": ["kind", "attr", "value"],
+    "additionalProperties": False,
 }
+_RECORD_POSITION = {
+    "type": "object",
+    "properties": {
+        "kind": {"const": "position"},
+        "within": {"type": "string", "pattern": f"^{WIDGET_NAME}$"},
+        "value": {"type": "string", "minLength": 1},
+    },
+    "required": ["kind", "within", "value"],
+    "additionalProperties": False,
+}
+_RECORD_BODY = {
+    "type": "object",
+    "properties": {
+        "kind": {"const": "body"},
+        "value": {"type": "string", "minLength": 1},
+    },
+    "required": ["kind", "value"],
+    "additionalProperties": False,
+}
+_RECORD_VALUE = {
+    "type": "object",
+    "properties": {
+        "kind": {"const": "value"},
+        "attr": {"type": "string", "pattern": f"^{HTML_NAME}$"},
+        "value": {"type": "string", "minLength": 1},
+    },
+    "required": ["kind", "attr", "value"],
+    "additionalProperties": False,
+}
+
+
+def _verbs_schema(records: list, required: list) -> dict:
+    """The shape x-state and x-report share: verbs to {detail, unit, record},
+    differing only in which record forms a channel admits and whether one is
+    required at all."""
+    return {
+        "type": "object",
+        "minProperties": 1,
+        "propertyNames": {"pattern": f"^{HTML_NAME}$"},
+        "additionalProperties": {
+            "type": "object",
+            "properties": {
+                "detail": {"type": "object"},
+                "unit": {"type": "string", "minLength": 1},
+                "record": {"oneOf": records},
+            },
+            "required": required,
+            "additionalProperties": False,
+        },
+    }
+
+
+STATE_SCHEMA = _verbs_schema(
+    [_RECORD_ATTRIBUTE, _RECORD_POSITION, _RECORD_BODY, _RECORD_VALUE], ["detail"]
+)
+# A report moves declared state only, never body words — no body record, so the
+# passage reading never has to model one — and the record itself is required:
+# the gate compares record forms, and a recordless report would be a claim
+# nothing could check a version against.
+REPORT_SCHEMA = _verbs_schema(
+    [_RECORD_ATTRIBUTE, _RECORD_POSITION, _RECORD_VALUE], ["detail", "record"]
+)
 # An ask is a standing request to the reader, and both halves of it are already
 # written down: `when` says which instances ask (attribute values, a flag's being
 # true and false), and x-state says what an answer looks like. See $awaits. One
@@ -445,6 +489,7 @@ EXTENSION_SCHEMA = {
             "type": "array",
             "items": {"type": "string", "pattern": f"^{HTML_NAME}$"},
         },
+        "x-report": REPORT_SCHEMA,
         "x-retired-when": {"type": "string", "pattern": f"^{HTML_NAME}$"},
         "x-says": {
             "type": "object",
@@ -1041,11 +1086,22 @@ def other_colloquys(page_dir: Path) -> list:
 
 
 def unacknowledged(events: list, cursor: int) -> list:
-    """The user's events past the acknowledgement cursor: posted, and not yet
-    confirmed in the agent's model context. The one predicate for that — the
-    banner's pending count and `colloquy wait`'s output must agree on which events
-    those are."""
-    return [e for e in events if e["seq"] > cursor and e["author"] == "user"]
+    """The events past the acknowledgement cursor that the page's watcher owes a
+    reading: the user's own, and workers' reports — a report moves the page the
+    way a user's action does, and the watcher is the one who can absorb it into
+    a version. One cursor and one predicate for the whole batch, so `colloquy
+    wait`'s output, the Stop hook's count, and the idle gate cannot disagree
+    about what is still owed. The reader's banner counts only the user half
+    (full_state's `pending`): a report is news the agent owes the page, not
+    something the reader owes an answer. A session that reports to a page it
+    also watches reads its own report back once — rare enough (workers report,
+    the watcher publishes) that a session-keyed carve-out would cost a second,
+    parameterized predicate for no failure anyone has hit."""
+    return [
+        e
+        for e in events
+        if e["seq"] > cursor and (e["author"] == "user" or e["kind"] == "report")
+    ]
 
 
 def presence(page_dir: Path, events: list) -> dict:
@@ -1071,7 +1127,12 @@ def presence(page_dir: Path, events: list) -> dict:
         "status": status,
         "listening": time.time() - heartbeat["t"] < HEARTBEAT_FRESH_SECS,
         "cursor": cursor,
-        "pending": len(unacknowledged(events, cursor)),
+        # The reader's number, not the watcher's: their own messages the agent
+        # hasn't taken in. Reports ride the same cursor but are the agent's debt,
+        # so the banner never tells a reader that a worker's news is waiting on them.
+        "pending": sum(
+            1 for e in unacknowledged(events, cursor) if e["author"] == "user"
+        ),
         "agent": session.get("agent", "Claude") if session else "Claude",
         # The claimant's host program, for behavior that keys on it — the display
         # name above is anyone's to choose, so nothing may dispatch on it.
@@ -2090,7 +2151,7 @@ def revive_server(page_dir: Path) -> bool:
 
 
 def cmd_wait(page_dir: Path) -> int:
-    """Hold until the user speaks, and deliver what they said.
+    """Hold until the user speaks or a worker reports, and deliver what was said.
 
     A wait ends on them, or on the page's server being down with no restart to
     make. It puts no clock on how long a user takes, because there is no such
@@ -2109,9 +2170,9 @@ def cmd_wait(page_dir: Path) -> int:
         while True:
             write_json(page_dir / "heartbeat.json", {"t": time.time()})
             events = read_events(page_dir)
-            new_user = unacknowledged(events, cursor)
-            if new_user:
-                for event in new_user:
+            batch = unacknowledged(events, cursor)
+            if batch:
+                for event in batch:
                     print(json.dumps(event, ensure_ascii=False), flush=True)
                 status = read_json(page_dir / "status.json") or {"state": "idle"}
                 if status["state"] != "working":
@@ -2120,8 +2181,8 @@ def cmd_wait(page_dir: Path) -> int:
                     # that claim; the agent's own `colloquy status` clears it.
                     # Mid-work output has no pickup gap, so leave the existing claim
                     # byte-for-byte untouched instead of shortening its freshness window.
-                    # "update", not "comment": a batch may mix comments and actions.
-                    n = len(new_user)
+                    # "update", not "comment": a batch may mix comments, actions, and reports.
+                    n = len(batch)
                     cmd_status(
                         page_dir,
                         "working",
@@ -2163,17 +2224,19 @@ def cmd_wait(page_dir: Path) -> int:
 
 
 def cmd_ack(page_dir: Path, seq: int) -> None:
-    """Acknowledge through one user event after complete wait output reached context.
+    """Acknowledge through one event of a complete wait batch that reached context.
 
-    The target itself must be a user event. This catches a mistyped sequence and
-    prevents an agent from advancing the cursor to a trailing log entry it never saw.
-    Writing only when the cursor advances makes retries harmless.
+    The target must be something `colloquy wait` prints — a user event or a
+    worker's report. This catches a mistyped sequence and prevents an agent from
+    advancing the cursor to a trailing log entry it never saw. Writing only when
+    the cursor advances makes retries harmless.
     """
     events = read_events(page_dir)
     if seq > len(events):
         sys.exit(f"event {seq} does not exist; the log ends at {len(events)}")
-    if events[seq - 1]["author"] != "user":
-        sys.exit(f"event {seq} is not a user event")
+    target = events[seq - 1]
+    if target["author"] != "user" and target["kind"] != "report":
+        sys.exit(f"event {seq} is neither a user event nor a report")
     cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
     if seq > cursor:
         write_json(page_dir / "cursor.json", {"seq": seq})
@@ -2252,6 +2315,50 @@ def action_contract_error(page_dir: Path, event: dict, events: list, registry: d
     if errors:
         return (
             f"<{tag}> action {event['action']!r} detail is invalid: {errors[0].message}"
+        )
+    return None
+
+
+def report_contract_error(page_dir: Path, event: dict, registry: dict):
+    """Why a structurally complete report violates its widget's declaration —
+    the CLI door's mirror of the POST door's action_contract_error. Page markup
+    only, never a reply's: a report has to be answerable, and thread markup is
+    frozen in the log, so no version could ever absorb or overrule one made
+    there."""
+    parser = _StructParser()
+    parser.feed(version_path(page_dir, event["version"]).read_text(encoding="utf-8"))
+    parser.close()
+    tags = {
+        rec["attrs"]["id"]: rec["tag"]
+        for rec in parser.cq_elements
+        if rec["attrs"].get("id")
+    }
+    tag = tags.get(event["widget"])
+    if tag is None:
+        return (
+            f"unknown report widget {event['widget']!r} in v{event['version']} — "
+            "reports name page widgets only; thread markup is frozen, so no "
+            "version could ever answer a report made there"
+        )
+    entry = registry.get(tag)
+    if entry is None:
+        return (
+            f"registry no longer declares <{tag}> for report widget {event['widget']!r}"
+        )
+    declared = entry.get("x-report", {})
+    if event["action"] not in declared:
+        return f"<{tag}> does not declare report verb {event['action']!r}" + (
+            f"; it declares {sorted(declared)}" if declared else ""
+        )
+    errors = sorted(
+        Draft202012Validator(declared[event["action"]]["detail"]).iter_errors(
+            event["detail"]
+        ),
+        key=str,
+    )
+    if errors:
+        return (
+            f"<{tag}> report {event['action']!r} detail is invalid: {errors[0].message}"
         )
     return None
 
@@ -2379,6 +2486,42 @@ def cmd_reply(page_dir: Path, to: str, text, markup: str) -> None:
     print(json.dumps(append_event(page_dir, event), ensure_ascii=False))
 
 
+def cmd_report(page_dir: Path, widget: str, verb: str, fields: tuple) -> None:
+    """A worker's provisional news: a declared state change folded onto a page
+    widget, validated at this door the way the POST door validates an action,
+    stamped with the posting session's voice, and made against the newest
+    published version — the page the reader is looking at. The runtime paints it
+    live; it stands until a version absorbs or overrules it by id (see
+    `version publish`), and the page's watcher wakes to fold it in. Field values
+    are strings — the declared detail schemas for reports speak in attribute
+    values, which is all a report may move."""
+    events = read_events(page_dir)
+    published = published_versions(page_dir, events)
+    if not published:
+        sys.exit("no published version; run `colloquy version publish` first")
+    registry = load_registry(page_dir)
+    if registry is None:
+        sys.exit(f"no registry.json in {page_dir}; run `colloquy page init` first")
+    detail = {}
+    for field in fields:
+        name, eq, value = field.partition("=")
+        if not eq or not name:
+            sys.exit(f"detail fields are name=value, got {field!r}")
+        detail[name] = value
+    event = {
+        "kind": "report",
+        "author": "claude",
+        **message_identity(),
+        "widget": widget,
+        "action": verb,
+        "detail": detail,
+        "version": published[-1],
+    }
+    if error := report_contract_error(page_dir, event, registry):
+        sys.exit(error)
+    print(json.dumps(append_event(page_dir, event), ensure_ascii=False))
+
+
 def cmd_publish(page_dir: Path, version: int, text) -> None:
     name = version_name(version)
     path = version_path(page_dir, version)
@@ -2399,10 +2542,29 @@ def cmd_publish(page_dir: Path, version: int, text) -> None:
     # no later version should have to repeat it (see retractions). It rides the
     # note itself rather than a second event: `note` is one act, and two appends
     # can be torn by a crash into a retraction for a version that never published.
+    html = path.read_text(encoding="utf-8")
     parser = _StructParser()
-    parser.feed(path.read_text(encoding="utf-8"))
+    parser.feed(html)
     parser.close()
     retracts = sorted(parser.restated)
+    # Publishing is also where a standing report is answered, and the answer is
+    # explicit, by id: the note names every report this version carried into its
+    # markup (wrote the reported state — absorption) or marked `overruled` on
+    # (overruling), and replay stops those reports at this version. Silence names
+    # nothing, and the report keeps painting. All of a unit's standing reports go
+    # together, or a superseded older one would keep replaying under the answer.
+    # The check above already required the vendored registry, so read it plainly.
+    registry = load_registry(page_dir)
+    events = read_events(page_dir)
+    byid = {r["attrs"]["id"]: r for r in parser.cq_elements if r["attrs"].get("id")}
+    spk = spoken(html, registry)
+    answered = []
+    for unit, reports in standing_reports(events, byid, registry, None).items():
+        last, spec = reports[-1]
+        if unit in parser.overruled or markup_facet(
+            unit, spec, byid, spk
+        ) == folded_facet(last, spec):
+            answered.extend(r["id"] for r, _ in reports)
     event = {
         "kind": "note",
         "author": "claude",
@@ -2412,6 +2574,8 @@ def cmd_publish(page_dir: Path, version: int, text) -> None:
     }
     if retracts:
         event["restated"] = retracts
+    if answered:
+        event["reports"] = sorted(answered)
     print(json.dumps(append_event(page_dir, event), ensure_ascii=False))
 
 
@@ -2447,7 +2611,8 @@ def cmd_transcript(page_dir: Path) -> None:
     edits = [
         e
         for e in events
-        if e["kind"] == "action" or (e["kind"] == "note" and e.get("restated"))
+        if e["kind"] in {"action", "report"}
+        or (e["kind"] == "note" and e.get("restated"))
     ]
     if edits:
         print("\n### Edits\n")
@@ -2460,7 +2625,14 @@ def cmd_transcript(page_dir: Path) -> None:
                 continue
             detail = " ".join(f"{k}={v}" for k, v in e["detail"].items())
             verb = f"{e['action']} {detail}".strip()  # a bare reject carries no detail
-            print(f"- `{e['widget']}`: {verb} (on v{e['version']})")
+            if e["kind"] == "report":
+                # A worker's provisional news is an outcome too, under its own name.
+                print(
+                    f"- `{e['widget']}`: {e.get('agent', 'a worker')} reported "
+                    f"{verb} (on v{e['version']})"
+                )
+            else:
+                print(f"- `{e['widget']}`: {verb} (on v{e['version']})")
 
     threads = build_threads(events)
     if threads:
@@ -2519,7 +2691,9 @@ CATALOG_PREAMBLE = """\
 # against the one list this page colors from (printed below). x-awaits marks a
 # tag whose instances stand as requests to the reader — what the banner counts
 # and the `a` key steps through, so a page's open questions are findable
-# without the reader hunting for them.
+# without the reader hunting for them. x-report is the agent channel: verbs a
+# worker folds onto the page with `colloquy report`, standing as provisional
+# state until a version absorbs or overrules them (printed below as $report).
 """
 
 
@@ -2547,6 +2721,12 @@ def cmd_catalog(page_dir: Path) -> None:
             "\n# x-state — how a widget's action verbs and their record forms are declared.\n"
         )
         print(json.dumps(state, indent=2, ensure_ascii=False))
+    report = reg.get("$report")
+    if report:
+        print(
+            "\n# x-report — the agent channel: worker reports, and how a version answers one.\n"
+        )
+        print(json.dumps(report, indent=2, ensure_ascii=False))
     awaits = reg.get("$awaits")
     if awaits:
         print("\n# x-awaits — what makes an element one of the page's standing asks.\n")
@@ -2594,7 +2774,9 @@ def unattended_pages(session_id: str) -> list:
             # own. Reporting the page here would have Claude start a second one, and two
             # waiters would print the same unacknowledged events twice.
             continue
-        n = state["pending"]
+        # The watcher's whole batch — user events and workers' reports — not the
+        # reader-facing count, which deliberately leaves reports out.
+        n = len(unacknowledged(events, state["cursor"]))
         if n:
             if codex and state["listening"]:
                 remedy = (
@@ -2610,7 +2792,7 @@ def unattended_pages(session_id: str) -> list:
                 remedy = "`colloquy wait` prints them."
             remedy += f" {ACK_BATCH_INSTRUCTION} Then address every one."
             reasons.append(
-                f"{page_dir}: {n} user event{'s' if n != 1 else ''} you haven't picked up. "
+                f"{page_dir}: {n} update{'s' if n != 1 else ''} you haven't picked up. "
                 + remedy
             )
         elif state["status"]["state"] != "idle":
@@ -2876,6 +3058,16 @@ class _StructParser(HTMLParser):
             rec["attrs"]["id"]
             for rec in self.cq_elements
             if rec["attrs"].get("id") and "restated" in rec["attrs"]
+        }
+
+    @property
+    def overruled(self) -> set:
+        """Ids this version declares it keeps its own state on, over a worker's
+        standing report — the agent channel's mirror of `restated`."""
+        return {
+            rec["attrs"]["id"]
+            for rec in self.cq_elements
+            if rec["attrs"].get("id") and "overruled" in rec["attrs"]
         }
 
     @property
@@ -3863,19 +4055,20 @@ def validate_registry(registry: dict, source) -> dict:
             sys.exit(
                 f"{path}: <{tag}> registry extensions are invalid: {errors[0].message}"
             )
-        for verb, spec in entry.get("x-state", {}).items():
-            try:
-                Draft202012Validator.check_schema(spec["detail"])
-            except SchemaError as error:
-                sys.exit(
-                    f"{path}: <{tag}> x-state verb `{verb}` has an invalid "
-                    f"detail schema: {error.message}"
-                )
-            if spec["detail"].get("type") != "object":
-                sys.exit(
-                    f"{path}: <{tag}> x-state verb `{verb}` detail schema "
-                    "must declare an object"
-                )
+        for channel in ("x-state", "x-report"):
+            for verb, spec in entry.get(channel, {}).items():
+                try:
+                    Draft202012Validator.check_schema(spec["detail"])
+                except SchemaError as error:
+                    sys.exit(
+                        f"{path}: <{tag}> {channel} verb `{verb}` has an invalid "
+                        f"detail schema: {error.message}"
+                    )
+                if spec["detail"].get("type") != "object":
+                    sys.exit(
+                        f"{path}: <{tag}> {channel} verb `{verb}` detail schema "
+                        "must declare an object"
+                    )
 
     for tag, entry in widgets.items():
         if unknown := sorted(set(entry.get("x-parent", [])) - set(widgets)):
@@ -3951,7 +4144,7 @@ def validate_registry(registry: dict, source) -> dict:
             )
         needs_upgrade = [
             key
-            for key in ("x-state", "x-language", "x-verbatim")
+            for key in ("x-state", "x-report", "x-language", "x-verbatim")
             if entry.get(key) and not entry["x-upgrade"]
         ]
         if needs_upgrade:
@@ -3959,65 +4152,111 @@ def validate_registry(registry: dict, source) -> dict:
                 f"{path}: <{tag}> declares {', '.join(needs_upgrade)} "
                 "but has no upgraded handler"
             )
-        for verb, spec in entry.get("x-state", {}).items():
-            detail_properties = spec["detail"].get("properties", {})
-            required = set(spec["detail"].get("required", []))
-            unit = spec.get("unit", "widget")
-            fields = [] if unit == "widget" else [unit]
-            record = spec.get("record")
-            if record:
-                fields.append(record["value"])
-                if record["kind"] == "position" and record["within"] not in widgets:
-                    sys.exit(
-                        f"{path}: <{tag}> x-state verb `{verb}` records a position "
-                        f"within unknown widget <{record['within']}>"
-                    )
-            undeclared = [field for field in fields if field not in detail_properties]
-            optional = [field for field in fields if field not in required]
-            if undeclared or optional:
-                problem = (
-                    f"does not declare {undeclared}"
-                    if undeclared
-                    else f"does not require {optional}"
-                )
-                sys.exit(
-                    f"{path}: <{tag}> x-state verb `{verb}` reads detail fields "
-                    f"its schema {problem}"
-                )
-            if unit != "widget" and record and record["kind"] != "position":
-                sys.exit(
-                    f"{path}: <{tag}> x-state verb `{verb}` records per-part state; "
-                    "only position records support that"
-                )
-
-            if unit != "widget" and not declares_string(detail_properties[unit]):
-                sys.exit(
-                    f"{path}: <{tag}> x-state verb `{verb}` fold unit `{unit}` "
-                    "must be a string"
-                )
-            if record:
-                value = record["value"]
-                schema = detail_properties[value]
-                # An attribute record names the set of elements wearing it, so its
-                # detail field is a list of ids however many the group allows —
-                # nothing downstream has to ask which kind of group it came from.
-                if record["kind"] == "attribute":
-                    items = schema.get("items") if isinstance(schema, dict) else None
-                    if not (
-                        isinstance(schema, dict)
-                        and schema.get("type") == "array"
-                        and isinstance(items, dict)
-                        and items.get("type") == "string"
-                    ):
+        # A version overrules a standing report with `overruled` on the element,
+        # so a widget with an agent channel that doesn't declare the attribute is
+        # one whose every report contradiction is unpublishable.
+        if entry.get("x-report") and not (
+            isinstance(properties.get("overruled"), dict)
+            and properties["overruled"].get("type") == "boolean"
+        ):
+            sys.exit(
+                f"{path}: <{tag}> declares x-report but not the boolean `overruled` "
+                "attribute a version overrules a standing report with"
+            )
+        # One rule set for both channels: x-state and x-report differ in
+        # precedence, not in how a verb, its unit, and its record hang together.
+        for channel in ("x-state", "x-report"):
+            for verb, spec in entry.get(channel, {}).items():
+                detail_properties = spec["detail"].get("properties", {})
+                required = set(spec["detail"].get("required", []))
+                unit = spec.get("unit", "widget")
+                fields = [] if unit == "widget" else [unit]
+                record = spec.get("record")
+                if record:
+                    fields.append(record["value"])
+                    if record["kind"] == "position" and record["within"] not in widgets:
                         sys.exit(
-                            f"{path}: <{tag}> x-state verb `{verb}` record value `{value}` "
-                            "must be an array of strings"
+                            f"{path}: <{tag}> {channel} verb `{verb}` records a position "
+                            f"within unknown widget <{record['within']}>"
                         )
-                elif not declares_string(schema):
+                    if record["kind"] == "value":
+                        attr = record["attr"]
+                        if attr not in properties:
+                            sys.exit(
+                                f"{path}: <{tag}> {channel} verb `{verb}` records "
+                                f"undeclared attribute `{attr}`"
+                            )
+                        # An x-says value is words the reader sees, and the file's
+                        # reading takes them from the markup — replay writing one
+                        # would change what the page says while that reading held
+                        # still, the desync the fence rules exist to prevent.
+                        if attr in said:
+                            sys.exit(
+                                f"{path}: <{tag}> {channel} verb `{verb}` records "
+                                f"x-says attribute `{attr}`, whose value is words "
+                                "the reader sees — declared state may not move the "
+                                "page's words"
+                            )
+                undeclared = [
+                    field for field in fields if field not in detail_properties
+                ]
+                optional = [field for field in fields if field not in required]
+                if undeclared or optional:
+                    problem = (
+                        f"does not declare {undeclared}"
+                        if undeclared
+                        else f"does not require {optional}"
+                    )
                     sys.exit(
-                        f"{path}: <{tag}> x-state verb `{verb}` record value `{value}` "
+                        f"{path}: <{tag}> {channel} verb `{verb}` reads detail fields "
+                        f"its schema {problem}"
+                    )
+                if unit != "widget" and record and record["kind"] != "position":
+                    sys.exit(
+                        f"{path}: <{tag}> {channel} verb `{verb}` records per-part "
+                        "state; only position records support that"
+                    )
+
+                if unit != "widget" and not declares_string(detail_properties[unit]):
+                    sys.exit(
+                        f"{path}: <{tag}> {channel} verb `{verb}` fold unit `{unit}` "
                         "must be a string"
                     )
+                if record:
+                    value = record["value"]
+                    schema = detail_properties[value]
+                    # An attribute record names the set of elements wearing it, so its
+                    # detail field is a list of ids however many the group allows —
+                    # nothing downstream has to ask which kind of group it came from.
+                    if record["kind"] == "attribute":
+                        items = (
+                            schema.get("items") if isinstance(schema, dict) else None
+                        )
+                        if not (
+                            isinstance(schema, dict)
+                            and schema.get("type") == "array"
+                            and isinstance(items, dict)
+                            and items.get("type") == "string"
+                        ):
+                            sys.exit(
+                                f"{path}: <{tag}> {channel} verb `{verb}` record "
+                                f"value `{value}` must be an array of strings"
+                            )
+                    elif record["kind"] == "value":
+                        # The record reads and writes the attribute, so its detail
+                        # field speaks the attribute's own schema — one vocabulary,
+                        # or the log's contract and the markup's drift apart.
+                        if schema != properties[record["attr"]]:
+                            sys.exit(
+                                f"{path}: <{tag}> {channel} verb `{verb}` record "
+                                f"value `{value}` must carry attribute "
+                                f"`{record['attr']}`'s own schema"
+                            )
+                    elif not declares_string(schema):
+                        sys.exit(
+                            f"{path}: <{tag}> {channel} verb `{verb}` record "
+                            f"value `{value}` must be a string"
+                        )
         retired = entry.get("x-retired-when")
         if retired is None:
             continue
@@ -4106,8 +4345,9 @@ def incoming_registry(layers: list) -> dict:
 
 def vocabulary_gaps(page_dir: Path, events: list, incoming: dict) -> list:
     """What the page's log says that the *incoming* layer no longer speaks:
-    event kinds or fields with no $events entry, or actions whose sending tag,
-    verb, or detail the incoming x-state contract rejects. Empty for a fresh page.
+    event kinds or fields with no $events entry, or actions and reports whose
+    sending tag, verb, or detail the incoming x-state or x-report contract
+    rejects. Empty for a fresh page.
     Counted, because the number is the cost — each is a recorded event that
     would never replay again."""
     if not events:
@@ -4124,6 +4364,10 @@ def vocabulary_gaps(page_dir: Path, events: list, incoming: dict) -> list:
             error := action_contract_error(page_dir, e, events, incoming)
         ):
             key = f"action contract: {error}"
+        elif kind == "report" and (
+            error := report_contract_error(page_dir, e, incoming)
+        ):
+            key = f"report contract: {error}"
         else:
             continue
         missing[key] = missing.get(key, 0) + 1
@@ -4381,6 +4625,56 @@ def retractions(events: list, upto=None) -> dict:
     return at
 
 
+def report_absorptions(events: list, upto=None) -> dict:
+    """report event id → the version whose note answered it (absorbed or
+    overruled) — the agent channel's mirror of `retractions`, windowed the same
+    way and lasting the same way: the answer rides the note of the one version
+    that gave it, and holds for good without being repeated."""
+    at = {}
+    for e in events:
+        if e["kind"] == "note" and (upto is None or e["version"] <= upto):
+            for rid in e.get("reports", []):
+                at[rid] = max(at.get(rid, 0), e["version"])
+    return at
+
+
+def standing_reports(events: list, byid: dict, registry: dict, upto=None) -> dict:
+    """unit id → the live report events on it, oldest first, each with its
+    x-report spec. Live means made against a version inside the window and not
+    yet answered by a note inside it. The last entry is the fold — every
+    report states an absolute value, so the newest per unit is the state — and
+    the whole list is what answering retires: publish names every id on the
+    unit, or an older superseded report would keep replaying under the new
+    version. A report whose widget the current markup lacks resolves no spec
+    and stands nowhere; a dropped id is id-survival's business, not this
+    channel's."""
+    absorbed = report_absorptions(events, upto)
+    per_unit = {}
+    for e in events:
+        if e["kind"] != "report":
+            continue
+        if upto is not None and e["version"] > upto:
+            continue
+        if e["id"] in absorbed:
+            continue
+        rec = byid.get(e["widget"])
+        spec = (
+            (registry.get(rec["tag"], {}).get("x-report") or {}).get(e["action"])
+            if rec
+            else None
+        )
+        if not spec:
+            continue
+        unit = (
+            e["widget"]
+            if spec.get("unit", "widget") == "widget"
+            else e["detail"].get(spec["unit"])
+        )
+        if isinstance(unit, str):
+            per_unit.setdefault(unit, []).append((e, spec))
+    return per_unit
+
+
 def action_rests_on(event: dict, spk: dict) -> list:
     """The runtime's restsOn, read the same way here: the sending widget plus
     every detail id it contains. This is the one key space for liveness — fold
@@ -4446,8 +4740,9 @@ def state_fold(
 
 def markup_facet(unit: str, spec: dict, byid: dict, spk: dict):
     """What one version's markup shows for a unit's declared record form: every
-    element inside it carrying the attribute, the declared container enclosing
-    it, or its body's words — the empty list where the markup shows no pick.
+    element inside it carrying the attribute, the unit's own attribute's value,
+    the declared container enclosing it, or its body's words — the empty list
+    where the markup shows no pick.
 
     An attribute record is a set, never one element: a group taking several
     picks marks several options, and one shape for both is what lets the fold
@@ -4462,6 +4757,9 @@ def markup_facet(unit: str, spec: dict, byid: dict, spk: dict):
             if record["attr"] in orec["attrs"]
             and unit in spk.get(oid, EMPTY).within[:-1]
         )
+    if record["kind"] == "value":
+        rec = byid.get(unit)
+        return rec["attrs"].get(record["attr"]) if rec else None
     if record["kind"] == "position":
         enclosing = [
             i
@@ -4552,6 +4850,21 @@ def record_lag(html: str, events: list, registry: dict) -> list:
             continue
         lag.append(
             f"`{unit}`: the log records {e['action']} → {folded_facet(e, spec)!r}; "
+            f"the markup still shows {f_cur!r}"
+        )
+    # The agent channel's half of the same debt: a standing report is state the
+    # markup has not absorbed, and the final version is the page that has to
+    # read right without the log.
+    for unit, reports in sorted(standing_reports(events, byid, registry, None).items()):
+        e, spec = reports[-1]
+        if unit not in byid:
+            continue
+        f_cur = markup_facet(unit, spec, byid, spk)
+        f_rep = folded_facet(e, spec)
+        if f_cur == f_rep:
+            continue
+        lag.append(
+            f"`{unit}`: a report records {e['action']} → {f_rep!r}; "
             f"the markup still shows {f_cur!r}"
         )
     return lag
@@ -4733,6 +5046,106 @@ def restatement_errors(
     return errors
 
 
+def report_errors(
+    cur, prev, was: dict, now: dict, events: list, prev_num: int, registry: dict
+) -> list:
+    """The report gate, beside the reviewer one — the same shape with the
+    precedence reversed. A report is a worker's provisional news: the runtime
+    paints it onto every version published before it, and it stands only until
+    a version answers it by id (`reports` on the note, the mirror of
+    `restated`). Three outcomes are legal. Writing the reported state is
+    honoring — publishing records it as absorption. Leaving the markup as the
+    previous version had it is blessed silence — the report keeps painting.
+    Marking the element `overruled` keeps this version's own state and retires
+    the report, with the why in the note's text. What is refused is the fourth
+    thing, markup that contradicts a standing report it never names: the drop
+    must be the publisher's to adjudicate, never silent. And an unearned
+    `overruled` is refused like an unearned `restated` — spent where nothing
+    stands or where the markup agrees with the report, it is the reflex that
+    would make the gate meaningless.
+
+    Standing is read up to prev — never this version's own note, which is what
+    publishing is about to record — so re-checking a published version reaches
+    the same verdict as checking it did."""
+    errors = []
+    declared = cur.overruled
+    byid = {r["attrs"]["id"]: r for r in cur.cq_elements if r["attrs"].get("id")}
+    prev_byid = {r["attrs"]["id"]: r for r in prev.cq_elements if r["attrs"].get("id")}
+    standing = standing_reports(events, byid, registry, prev_num)
+    earned = set()
+    for unit in sorted(standing):
+        e, spec = standing[unit][-1]
+        rec = byid.get(unit)
+        # A unit either version lacks is id-survival's business, not this gate's.
+        if rec is None or unit not in prev_byid:
+            continue
+        f_cur = markup_facet(unit, spec, byid, now)
+        f_rep = folded_facet(e, spec)
+        if unit in declared and f_cur != f_rep:
+            earned.add(unit)  # a named disagreement, whatever state it keeps
+            continue
+        if f_cur == f_rep:
+            continue  # honoring: publishing absorbs the report by id
+        if f_cur == markup_facet(unit, spec, prev_byid, was):
+            continue  # blessed silence: the report keeps painting
+        where = f"<{rec['tag']} id={unit!r}> (line {rec['line']})"
+        who = e.get("agent", "a worker")
+        errors.append(
+            f"{where}: its markup contradicts a standing report — it shows "
+            f"{f_cur!r} where {who}'s {e['action']} (report {e['id']}, on "
+            f"v{e['version']}) left {f_rep!r}. Adjudicate it: write the reported "
+            f"state to absorb the report, or add `overruled` to keep this state "
+            f"and retire it (say why in the note)."
+        )
+    unearned = declared - earned
+    # Where an attribute is spent past its version: which version already
+    # answered the unit's reports, for the message that says to drop it.
+    answered_at = {}
+    if unearned:
+        absorbed = report_absorptions(events, prev_num)
+        for e in events:
+            if e["kind"] != "report" or e["id"] not in absorbed:
+                continue
+            rec = byid.get(e["widget"])
+            spec = (
+                (registry.get(rec["tag"], {}).get("x-report") or {}).get(e["action"])
+                if rec
+                else None
+            )
+            if not spec:
+                continue
+            unit = (
+                e["widget"]
+                if spec.get("unit", "widget") == "widget"
+                else e["detail"].get(spec["unit"])
+            )
+            if isinstance(unit, str):
+                answered_at[unit] = max(answered_at.get(unit, 0), absorbed[e["id"]])
+    for sid in sorted(unearned):
+        rec = byid.get(sid)
+        if rec is None:
+            continue
+        where = f"<{rec['tag']} id={sid!r}> (line {rec['line']})"
+        if sid in standing:
+            errors.append(
+                f"{where}: overruled, but this version writes the reported state — "
+                f"that is absorption, which publishing records on its own. "
+                f"Drop the attribute."
+            )
+        elif sid in answered_at:
+            errors.append(
+                f"{where}: overruled, but v{answered_at[sid]} already answered the "
+                f"reports on it — an answer is recorded when it is published and "
+                f"holds without being repeated. Drop the attribute."
+            )
+        else:
+            errors.append(
+                f"{where}: overruled, but no report is standing on it — there is "
+                f"nothing to overrule. Drop the attribute."
+            )
+    return errors
+
+
 def structure_errors(parser: _StructParser) -> list:
     """A fed parser's structural complaints, plus the tags it was left holding
     open at the end of its input."""
@@ -4890,17 +5303,14 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
                 f"ids present in {prev_name} but dropped in {name} "
                 f"(anchors on them will break): {dropped}"
             )
-    # And the decisions recorded on the ids that stayed.
+    # And the decisions recorded on the ids that stayed — the reviewer channel's
+    # gate, then its mirror for the agent channel's standing reports.
+    now = spoken(html, registry or {})
     errors.extend(
-        restatement_errors(
-            parser,
-            prev,
-            was,
-            spoken(html, registry or {}),
-            events,
-            prev_num,
-            registry or {},
-        )
+        restatement_errors(parser, prev, was, now, events, prev_num, registry or {})
+    )
+    errors.extend(
+        report_errors(parser, prev, was, now, events, prev_num, registry or {})
     )
 
     # Thread markup is frozen in the log and rendered into the panel; a page id
@@ -5319,9 +5729,12 @@ def render_version(browser, url: str) -> list:
         # mid-replay would miss whatever hadn't landed yet.
         conflicts = []
         if scheme == "light":
+            # Both replayed kinds: the caught-up stamp counts reports beside
+            # actions, so the wait must too or it never sees the page catch up.
             n_actions = page.evaluate(
                 "fetch('/api/state').then(r => r.json())"
-                ".then(s => s.events.filter(e => e.kind === 'action').length)"
+                ".then(s => s.events.filter(e => e.kind === 'action' "
+                "|| e.kind === 'report').length)"
             )
             if n_actions:
                 try:
@@ -5770,17 +6183,18 @@ def status(dir: str, state: str, detail: str) -> None:
     """Set the agent's banner state."""
     page_dir = resolve_dir(dir)
     # Idling over unacknowledged events ends the colloquy on a user still owed an
-    # answer. Here rather than in cmd_status because SessionEnd idles pages whose
-    # session is already gone, where nothing is left to pick them up.
-    events = read_events(page_dir)
-    pending = (
-        full_state(page_dir, events, published_versions(page_dir, events))["pending"]
-        if state == "idle"
-        else 0
-    )
+    # answer — or on a worker's report left standing as provisional state forever.
+    # The watcher's whole batch, not the reader-facing count. Here rather than in
+    # cmd_status because SessionEnd idles pages whose session is already gone,
+    # where nothing is left to pick them up.
+    pending = 0
+    if state == "idle":
+        events = read_events(page_dir)
+        cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
+        pending = len(unacknowledged(events, cursor))
     if pending:
         sys.exit(
-            f"{pending} user event{'s' if pending != 1 else ''} nobody has picked up; "
+            f"{pending} update{'s' if pending != 1 else ''} nobody has picked up; "
             "idling ends the colloquy over them. `colloquy wait` prints them "
             "and returns at once when events are already waiting. "
             + ACK_BATCH_INSTRUCTION
@@ -5789,15 +6203,15 @@ def status(dir: str, state: str, detail: str) -> None:
 
 
 @cli.command(
-    short_help="Print unacknowledged user events, then exit.",
+    short_help="Print unacknowledged user events and reports, then exit.",
     help=(
-        "Wait for user events not yet acknowledged from model context and print "
-        "them as JSON lines.\n\n" + ACK_BATCH_INSTRUCTION
+        "Wait for user events and worker reports not yet acknowledged from model "
+        "context and print them as JSON lines.\n\n" + ACK_BATCH_INSTRUCTION
     ),
 )
 @click.argument("dir", metavar="PAGE")
 def wait(dir: str) -> None:
-    """Print unacknowledged user events, then exit."""
+    """Print unacknowledged user events and reports, then exit."""
     sys.exit(cmd_wait(resolve_dir(dir)))
 
 
@@ -5837,6 +6251,22 @@ def comment(dir: str, quote: str, section: str, text: str, markup: str) -> None:
 def reply(dir: str, to: str, text: str, markup: str) -> None:
     """Post a threaded reply as the agent (--text or stdin)."""
     cmd_reply(resolve_dir(dir), to, text, markup)
+
+
+@cli.command(short_help="Report a state change onto a page widget, as a worker.")
+@click.argument("dir", metavar="PAGE")
+@click.argument("widget", metavar="WIDGET")
+@click.argument("verb", metavar="VERB")
+@click.argument("fields", metavar="[NAME=VALUE]...", nargs=-1)
+def report(dir: str, widget: str, verb: str, fields: tuple) -> None:
+    """Report a state change onto a page widget, as a worker.
+
+    The verb and its fields are the widget's own x-report declaration —
+    `colloquy report <page> t-parser status status=review` moves a task. The
+    page paints the report live as provisional news; it stands until a version
+    absorbs or overrules it, and the page's watcher wakes to fold it in.
+    """
+    cmd_report(resolve_dir(dir), widget, verb, fields)
 
 
 @cli.command(short_help="Print the event log as JSON lines.")

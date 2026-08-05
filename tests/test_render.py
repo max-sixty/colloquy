@@ -4858,6 +4858,110 @@ def test_an_ask_joins_the_walk_by_being_declared(browser, serve):
     page.close()
 
 
+# One parent over two leaves, so a status report has to move both the marker and
+# the parent's computed done-fraction — the state a stylesheet cannot recount.
+REPORT_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>reports</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">The feeders</h1>
+<cq-tasks id="plan">
+  <cq-task id="t-feeders" status="active" owner="wren"><strong>Rebuild the feeders</strong>
+    <cq-task id="t-mounts" status="done"><strong>Replace the mounts</strong></cq-task>
+    <cq-task id="t-parser" status="active"><strong>Fit squirrel baffles</strong></cq-task>
+  </cq-task>
+</cq-tasks>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_workers_report_paints_live_and_ends_at_the_version_that_answers_it(
+    browser, serve
+):
+    """The agent channel, end to end in the browser: a `colloquy report` reaches
+    the open page on the next poll and paints as provisional news — the status
+    attribute moves, the parent's done-fraction recounts, the element wears
+    data-cq-reported rather than the user's pending mark, and a task reported
+    into `review` joins the asks the banner counts. Then the version that
+    answers the report by id takes the page back: replay skips a report the
+    note named, so the overruling version's own state is what renders, with no
+    provisional mark left on it. Last, the diff against the base version reads
+    the base's state as the reader saw it — report included — so the overrule
+    marks as a change even though the two files spell the same status."""
+    url = serve(REPORT_PAGE)
+    d = serve.page_dir
+    page, errors = open_page(browser, url)
+    fraction = page.locator("#t-feeders > .cq-chips")
+    expect(fraction).to_contain_text("1/2 done")
+    expect(page.locator(".cq-asks")).to_be_hidden()  # nothing waits on the reader
+
+    sent = CliRunner().invoke(
+        interact.cli, ["report", str(d), "t-parser", "status", "status=review"]
+    )
+    assert sent.exit_code == 0, sent.output
+    told(page)
+    task = page.locator("#t-parser")
+    expect(task).to_have_attribute("status", "review")
+    expect(task).to_have_attribute("data-cq-reported", "1")
+    expect(task).not_to_have_attribute("data-cq-pending", "1")
+    # A task at review is a standing ask however the status got there.
+    expect(page.locator(".cq-asks")).to_have_text("Asks (1)")
+
+    # A second report supersedes the first — absolute values fold — and the
+    # fraction chip recounts across the tree.
+    sent = CliRunner().invoke(
+        interact.cli, ["report", str(d), "t-parser", "status", "status=done"]
+    )
+    assert sent.exit_code == 0, sent.output
+    told(page)
+    expect(task).to_have_attribute("status", "done")
+    expect(fraction).to_contain_text("2/2 done")
+    expect(page.locator(".cq-asks")).to_be_hidden()
+
+    # The overruling version: its markup keeps `active` and names the reports on
+    # the note (publish resolves the ids from `overruled`), so replay stops them
+    # and the document speaks again.
+    (d / "versions" / "v2.html").write_text(
+        REPORT_PAGE.replace(
+            '<cq-task id="t-parser" status="active">',
+            '<cq-task id="t-parser" status="active" overruled>',
+        )
+    )
+    published = CliRunner().invoke(
+        interact.cli,
+        ["version", "publish", str(d), "--version", "2", "--text", "not done yet"],
+    )
+    assert published.exit_code == 0, published.output
+    assert len(interact.read_events(d)[-1]["reports"]) == 2
+    page.wait_for_url("**/versions/v2.html")
+    page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+    task = page.locator("#t-parser")
+    expect(task).to_have_attribute("status", "active")
+    expect(task).not_to_have_attribute("data-cq-reported", "1")
+    expect(page.locator("#t-feeders > .cq-chips")).to_contain_text("1/2 done")
+
+    # The diff's state half, mirror-image: v1's markup also said `active`, but
+    # the reader last saw v1 wearing the report's `done`, so the overrule is a
+    # change since the base — the report-layered base facet is what says so.
+    page.locator(".cq-banner button", has_text="Δ").click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('.cq-ins-block').length > 0"
+    )
+    assert page.evaluate(
+        "() => [...document.querySelectorAll('.cq-ins-block')].map(e => e.id)"
+    ) == ["t-parser"]
+    assert errors == []
+    page.close()
+
+
 def test_render_reports_markup_the_log_replays_over(browser, serve):
     """The static gate refuses a version that rewords what a decision rests on,
     but `chosen`, a card's column, and their kind say nothing a text diff can

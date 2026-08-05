@@ -84,7 +84,7 @@
     "x-upgrade": true
   },
   "cq-tasks": {
-    "description": "A hierarchy of work: what a project is made of, who holds each piece, and where each piece stands. Children are cq-task elements, nesting freely — the tree is the plan's own shape, so write the decomposition as it is rather than flattening it. Where cq-milestones is a flat rail of stages on a schedule and cq-board is a set the reviewer re-orders, cq-tasks is structure: a parent's children are what doing it means, and the upgrade counts each parent's subtree into a generated done-fraction chip so the tree reads as progress without a widget of its own. Statuses change by republishing — the page keeps up with the work — and comments anchor per task, so keep every task's id stable across versions.",
+    "description": "A hierarchy of work: what a project is made of, who holds each piece, and where each piece stands. Children are cq-task elements, nesting freely — the tree is the plan's own shape, so write the decomposition as it is rather than flattening it. Where cq-milestones is a flat rail of stages on a schedule and cq-board is a set the reviewer re-orders, cq-tasks is structure: a parent's children are what doing it means, and the upgrade counts each parent's subtree into a generated done-fraction chip so the tree reads as progress without a widget of its own. Statuses change by republishing, or between versions by a worker's `colloquy report` (x-report on cq-task) — the page keeps up with the work — and comments anchor per task, so keep every task's id stable across versions.",
     "type": "object",
     "properties": {
       "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
@@ -95,21 +95,29 @@
     "x-example": "<cq-tasks id=\"aviary-plan\">\n  <cq-task id=\"t-feeders\" status=\"active\" owner=\"wren\">\n    <strong>Rebuild the feeders</strong> Two of four mounted.\n    <cq-task id=\"t-mounts\" status=\"done\" owner=\"wren\"><strong>Replace the mounts</strong></cq-task>\n    <cq-task id=\"t-baffles\" status=\"review\" owner=\"finch\" when=\"aug 4\"><strong>Fit squirrel baffles</strong></cq-task>\n  </cq-task>\n  <cq-task id=\"t-bath\" status=\"blocked\">\n    <strong>Heat the bird bath</strong> Waiting on the transformer pick below.\n  </cq-task>\n</cq-tasks>"
   },
   "cq-task": {
-    "description": "One piece of the work. Lead with a <strong> title; prose follows, and child cq-task elements after the prose are its decomposition. `status` colors the marker: planned, active, blocked (stuck — the prose says on what), review (finished by whoever held it, awaiting the reader), done. `owner` names who holds it now — an agent, a session, a person — and `when` is a free-text schedule label; both render as chips after the title, with `tags` adding one chip per entry. A parent with children also gets a generated done-fraction chip counting its subtree. A task that needs the reader's word is `review` or `blocked`: those two are the standing asks a tree makes (see $awaits), counted in the banner and stepped to by `a` alongside every other thing the page is waiting on, so keep them honest — a task marked active that is really waiting on a decision is invisible exactly where it needs to be seen. They ask until a later version says otherwise: a tree has no action channel, so the reader answers in words and you answer by republishing the status.",
+    "description": "One piece of the work. Lead with a <strong> title; prose follows, and child cq-task elements after the prose are its decomposition. `status` colors the marker: planned, active, blocked (stuck — the prose says on what), review (finished by whoever held it, awaiting the reader), done. `owner` names who holds it now — an agent, a session, a person — and `when` is a free-text schedule label; both render as chips after the title, with `tags` adding one chip per entry. A parent with children also gets a generated done-fraction chip counting its subtree. A task that needs the reader's word is `review` or `blocked`: those two are the standing asks a tree makes (see $awaits), counted in the banner and stepped to by `a` alongside every other thing the page is waiting on, so keep them honest — a task marked active that is really waiting on a decision is invisible exactly where it needs to be seen. They ask until a later version says otherwise: a tree has no reader action channel, so the reader answers in words and you answer by republishing the status. The agent side does have one — `status` is agent-settable (x-report): a worker holding a task reports where it stands (`colloquy report <page> <task-id> status status=review`), the page paints it as provisional news, and it stands until a version absorbs or overrules it (see $report; `overruled` is the overruling version's word).",
     "type": "object",
     "properties": {
       "id":     {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
       "status": {"enum": ["planned", "active", "blocked", "review", "done"]},
       "owner":  {"type": "string"},
       "when":   {"type": "string"},
-      "tags":   {"type": "string", "pattern": "^[a-z0-9-]+(,[a-z0-9-]+)*$"}
+      "tags":   {"type": "string", "pattern": "^[a-z0-9-]+(,[a-z0-9-]+)*$"},
+      "overruled": {"type": "boolean"}
     },
     "required": ["id", "status"],
     "additionalProperties": false,
     "x-parent": ["cq-tasks", "cq-task"],
     "x-content": "prose",
     "x-upgrade": true,
-    "x-awaits": {"when": {"status": ["review", "blocked"]}}
+    "x-awaits": {"when": {"status": ["review", "blocked"]}},
+    "x-report": {
+      "status": {
+        "detail": {"type": "object", "properties": {"status": {"enum": ["planned", "active", "blocked", "review", "done"]}}, "required": ["status"], "additionalProperties": false},
+        "unit": "widget",
+        "record": {"kind": "value", "attr": "status", "value": "status"}
+      }
+    }
   },
   "cq-timeline": {
     "description": "A chronological event log — the incident-report shape. Children are cq-event elements only. Where cq-milestones tracks planned work by status, cq-timeline records what happened, when.",
@@ -444,13 +452,20 @@
       "done": ["version", "text"],
       "close": ["version"],
       "action": ["widget", "action", "detail", "version"],
-      "note": ["version", "text", "restated", "agent", "session"]
+      "report": ["widget", "action", "detail", "version", "agent", "session"],
+      "note": ["version", "text", "restated", "reports", "agent", "session"]
     }
   },
   "$state": {
     "description": "What x-state declares, once per widget with an action channel: each verb's detail schema (the payload half of the log's forever-contract), its fold unit, and the record form its state takes in markup. Every applyAction is absolute, so the user's standing state is a fold — the last surviving action per unit — and one declaration drives the POST and re-vendor contract gates, `version check`'s state gate (a version whose markup actively contradicts the fold without `restated` is refused; writing the folded state is honoring; re-emitting the previous version's state is blessed silence), the record-lag report, the runtime's decided-but-unhonored mark, and the version diff's state half.",
     "unit": "\"widget\" for a verb absolute across the group (choose toggles every sibling), or the detail field naming the element the verb is absolute per (move's \"card\").",
-    "record": "How the state reads in markup: {kind: \"attribute\", attr, value} — every element inside the unit carrying attr, sorted, vs the ids the detail field `value` lists, which is why that field is an array however many the widget allows at once; {kind: \"position\", within, value} — the enclosing `within` element, compared at that granularity (indexes compose across cards, so column is the whole comparison); {kind: \"body\", value} — the unit's own words. A verb with no record (accept/reject) folds for the runtime's pending mark, and retirement stays retirable_ids' business."
+    "record": "How the state reads in markup: {kind: \"attribute\", attr, value} — every element inside the unit carrying attr, sorted, vs the ids the detail field `value` lists, which is why that field is an array however many the widget allows at once; {kind: \"position\", within, value} — the enclosing `within` element, compared at that granularity (indexes compose across cards, so column is the whole comparison); {kind: \"body\", value} — the unit's own words; {kind: \"value\", attr, value} — the unit's own attr holding one scalar, whose detail field carries the attribute's own schema so the log's contract and the markup's cannot drift. A verb with no record (accept/reject) folds for the runtime's pending mark, and retirement stays retirable_ids' business."
+  },
+  "$report": {
+    "description": "What x-report declares, once per widget with an agent channel: report verbs a worker folds onto the page through `colloquy report`, each with a detail schema (the payload half of the log's forever-contract, exactly as x-state's), a fold unit, and a required record form drawn from $state's vocabulary minus `body` — a report moves declared state only, never the page's words, which is what keeps the passage reading untouched by it. The runtime paints a standing report live (data-cq-reported) with precedence opposite to a reviewer's action: an action outranks every later version until `restated` retracts it; a report is provisional news, standing only until a version answers it.",
+    "answering": "Explicit, by id. `version publish` names on the note (`reports`) every standing report the version answered: one whose recorded state the markup writes is absorbed, and one on an element marked `overruled` is overruled — the why belongs in the note's text. Replay stops a named report at that version. Silence — markup unchanged — is blessed and names nothing, so the report keeps painting. `version check` refuses the third thing, markup that contradicts a standing report it never names, and refuses an `overruled` with nothing to overrule, exactly as the reviewer gate polices `restated`.",
+    "overruled": "A boolean attribute on the reported element, declared by every x-report widget: this version keeps its own state over the standing report. It belongs to the one version that does the overruling — publishing records the answer on the note, so later versions leave it off.",
+    "wakes": "A report joins the watcher's batch: `colloquy wait` prints it beside user events, the same `ack` acknowledges it, and idling is refused over one nobody read. The reader's banner counts none of this — a report is news the agent owes the page, not something the reader owes an answer."
   },
   "$awaits": {
     "description": "What x-awaits declares: an instance of this tag is a standing request to the reader — a question with no pick, a change nobody has decided, a piece of work the page says is waiting on them. One declaration is the whole of it. The banner's count, the `a` key that steps them, and the `?` overlay's row are three readings of one list, so nothing counts asks by naming a tag and the twelfth widget joins by declaring rather than by being taught to three consumers. Quoted material asks nothing — an exhibited decision is a mention (x-exhibit). A widget inside a thread asks like one on the page — a question is a request to the reader wherever it stands, and `a` opens the panel to reach it — with one bound set by what a thread is: its markup is frozen, so no version can answer there, and only a widget with an action channel (x-state) asks in a thread at all.",

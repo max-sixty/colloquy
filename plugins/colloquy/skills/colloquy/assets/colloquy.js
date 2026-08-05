@@ -141,8 +141,10 @@ const PAGE_PAINT_ATTRIBUTE = Object.freeze({
   done: "data-cq-done",
   restated: "data-cq-restated",
   replayWrote: "data-cq-replay-wrote",
+  reportWrote: "data-cq-report-wrote",
   applied: "data-cq-applied",
   pending: "data-cq-pending",
+  reported: "data-cq-reported",
   upgraded: "data-cq-upgraded",
 });
 const PAGE_PAINT_ATTRIBUTES = new Set(Object.values(PAGE_PAINT_ATTRIBUTE));
@@ -4586,9 +4588,12 @@ async function applyDiff(baseVersion) {
   // The state half: block keys catch words, and a pure state change — a card
   // in a different column, a pick on a different option — has no text of its
   // own. Compare declared facets instead: the base version's state (its markup
-  // plus the fold as of it) against the live DOM, which already wears the
-  // current fold. Body facets are words and the block keys above own them.
+  // plus both folds as of it — a report standing at the base painted there
+  // just as an action did, so what the reader saw includes it) against the
+  // live DOM, which already wears the current folds. Body facets are words and
+  // the block keys above own them.
   const baseFold = stateFold(baseVersion);
+  const baseReports = reportFold(baseVersion);
   for (const [tag, spec] of stateSpecs()) {
     if (!spec.record || spec.record.kind === "body") continue;
     for (const widget of document.body.querySelectorAll(tag)) {
@@ -4602,8 +4607,14 @@ async function applyDiff(baseVersion) {
       for (const el of units) {
         const baseEl = doc.getElementById(el.id);
         if (!baseEl) continue; // new to this version: the content half marks it
-        const before = baseFold.has(el.id)
-          ? foldedFacet(baseFold.get(el.id).e, spec.record)
+        // The later writer wins between the channels, as replay's seq order has
+        // it; a fold entry whose detail lacks this record's field wrote some
+        // other facet of the unit and says nothing about this one.
+        const writers = [baseFold.get(el.id), baseReports.get(el.id)]
+          .filter((c) => c && spec.record.value in c.e.detail)
+          .sort((a, b) => a.e.seq - b.e.seq);
+        const before = writers.length
+          ? foldedFacet(writers.at(-1).e, spec.record)
           : domFacet(baseEl, spec.record);
         const now = domFacet(el, spec.record);
         if (before === now) continue;
@@ -4822,6 +4833,14 @@ latestChip.onclick = () => (location.href = "/");
 // settle, so the methods exist, and the pass runs at the end of a poll, so the
 // panel's own widgets do too.
 //
+// Reports ride the same pass with the precedence reversed. A report is a
+// worker's provisional news (`colloquy report`, x-report in the registry): it
+// paints onto the versions published before it and stops at the version whose
+// note answers it by id (`reports`, the mirror of `restated`) — where an
+// action outranks every later version until a retraction. The two channels
+// never share a record today, so their order within one poll is unobservable;
+// each keeps seq order within itself.
+//
 // The log outranks the markup, and that is the whole rule: authored state is the
 // initial condition, never a later correction, so nothing a version does or
 // omits can un-make a decision by itself. The repo's own CLAUDE.md carries why,
@@ -4860,6 +4879,17 @@ function retractionFloors(upto) {
         floors.set(id, Math.max(floors.get(id) ?? 0, e.version));
   return floors;
 }
+// A report's end: the ids the notes in the window answered, absorbed or
+// overruled — the agent channel's mirror of retractionFloors, read from the
+// log for the same reason (the version after the answer declares nothing, and
+// its silence must not hand the report back).
+function answeredReports(upto) {
+  const answered = new Set();
+  for (const e of events)
+    if (e.kind === "note" && e.version <= upto)
+      for (const id of e.reports || []) answered.add(id);
+  return answered;
+}
 // An id-bearing element's state as markup can say it: tag, attributes, and
 // place among its id-bearing kin. Text is deliberately absent — words are the
 // static gate's subject (restatement_errors); this is the rest, the state no
@@ -4891,78 +4921,99 @@ function applyActions() {
   // move the nodes a drag preview is holding. Retry next poll.
   if (document.querySelector(".cq-dragging")) return;
   const takenBack = retractionFloors(VNUM);
-  // One snapshot brackets the batch: the loop below is synchronous, so between
-  // these two readings nothing but its applyAction calls — no gesture, no widget
-  // rendering itself — can touch the page, and the diff of the ends is exactly
-  // what replay wrote.
-  const before = events.some((e) => e.kind === "action" && !appliedActions.has(e.seq))
-    ? shallowSigs(document.body)
-    : null;
-  const priorMotion = before && new Set(document.getAnimations());
-  let applied = false;
+  const answered = answeredReports(VNUM);
   const deferredWidgets = new Set();
-  for (const e of events) {
-    if (
-      e.kind !== "action" ||
-      appliedActions.has(e.seq) ||
-      deferredWidgets.has(e.widget)
-    )
-      continue;
-    const el = document.getElementById(e.widget);
-    // Every terminal action is decided here and never looked at again. This pass runs
-    // after the panel has rendered the log, so a widget that isn't here is one no
-    // version can carry — an honored suggestion, whose wrapper the version replaced.
-    if (!el?.applyAction) {
-      appliedActions.add(e.seq);
-      continue;
-    }
-    // A pinned older version is a historical view, so it shows what the user
-    // had done by then and not what they did later. A widget inside the comment
-    // layer (.cq-chrome — a reply's inline question) has no version at all: its markup
-    // is frozen in the log, and no version can rewrite or retract it.
-    if (!inChrome(el)) {
-      if (e.version > VNUM) {
+  let applied = false;
+  const started = [];
+  // Actions first, then reports, each pass bracketed by its own snapshot so what
+  // replay wrote is attributed to the channel that wrote it: version check
+  // --render reads the reviewer channel's record (replayWrote) as "state the log
+  // replays over", and a report's write there would lay a worker's news at the
+  // user's door. The loop inside a pass is synchronous, so between a pass's two
+  // readings nothing but its applyAction calls — no gesture, no widget rendering
+  // itself — can touch the page, and the diff of the ends is exactly what that
+  // channel wrote.
+  for (const [kind, wroteAttr] of [
+    ["action", PAGE_PAINT_ATTRIBUTE.replayWrote],
+    ["report", PAGE_PAINT_ATTRIBUTE.reportWrote],
+  ]) {
+    const before = events.some((e) => e.kind === kind && !appliedActions.has(e.seq))
+      ? shallowSigs(document.body)
+      : null;
+    const priorMotion = before && new Set(document.getAnimations());
+    let wrote = false;
+    for (const e of events) {
+      if (e.kind !== kind || appliedActions.has(e.seq) || deferredWidgets.has(e.widget))
+        continue;
+      const el = document.getElementById(e.widget);
+      // Every terminal action is decided here and never looked at again. This pass runs
+      // after the panel has rendered the log, so a widget that isn't here is one no
+      // version can carry — an honored suggestion, whose wrapper the version replaced.
+      if (!el?.applyAction) {
         appliedActions.add(e.seq);
         continue;
       }
-      const gone = restsOn(e, el).filter((id) => (takenBack.get(id) ?? 0) > e.version);
-      if (gone.length) {
-        // Say so on the page: a decision undone looks exactly like one never
-        // made, and the user is owed the difference.
-        for (const id of gone) {
-          const target = document.getElementById(id);
-          if (target) target.setAttribute(PAGE_PAINT_ATTRIBUTE.restated, "1");
+      if (e.kind === "report") {
+        // A report paints the versions published before it and ends at the one
+        // whose note answered it: a pinned older version predates the news, and
+        // an answered report's state is the document's to speak. No retraction
+        // floors here — a report is not a decision `restated` can take back.
+        if (e.version > VNUM || answered.has(e.id)) {
+          appliedActions.add(e.seq);
+          continue;
         }
-        appliedActions.add(e.seq);
+      } else if (!inChrome(el)) {
+        // A pinned older version is a historical view, so it shows what the user
+        // had done by then and not what they did later. A widget inside the comment
+        // layer (.cq-chrome — a reply's inline question) has no version at all: its markup
+        // is frozen in the log, and no version can rewrite or retract it.
+        if (e.version > VNUM) {
+          appliedActions.add(e.seq);
+          continue;
+        }
+        const gone = restsOn(e, el).filter(
+          (id) => (takenBack.get(id) ?? 0) > e.version,
+        );
+        if (gone.length) {
+          // Say so on the page: a decision undone looks exactly like one never
+          // made, and the user is owed the difference.
+          for (const id of gone) {
+            const target = document.getElementById(id);
+            if (target) target.setAttribute(PAGE_PAINT_ATTRIBUTE.restated, "1");
+          }
+          appliedActions.add(e.seq);
+          continue;
+        }
+      }
+      // A widget may briefly own live local input. `false` asks replay to leave this
+      // action and later actions for the same widget in order for the next poll.
+      if (el.applyAction(e.action, e.detail) === false) {
+        deferredWidgets.add(e.widget);
         continue;
       }
+      appliedActions.add(e.seq);
+      wrote = true;
     }
-    // A widget may briefly own live local input. `false` asks replay to leave this
-    // action and later actions for the same widget in order for the next poll.
-    if (el.applyAction(e.action, e.detail) === false) {
-      deferredWidgets.add(e.widget);
-      continue;
-    }
-    appliedActions.add(e.seq);
+    if (!wrote) continue;
     applied = true;
-  }
-  if (applied) {
     const now = shallowSigs(document.body);
-    // What the batch wrote — the ids whose shallow state its calls changed —
+    // What the pass wrote — the ids whose shallow state its calls changed —
     // recorded on the body, where version check --render reads it. A no-op says the
     // markup already held the state; only a page widget can contradict its
     // version, so a reply's widget (.cq-chrome, no version) goes unrecorded.
-    const wrote = [...new Set([...before.keys(), ...now.keys()])].filter(
+    const changed = [...new Set([...before.keys(), ...now.keys()])].filter(
       (id) => before.get(id) !== now.get(id) && !inChrome(document.getElementById(id)),
     );
-    if (wrote.length) {
-      const prior =
-        document.body.getAttribute(PAGE_PAINT_ATTRIBUTE.replayWrote)?.split(" ") ?? [];
+    if (changed.length) {
+      const prior = document.body.getAttribute(wroteAttr)?.split(" ") ?? [];
       document.body.setAttribute(
-        PAGE_PAINT_ATTRIBUTE.replayWrote,
-        [...new Set([...prior, ...wrote])].join(" "),
+        wroteAttr,
+        [...new Set([...prior, ...changed])].join(" "),
       );
     }
+    started.push(...document.getAnimations().filter((a) => !priorMotion.has(a)));
+  }
+  if (applied) {
     // A replay moves the page's text — a card to another column, a suggestion to its
     // settled slot — so the marks are repainted where they now belong. Said here rather
     // than left to the caller's order: a pass held off by a live drag lands on a poll
@@ -4973,13 +5024,12 @@ function applyActions() {
     // pointer mid-flight. The batch's own animations are the fact to consume — never
     // the document's, whose chrome runs one that has no end — and when the last of
     // them lands, ask again.
-    const started = document.getAnimations().filter((a) => !priorMotion.has(a));
     Promise.allSettled(started.map((a) => a.finished)).then(refreshAim);
   }
   paintPending();
-  // Every action in the log is now decided (applied, skipped, or retired), and
-  // the stamp says so — it is what version check --render awaits before reading the
-  // replay's record, so the gate never reads a page mid-replay.
+  // Every action and report in the log is now decided (applied, skipped, or
+  // retired), and the stamp says so — it is what version check --render awaits
+  // before reading the replay's record, so the gate never reads a page mid-replay.
   document.body.setAttribute(PAGE_PAINT_ATTRIBUTE.applied, String(appliedActions.size));
 }
 
@@ -4993,10 +5043,13 @@ function applyActions() {
 // overwrites in the DOM.
 const authoredFacets = new Map(); // unit id -> the facet this version arrived showing
 
+// Both channels: a report's record form is a facet exactly as an action's is,
+// so the authored-facet capture and the diff's state half serve the two alike.
 function stateSpecs() {
   const specs = [];
   for (const [tag, entry] of Object.entries(registry))
-    for (const spec of Object.values(entry["x-state"] ?? {})) specs.push([tag, spec]);
+    for (const key of ["x-state", "x-report"])
+      for (const spec of Object.values(entry[key] ?? {})) specs.push([tag, spec]);
   return specs;
 }
 
@@ -5010,6 +5063,7 @@ function domFacet(el, record) {
       .map((o) => o.id)
       .sort()
       .join(" ");
+  if (record.kind === "value") return el.getAttribute(record.attr);
   if (record.kind === "position") return el.closest(record.within)?.id ?? null;
   return quoteFrom(textNodesUnder(el)); // "body": the words, read the way a quote is
 }
@@ -5068,6 +5122,25 @@ function stateFold(upto) {
   return fold;
 }
 
+// The agent channel's fold: the last standing report per declared unit as of
+// `upto`. Standing means inside the window and not answered by a note there —
+// no retraction floors, because a report is not a decision `restated` can take
+// back; a note naming it is the one way it ends.
+function reportFold(upto) {
+  const answered = answeredReports(upto);
+  const fold = new Map();
+  for (const e of events) {
+    if (e.kind !== "report" || e.version > upto || answered.has(e.id)) continue;
+    const el = document.getElementById(e.widget);
+    if (!el?.applyAction || inChrome(el)) continue;
+    const spec = registry[el.tagName.toLowerCase()]?.["x-report"]?.[e.action];
+    if (!spec) continue;
+    const unit = spec.unit === "widget" || !spec.unit ? e.widget : e.detail[spec.unit];
+    if (typeof unit === "string") fold.set(unit, { e, spec });
+  }
+  return fold;
+}
+
 // data-cq-pending: this element's decided state differs from what the version's
 // markup arrived showing — the record is behind the log. It clears when a
 // version carries the decision (the two agree again) or a retraction hands the
@@ -5075,8 +5148,8 @@ function stateFold(upto) {
 // with (honoring retires the wrapper), so it stays marked while the wrapper
 // stands.
 function paintPending() {
-  for (const el of document.querySelectorAll(`[${PAGE_PAINT_ATTRIBUTE.pending}]`))
-    el.removeAttribute(PAGE_PAINT_ATTRIBUTE.pending);
+  for (const attr of [PAGE_PAINT_ATTRIBUTE.pending, PAGE_PAINT_ATTRIBUTE.reported])
+    for (const el of document.querySelectorAll(`[${attr}]`)) el.removeAttribute(attr);
   for (const [unit, { e, spec }] of stateFold(VNUM)) {
     const el = document.getElementById(unit);
     if (!el) continue;
@@ -5084,6 +5157,16 @@ function paintPending() {
       ? foldedFacet(e, spec.record) !== authoredFacets.get(unit)
       : true;
     if (behind) el.setAttribute(PAGE_PAINT_ATTRIBUTE.pending, "1");
+  }
+  // The mirror mark, kept apart so a worker's news never wears the user's
+  // color: data-cq-reported says this element's state is a standing report the
+  // version's markup has not absorbed — provisional until a version answers it,
+  // where data-cq-pending says the reader decided and the record lags.
+  for (const [unit, { e, spec }] of reportFold(VNUM)) {
+    const el = document.getElementById(unit);
+    if (!el) continue;
+    if (foldedFacet(e, spec.record) !== authoredFacets.get(unit))
+      el.setAttribute(PAGE_PAINT_ATTRIBUTE.reported, "1");
   }
 }
 async function poll() {

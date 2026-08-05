@@ -300,6 +300,16 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0;
 [data-cq-pending] { outline: 2px solid color-mix(in srgb, var(--ok) 50%, transparent);
                     outline-offset: 3px; border-radius: 2px; }
 
+/* A worker's standing report: this element's state arrived through the log
+   (`colloquy report`) and no version has answered it yet. Provisional news
+   rather than a decision — amber and dashed, so it never reads as the user's
+   green, and it clears the moment a version absorbs or overrules the report
+   (the note's `reports` ids). The runtime sets this from the log; the
+   answering version's word is `overruled` on the element, or simply writing
+   the reported state. */
+[data-cq-reported] { outline: 2px dashed color-mix(in srgb, var(--warn) 55%, transparent);
+                     outline-offset: 3px; border-radius: 2px; }
+
 /* ---------- element-widgets ---------- */
 
 /* Every attribute the registry marks x-says is written twice here. The runtime

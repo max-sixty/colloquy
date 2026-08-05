@@ -86,11 +86,12 @@ Commands:
   events      Print the event log as JSON lines.
   page        Create pages and add media.
   reply       Reply to a thread as the agent.
+  report      Report a state change onto a page widget, as a worker.
   server      Run or stop the local server.
   status      Set the agent's banner state.
   transcript  Print the page's exchange as Markdown.
   version     Check, publish, and export versions.
-  wait        Print unacknowledged user events, then exit.
+  wait        Print unacknowledged user events and reports, then exit.
 """,
             id="root",
         ),
@@ -2343,6 +2344,174 @@ def test_restating_a_widget_that_kept_its_words_is_refused(page_dir):
     assert "unchanged since v1" in result.output
 
 
+def _tasks(status, extra=""):
+    """A one-task tree whose task carries the given status and extra attributes."""
+    return (
+        '<cq-tasks id="tree">'
+        f'<cq-task id="t-parser" status="{status}"{extra}><strong>Parser</strong></cq-task>'
+        "</cq-tasks>"
+    )
+
+
+def _tasks_version(page_dir, version, status, extra=""):
+    (page_dir / "versions" / f"v{version}.html").write_text(
+        PAGE.replace("<h2>Plan</h2>", "<h2>Plan</h2>" + _tasks(status, extra))
+    )
+
+
+def _report(page_dir, *args):
+    return CliRunner().invoke(interact.cli, ["report", str(page_dir), *args])
+
+
+def test_report_validates_at_the_door_and_stamps_identity(page_dir, monkeypatch):
+    """`colloquy report` is the report event's one door, so the widget, verb, and
+    detail are held to the x-report declaration there — the CLI mirror of the
+    POST door's action gate — and the event leaves stamped with the posting
+    session's voice and the version the reader is looking at."""
+    _tasks_version(page_dir, 1, "active")
+    unpublished = _report(page_dir, "t-parser", "status", "status=review")
+    assert unpublished.exit_code == 1
+    assert "no published version" in unpublished.output
+
+    publish(page_dir)
+    for args, message in [
+        (("nope", "status", "status=review"), "unknown report widget"),
+        (("tree", "status", "status=review"), "does not declare report verb"),
+        (("t-parser", "finish", "status=done"), "does not declare report verb"),
+        (("t-parser", "status", "status=shipping"), "detail is invalid"),
+        (("t-parser", "status", "status"), "name=value"),
+        (("t-parser", "status"), "'status' is a required property"),
+    ]:
+        refused = _report(page_dir, *args)
+        assert refused.exit_code == 1, args
+        assert message in refused.output, args
+    assert all(e["kind"] != "report" for e in interact.read_events(page_dir))
+
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "worker-1")
+    monkeypatch.setenv("COLLOQUY_AGENT", "Indexer")
+    sent = _report(page_dir, "t-parser", "status", "status=review")
+    assert sent.exit_code == 0, sent.output
+    event = interact.read_events(page_dir)[-1]
+    assert event["kind"] == "report" and event["author"] == "claude"
+    assert (event["agent"], event["session"]) == ("Indexer", "worker-1")
+    assert event["widget"] == "t-parser" and event["action"] == "status"
+    assert event["detail"] == {"status": "review"} and event["version"] == 1
+
+
+def test_a_version_may_not_quietly_contradict_a_standing_report(page_dir):
+    """A report is provisional news with the reviewer precedence reversed:
+    silence leaves it painting, writing the reported state absorbs it, and a
+    version that writes something else must say so with `overruled` — the gate
+    refuses the silent contradiction, which would otherwise drop a worker's
+    news without anyone adjudicating it."""
+    _tasks_version(page_dir, 1, "active")
+    publish(page_dir)
+    assert _report(page_dir, "t-parser", "status", "status=review").exit_code == 0
+
+    # Blessed silence: markup unchanged, the report keeps painting — and the
+    # passing run says so in the record-debt register.
+    _tasks_version(page_dir, 2, "active")
+    silent = check(page_dir, version=2)
+    assert silent.exit_code == 0
+    assert "a report records status → 'review'" in silent.output
+
+    # Honoring: writing the reported state.
+    _tasks_version(page_dir, 2, "review")
+    assert check(page_dir, version=2).exit_code == 0, "honoring a report must pass"
+
+    # Contradiction, unnamed: refused, naming the report and both states.
+    _tasks_version(page_dir, 2, "done")
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "contradicts a standing report" in result.output
+    assert "'done'" in result.output and "'review'" in result.output
+    assert "overruled" in result.output
+
+    # Said out loud, the same version publishes — including back to the state
+    # the report tried to move (rejecting the news without changing the page).
+    _tasks_version(page_dir, 2, "done", " overruled")
+    assert check(page_dir, version=2).exit_code == 0
+    _tasks_version(page_dir, 2, "active", " overruled")
+    assert check(page_dir, version=2).exit_code == 0
+
+
+def test_publishing_names_the_reports_it_answered(page_dir):
+    """Absorption is explicit, by id: the note carries the report ids the
+    version answered, and only that record ends a report — a later version is
+    free to move the state again exactly because the report ended."""
+    _tasks_version(page_dir, 1, "active")
+    runner = CliRunner()
+    assert (
+        runner.invoke(
+            interact.cli,
+            ["version", "publish", str(page_dir), "--version", "1", "--text", "cut"],
+        ).exit_code
+        == 0
+    )
+    sent = _report(page_dir, "t-parser", "status", "status=review")
+    assert sent.exit_code == 0
+    report_id = json.loads(sent.output)["id"]
+
+    _tasks_version(page_dir, 2, "review")
+    published = runner.invoke(
+        interact.cli,
+        ["version", "publish", str(page_dir), "--version", "2", "--text", "absorb"],
+    )
+    assert published.exit_code == 0, published.output
+    note = [e for e in interact.read_events(page_dir) if e["kind"] == "note"][-1]
+    assert note["reports"] == [report_id]
+
+    # The report ended at v2, so v3 owes it nothing.
+    _tasks_version(page_dir, 3, "done")
+    assert check(page_dir, version=3).exit_code == 0
+
+    # And a repeated `overruled` after the answer is the carried-forward
+    # attribute, refused the way a repeated `restated` is.
+    _tasks_version(page_dir, 3, "done", " overruled")
+    stale = check(page_dir, version=3)
+    assert stale.exit_code == 1
+    assert "v2 already answered" in stale.output
+
+
+def test_absorption_is_by_id_never_inferred_from_markup(page_dir):
+    """The bug put back: a v2 that writes the reported state but whose note
+    names no report ids (the shape a hand-built note has) leaves the report
+    standing, so a v3 that moves the state again is refused. Without the
+    id-explicit record the gate would infer absorption from v2's markup and let
+    the report die silently."""
+    _tasks_version(page_dir, 1, "active")
+    publish(page_dir)
+    assert _report(page_dir, "t-parser", "status", "status=review").exit_code == 0
+    _tasks_version(page_dir, 2, "review")
+    publish(page_dir, version=2)  # a bare note: honoring markup, nothing named
+
+    _tasks_version(page_dir, 3, "done")
+    result = check(page_dir, version=3)
+    assert result.exit_code == 1
+    assert "contradicts a standing report" in result.output
+
+
+def test_an_unearned_overruled_is_refused(page_dir):
+    """`overruled` discards a worker's news, so a version may only spend it
+    where a disagreement justifies it — agreeing with the report, or wearing it
+    with no report standing, is the reflex that would hollow the gate out."""
+    _tasks_version(page_dir, 1, "active")
+    publish(page_dir)
+
+    # Nothing standing at all.
+    _tasks_version(page_dir, 2, "active", " overruled")
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "nothing to overrule" in result.output
+
+    # Standing, but the markup writes the reported state: that is absorption.
+    assert _report(page_dir, "t-parser", "status", "status=review").exit_code == 0
+    _tasks_version(page_dir, 2, "review", " overruled")
+    result = check(page_dir, version=2)
+    assert result.exit_code == 1
+    assert "writes the reported state" in result.output
+
+
 def _board(todo, done):
     """A two-column board, each column given its cards as (id, attrs, title)."""
     card = lambda c: f'<cq-card id="{c[0]}"{c[1]}><strong>{c[2]}</strong></cq-card>'
@@ -2886,6 +3055,42 @@ def test_init_refuses_an_incoming_detail_contract_that_rejects_logged_actions(
     assert "detail" in result.output
 
 
+def test_init_refuses_a_logged_report_the_incoming_layer_no_longer_speaks(page_dir):
+    """A report is the log's forever-contract exactly as an action is: an
+    incoming layer that drops the widget's x-report verb strands every recorded
+    report, and the stamp refuses the re-vendor rather than let them fall
+    silent."""
+    version = page_dir / "versions" / "v1.html"
+    version.write_text(
+        version.read_text().replace(
+            "</section>",
+            '<cq-tasks id="tree"><cq-task id="t1" status="active">'
+            "<strong>Parse</strong></cq-task></cq-tasks></section>",
+        )
+    )
+    publish(page_dir)
+    assert (
+        CliRunner()
+        .invoke(interact.cli, ["report", str(page_dir), "t1", "status", "status=done"])
+        .exit_code
+        == 0
+    )
+
+    registry = json.loads((page_dir / "registry.json").read_text())
+    task = registry["cq-task"]
+    task.pop("x-report")
+    overlay = page_dir.parent / ".colloquy"
+    overlay.mkdir(parents=True)
+    (overlay / "registry.json").write_text(json.dumps({"cq-task": task}))
+
+    result = CliRunner().invoke(interact.cli, ["page", "init", str(page_dir)])
+
+    assert result.exit_code != 0
+    assert "no longer speaks" in result.output
+    assert "report contract" in result.output
+    assert "cq-task" in result.output and "status" in result.output
+
+
 def test_check_refuses_a_malformed_registry(page_dir):
     (page_dir / "registry.json").write_text("{broken")
     result = check(page_dir)
@@ -2949,6 +3154,85 @@ def test_check_refuses_malformed_registry_extensions(page_dir, key, value):
     result = check(page_dir)
     assert result.exit_code != 0
     assert "<cq-options> registry extensions are invalid" in result.output
+
+
+def _mutated_registry_check(page_dir, mutate):
+    registry = json.loads((page_dir / "registry.json").read_text())
+    mutate(registry)
+    (page_dir / "registry.json").write_text(json.dumps(registry))
+    return check(page_dir)
+
+
+def _report_body_record(registry):
+    registry["cq-task"]["x-report"]["status"]["record"] = {
+        "kind": "body",
+        "value": "status",
+    }
+
+
+def _report_no_record(registry):
+    del registry["cq-task"]["x-report"]["status"]["record"]
+
+
+def _report_undeclared_attr(registry):
+    registry["cq-task"]["x-report"]["status"]["record"]["attr"] = "phase"
+
+
+def _report_says_attr(registry):
+    registry["cq-task"]["x-says"] = {"owner": "before"}
+    registry["cq-task"]["x-report"]["status"] = {
+        "detail": {
+            "type": "object",
+            "properties": {"owner": {"type": "string"}},
+            "required": ["owner"],
+            "additionalProperties": False,
+        },
+        "unit": "widget",
+        "record": {"kind": "value", "attr": "owner", "value": "owner"},
+    }
+
+
+def _report_detail_drift(registry):
+    registry["cq-task"]["x-report"]["status"]["detail"]["properties"]["status"] = {
+        "type": "string"
+    }
+
+
+def _report_without_overruled(registry):
+    del registry["cq-task"]["properties"]["overruled"]
+
+
+def _report_without_upgrade(registry):
+    registry["cq-task"]["x-upgrade"] = False
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        # A report moves declared state only, never body words — the schema is
+        # where the paint-only constraint lives, so a body record never parses.
+        (_report_body_record, "registry extensions are invalid"),
+        # The gate compares record forms, so a recordless report declares
+        # nothing a version could be checked against.
+        (_report_no_record, "registry extensions are invalid"),
+        (_report_undeclared_attr, "records undeclared attribute `phase`"),
+        # An x-says value is the page's words: replay writing one would change
+        # what the page says while the file's reading held still.
+        (_report_says_attr, "records x-says attribute `owner`"),
+        # One vocabulary: the detail field speaks the attribute's own schema,
+        # or the log's contract and the markup's drift apart.
+        (_report_detail_drift, "must carry attribute `status`'s own schema"),
+        # `overruled` is how a version keeps its state over a report; without it
+        # every contradiction is unpublishable.
+        (_report_without_overruled, "not the boolean `overruled`"),
+        # Reports replay through applyAction, so the widget must upgrade.
+        (_report_without_upgrade, "declares x-report"),
+    ],
+)
+def test_an_x_report_declaration_is_checked_whole(page_dir, mutate, message):
+    result = _mutated_registry_check(page_dir, mutate)
+    assert result.exit_code != 0
+    assert message in result.output
 
 
 @pytest.mark.parametrize("tag", ["cq-options[", "CQ-options", "cq_options"])
@@ -3582,6 +3866,16 @@ def test_server_round_trip(server, page_dir):
         },
         {"kind": "reply", "parent": "nope", "version": 1, "text": "hi"},
         {"kind": "resolve", "parent": "nope"},
+        # A report is agent-authored: its one door is `colloquy report`, so the
+        # browser door refuses the kind outright rather than minting user
+        # events that outrank nothing.
+        {
+            "kind": "report",
+            "widget": "feeder-board",
+            "action": "move",
+            "detail": {"card": "card-baffle", "to": "col-doing", "index": 0},
+            "version": 1,
+        },
         ["not", "an", "object"],
     ]:
         status, body = fetch(f"{server}/api/event", data=json.dumps(bad).encode())
@@ -4157,6 +4451,30 @@ def test_wait_prints_unacknowledged_user_events_and_flips_status(page_dir, capsy
     interact.cmd_status(page_dir, "working", "revising the plan")
     assert "handoff" not in interact.read_json(page_dir / "status.json")
 
+    # A worker's report wakes the watcher like a user event — it is the
+    # orchestrator's to fold into a version — but the reader's banner count
+    # deliberately leaves it out: a report is news the agent owes the page, not
+    # something the reader owes an answer.
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "report",
+            "author": "claude",
+            "agent": "Indexer",
+            "session": "worker-1",
+            "widget": "t1",
+            "action": "status",
+            "detail": {"status": "review"},
+            "version": 1,
+        },
+    )
+    assert page_state(page_dir)["pending"] == 0
+    assert interact.cmd_wait(page_dir) == 0
+    shown = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert [(e["kind"], e.get("agent")) for e in shown] == [("report", "Indexer")]
+    interact.cmd_ack(page_dir, 4)
+    assert interact.read_json(page_dir / "cursor.json")["seq"] == 4
+
 
 def test_ack_checks_its_target_and_advances_monotonically(page_dir):
     interact.append_event(
@@ -4177,13 +4495,29 @@ def test_ack_checks_its_target_and_advances_monotonically(page_dir):
 
     agent_event = runner.invoke(interact.cli, ["ack", str(page_dir), "1"])
     assert agent_event.exit_code == 1
-    assert "event 1 is not a user event" in agent_event.output
+    assert "event 1 is neither a user event nor a report" in agent_event.output
 
     first = runner.invoke(interact.cli, ["ack", str(page_dir), "3"])
     retry = runner.invoke(interact.cli, ["ack", str(page_dir), "3"])
     older = runner.invoke(interact.cli, ["ack", str(page_dir), "2"])
     assert first.exit_code == retry.exit_code == older.exit_code == 0
     assert interact.read_json(page_dir / "cursor.json") == {"seq": 3}
+
+    # A worker's report is part of the watcher's batch, so it is a valid ack
+    # target too — the same cursor covers both kinds.
+    interact.append_event(
+        page_dir,
+        {
+            "kind": "report",
+            "author": "claude",
+            "widget": "t1",
+            "action": "status",
+            "detail": {"status": "review"},
+            "version": 1,
+        },
+    )
+    assert runner.invoke(interact.cli, ["ack", str(page_dir), "4"]).exit_code == 0
+    assert interact.read_json(page_dir / "cursor.json") == {"seq": 4}
 
 
 def test_wait_preserves_a_working_status_on_mid_work_output(page_dir, capsys):
@@ -4432,7 +4766,7 @@ def test_prompt_hook_surfaces_comments_claude_never_picked_up(claimed, capsys):
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"][
         "additionalContext"
     ]
-    assert "1 user event you haven't picked up" in context
+    assert "1 update you haven't picked up" in context
 
     # Not while a watcher is live: it prints them itself, and sending Claude to start a
     # second `colloquy wait` would print every unacknowledged event twice.
@@ -4469,7 +4803,7 @@ def test_only_serving_or_watching_a_page_puts_the_session_under_the_guard(
     # If wait's process finished without its output entering model context, the event
     # remains recoverable and the next hook names it rather than calling it delivered.
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s7"})
-    assert "1 user event" in json.loads(capsys.readouterr().out)["reason"]
+    assert "1 update" in json.loads(capsys.readouterr().out)["reason"]
 
     interact.cmd_ack(page_dir, 1)
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s7"})
@@ -4504,7 +4838,7 @@ def test_idle_cannot_close_a_page_over_events_nobody_read(claimed, capsys):
     interact.append_event(claimed, {"kind": "comment", "author": "user", "text": "hi"})
     refused = CliRunner().invoke(interact.cli, ["status", str(claimed), "idle"])
     assert refused.exit_code == 1
-    assert "1 user event nobody has picked up" in refused.output
+    assert "1 update nobody has picked up" in refused.output
     assert interact.ACK_BATCH_INSTRUCTION in refused.output
     assert interact.read_json(claimed / "status.json")["state"] != "idle"
 
@@ -4518,6 +4852,28 @@ def test_idle_cannot_close_a_page_over_events_nobody_read(claimed, capsys):
     )
     interact.cmd_hook({"hook_event_name": "Stop", "session_id": "s1"})
     assert capsys.readouterr().out == ""
+
+    # A worker's report holds idle the same way: idling over one would freeze its
+    # provisional state on the page forever, with nobody left to absorb it.
+    interact.append_event(
+        claimed,
+        {
+            "kind": "report",
+            "author": "claude",
+            "widget": "t1",
+            "action": "status",
+            "detail": {"status": "review"},
+            "version": 1,
+        },
+    )
+    refused = CliRunner().invoke(interact.cli, ["status", str(claimed), "idle"])
+    assert refused.exit_code == 1
+    assert "1 update nobody has picked up" in refused.output
+    assert CliRunner().invoke(interact.cli, ["ack", str(claimed), "2"]).exit_code == 0
+    assert (
+        CliRunner().invoke(interact.cli, ["status", str(claimed), "idle"]).exit_code
+        == 0
+    )
 
 
 def test_session_end_idles_the_page_and_stops_its_server(claimed):
