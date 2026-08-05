@@ -3956,6 +3956,87 @@ def test_two_pages_on_one_machine_get_their_own_cookie(page_dir, tmp_path):
     assert interact.access_cookie(page_dir) != interact.access_cookie(other)
 
 
+def neighbour_page(directory, title=None, pid=None, published=True):
+    """A page another server is serving, written down the way `server run` writes
+    it: a version on disk, its note in the log, and a server.json naming a pid.
+    The pid defaults to this test process — a live one."""
+    (directory / "versions").mkdir(parents=True)
+    head = f"<title>{title}</title>" if title else ""
+    (directory / "versions" / "v1.html").write_text(
+        f"<!doctype html><html><head>{head}</head>"
+        "<body><main><p>words</p></main></body></html>"
+    )
+    if published:
+        interact.append_event(
+            directory, {"kind": "note", "author": "claude", "version": 1, "text": "t"}
+        )
+    url = f"http://127.0.0.1:59999/?t=key-{directory.name}"
+    interact.write_json(
+        directory / "server.json",
+        {"port": 59999, "pid": pid or os.getpid(), "url": url, "lifetime": "standing"},
+    )
+    return url
+
+
+def test_state_ships_the_machines_other_live_colloquys(page_dir, server, tmp_path):
+    """`others` on /api/state is every page a live server holds up, found through
+    both places pages are written down — the conventional pages/ home and the
+    live-session registry — titled by its newest published version, and nothing
+    else: not a dead server's page, not one with nothing published to link, and
+    not the page doing the asking."""
+    pages = interact.state_home() / "pages"
+    live_url = neighbour_page(pages / "live", title="The other page")
+    gone = subprocess.Popen([sys.executable, "-c", ""])
+    gone.wait()
+    neighbour_page(pages / "dead", title="A dead server's page", pid=gone.pid)
+    neighbour_page(pages / "unpublished", title="Nothing to link", published=False)
+    # A neighbour something corrupted: its log no longer parses, and the fault
+    # stays its own — skipped, rather than 500ing every other page's poll.
+    neighbour_page(pages / "corrupt", title="A corrupted page")
+    (pages / "corrupt" / "comments.jsonl").write_text('{"kind": "note", "author"')
+    # A page served from a session's scratch directory, plus the asking page
+    # itself: the registry finds the first, and the second stays out of its own
+    # list. Untitled, so the title falls back to the directory's name.
+    claimed_url = neighbour_page(tmp_path / "scratch")
+    sessions = interact.state_home() / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    interact.write_json(
+        sessions / "s1.json",
+        {
+            "pid": os.getpid(),
+            "pages": [str(tmp_path / "scratch"), str(page_dir)],
+            "ts": "2026-01-01T00:00:00-08:00",
+        },
+    )
+
+    state = json.loads(fetch(f"{server}/api/state")[1])
+    assert state["others"] == [
+        {"title": "scratch", "url": claimed_url},
+        {"title": "The other page", "url": live_url},
+    ]
+
+
+@pytest.fixture
+def wildcard_server(page_dir):
+    """The stated-host bind: a real server on "::", the network-facing socket."""
+    httpd = interact.DualStackHTTPServer(
+        ("::", 0), interact.handler_for(page_dir, TOKEN)
+    )
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    httpd.shutdown()
+
+
+def test_others_ride_only_a_loopback_bind(wildcard_server):
+    """Every URL in `others` carries its page's key. A loopback server's reader is
+    on this machine, where the keys are theirs to read off disk; a network-facing
+    bind (--host, an SSH route) hands its whole network whatever it ships, so
+    there the state carries an empty list rather than the way into every page."""
+    neighbour_page(interact.state_home() / "pages" / "live", title="The other page")
+    state = json.loads(fetch(f"{wildcard_server}/api/state")[1])
+    assert state["others"] == []
+
+
 def test_a_bare_ipv6_address_is_bracketed_in_the_url():
     """A v6 address is colons all the way down, and the authority separates its port
     with one too."""

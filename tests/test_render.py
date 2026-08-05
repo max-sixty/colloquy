@@ -1450,7 +1450,7 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
     url = serve(html, comments=9)
     d = serve.page_dir
     page, errors = open_page(browser, url, pin=True)
-    comments = ".cq-banner button[aria-expanded]"
+    comments = ".cq-banner .cq-comments"
     accept_all = '.cq-banner [title^="Accept every"]'
     page.wait_for_function(
         f"() => document.querySelector('{comments}').textContent === 'Comments (9)'"
@@ -1550,6 +1550,78 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
     assert page.evaluate(states_a_width) == wide, (
         "a banner with no room left took it out of the controls that state a width, "
         "which is what leaves them free to move on the next thing that arrives"
+    )
+    assert errors == []
+    page.close()
+
+
+@pytest.fixture
+def other_colloquy(tmp_path, monkeypatch):
+    """A second live colloquy for the banner's menu to find: published, served by a
+    real handler, and written down under the state home the way `server run` writes
+    it — which is the whole of how one page learns another exists."""
+    monkeypatch.chdir(tmp_path)  # keep the project layer out of the overlay
+    d = interact.state_home() / "pages" / "other"
+    result = CliRunner().invoke(interact.cli, ["page", "init", str(d)])
+    assert result.exit_code == 0, result.output
+    (d / "versions" / "v1.html").write_text(
+        LONG_PAGE.replace("<title>long</title>", "<title>The other colloquy</title>")
+    )
+    interact.append_event(
+        d, {"kind": "note", "author": "claude", "version": 1, "text": "t"}
+    )
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(d, TOKEN))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    port = httpd.server_address[1]
+    interact.write_json(
+        d / "server.json",
+        {
+            "port": port,
+            "pid": os.getpid(),
+            "url": f"http://127.0.0.1:{port}/?t={TOKEN}",
+            "lifetime": "standing",
+        },
+    )
+    yield f"http://127.0.0.1:{port}"
+    httpd.shutdown()
+
+
+def test_the_banner_links_the_machines_other_colloquys(browser, serve, other_colloquy):
+    """The Other colloquys menu, end to end: the banner counts the machine's other
+    live pages, a press opens a card of links named by each page's own title, and a
+    link opens that page — root URL, key and all — in a tab of its own, leaving this
+    one where it was. Esc is the card's rung on the ladder. On a machine serving
+    nothing else the button never appears, which every other test here shows for
+    free; what needs a second server is the menu itself."""
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    btn = page.locator(".cq-others")
+    expect(btn).to_have_text("Other colloquys (1)")
+    btn.click()
+    link = page.locator(".cq-others-menu a")
+    expect(link).to_have_text("The other colloquy")  # the page's title, not its slug
+    with page.context.expect_page() as opened:
+        link.click()
+    # The other server's own redirect lands the new tab on its newest published
+    # version, authorized by the key the link carried.
+    expect(opened.value).to_have_url(f"{other_colloquy}/versions/v1.html")
+    expect(page.locator(".cq-others-menu")).to_be_visible()  # the press left this tab alone
+    page.keyboard.press("Escape")
+    expect(page.locator(".cq-others-menu")).not_to_be_visible()
+    expect(btn).to_be_visible()  # closing the card keeps the standing button
+    expect(btn).to_have_text("Other colloquys (1)")  # and the count
+    # The count's reservation, swept here because this is the one test that ever
+    # renders the button — every other page here runs under an isolated HOME, so
+    # neither the press sweep nor the poll test can reach it. The widest label
+    # below a thousand must not move the control.
+    before, widest = page.evaluate(
+        """() => { const b = document.querySelector('.cq-others');
+                   const before = b.offsetWidth;
+                   b.textContent = 'Other colloquys (999)';
+                   return [before, b.offsetWidth]; }"""
+    )
+    assert widest == before, (
+        f"'Other colloquys (999)' grew the button {before}px -> {widest}px: its "
+        "reserve list no longer names the widest label renderOthers writes"
     )
     assert errors == []
     page.close()
@@ -2123,7 +2195,7 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
     page.wait_for_function("() => document.body.scrollTop > 0")
     before = page.evaluate("() => document.body.scrollTop")
 
-    page.locator("button[aria-expanded]").click()
+    page.locator(".cq-comments").click()
     panel_settled(page)
 
     # One wheel over the page's visible sliver, one over the sheet. Waiting on the
@@ -2176,7 +2248,7 @@ def test_covering_panel_takes_the_page_scroll_with_it(browser, serve):
     page.wait_for_function(f"() => document.body.scrollTop > {at_mark}")
 
     # The resize path: narrowing onto an open panel locks, widening unlocks.
-    page.locator("button[aria-expanded]").click()
+    page.locator(".cq-comments").click()
     panel_settled(page)
     resized(page, 1000, 600)
     page.wait_for_function(
@@ -2197,7 +2269,7 @@ def test_covering_panel_keeps_toasts_on_screen_and_clear_of_the_footer(browser, 
     then returns beside it at the first width where the panel stops covering."""
     page, _ = open_page(browser, serve(LONG_PAGE))
     resized(page, 320, 600)
-    page.locator("button[aria-expanded]").click()
+    page.locator(".cq-comments").click()
     page.locator(".cq-general textarea").fill("The unsent comment stays here.")
 
     message = (
@@ -2319,7 +2391,7 @@ def test_a_sent_comment_is_revealed_in_the_panel(browser, serve):
     sight, silently. Both send routes then end in the composer the words left, where
     the rebuild sent a button click's focus somewhere else than ⌘⏎'s."""
     page, errors = open_page(browser, serve(LONG_PAGE, comments=12))
-    page.locator("button[aria-expanded]").click()
+    page.locator(".cq-comments").click()
     panel_settled(page)
     assert page.evaluate(
         "() => { const t = document.querySelector('.cq-threads');"
@@ -2357,7 +2429,7 @@ def test_an_arriving_reply_leaves_the_list_where_the_reader_put_it(browser, serv
     free to adjust. The old rebuild restored the offset and let the content slide under
     it."""
     page, errors = open_page(browser, serve(LONG_PAGE, comments=12))
-    page.locator("button[aria-expanded]").click()
+    page.locator(".cq-comments").click()
     panel_settled(page)
     held = page.evaluate("""() => {
         const box = document.querySelector('.cq-threads');
@@ -2405,7 +2477,7 @@ def test_an_arrival_interrupts_nothing_the_user_holds(browser, serve):
     could only approximate this by saving and restoring focus and caret by hand, and
     the two send routes proved the restore had holes."""
     page, errors = open_page(browser, serve(LONG_PAGE, comments=3))
-    page.locator("button[aria-expanded]").click()
+    page.locator(".cq-comments").click()
     panel_settled(page)
     ta = page.locator(".cq-threads > .cq-thread").first.locator("textarea")
     ta.click()
@@ -2452,7 +2524,7 @@ def test_resolving_an_early_thread_renumbers_the_rest_in_place(browser, serve):
     resolution instead of snapping shut on every arrival, which is what the rebuild
     did."""
     page, errors = open_page(browser, serve(LONG_PAGE, comments=3))
-    page.locator("button[aria-expanded]").click()
+    page.locator(".cq-comments").click()
     panel_settled(page)
     c1, c2, c3 = [
         e["id"] for e in interact.read_events(serve.page_dir) if e["kind"] == "comment"
@@ -9856,7 +9928,7 @@ def test_a_written_comment_keeps_its_originating_agent(browser, serve, monkeypat
     )
     page, errors = open_page(browser, url)
     page.wait_for_function("() => (CSS.highlights.get('cq-mark')?.size ?? 0) > 0")
-    toggle = page.locator("button[aria-expanded]")
+    toggle = page.locator(".cq-comments")
     expect(toggle).to_have_text(
         "Comments (1)"
     )  # counted as open, like any other thread
@@ -9895,7 +9967,7 @@ def test_a_reply_toast_keeps_its_originating_agent(browser, serve):
         {"id": "claude", "pid": os.getpid(), "agent": "Claude", "ts": "t"},
     )
     page, errors = open_page(browser, url)
-    expect(page.locator("button[aria-expanded]")).to_have_text("Comments (1)")
+    expect(page.locator(".cq-comments")).to_have_text("Comments (1)")
 
     interact.append_event(
         d,

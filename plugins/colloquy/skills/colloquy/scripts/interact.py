@@ -944,6 +944,64 @@ def owned_pages(session_id: str) -> list:
     ]
 
 
+def other_colloquys(page_dir: Path) -> list:
+    """The machine's other live colloquys — a title and handover URL for each
+    page whose server is up — for the banner's "Other colloquys" menu.
+
+    Candidates are the two places page directories are already written down:
+    the conventional pages/ home and the live-session registry, which is what
+    finds a page served from a session's scratch directory. Liveness is
+    server.json's pid, the same answer `running_server` gives everything else,
+    and the URL is the one that server minted, key included. The title is the
+    newest published version's — the version that page's own root URL answers
+    with — read the way `transcript` reads it.
+
+    Uncached, on every /api/state: the whole scan measured ~5ms against a state
+    home holding forty pages, three of them live."""
+    candidates = []
+    pages = state_home() / "pages"
+    if pages.is_dir():
+        candidates += (d for d in pages.iterdir() if d.is_dir())
+    sessions = state_home() / "sessions"
+    if sessions.is_dir():
+        for record in sessions.glob("*.json"):
+            # claim_page prunes dead sessions' records; one can vanish mid-scan.
+            entry = read_json(record)
+            if entry:
+                candidates += (Path(p) for p in entry["pages"])
+    others = []
+    seen = {page_dir.resolve()}
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if candidate in seen or not candidate.is_dir():
+            continue
+        seen.add(candidate)
+        # A neighbour's fault stays its own. This is the one read of state some
+        # other page owns: a directory deleted mid-scan (stale pages are deleted
+        # and made again) or a log a disk fault corrupted would otherwise 500
+        # every open page's poll on the machine, blaming the page that asked.
+        try:
+            info = running_server(candidate)
+            if not info:
+                continue
+            events = read_events(candidate)
+            published = published_versions(candidate, events)
+            # A server up before its page's first publish serves nothing to link.
+            if not published:
+                continue
+            parser = _StructParser()
+            parser.feed(
+                version_path(candidate, published[-1]).read_text(encoding="utf-8")
+            )
+            parser.close()
+        except (OSError, ValueError):
+            continue
+        others.append(
+            {"title": parser.title.strip() or candidate.name, "url": info["url"]}
+        )
+    return sorted(others, key=lambda entry: entry["title"].lower())
+
+
 def unacknowledged(events: list, cursor: int) -> list:
     """The user's events past the acknowledgement cursor: posted, and not yet
     confirmed in the agent's model context. The one predicate for that — the
@@ -1075,7 +1133,18 @@ class Handler(BaseHTTPRequestHandler):
             # versions through the handler's own view, so a preview server's
             # state agrees with what it serves (identical when not previewing).
             events = read_events(self.page_dir)
-            self._json(full_state(self.page_dir, events, self.versions_live(events)))
+            state = full_state(self.page_dir, events, self.versions_live(events))
+            # Every URL in `others` carries its page's key, so the list rides
+            # only a loopback bind, asked of the socket this server actually
+            # bound: this machine's reader could read the keys off disk anyway,
+            # where a network the server faces (--host, an SSH route) gets the
+            # way into every other page from the one URL it was handed.
+            state["others"] = (
+                other_colloquys(self.page_dir)
+                if ipaddress.ip_address(self.server.server_address[0]).is_loopback
+                else []
+            )
+            self._json(state)
             return
         # Browsers ask for this unprompted. Answering "no content" rather than
         # letting it fall through to 404 keeps the console clean, which is what

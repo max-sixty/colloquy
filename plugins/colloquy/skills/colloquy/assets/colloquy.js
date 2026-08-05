@@ -1066,6 +1066,24 @@ style.textContent = `
       .cq-banner select, .cq-resolve { font: inherit; }
     }
     .cq-banner select { padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; flex: none; width: 190px; text-overflow: ellipsis; }
+    .cq-others { anchor-name: --cq-others-btn; }
+    /* The colloquys menu, anchored to its button: a card of links out to the machine's
+       other live pages, each opening in its own tab. Fixed against the viewport like the
+       help overlay, so no banner overflow rule can clip it. */
+    .cq-others-menu { position: fixed; position-anchor: --cq-others-btn; z-index: 9200;
+      top: calc(anchor(bottom) + 6px); right: anchor(right); display: none;
+      min-width: 200px; max-width: 320px; background: var(--card);
+      border: 1px solid var(--border-2); border-radius: var(--r);
+      box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px;
+      /* Fixed, so page scroll never reaches it: past this height the card
+         scrolls itself, and one wheel gesture moves one region. */
+      max-height: calc(100vh - 60px); overflow-y: auto; overscroll-behavior: contain; }
+    .cq-others-menu.open { display: block; }
+    .cq-others-menu a { display: block; padding: 6px 10px; border-radius: 6px;
+      color: inherit; text-decoration: none; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; }
+    .cq-others-menu a:hover { background: var(--chip); }
+    .cq-others-menu a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
     /* The one control on the right of the row that may give, because it is the leftmost
        of them and giving there moves nothing; the status text, off at the other end, is
        the other. The rest are .cq-btn, floored at their own words by nowrap — the chooser
@@ -1224,7 +1242,7 @@ const el = (tag, cls, text) => {
 const banner = el("div", "cq-ui cq-banner");
 const dot = el("span", "cq-dot");
 const statusText = el("span", "cq-status-text", "Connecting…");
-// The three controls the banner's news arrives as, each present only while it has
+// The controls the banner's news arrives as, each present only while it has
 // something to say. Room a control has once taken is room it keeps for the rest of the
 // page's life: before it first appears there is nothing to hold, so a page that never
 // falls behind pays nothing for the chip, and once one has stood somewhere the others
@@ -1249,7 +1267,47 @@ const diffBtn = el("button", "cq-btn", "Δ");
 // has not scrolled that far still knows there is something to answer.
 const asksBtn = el("button", "cq-btn cq-asks", "");
 asksBtn.title = "Go to the next thing this page is waiting on you for (a)";
-for (const control of [latestChip, diffBtn, asksBtn]) showNews(control, false);
+// The machine's other live colloquys, each a link opening in its own tab. The server
+// ships the list with every poll (`others` on /api/state — loopback binds only, since
+// each URL carries its page's key); the menu is built at open from the newest list, so
+// a poll never reshuffles links under the pointer, and a list going stale under an open
+// menu waits for the close rather than yanking what the user is reading.
+const othersBtn = el("button", "cq-btn cq-others", "");
+othersBtn.title = "Other colloquy pages live on this machine — each opens in a new tab";
+othersBtn.setAttribute("aria-expanded", "false");
+// A nav, because navigation is what it is and a bare div may not carry the
+// aria-label the card needs (axe: aria-prohibited-attr, serious).
+const othersMenu = el("nav", "cq-ui cq-others-menu");
+othersMenu.setAttribute("aria-label", "Other colloquys");
+let others = [];
+let othersOpen = false;
+function showOthers(open) {
+  othersOpen = open;
+  if (open) {
+    othersMenu.textContent = "";
+    for (const { title, url } of others) {
+      const link = el("a", "", title);
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      // The card ellipsizes a long title; the tooltip holds the whole of it.
+      link.title = title;
+      othersMenu.append(link);
+    }
+  } else if (othersMenu.contains(document.activeElement)) othersBtn.focus();
+  othersMenu.classList.toggle("open", open);
+  othersBtn.setAttribute("aria-expanded", String(open));
+  paintLine();
+}
+othersBtn.onclick = () => showOthers(!othersOpen);
+function renderOthers(state) {
+  others = state.others ?? []; // an older server ships no list, which is an empty one
+  othersBtn.textContent = `Other colloquys (${others.length})`;
+  // While the menu stands its button stands too, whatever the count just did.
+  showNews(othersBtn, others.length > 0 || othersOpen);
+}
+for (const control of [latestChip, diffBtn, asksBtn, othersBtn])
+  showNews(control, false);
 const versionSelect = document.createElement("select");
 versionSelect.title = "Version";
 versionSelect.setAttribute("aria-label", "Version");
@@ -1276,6 +1334,7 @@ banner.append(
   dot,
   statusText,
   el("span", "cq-spacer"),
+  othersBtn,
   latestChip,
   asksBtn,
   diffBtn,
@@ -1344,7 +1403,17 @@ keylineEl.setAttribute("aria-hidden", "true");
 // this container. A div, not a cq-* element — the render gate reads a cq-* ancestor
 // as "inside a widget", and the runtime's layer is inside none.
 const chromeRoot = el("div", "cq-chrome");
-chromeRoot.append(banner, panel, fab, composer, toastEl, liveEl, helpEl, keylineEl);
+chromeRoot.append(
+  banner,
+  othersMenu,
+  panel,
+  fab,
+  composer,
+  toastEl,
+  liveEl,
+  helpEl,
+  keylineEl,
+);
 document.body.append(chromeRoot);
 // The controls that rewrite their own words hold the widest of them now, measured in
 // the face the banner just rendered them in (see the stylesheet's banner comment).
@@ -1354,6 +1423,7 @@ document.body.append(chromeRoot);
 if (SIGNOFF) reserve(approveBtn, ["✓ Looks good", "✓ Approved"]);
 reserve(toggleBtn, ["Comments", "Comments (999)"]);
 reserve(asksBtn, ["Asks (999)"]);
+reserve(othersBtn, ["Other colloquys (999)"]);
 const basePaddingTop = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
 document.body.style.paddingTop = basePaddingTop + banner.offsetHeight + "px";
 // The banner's reservation at the other edge: the key line stands for the page's
@@ -3305,6 +3375,8 @@ function standDown(target) {
     if (composerOpen && !composerInput.value) hideComposer();
   }
   if (helpOpen && !target.closest?.(".cq-help")) showHelp(false);
+  if (othersOpen && !target.closest?.(".cq-others, .cq-others-menu"))
+    showOthers(false);
 }
 document.addEventListener("mousedown", (ev) => standDown(ev.target));
 
@@ -3740,7 +3812,7 @@ const KEYS = [
   { key: "?", label: "?", does: "This key reference", line: "keys", run: toggleHelp },
   {
     label: "Esc",
-    does: "Back out one layer: an armed g, help, composer, a box you are typing in, panel",
+    does: "Back out one layer: an armed g, help, the colloquys menu, composer, a box you are typing in, panel",
   },
   { label: SEND_KEYS, does: "Send, in the focused composer" },
 ];
@@ -3802,6 +3874,9 @@ document.addEventListener("keydown", (ev) => {
   // everywhere; the overlay holds focus on open, so reaching one takes a deliberate
   // Tab out.
   if (helpOpen && ev.key !== "?") return;
+  // The colloquys menu is a scope the same way: while it stands the table stands
+  // down, so the key line's "esc close menu" is the whole truth.
+  if (othersOpen) return;
   const bound = KEYS.find((b) => b.key === ev.key);
   if (!bound || !live(bound)) return;
   ev.preventDefault();
@@ -3842,6 +3917,8 @@ function scene() {
     };
   if (helpOpen)
     return { rows: [], esc: { says: "close help", out: () => showHelp(false) } };
+  if (othersOpen)
+    return { rows: [], esc: { says: "close menu", out: () => showOthers(false) } };
   if (composerOpen)
     return {
       rows:
@@ -4827,6 +4904,7 @@ async function poll() {
   agent = state.agent || "Claude";
   renderStatus(state);
   renderVersions(state);
+  renderOthers(state);
   if (eventSeq > lastEventSeq) {
     lastEventSeq = eventSeq;
     // prune only here, where events is the server's truth — never from renderThreads,

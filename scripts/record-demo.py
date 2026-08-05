@@ -422,7 +422,7 @@ def shoot_stills(
             "() => document.querySelector('.cq-status-text')"
             ".textContent.includes('is listening')"
         )
-        page.locator(".cq-banner button[aria-expanded]").click()
+        page.locator(".cq-banner .cq-comments").click()
         page.wait_for_selector(".cq-thread .cq-msg.claude")
         page.locator("#top").scroll_into_view_if_needed()
         # The panel's margin transition, asked of the transition rather than waited out:
