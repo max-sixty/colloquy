@@ -197,7 +197,10 @@ name is anyone's to choose and two workers may share one.
 A message body is Markdown, stored as typed and
 rendered by the page's own vendored runtime — the browser is where the page's other
 rendering already lives, and vendoring the renderer beside the panel's styles is what
-keeps the two versioning together. Raw HTML in a body renders as its characters there,
+keeps the two versioning together. A fragment link in a body — `[the group](#d-channel)`,
+either author's — points at an element of the page, and the browser's own navigation
+carries the reader there; the runtime only marks one this version can't follow, since a
+message outlives the version it was written on. Raw HTML in a body renders as its characters there,
 so text cannot inject markup; a widget rides the event's `markup` field instead, whose
 one door is `colloquy comment`/`colloquy reply`, where it is validated against the
 vendored registry — the discussion-side analog of `version check`. The browser door refuses the

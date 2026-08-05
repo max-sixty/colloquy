@@ -333,7 +333,14 @@ For each acknowledged batch:
      warrants it — usually both. A reply's `--text` is brief Markdown — lists, `code`,
      fenced blocks, a table, bare URLs arrive as links — and every raw tag in it
      renders as its characters: write `<T>`, `<div>`, or a `cq-` tag in prose and
-     the user reads exactly those words. To put a widget in the thread (a small
+     the user reads exactly those words. Point at the page with an ordinary
+     Markdown fragment link — "pick [the channel decision](#d-channel)" — and the
+     words carry the reader to that element, opening whatever tab or settled group
+     hides it. Reach for one whenever a reply names a part of the page: telling
+     them where to look costs a sentence they then have to act on, where a
+     reference is the act. Nothing checks the id, so keep it right; one this
+     version hasn't got renders detached, like a quote whose passage left the page.
+     To put a widget in the thread (a small
      `cq-diagram` explaining a fix renders live there), pass its markup as `--markup`,
      which renders after the text. `colloquy reply` validates it against the vendored
      registry and rejects what `version check` would, and a widget's ids must be
@@ -476,6 +483,9 @@ words an edit replaced is refused with what to do about it, rather than posted a
 comment that lands nowhere — as is a `--section` naming an element their decision left
 empty (a deletion accepted, an insertion refused): present in the file, absent from
 their screen.
+
+A comment's `--text` is the same Markdown a reply's is, fragment links included:
+`[the group](#d-channel)` carries the reader to that element.
 
 A comment asks; a `cq-suggestion` proposes. Where you have the better sentence, ship it
 as a suggestion in the next version and let them accept it — a comment is for the

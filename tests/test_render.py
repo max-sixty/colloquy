@@ -4694,6 +4694,89 @@ def test_a_key_walks_the_page_s_open_asks(browser, serve):
     page.close()
 
 
+# One target of ordinary height and one taller than any viewport, both far enough down
+# that arriving at either is a real scroll.
+TRAVEL_PAGE = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>travel</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Placement</h1>
+{"".join(f"<p>Fill paragraph {i}, long enough to take a line of its own.</p>" for i in range(10))}
+<cq-diagram id="flow"><pre>
+graph LR
+  Cart --&gt; Pay
+</pre></cq-diagram>
+{"".join(f"<p>More fill, paragraph {i}.</p>" for i in range(10))}
+<section id="long-part">
+<h2>The long tail</h2>
+{"".join(f"<p>Tail fill, paragraph {i}, deep enough that the section outgrows any viewport.</p>" for i in range(24))}
+</section>
+</main>
+</body>
+</html>
+"""
+
+
+def test_travelling_to_an_element_lands_where_it_was_aimed(browser, serve):
+    """Clicking a quoteless thread's § label brings its element to the middle — the
+    one promise every caller of that travel makes, the `a` key's landing included.
+
+    It was 27px short of the middle in every one of them, and invisibly so: the
+    scroller declares `scroll-padding-top` to keep a native fragment jump clear of
+    the banner, and scrollIntoView's own "center" measures against the padded box
+    rather than the viewport. So the arithmetic is the painted-range branch's, which
+    never went through scrollIntoView and never drifted.
+
+    A section taller than the viewport is the case centring cannot serve at all:
+    put its middle in the middle and the heading the reader was sent to is above
+    the top edge. It takes the banner clearance instead — read from the same
+    declaration, so the number lives in one place — and the reader starts at the
+    start."""
+    url = serve(TRAVEL_PAGE)
+    thread = {
+        section: interact.append_event(
+            serve.page_dir,
+            {
+                "kind": "comment",
+                "author": "user",
+                "version": 1,
+                "text": f"About {section}.",
+                "anchor": {"section": section},
+            },
+        )["id"]
+        for section in ("flow", "long-part")
+    }
+    page, errors = open_page(browser, url)
+    page.get_by_role("button", name="Comments", exact=False).click()
+    quote = lambda section: page.locator(
+        f'.cq-thread[data-id="{thread[section]}"] .cq-quote'
+    )
+
+    # Centred: the destination the travel computed, which a glide toward it passes
+    # through no earlier position that could be mistaken for.
+    quote("flow").click()
+    page.wait_for_function(
+        """() => { const r = document.getElementById('flow').getBoundingClientRect();
+                   return r.height > 0
+                       && Math.abs(r.top + r.height / 2 - innerHeight / 2) < 2; }"""
+    )
+
+    quote("long-part").click()
+    page.wait_for_function(
+        """() => { const r = document.getElementById('long-part').getBoundingClientRect();
+                   const clear = parseFloat(getComputedStyle(document.body).scrollPaddingTop);
+                   return r.height > innerHeight && Math.abs(r.top - clear) < 2; }"""
+    )
+    assert errors == []
+    page.close()
+
+
 def test_an_ask_joins_the_walk_by_being_declared(browser, serve):
     """The list is never closed, and this is the test of it: a widget core has never
     heard of joins the count, the walk and the overlay by its registry entry alone,
@@ -5116,6 +5199,91 @@ def test_a_reply_renders_the_markdown_it_was_written_in(browser, serve):
     # the message says.
     text = body.inner_text()
     assert "**" not in text and "Vec<T>" in text
+    assert errors == []
+    page.close()
+
+
+REF_PAGE = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>refs</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Feeder placement</h1>
+{"".join(f"<p>Fill paragraph {i}, long enough to take a line of its own.</p>" for i in range(10))}
+<cq-tabs id="projects">
+  <cq-tab id="tab-feeders" label="Winter feeders">
+    <p id="p-feeders">Two of the four feeders are mounted.</p>
+  </cq-tab>
+  <cq-tab id="tab-bath" label="Heated bird bath">
+    <p id="p-bath">The thermostat arrived cracked and a replacement is on order.</p>
+  </cq-tab>
+</cq-tabs>
+{"".join(f"<p>Tail fill, paragraph {i}.</p>" for i in range(10))}
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_message_reference_travels_or_says_it_cant(browser, serve):
+    """A message can point at the page with a fragment link, and the platform is what
+    carries the reader: collapsed content wears hidden="until-found", so the jump
+    fires beforematch and the tab holding the target opens itself. That half is
+    pinned here rather than implemented — a runtime that starts intercepting these
+    presses has to keep doing it, reveal included.
+
+    The half the browser has no answer for is an id this version hasn't got, which
+    needs nobody to have erred: a comment outlives the version it was written on.
+    Unmarked it reads live, moves nothing, and leaves a fragment nobody holds in the
+    URL for the next load to honor. So it wears the detached face a stranded quote
+    wears and its press is refused — asserted from a real press, since that refusal
+    is the whole of what the runtime does here."""
+    url = serve(REF_PAGE)
+    interact.append_event(
+        serve.page_dir,
+        {
+            "kind": "comment",
+            "id": "c-ref",
+            "author": "user",
+            "version": 1,
+            "text": "See [the bath](#p-bath), not [the old note](#gone).",
+        },
+    )
+    page, errors = open_page(browser, url)
+    page.get_by_role("button", name="Comments", exact=False).click()
+
+    live = page.locator('.cq-msg-body a[href="#p-bath"]')
+    expect(live).to_have_attribute("title", "Jump to § p-bath")
+    # Collapsed behind the inactive tab until the jump asks for it, which is the
+    # platform half: hidden="until-found" answers a fragment navigation.
+    hidden = re.compile(".*")
+    expect(page.locator("#tab-bath")).to_have_attribute("hidden", hidden)
+    live.click()
+    expect(page.locator("#tab-bath")).not_to_have_attribute("hidden", hidden)
+    page.wait_for_function(
+        """() => { const r = document.getElementById('p-bath').getBoundingClientRect();
+                   return r.height > 0 && r.top >= 0 && r.bottom <= innerHeight; }"""
+    )
+
+    dead = page.locator('.cq-msg-body a[href="#gone"]')
+    expect(dead).to_have_class("detached")
+    expect(dead).to_have_attribute("aria-disabled", "true")
+    expect(dead).to_have_attribute(
+        "title", "§ gone isn't in the version you're viewing"
+    )
+    # force, because locator.click refuses aria-disabled controls and that refusal is
+    # the state under test. Nothing will happen, so there is no fact to consume: the
+    # press is the edge, and the hash the browser would write is synchronous with it.
+    at = page.evaluate("() => document.body.scrollTop")
+    was = page.url  # the live jump left its own fragment, as a fragment jump does
+    dead.click(force=True)
+    assert page.url == was, page.url
+    assert page.evaluate("() => document.body.scrollTop") == at
     assert errors == []
     page.close()
 

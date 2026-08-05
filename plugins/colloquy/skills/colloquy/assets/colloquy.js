@@ -117,7 +117,14 @@
  * one door is the CLI gate (`colloquy comment`/`colloquy reply` validate it against the
  * vendored registry; the browser door refuses the field), so what lands here is
  * injected as validated. A suggestion's text renders verbatim: its characters are
- * bound for the page as typed. */
+ * bound for the page as typed.
+ *
+ * A fragment link in a message ([the group](#d-channel)) points at an element of the
+ * page, and the browser's own navigation is the travel — collapsed content wears
+ * hidden="until-found", so the jump opens the tab or settled group holding it. The
+ * runtime adds only the half the platform has no answer for: a comment outlives the
+ * version it was written on, so a reference to an id this one hasn't got wears the
+ * detached face a stranded quote wears, and its press is refused (paintAnchors). */
 
 // ---------- widget layer ----------
 
@@ -1148,6 +1155,11 @@ style.textContent = `
     .cq-msg-body li { margin: 2px 0; }
     .cq-msg-body pre { padding: 8px 10px; }
     .cq-msg-body blockquote { padding: 2px 10px; }
+    /* A reference to an element this version hasn't got, wearing the same word the
+       quote above wears for the same fact. The whole text-decoration shorthand,
+       because a widget's § reference (cq-ref) undressed its underline and a style
+       alone would paint nothing there. paintAnchors is the one writer. */
+    .cq-msg-body a.detached { color: var(--muted-2); text-decoration: underline dashed; cursor: default; }
     /* Send buttons sit at the bottom so a growing textarea doesn't stretch them. */
     .cq-compose, .cq-general { display: flex; gap: 6px; margin-top: 8px; align-items: flex-end; }
     .cq-compose textarea, .cq-general textarea { flex: 1; min-width: 0; }
@@ -2937,7 +2949,48 @@ function paintAnchors() {
       ? "Jump to this passage"
       : "This passage can't be identified in the version you're viewing";
   }
+
+  // A message pointing at the page — [the group](#d-channel) — travels by the
+  // browser's own fragment navigation, which is already the whole feature: collapsed
+  // content wears hidden="until-found", so the jump fires beforematch and the owning
+  // tab or settled group opens itself. What the browser has no answer for is the id
+  // this version hasn't got. A comment outlives the version it was written on, so
+  // that happens without anyone doing anything wrong — and unmarked, the reference
+  // reads live, moves nothing on the press, and leaves a fragment nobody holds in the
+  // URL for the next load to honor. So it wears the same detached face a quote whose
+  // passage left the page wears, asked of the same resolveAnchor, and its press is
+  // taken rather than spent. aria-disabled because the title only reaches a pointer.
+  for (const a of panel.querySelectorAll(MSG_REF)) {
+    const id = refId(a);
+    const alive = Boolean(resolveAnchor({ section: id }));
+    a.classList.toggle("detached", !alive);
+    if (alive) a.removeAttribute("aria-disabled");
+    else a.setAttribute("aria-disabled", "true");
+    a.title = alive ? `Jump to § ${id}` : `§ ${id} isn't in the version you're viewing`;
+  }
 }
+
+// A reference a message makes into the page: its own Markdown link, or one a widget
+// in its frozen markup writes (a cq-option's `for`). One selector, so what the paint
+// above dresses and what the press below refuses are the same set.
+const MSG_REF = '.cq-msg-body a[href^="#"]';
+// The href holds the id as the renderer percent-encoded it; the document holds it as
+// written. A malformed escape ("#100%") keeps its own characters.
+function refId(a) {
+  const raw = a.getAttribute("href").slice(1);
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+// The only press this layer takes from the browser: a reference this version can't
+// follow. Everything else — the travel, the reveal, the back button — is the
+// platform's, and an exported copy keeps it by having a real href to jump through.
+panel.addEventListener("click", (ev) => {
+  const a = ev.target.closest(MSG_REF);
+  if (a && !resolveAnchor({ section: refId(a) })) ev.preventDefault();
+});
 
 // Which thread's mark is under a point. A painted range is not an element, so the pointer
 // finds it by the boxes the range occupies rather than by hit-testing the DOM — asking for
@@ -2958,16 +3011,31 @@ function markAt(x, y) {
   return null;
 }
 
+// Bring an element of the document to the middle — a thread's element anchor, a page
+// ask the a key steps to. The document scroller's, so an element standing in the
+// panel's own list is its region's to centre rather than this one's. reveal first,
+// since opening a tab or a settled group moves everything below it. The arithmetic is the range branch's below, because "the middle"
+// means the viewport's: scrollIntoView measures against the scroller's own
+// scroll-padding-top — declared so a native fragment jump clears the banner — and every
+// "center" through it therefore landed 27px low. An element taller than the viewport has
+// no middle to show, and centring one puts its opening words above the top edge, so it
+// takes that same banner clearance instead and the reader starts at the start.
+function scrollToElement(el) {
+  reveal(el);
+  el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+  const rect = el.getBoundingClientRect();
+  const clear = parseFloat(getComputedStyle(pageScroller).scrollPaddingTop) || 0;
+  jumpBy(rect.top - Math.max((innerHeight - rect.height) / 2, clear), SCROLL);
+}
+
 // Move to where a thread is painted, if it still is — asked of the pass's own record, so the
 // panel and the page can't disagree about whether the passage survived. A painted range has
-// no element to scroll into view, so its own box does the work; reveal first, since opening
-// a tab or a settled group moves everything below it.
+// no element to scroll into view, so its own box does the work.
 function scrollToThread(id) {
   const where = marksOf(id)[0];
   if (!where) return;
   if (!(where instanceof Range)) {
-    reveal(where);
-    where.scrollIntoView({ behavior: SCROLL, block: "center" });
+    scrollToElement(where);
     return;
   }
   const holder = where.startContainer.parentElement;
@@ -4319,7 +4387,12 @@ function stepAsk() {
     document.querySelector(`[data-cq-for="${next.id}"] ${ASK_CONTROL}`);
   if (!control) next.tabIndex = -1; // nothing to work: the ask itself takes the focus
   (control ?? next).focus({ preventScroll: true });
-  next.scrollIntoView({ behavior: SCROLL, block: "center" });
+  // Each ask centres in the region it stands in. The banner clearance
+  // scrollToElement answers for is the document scroller's alone, and a thread's
+  // ask is in the panel's own list, which has none — so that one is the platform's
+  // to centre and only a page ask takes the shared travel.
+  if (inChrome(next)) next.scrollIntoView({ behavior: SCROLL, block: "center" });
+  else scrollToElement(next);
   announce(`${to + 1} of ${asks.length} waiting on you`);
 }
 
