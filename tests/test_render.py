@@ -5224,7 +5224,10 @@ REF_PAGE = f"""<!doctype html>
     <p id="p-bath">The thermostat arrived cracked and a replacement is on order.</p>
   </cq-tab>
 </cq-tabs>
-{"".join(f"<p>Tail fill, paragraph {i}.</p>" for i in range(10))}
+<section id="tail">
+{"".join(f"<p>Tail fill, paragraph {i}, long enough to stand as a landmark of its own.</p>" for i in range(16))}
+<p id="tail-end">The last words on the page, where a reader who read to the end is.</p>
+</section>
 </main>
 </body>
 </html>
@@ -5271,6 +5274,19 @@ def test_a_message_reference_travels_or_says_it_cant(browser, serve):
                    return r.height > 0 && r.top >= 0 && r.bottom <= innerHeight; }"""
     )
 
+    # The other half of a link: opened in its own tab it is an arrival, which the
+    # browser answers before any widget has upgraded — so the runtime is what aims it
+    # (landArrival). Nothing of this tab travels with it; the new one starts empty.
+    with page.context.expect_page() as opened:
+        live.click(modifiers=["Meta"])
+    tab = opened.value
+    tab.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+    tab.wait_for_function(
+        """() => { const r = document.getElementById('p-bath').getBoundingClientRect();
+                   return r.height > 0 && r.top >= 0 && r.bottom <= innerHeight; }"""
+    )
+    tab.close()
+
     dead = page.locator('.cq-msg-body a[href="#gone"]')
     expect(dead).to_have_class("detached")
     expect(dead).to_have_attribute("aria-disabled", "true")
@@ -5285,6 +5301,51 @@ def test_a_message_reference_travels_or_says_it_cant(browser, serve):
     dead.click(force=True)
     assert page.url == was, page.url
     assert page.evaluate("() => document.body.scrollTop") == at
+    assert errors == []
+    page.close()
+
+
+def test_an_arrival_lands_where_the_url_aimed(browser, serve):
+    """A URL naming an element is answered once the page is done becoming itself.
+
+    The browser answers it at parse time, when no widget has upgraded and nothing is
+    collapsed yet — so the tab holding the target is still open, the document is
+    still its unupgraded height, and both facts stop being true a moment later. The
+    same staleness is why scroll restoration is manual; the fragment was the half of
+    that takeover never written.
+
+    Then the ranking, which is the browser's own. Arriving somewhere named is what a
+    fragment is for, and the reading position this tab kept — of whatever it last
+    left this page at — must not paint over it. Returning is the other way round: on
+    a reload the fragment is left over from a reference followed earlier, and the
+    reader's own position is the answer."""
+    url = serve(REF_PAGE)
+    hidden = re.compile(".*")
+    onscreen = """(id) => { const r = document.getElementById(id).getBoundingClientRect();
+                            return r.height > 0 && r.top >= 0 && r.bottom <= innerHeight; }"""
+
+    # A fresh tab: nothing saved, nothing to outrank. The target is behind a tab that
+    # does not exist until the upgrade runs, which is after the browser has jumped.
+    page, errors = open_page(browser, f"{url}#p-bath")
+    expect(page.locator("#tab-bath")).not_to_have_attribute("hidden", hidden)
+    page.wait_for_function(onscreen, arg="p-bath")
+
+    # Read to the end and leave: the position is written down on the way out and the
+    # tab keeps it. Coming back at a named place is what the ranking is for — that
+    # position is real and recent, and still not what this URL asked for.
+    page.evaluate("() => document.body.scrollTo({top: 1e6, behavior: 'instant'})")
+    page.goto("about:blank")
+    page.goto(f"{url}#p-bath")
+    page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+    page.wait_for_function(onscreen, arg="p-bath")
+
+    # The reader moves on, so the fragment is stale by the reload that carries it. The
+    # bath tab stays open across that reload and says nothing about this — a tab
+    # remembers its own panel, the same way the position is remembered here.
+    page.evaluate("() => document.body.scrollTo({top: 1e6, behavior: 'instant'})")
+    page.reload()
+    page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
+    page.wait_for_function(onscreen, arg="tail-end")
     assert errors == []
     page.close()
 

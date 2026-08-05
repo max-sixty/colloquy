@@ -2951,9 +2951,11 @@ function paintAnchors() {
   }
 
   // A message pointing at the page — [the group](#d-channel) — travels by the
-  // browser's own fragment navigation, which is already the whole feature: collapsed
-  // content wears hidden="until-found", so the jump fires beforematch and the owning
-  // tab or settled group opens itself. What the browser has no answer for is the id
+  // browser's own fragment navigation, which is already the whole feature within one
+  // document: collapsed content wears hidden="until-found", so the jump fires
+  // beforematch and the owning tab or settled group opens itself. Opened in a new tab
+  // it is an arrival rather than a jump, and landArrival is what answers it there.
+  // What the browser has no answer for is the id
   // this version hasn't got. A comment outlives the version it was written on, so
   // that happens without anyone doing anything wrong — and unmarked, the reference
   // reads live, moves nothing on the press, and leaves a fragment nobody holds in the
@@ -2961,7 +2963,7 @@ function paintAnchors() {
   // passage left the page wears, asked of the same resolveAnchor, and its press is
   // taken rather than spent. aria-disabled because the title only reaches a pointer.
   for (const a of panel.querySelectorAll(MSG_REF)) {
-    const id = refId(a);
+    const id = fragmentId(a.getAttribute("href"));
     const alive = Boolean(resolveAnchor({ section: id }));
     a.classList.toggle("detached", !alive);
     if (alive) a.removeAttribute("aria-disabled");
@@ -2974,10 +2976,12 @@ function paintAnchors() {
 // in its frozen markup writes (a cq-option's `for`). One selector, so what the paint
 // above dresses and what the press below refuses are the same set.
 const MSG_REF = '.cq-msg-body a[href^="#"]';
-// The href holds the id as the renderer percent-encoded it; the document holds it as
-// written. A malformed escape ("#100%") keeps its own characters.
-function refId(a) {
-  const raw = a.getAttribute("href").slice(1);
+// The id a fragment names. An href holds it as the renderer percent-encoded it and
+// location.hash as the browser did; the document holds it as written. A malformed
+// escape ("#100%") keeps its own characters. One reading for both, because a reference
+// the panel paints and a URL the page arrived at name their element the same way.
+function fragmentId(fragment) {
+  const raw = fragment.slice(1);
   try {
     return decodeURIComponent(raw);
   } catch {
@@ -2989,7 +2993,8 @@ function refId(a) {
 // platform's, and an exported copy keeps it by having a real href to jump through.
 panel.addEventListener("click", (ev) => {
   const a = ev.target.closest(MSG_REF);
-  if (a && !resolveAnchor({ section: refId(a) })) ev.preventDefault();
+  if (a && !resolveAnchor({ section: fragmentId(a.getAttribute("href")) }))
+    ev.preventDefault();
 });
 
 // Which thread's mark is under a point. A painted range is not an element, so the pointer
@@ -3020,12 +3025,17 @@ function markAt(x, y) {
 // "center" through it therefore landed 27px low. An element taller than the viewport has
 // no middle to show, and centring one puts its opening words above the top edge, so it
 // takes that same banner clearance instead and the reader starts at the start.
-function scrollToElement(el) {
+//
+// It glides, because a page the reader is already holding is one the motion keeps their
+// place in — the same reason a restore doesn't (jumpBy). An arrival passes "instant" for
+// exactly that reason: a document that appeared a moment ago holds no place to keep, so
+// the glide would be animating from nowhere.
+function scrollToElement(el, behavior = SCROLL) {
   reveal(el);
   el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
   const rect = el.getBoundingClientRect();
   const clear = parseFloat(getComputedStyle(pageScroller).scrollPaddingTop) || 0;
-  jumpBy(rect.top - Math.max((innerHeight - rect.height) / 2, clear), SCROLL);
+  jumpBy(rect.top - Math.max((innerHeight - rect.height) / 2, clear), behavior);
 }
 
 // Move to where a thread is painted, if it still is — asked of the pass's own record, so the
@@ -3443,8 +3453,7 @@ function standDown(target) {
     if (composerOpen && !composerInput.value) hideComposer();
   }
   if (helpOpen && !target.closest?.(".cq-help")) showHelp(false);
-  if (othersOpen && !target.closest?.(".cq-others, .cq-others-menu"))
-    showOthers(false);
+  if (othersOpen && !target.closest?.(".cq-others, .cq-others-menu")) showOthers(false);
 }
 document.addEventListener("mousedown", (ev) => standDown(ev.target));
 
@@ -5022,12 +5031,24 @@ generalInput.value = loadDraft("general");
 try {
   if (localStorage.getItem(PANEL_KEY) === "1") setPanel(true);
 } catch {}
-// Carry the reading position across every arrival — version switch, reload, back
-// (the panel is restored just above, so the column is already reflowed). The
-// browser's own restoration is taken over entirely: upgrades change the page's
-// height after it runs (tabs collapse, diagrams render, diff files fold), so its
-// offsets go stale; the landmark is re-found once geometry has settled instead.
+// Where an arrival lands — version switch, reload, back, a URL naming an element (the
+// panel is restored just above, so the column is already reflowed). The browser answers
+// this twice, and both answers are taken before the page is done becoming itself:
+// upgrades change its height afterwards (tabs collapse, diagrams render, diff files
+// fold), so a restored offset points into a document that no longer exists and a
+// fragment jump lands at an element a tab has since closed over. Hence manual
+// restoration, and hence the fragment travelling the same road — that was the half of
+// this takeover left to the platform, which cannot see the page the upgrade makes.
+//
+// The ranking is the browser's own, restated once the geometry has settled. A fresh
+// navigation is someone arriving at a named place, so the fragment outranks the saved
+// position: that position is wherever this tab last left this page, and a URL naming an
+// element is not a request to resume it. A reload or a back is someone returning, where
+// the fragment is left over from a reference followed earlier and their own position is
+// the answer. An id this version hasn't got falls through to that position, the same way
+// a reference naming one paints detached rather than dead-ending.
 history.scrollRestoration = "manual";
+const ARRIVING = performance.getEntriesByType("navigation")[0]?.type === "navigate";
 const savedView = (() => {
   try {
     return JSON.parse(sessionStorage.getItem(VIEW_KEY) || "null");
@@ -5041,6 +5062,12 @@ addEventListener("pagehide", () => {
     sessionStorage.setItem(VIEW_KEY, JSON.stringify(captureView()));
   } catch {}
 });
+function landArrival() {
+  const aimed =
+    ARRIVING && resolveAnchor({ section: fragmentId(location.hash) })?.element;
+  if (aimed) scrollToElement(aimed, "instant");
+  else if (savedView) restoreView(savedView);
+}
 const savedComposer = loadDraft("composer");
 
 // ---------- start ----------
@@ -5058,10 +5085,8 @@ upgradeWidgets().then(() => {
   anchoringReady = true;
   paintAnchors(); // an early general post may already have loaded anchored threads
   updateFab(); // an early selection is now read from the fully upgraded page
-  if (savedView) {
-    restoreView(savedView);
-    if (savedView.v < VNUM) showToast(`Updated to v${VNUM}`);
-  }
+  landArrival();
+  if (savedView && savedView.v < VNUM) showToast(`Updated to v${VNUM}`);
   if (savedComposer)
     try {
       const { text, anchor, suggest } = JSON.parse(savedComposer);

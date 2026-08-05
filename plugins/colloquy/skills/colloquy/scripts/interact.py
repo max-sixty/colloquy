@@ -200,7 +200,9 @@ rendered by the page's own vendored runtime — the browser is where the page's 
 rendering already lives, and vendoring the renderer beside the panel's styles is what
 keeps the two versioning together. A fragment link in a body — `[the group](#d-channel)`,
 either author's — points at an element of the page, and the browser's own navigation
-carries the reader there; the runtime only marks one this version can't follow, since a
+carries the reader there, opening whatever tab or settled group hides it. Two things are
+the runtime's: an arrival aimed by such a link (⌘-click opens a tab the browser answers
+before any widget has upgraded), and marking one this version can't follow, since a
 message outlives the version it was written on. Raw HTML in a body renders as its characters there,
 so text cannot inject markup; a widget rides the event's `markup` field instead, whose
 one door is `colloquy comment`/`colloquy reply`, where it is validated against the
