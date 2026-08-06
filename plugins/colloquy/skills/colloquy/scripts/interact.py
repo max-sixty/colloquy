@@ -976,8 +976,10 @@ def owned_pages(session_id: str) -> list:
 
 
 def other_colloquys(page_dir: Path) -> list:
-    """The machine's other live colloquys — a title and handover URL for each
-    page whose server is up — for the banner's "Other colloquys" menu.
+    """The machine's other live colloquys, for the banner's panel: each page
+    whose server is up, as a title, its handover URL, and the same presence
+    facts the page ships about itself — so a row there and the banner above it
+    are the one judgment reading the one shape.
 
     Candidates are the two places page directories are already written down:
     the conventional pages/ home and the live-session registry, which is what
@@ -987,8 +989,9 @@ def other_colloquys(page_dir: Path) -> list:
     newest published version's — the version that page's own root URL answers
     with — read the way `transcript` reads it.
 
-    Uncached, on every /api/state: the whole scan measured ~5ms against a state
-    home holding forty pages, three of them live."""
+    Uncached, on every /api/state: the whole scan, presence reads included,
+    measured ~1.4ms against a state home holding forty pages, three of them
+    live."""
     candidates = []
     pages = state_home() / "pages"
     if pages.is_dir():
@@ -1028,7 +1031,11 @@ def other_colloquys(page_dir: Path) -> list:
         except (OSError, ValueError):
             continue
         others.append(
-            {"title": parser.title.strip() or candidate.name, "url": info["url"]}
+            {
+                "title": parser.title.strip() or candidate.name,
+                "url": info["url"],
+                **presence(candidate, events),
+            }
         )
     return sorted(others, key=lambda entry: entry["title"].lower())
 
@@ -1041,7 +1048,12 @@ def unacknowledged(events: list, cursor: int) -> list:
     return [e for e in events if e["seq"] > cursor and e["author"] == "user"]
 
 
-def full_state(page_dir: Path, events: list, versions: list) -> dict:
+def presence(page_dir: Path, events: list) -> dict:
+    """The facts a shown status derives from: the agent's claim, and everything the
+    directory holds that can answer for it. One gatherer for both places a status
+    is shown — `full_state` spreads it into the page's own poll answer, and
+    `other_colloquys` attaches it to each entry — so the runtime's one
+    claim-against-proof judgment reads the same fields whichever page it judges."""
     # A file that isn't there stands in as its whole record, so every read below
     # indexes rather than asking twice whether the field arrived.
     status = read_json(page_dir / "status.json") or {
@@ -1056,7 +1068,6 @@ def full_state(page_dir: Path, events: list, versions: list) -> dict:
     # it forward onto versions written without it.
     cursor = (read_json(page_dir / "cursor.json") or {"seq": 0})["seq"]
     return {
-        "versions": versions,
         "status": status,
         "listening": time.time() - heartbeat["t"] < HEARTBEAT_FRESH_SECS,
         "cursor": cursor,
@@ -1067,6 +1078,13 @@ def full_state(page_dir: Path, events: list, versions: list) -> dict:
         "host": session.get("host") if session else None,
         # None when nothing claimed the page — interact.py run outside an agent host.
         "session_alive": pid_alive(session["pid"]) if session else None,
+    }
+
+
+def full_state(page_dir: Path, events: list, versions: list) -> dict:
+    return {
+        "versions": versions,
+        **presence(page_dir, events),
         # As logged: a message's text is Markdown the page's vendored runtime renders,
         # and its markup is the fragment the CLI gate validated. The wire adds nothing,
         # so the only vocabulary a page's frozen layer has to keep speaking is the

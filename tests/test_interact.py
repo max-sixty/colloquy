@@ -4009,9 +4009,19 @@ def test_state_ships_the_machines_other_live_colloquys(page_dir, server, tmp_pat
     both places pages are written down — the conventional pages/ home and the
     live-session registry — titled by its newest published version, and nothing
     else: not a dead server's page, not one with nothing published to link, and
-    not the page doing the asking."""
+    not the page doing the asking. Each entry carries the same presence facts the
+    page ships about itself (`presence`), so the panel's row and that page's own
+    banner judge from one shape."""
     pages = interact.state_home() / "pages"
     live_url = neighbour_page(pages / "live", title="The other page")
+    interact.write_json(
+        pages / "live" / "status.json",
+        {"state": "working", "detail": "measuring", "ts": "2026-01-01T00:00:00-08:00"},
+    )
+    interact.write_json(
+        pages / "live" / "session.json",
+        {"id": "s9", "host": "claude-code", "pid": os.getpid(), "agent": "Codex"},
+    )
     gone = subprocess.Popen([sys.executable, "-c", ""])
     gone.wait()
     neighbour_page(pages / "dead", title="A dead server's page", pid=gone.pid)
@@ -4036,9 +4046,32 @@ def test_state_ships_the_machines_other_live_colloquys(page_dir, server, tmp_pat
     )
 
     state = json.loads(fetch(f"{server}/api/state")[1])
+    # A directory holding no claims at all is still a complete answer: every
+    # presence field arrives, as its absent-file default.
+    unclaimed = {
+        "status": {"state": "idle", "detail": "", "ts": None},
+        "listening": False,
+        "cursor": 0,
+        "pending": 0,
+        "agent": "Claude",
+        "host": None,
+        "session_alive": None,
+    }
     assert state["others"] == [
-        {"title": "scratch", "url": claimed_url},
-        {"title": "The other page", "url": live_url},
+        {"title": "scratch", "url": claimed_url, **unclaimed},
+        {
+            "title": "The other page",
+            "url": live_url,
+            **unclaimed,
+            "status": {
+                "state": "working",
+                "detail": "measuring",
+                "ts": "2026-01-01T00:00:00-08:00",
+            },
+            "agent": "Codex",
+            "host": "claude-code",
+            "session_alive": True,
+        },
     ]
 
 

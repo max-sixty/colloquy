@@ -1073,24 +1073,26 @@ style.textContent = `
       .cq-banner select, .cq-resolve { font: inherit; }
     }
     .cq-banner select { padding: 3px 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; flex: none; width: 190px; text-overflow: ellipsis; }
-    .cq-others { anchor-name: --cq-others-btn; }
-    /* The colloquys menu, anchored to its button: a card of links out to the machine's
-       other live pages, each opening in its own tab. Fixed against the viewport like the
-       help overlay, so no banner overflow rule can clip it. */
-    .cq-others-menu { position: fixed; position-anchor: --cq-others-btn; z-index: 9200;
-      top: calc(anchor(bottom) + 6px); right: anchor(right); display: none;
-      min-width: 200px; max-width: 320px; background: var(--card);
-      border: 1px solid var(--border-2); border-radius: var(--r);
-      box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px;
-      /* Fixed, so page scroll never reaches it: past this height the card
-         scrolls itself, and one wheel gesture moves one region. */
-      max-height: calc(100vh - 60px); overflow-y: auto; overscroll-behavior: contain; }
-    .cq-others-menu.open { display: block; }
-    .cq-others-menu a { display: block; padding: 6px 10px; border-radius: 6px;
-      color: inherit; text-decoration: none; white-space: nowrap; overflow: hidden;
+    /* The colloquys panel: the comment panel's mirror on the left, a board of the
+       machine's live pages that stands while the reader works. Fixed over the content —
+       opening it moves nothing — and its own scroll region, so one wheel gesture moves
+       one region. */
+    .cq-others-panel { position: fixed; top: var(--cq-banner-h); left: 0; bottom: 0; z-index: 8900;
+      width: min(300px, 100vw); background: var(--card); border-right: 1px solid var(--rule);
+      display: none; padding: 6px 4px; overflow-y: auto; overscroll-behavior: contain; }
+    .cq-others-panel.open { display: block; }
+    .cq-others-row { display: block; padding: 8px 10px; border-radius: 6px; color: inherit;
+      text-decoration: none; }
+    a.cq-others-row:hover { background: var(--chip); }
+    .cq-others-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .cq-others-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .cq-others-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden;
       text-overflow: ellipsis; }
-    .cq-others-menu a:hover { background: var(--chip); }
-    .cq-others-menu a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    /* Indented past the dot's 9px and its 8px gap, so the line reads under the title;
+       one line, ellipsized, so a detail growing repaints its own words and moves
+       nothing. */
+    .cq-others-line { color: var(--ink-2); margin-left: 17px; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; }
     /* The one control on the right of the row that may give, because it is the leftmost
        of them and giving there moves nothing; the status text, off at the other end, is
        the other. The rest are .cq-btn, floored at their own words by nowrap — the chooser
@@ -1279,44 +1281,140 @@ const diffBtn = el("button", "cq-btn", "Δ");
 // has not scrolled that far still knows there is something to answer.
 const asksBtn = el("button", "cq-btn cq-asks", "");
 asksBtn.title = "Go to the next thing this page is waiting on you for (a)";
-// The machine's other live colloquys, each a link opening in its own tab. The server
-// ships the list with every poll (`others` on /api/state — loopback binds only, since
-// each URL carries its page's key); the menu is built at open from the newest list, so
-// a poll never reshuffles links under the pointer, and a list going stale under an open
-// menu waits for the close rather than yanking what the user is reading.
+// The machine's live colloquys and what each is doing: a left panel of rows, each a
+// link opening that page in its own tab, judged by the same `presented` the banner
+// answers with, from the same facts — `others` on /api/state carries them for every
+// live page, and every URL in the list carries only the key this reader already
+// holds, since there is one key for the machine (`host_key`). The current page heads
+// the list as a marked, unlinked row, so the panel reads as the whole machine. A
+// status board's point is being live, so rows reconcile on every poll, keyed by URL —
+// the stable identity, since address, port and key all survive a restart — and a
+// status change repaints the row's own dot and words without moving it.
 const othersBtn = el("button", "cq-btn cq-others", "");
-othersBtn.title = "Other colloquy pages live on this machine — each opens in a new tab";
+othersBtn.title = "Colloquys live on this machine, and what each is doing (o)";
 othersBtn.setAttribute("aria-expanded", "false");
 // A nav, because navigation is what it is and a bare div may not carry the
 // aria-label the card needs (axe: aria-prohibited-attr, serious).
-const othersMenu = el("nav", "cq-ui cq-others-menu");
-othersMenu.setAttribute("aria-label", "Other colloquys");
+const othersPanel = el("nav", "cq-ui cq-others-panel");
+othersPanel.setAttribute("aria-label", "Colloquys on this machine");
 let others = [];
 let othersOpen = false;
+// The panel survives a reload like the comment panel does (see PANEL_KEY):
+// reloading is not resetting, and a board someone stood up to watch stays stood.
+const OTHERS_KEY = "cq-others-open";
 function showOthers(open) {
   othersOpen = open;
   if (open) {
-    othersMenu.textContent = "";
-    for (const { title, url } of others) {
-      const link = el("a", "", title);
-      link.href = url;
-      link.target = "_blank";
-      link.rel = "noopener";
-      // The card ellipsizes a long title; the tooltip holds the whole of it.
-      link.title = title;
-      othersMenu.append(link);
-    }
-  } else if (othersMenu.contains(document.activeElement)) othersBtn.focus();
-  othersMenu.classList.toggle("open", open);
+    othersPanel.classList.add("open");
+    motion(
+      othersPanel,
+      [{ transform: "translateX(-100%)" }, { transform: "translateX(0)" }],
+      200,
+    );
+  } else {
+    // Slid out before hidden, and hidden only if still closed on arrival — a
+    // reopen mid-slide leaves the panel standing rather than racing the finish.
+    const out = motion(
+      othersPanel,
+      [{ transform: "translateX(0)" }, { transform: "translateX(-100%)" }],
+      160,
+    );
+    const hide = () => {
+      if (!othersOpen) othersPanel.classList.remove("open");
+    };
+    if (out) out.onfinish = hide;
+    else hide();
+    if (othersPanel.contains(document.activeElement)) othersBtn.focus();
+  }
+  try {
+    localStorage.setItem(OTHERS_KEY, open ? "1" : "");
+  } catch {}
   othersBtn.setAttribute("aria-expanded", String(open));
   paintLine();
 }
 othersBtn.onclick = () => showOthers(!othersOpen);
+try {
+  if (localStorage.getItem(OTHERS_KEY) === "1") {
+    othersOpen = true;
+    othersPanel.classList.add("open");
+    othersBtn.setAttribute("aria-expanded", "true");
+  }
+} catch {}
+// A row's whole account of a page: the dot's tone and one line of words, from the
+// same judgment the banner's sentences come from — the judgment is shared, the
+// wording is the seat's.
+const TONE = {
+  working: "working",
+  listening: "listening",
+  away: "away",
+  unheld: "",
+  closed: "",
+};
+function rowPresence(entry) {
+  const { kind, quiet } = presented(entry);
+  const line =
+    kind === "working"
+      ? "Working" + (entry.status.detail ? " — " + entry.status.detail : "")
+      : kind === "listening"
+        ? "Listening"
+        : kind === "away"
+          ? quiet
+            ? `Quiet (${ago(entry.status.ts)})`
+            : "Away"
+          : kind === "unheld"
+            ? "Unheld"
+            : "Closed";
+  return { tone: TONE[kind], line };
+}
+const othersRows = new Map(); // keyed by URL; the self row under its own key
 function renderOthers(state) {
   others = state.others ?? []; // an older server ships no list, which is an empty one
   othersBtn.textContent = `Other colloquys (${others.length})`;
-  // While the menu stands its button stands too, whatever the count just did.
+  // While the panel stands its button stands too, whatever the count just did.
   showNews(othersBtn, others.length > 0 || othersOpen);
+  const wanted = [
+    { key: "self", title: document.title, entry: state },
+    ...others.map((entry) => ({ key: entry.url, title: entry.title, entry })),
+  ];
+  let anchor = null; // the row before this one, so order holds without rebuilding
+  for (const { key, title, entry } of wanted) {
+    let row = othersRows.get(key);
+    if (!row) {
+      // The self row is a marked div — the reader is already here, so there is
+      // nothing to open; every other row is a link to its page's own tab.
+      row =
+        key === "self"
+          ? el("div", "cq-others-row cq-others-self")
+          : Object.assign(el("a", "cq-others-row"), {
+              href: key,
+              target: "_blank",
+              rel: "noopener",
+            });
+      const head = el("div", "cq-others-head");
+      head.append(el("span", "cq-dot"), el("span", "cq-others-title"));
+      if (key === "self") head.append(el("span", "cq-pill", "this page"));
+      row.append(head, el("div", "cq-others-line"));
+      othersRows.set(key, row);
+    }
+    const { tone, line } = rowPresence(entry);
+    const [rowDot, rowTitle] = row.querySelectorAll(".cq-dot, .cq-others-title");
+    const rowLine = row.querySelector(".cq-others-line");
+    // Written only on change: an unchanged poll must not feed the mutation stream
+    // a screen reader rebuilds its buffer on.
+    const dotCls = "cq-dot" + (tone ? " " + tone : "");
+    if (rowDot.className !== dotCls) rowDot.className = dotCls;
+    if (rowTitle.textContent !== title) rowTitle.textContent = title;
+    if (row.title !== title) row.title = title; // the row ellipsizes; the tooltip holds it whole
+    if (rowLine.textContent !== line) rowLine.textContent = line;
+    const place = anchor ? anchor.nextElementSibling : othersPanel.firstElementChild;
+    if (place !== row) othersPanel.insertBefore(row, place);
+    anchor = row;
+  }
+  for (const [key, row] of othersRows)
+    if (!wanted.some((w) => w.key === key)) {
+      row.remove();
+      othersRows.delete(key);
+    }
 }
 for (const control of [latestChip, diffBtn, asksBtn, othersBtn])
   showNews(control, false);
@@ -1417,7 +1515,7 @@ keylineEl.setAttribute("aria-hidden", "true");
 const chromeRoot = el("div", "cq-chrome");
 chromeRoot.append(
   banner,
-  othersMenu,
+  othersPanel,
   panel,
   fab,
   composer,
@@ -3453,7 +3551,6 @@ function standDown(target) {
     if (composerOpen && !composerInput.value) hideComposer();
   }
   if (helpOpen && !target.closest?.(".cq-help")) showHelp(false);
-  if (othersOpen && !target.closest?.(".cq-others, .cq-others-menu")) showOthers(false);
 }
 document.addEventListener("mousedown", (ev) => standDown(ev.target));
 
@@ -3872,6 +3969,15 @@ const KEYS = [
     run: stepAsk,
   },
   {
+    key: "o",
+    label: "o",
+    does: "Show or hide the machine's other colloquys",
+    // Live with neighbours to show, and while the panel stands whatever the
+    // count did — the key that opened it must still close it.
+    when: () => others.length > 0 || othersOpen,
+    run: () => showOthers(!othersOpen),
+  },
+  {
     key: "v",
     label: "v",
     does: "Highlight changes since the previous version",
@@ -3951,9 +4057,6 @@ document.addEventListener("keydown", (ev) => {
   // everywhere; the overlay holds focus on open, so reaching one takes a deliberate
   // Tab out.
   if (helpOpen && ev.key !== "?") return;
-  // The colloquys menu is a scope the same way: while it stands the table stands
-  // down, so the key line's "esc close menu" is the whole truth.
-  if (othersOpen) return;
   const bound = KEYS.find((b) => b.key === ev.key);
   if (!bound || !live(bound)) return;
   ev.preventDefault();
@@ -3994,8 +4097,6 @@ function scene() {
     };
   if (helpOpen)
     return { rows: [], esc: { says: "close help", out: () => showHelp(false) } };
-  if (othersOpen)
-    return { rows: [], esc: { says: "close menu", out: () => showOthers(false) } };
   if (composerOpen)
     return {
       rows:
@@ -4067,9 +4168,16 @@ function scene() {
       esc: { says: "close comments", out: () => setPanel(false) },
     };
   }
+  // With both panels standing, Esc takes the colloquys board first: it was opened
+  // for a glance, where the comment panel is the work itself — and a reader whose
+  // focus is in a thread is past this return, so their Esc stays the panel's.
   return {
     rows: KEYS.filter((b) => b.line && live(b)).map((b) => [keyLabel(b), b.line]),
-    esc: panelOpen ? { says: "close comments", out: () => setPanel(false) } : null,
+    esc: othersOpen
+      ? { says: "close colloquys", out: () => showOthers(false) }
+      : panelOpen
+        ? { says: "close comments", out: () => setPanel(false) }
+        : null,
   };
 }
 
@@ -4560,15 +4668,13 @@ diffBtn.onclick = async () => {
 // that it picks up again when a session does.
 const HANDOFF_GRACE_MS = 2 * 60 * 1000;
 const WORKING_GRACE_MS = 15 * 60 * 1000;
-function renderStatus(state) {
-  // One writer for the dot and the text, offline included: null is the poll
-  // saying it couldn't reach the server, not a second function's own rendering.
-  if (state === null) {
-    dot.className = "cq-dot offline";
-    statusText.textContent = "Server offline — comments won't send";
-    return;
-  }
-  const { status, listening, pending, session_alive } = state;
+// The claim-against-proof judgment, one function for every surface that shows a
+// status: the banner's sentence about this page and a panel row about a neighbour
+// read the same fields the server gathers in one place (`presence`), so the two can
+// never disagree about what "working" means. `kind` is the judged state; the caller
+// words it for its seat.
+function presented(state) {
+  const { status, listening, session_alive } = state;
   // How long the claim has gone unrefreshed. The rope is short for the status
   // `colloquy wait` writes as it prints a batch, because the agent writes its own
   // `colloquy status` after acknowledgement — that mark outliving minutes is a dropped
@@ -4584,30 +4690,46 @@ function renderStatus(state) {
   // once both are spent the page is unheld too.
   const unheld =
     session_alive === false || (session_alive === null && !listening && quiet);
+  const kind =
+    status.state === "idle"
+      ? "closed"
+      : unheld
+        ? "unheld"
+        : status.state === "working" && !quiet
+          ? "working"
+          : listening
+            ? "listening"
+            : "away";
+  return { kind, quiet };
+}
+function renderStatus(state) {
+  // One writer for the dot and the text, offline included: null is the poll
+  // saying it couldn't reach the server, not a second function's own rendering.
+  if (state === null) {
+    dot.className = "cq-dot offline";
+    statusText.textContent = "Server offline — comments won't send";
+    return;
+  }
+  const { status, pending } = state;
+  const { kind, quiet } = presented(state);
   // What the user's words do meanwhile. The log takes them with nobody on the other
   // end; the only thing attendance changes is when they are read.
   const saved = pending
     ? `${pending} update${pending === 1 ? "" : "s"} waiting.`
     : "Your comments are saved.";
-  let cls = "away",
-    text = "",
+  let text = "",
     showAge = false;
-  if (status.state === "idle") {
-    cls = "";
-    text = "Colloquy closed";
-  } else if (unheld) {
+  if (kind === "closed") text = "Colloquy closed";
+  else if (kind === "unheld")
     // No agent is named, because which one picks the page up next is not a fact this
     // page holds — only that the log is there for whichever does.
-    cls = "";
     text = `No session holds this page. ${saved} It picks up again when a session does.`;
-  } else if (status.state === "working" && !quiet) {
-    cls = "working";
+  else if (kind === "working") {
     showAge = Boolean(status.ts);
     text = `${agentName()} is working${status.detail ? " — " + status.detail : ""}`;
-  } else if (listening) {
-    cls = "listening";
+  } else if (kind === "listening")
     text = `${agentName()} is listening — select text to comment`;
-  } else {
+  else {
     // Somebody is behind the page and isn't attending: say which and what to do. A
     // long silence means Claude lost the thread; a recent check-in means it is
     // mid-turn and the next one collects.
@@ -4619,7 +4741,7 @@ function renderStatus(state) {
       : [`${agentName()} isn't watching right now.`, "It picks them up next turn."];
     text = `${why} ${saved} ${how}`;
   }
-  dot.className = "cq-dot " + cls;
+  dot.className = "cq-dot" + (TONE[kind] ? " " + TONE[kind] : "");
   statusText.textContent = "";
   statusText.append(document.createTextNode(text));
   if (showAge)

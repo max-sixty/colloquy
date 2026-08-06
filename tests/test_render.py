@@ -1557,9 +1557,10 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
 
 @pytest.fixture
 def other_colloquy(tmp_path, monkeypatch):
-    """A second live colloquy for the banner's menu to find: published, served by a
+    """A second live colloquy for the banner's panel to find: published, served by a
     real handler, and written down under the state home the way `server run` writes
-    it — which is the whole of how one page learns another exists."""
+    it — which is the whole of how one page learns another exists. It claims to be
+    working, freshly, so its row has a judged state to show."""
     monkeypatch.chdir(tmp_path)  # keep the project layer out of the overlay
     d = interact.state_home() / "pages" / "other"
     result = CliRunner().invoke(interact.cli, ["page", "init", str(d)])
@@ -1569,6 +1570,10 @@ def other_colloquy(tmp_path, monkeypatch):
     )
     interact.append_event(
         d, {"kind": "note", "author": "claude", "version": 1, "text": "t"}
+    )
+    interact.write_json(
+        d / "status.json",
+        {"state": "working", "detail": "running the suite", "ts": interact.now_iso()},
     )
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(d, TOKEN))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -1582,33 +1587,48 @@ def other_colloquy(tmp_path, monkeypatch):
             "lifetime": "standing",
         },
     )
-    yield f"http://127.0.0.1:{port}"
+    yield f"http://127.0.0.1:{port}", d
     httpd.shutdown()
 
 
-def test_the_banner_links_the_machines_other_colloquys(browser, serve, other_colloquy):
-    """The Other colloquys menu, end to end: the banner counts the machine's other
-    live pages, a press opens a card of links named by each page's own title, and a
-    link opens that page — root URL, key and all — in a tab of its own, leaving this
-    one where it was. Esc is the card's rung on the ladder. On a machine serving
-    nothing else the button never appears, which every other test here shows for
-    free; what needs a second server is the menu itself."""
+def test_the_banner_opens_a_panel_of_the_machines_colloquys(
+    browser, serve, other_colloquy
+):
+    """The colloquys panel, end to end: the banner counts the machine's other live
+    pages, a press slides out a left board headed by this page's own marked, unlinked
+    row, each neighbour is a link named by its title and saying what that page is
+    doing — the same judgment its own banner would show, from the same facts — and a
+    link opens that page in a tab of its own, leaving this one where it was, panel
+    standing. Esc is the panel's rung on the ladder. On a machine serving nothing
+    else the button never appears, which every other test here shows for free."""
+    other_url, _ = other_colloquy
     page, errors = open_page(browser, serve(LONG_PAGE))
     btn = page.locator(".cq-others")
     expect(btn).to_have_text("Other colloquys (1)")
     btn.click()
-    link = page.locator(".cq-others-menu a")
-    expect(link).to_have_text("The other colloquy")  # the page's title, not its slug
+    others_panel = page.locator(".cq-others-panel")
+    expect(others_panel).to_be_visible()
+    # This page heads the list, marked and never a link: the panel reads as the
+    # whole machine, and this page is where the reader already is.
+    self_row = others_panel.locator(".cq-others-self")
+    expect(self_row.locator(".cq-pill")).to_have_text("this page")
+    expect(self_row.locator(".cq-others-title")).to_have_text("long")
+    link = others_panel.locator("a.cq-others-row")
+    expect(link.locator(".cq-others-title")).to_have_text("The other colloquy")
+    # The fixture's page claims working with a fresh ts and nothing contradicts it,
+    # so the row says so — dot and words both the banner's own vocabulary.
+    expect(link.locator(".cq-others-line")).to_have_text("Working — running the suite")
+    expect(link.locator(".cq-dot")).to_have_class(re.compile(r"\bworking\b"))
     with page.context.expect_page() as opened:
         link.click()
     # The other server's own redirect lands the new tab on its newest published
     # version, authorized by the key the link carried.
-    expect(opened.value).to_have_url(f"{other_colloquy}/versions/v1.html")
-    # The press left this tab alone.
-    expect(page.locator(".cq-others-menu")).to_be_visible()
+    expect(opened.value).to_have_url(f"{other_url}/versions/v1.html")
+    # The press left this tab alone, board still standing.
+    expect(others_panel).to_be_visible()
     page.keyboard.press("Escape")
-    expect(page.locator(".cq-others-menu")).not_to_be_visible()
-    expect(btn).to_be_visible()  # closing the card keeps the standing button
+    expect(others_panel).not_to_be_visible()
+    expect(btn).to_be_visible()  # closing the panel keeps the standing button
     expect(btn).to_have_text("Other colloquys (1)")  # and the count
     # The count's reservation, swept here because this is the one test that ever
     # renders the button — every other page here runs under an isolated HOME, so
@@ -1624,6 +1644,39 @@ def test_the_banner_links_the_machines_other_colloquys(browser, serve, other_col
         f"'Other colloquys (999)' grew the button {before}px -> {widest}px: its "
         "reserve list no longer names the widest label renderOthers writes"
     )
+    assert errors == []
+    page.close()
+
+
+def test_a_panel_row_follows_its_pages_status_live(
+    browser, serve, other_colloquy, dead_pid
+):
+    """The panel is a status board, not a snapshot: a neighbour's state changing on
+    disk repaints its row at the next poll, in place — and a neighbour whose claimant
+    has exited reads as unheld, the computed fact its own banner would state, not the
+    claim its status file still makes."""
+    _, other_dir = other_colloquy
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    # The key is live once the list has arrived, which the button's count states.
+    expect(page.locator(".cq-others")).to_have_text("Other colloquys (1)")
+    page.keyboard.press("o")  # the key opens the panel like the button does
+    row = page.locator("a.cq-others-row")
+    expect(row.locator(".cq-others-line")).to_have_text("Working — running the suite")
+    interact.write_json(
+        other_dir / "status.json",
+        {"state": "working", "detail": "recording the demo", "ts": interact.now_iso()},
+    )
+    told(page)
+    expect(row.locator(".cq-others-line")).to_have_text("Working — recording the demo")
+    # The claim still says working; its claimant is gone. The row reports what the
+    # directory can prove, exactly as the neighbour's own banner would.
+    interact.write_json(
+        other_dir / "session.json",
+        {"id": "s", "host": "claude-code", "pid": dead_pid, "agent": "Claude"},
+    )
+    told(page)
+    expect(row.locator(".cq-others-line")).to_have_text("Unheld")
+    expect(row.locator(".cq-dot")).not_to_have_class(re.compile(r"\bworking\b"))
     assert errors == []
     page.close()
 
@@ -9883,7 +9936,9 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
     computed fact and the dot is not the amber it wears for a session falling behind."""
     page, _ = open_page(browser, serve(LONG_PAGE, comments=1))
     d = tmp_path / "page"
-    text, dot = page.locator(".cq-status-text"), page.locator(".cq-dot")
+    # The banner's own dot: the colloquys panel mirrors this page as a row, so a
+    # bare .cq-dot resolves to that row's copy too.
+    text, dot = page.locator(".cq-status-text"), page.locator(".cq-banner .cq-dot")
     UNHELD = (
         "No session holds this page. 1 update waiting."
         " It picks up again when a session does."

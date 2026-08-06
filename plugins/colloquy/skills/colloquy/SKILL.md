@@ -180,8 +180,9 @@ and the comment layer left behind.
   to propose — and a suggestion carries markup, not a widget's own state: proposing a
   card's column or an option's pick has no form yet.
 - The runtime injects the status banner, comment sidebar, version picker, keyboard
-  shortcuts (`?` in the browser shows the reference), and a banner menu linking the
-  machine's other live colloquys; don't build page UI for any of those. It also
+  shortcuts (`?` in the browser shows the reference), and a left panel listing the
+  machine's live colloquys with what each is doing; don't build page UI for any of
+  those. It also
   collects what the page is still waiting on the reader for — an
   undecided suggestion, a `choose` group with no pick, a task at `review` or `blocked`
   — into a banner count they can step through with `a`, from the vocabulary's own
