@@ -121,6 +121,11 @@ alone. The tests need the same set anyway, because they load `interact.py` by pa
 uv run pytest tests
 ```
 
+Two minutes rather than eleven, because `pyproject.toml` shards it across eight workers,
+and no network at all, because `conftest.py` runs uv offline — `version export` supplies
+Playwright outside the script's lock (`bin/colloquy` says why) and would otherwise
+revalidate it against the index.
+
 Ruff and prettier run from `.pre-commit-config.yaml`, which says what each covers
 and why. `wt merge` runs the whole set as a pre-merge hook (`.config/wt.toml`) and
 refuses a tree that doesn't pass. Before then:

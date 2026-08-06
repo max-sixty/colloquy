@@ -48,6 +48,12 @@ def isolated_session(tmp_path_factory, monkeypatch):
     what a fixture should be."""
     monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
     monkeypatch.setenv("UV_CACHE_DIR", UV_CACHE)
+    # `version export` supplies Playwright outside interact.py.lock (bin/colloquy
+    # says why), leaving its version unpinned, so uv revalidates it against the
+    # index whenever the cached answer goes stale — three retries per call, and
+    # test_site.py exports every example. The cache above already holds what
+    # uv.lock pinned, so reading from it is both the fix and the faster path.
+    monkeypatch.setenv("UV_OFFLINE", "1")
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)

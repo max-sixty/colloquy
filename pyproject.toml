@@ -24,6 +24,7 @@ requires-python = ">=3.10"
 [dependency-groups]
 dev = [
   "pytest>=8",
+  "pytest-xdist>=3",
   "playwright>=1.49",
   "axe-playwright-python>=0.1.4",
   # Mirrors interact.py's PEP 723 header, per the note above.
@@ -36,3 +37,11 @@ dev = [
 # plugin payload, and this project exists to name their environment.
 [tool.uv]
 package = false
+
+# The suite is round trips through a real browser rather than computation, so it
+# shards almost perfectly: every test gets its own tmp_path, its own HOME, and a
+# server on an ephemeral port, and Chrome launches once per worker per module.
+# Eight rather than every core, so a second worktree can run its own suite.
+# `-n0` to debug a single test.
+[tool.pytest.ini_options]
+addopts = "-n 8"
