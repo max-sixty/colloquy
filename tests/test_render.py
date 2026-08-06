@@ -3395,6 +3395,12 @@ def test_a_quoted_widget_exhibits_without_taking_input(browser, serve):
 # labels, naming the blocks of the page they are about, and a group taking more than one.
 # One label runs into inline markup and one row carries a chip, because both are things a
 # row lays out beside its own apparatus and neither is anything a card would notice.
+#
+# Form and arity are independent, so the page carries both values of each: `multiple` is
+# on a list (#jobs) and on a grid of cards (#tools), against single-pick cards
+# (#bracket). Which is what makes a claim about arity testable on its own — #jobs against
+# #bracket differs in two things at once, and a rule that was really the list form's
+# would pass that pair either way.
 ASK_PAGE = """<!doctype html>
 <html lang="en">
 <head>
@@ -3418,6 +3424,10 @@ mornings last winter.</p></section>
 <cq-options id="bracket" choose>
   <cq-option id="br-steel"><strong>Steel</strong> Galvanised, drop-in.</cq-option>
   <cq-option id="br-cedar"><strong>Cedar</strong> Cheap; needs sealing.</cq-option>
+</cq-options>
+<cq-options id="tools" choose multiple>
+  <cq-option id="tl-clamp"><strong>Bar clamp</strong> Holds the rail while it sets.</cq-option>
+  <cq-option id="tl-torque"><strong>Torque wrench</strong> The mounts are rated.</cq-option>
 </cq-options>
 <cq-options id="ordered">
   <cq-option id="ord-mounts">Mounts, before the frost</cq-option>
@@ -3445,13 +3455,13 @@ def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serv
     Two things the lint cannot see. A resting mark shows no word in either form, because
     an offer states nothing a reader could disagree with — and what a *picked* mark says
     has to survive that, since it is the page's only statement of where the pick sits.
-    What differs is the dot: a row draws one and a card does not. A card gives it up
-    because the state has the whole cell to live in, while a row's is a column at the
-    line's end with room reserved for it by name, so a row that stopped drawing there
-    would end in a blank the width of the word it isn't saying — and in a `multiple`
-    group an unticked slot is a fact about that row rather than a repetition of the
-    group's offer. Both are asked here, since either could be the theme forgetting a rule
-    rather than each form answering for itself. And a row's name is
+    What differs is the dot: a row draws one and a single-pick card does not. A card
+    gives it up because the state has the whole cell to live in, while a row's is a
+    column at the line's end with room reserved for it by name, so a row that stopped
+    drawing there would end in a blank the width of the word it isn't saying. Both are
+    asked here, since either could be the theme forgetting a rule rather than each form
+    answering for itself. (What a card under `multiple` does instead is the next test's:
+    that one is arity's, not the form's.) And a row's name is
     what the author wrote in it: the mark that lands inside the row once it is picked is
     the page speaking (`says`) and must stay out of the row's own name (`wrote`), or a
     question answered reads its answer back as part of what was asked."""
@@ -3494,9 +3504,10 @@ def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serv
     assert ref.get_attribute("href") == "#sec-mounts"
     assert page.locator("#job-camera .cq-ref").count() == 0
 
-    # No open mark says its word, in either form. The dot is where they part: the row's is
-    # drawn and the card's is not, which is each form answering for the room it reserved
-    # rather than one rule going missing.
+    # No open mark says its word, in either form. The dot is where they part: a row's is
+    # drawn and a single-pick card's is not, which is each form answering for the room it
+    # reserved rather than one rule going missing. (Arity moves this too, which is why the
+    # card side is read off `#bracket` rather than off the `multiple` card group beside it.)
     hidden = "el => getComputedStyle(el).fontSize"
     dot = "el => getComputedStyle(el, '::before').visibility"
     assert page.locator("#job-mounts .cq-pick").evaluate(hidden) == "0px"
@@ -3517,6 +3528,125 @@ def test_a_group_of_bare_labels_reads_as_a_question_about_the_page(browser, serv
         page.locator("#job-heater .cq-pick").get_attribute("aria-label")
         == "your pick: reversible Heat the bird bath"
     )
+    page.close()
+
+
+def test_a_group_says_how_many_of_it_the_reader_may_take(browser, serve):
+    """How many a group takes is the one thing about it a reader has to know before
+    pressing anything, and for a while the page said it nowhere. A `multiple` group drew
+    the identical circles a single-pick group draws — the shape every platform uses for
+    "one of these" — so the two questions were pixel-for-pixel the same and the only
+    thing that distinguished them was the author remembering to say so in prose. A reader
+    who took the marks at their word would pick once and expect the next click to replace
+    it.
+
+    So the mark's corner is the arity: round for one, square for any. Read as a fraction
+    of the mark's own box, because the two are computed in different units (a circle is
+    stated as a percentage of a box whose size is stated in px) and the question is the
+    shape rather than either number. What is pinned is that they differ and that the
+    single-pick one is a full round — a threshold between them would be this design's
+    3px corner written down a second time, free to disagree with it.
+
+    Arity is not the form, which is why the contrast is card against card. Both of the
+    rules here were the list form's once, on the reading that a `multiple` group is a
+    list of slots; `multiple` is orthogonal to which form a group takes, so a grid of
+    cards asking "which of these" inherited neither and offered the reader nothing to
+    count. Hence the second half: an unticked box is a fact about that option, not the
+    group's offer said again, so it draws under `multiple` where a single-pick card —
+    whose state has the whole cell to live in — gives it up.
+
+    And the shape is paint inside a box that does not change, so neither arity is a
+    pixel wider than the other and every room already reserved still covers."""
+    page, errors = open_page(browser, serve(ASK_PAGE))
+    corner = """el => { const s = getComputedStyle(el, '::before');
+                        const r = s.borderTopLeftRadius;
+                        return r.endsWith('%') ? parseFloat(r) / 100
+                                               : parseFloat(r) / parseFloat(s.width); }"""
+    one = page.locator("#br-steel .cq-pick").evaluate(corner)
+    many = page.locator("#tl-clamp .cq-pick").evaluate(corner)
+    assert one == 0.5, "a group taking one option draws something other than a circle"
+    assert many < one, (
+        "a group taking more than one draws the circle that means 'one of these', so "
+        "nothing on the page says the reader may take a second"
+    )
+    # Not the list form's rule wearing a card's clothes: the row group agrees with the
+    # card group it shares an arity with, against the card group it shares a form with.
+    assert page.locator("#job-mounts .cq-pick").evaluate(corner) == many
+
+    # An unticked slot is that option's own state under `multiple`, so the box draws with
+    # nothing in it — the reader counts what is left to take. A single-pick card has no
+    # such second question and keeps giving its box up.
+    dot = "el => getComputedStyle(el, '::before').visibility"
+    assert page.locator("#tl-clamp .cq-pick").evaluate(dot) == "visible", (
+        "a card group asking 'which of these' draws no empty boxes, so the reader has "
+        "nothing to count and no sign a second pick is on offer"
+    )
+    assert page.locator("#br-steel .cq-pick").evaluate(dot) == "hidden"
+
+    # Paint, not metrics: the mark's box is the same in both arities, which is what lets
+    # the row form's reserved column and the card's reserved strip stand unchanged.
+    box = "el => { const b = el.getBoundingClientRect(); return [b.width, b.height]; }"
+    assert page.locator("#tl-clamp .cq-pick").evaluate(box) == page.locator(
+        "#br-steel .cq-pick"
+    ).evaluate(box), "the shape that says arity took room from the option beside it"
+    assert errors == []
+    page.close()
+
+
+NESTED_ASK_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>nested</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Two jobs</h1>
+<cq-options id="outer" choose multiple>
+  <cq-option id="out-drill"><strong>The revocation drill</strong>
+    <p id="drill-p">Support wants it run at their own volume.</p>
+    <cq-options id="inner" choose>
+      <cq-option id="in-now">This sprint</cq-option>
+      <cq-option id="in-next">Next sprint</cq-option>
+    </cq-options>
+  </cq-option>
+  <cq-option id="out-keys"><strong>Key rotation</strong>
+    <p id="keys-p">Cheap, and overdue since the split.</p>
+  </cq-option>
+</cq-options>
+</main>
+</body>
+</html>
+"""
+
+
+def test_a_question_inside_an_option_keeps_its_own_arity(browser, serve):
+    """An option's content model is prose, so a question nests inside another question's
+    option — the theme's argument-row form lists `cq-options` among the block content it
+    lays out. The arity a mark wears has to be its own group's, and the shape that says so
+    is one an enclosing group could hand down: written as an inherited value, "which of
+    these" on the outside would have made "which one" on the inside draw squares, and the
+    reader would be told they may take both of two answers that replace each other.
+
+    So each group reaches only as far as the options it owns. This is what stops that
+    being an argument: a descendant selector here would pass every other test on this
+    page and fail only where two questions stand inside one another."""
+    page, errors = open_page(browser, serve(NESTED_ASK_PAGE))
+    corner = """el => { const s = getComputedStyle(el, '::before');
+                        const r = s.borderTopLeftRadius;
+                        return r.endsWith('%') ? parseFloat(r) / 100
+                                               : parseFloat(r) / parseFloat(s.width); }"""
+    assert page.locator("#in-now .cq-pick").evaluate(corner) == 0.5, (
+        "a single-pick question took the arity of the question it is nested in, so it "
+        "offers a set where only one answer will stand"
+    )
+    # And the outer group's own marks are unaffected by the group standing inside one of
+    # its options: the mark on #out-drill is the outer question's, not the inner one's.
+    assert page.locator("#out-drill > .cq-pick").evaluate(corner) < 0.5
+    assert page.locator("#out-keys > .cq-pick").evaluate(corner) < 0.5
+    assert errors == []
     page.close()
 
 

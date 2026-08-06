@@ -482,9 +482,32 @@ cq-option .cq-pick { display: inline-flex; align-items: center; gap: 6px;
                      font-size: var(--t-6); line-height: 1.5;
                      color: var(--muted); }
 cq-option .cq-pick::before { content: ""; width: 11px; height: 11px; flex: none;
-                     border: 1.5px solid var(--border-2); border-radius: 50%;
+                     border: 1.5px solid var(--border-2);
                      display: grid; place-items: center; box-sizing: border-box;
                      font-size: 8px; line-height: 1; color: var(--card); }
+/* The mark's corner is how many the group takes: a circle is one of these, a rounded
+ * square any of these. It is the only difference a reader gets, and it is the one they
+ * already have — every platform's radio and checkbox are this pair, and nothing else the
+ * group can do says arity. A `multiple` group was drawing the same circles a single-pick
+ * one draws, so the two were identical on screen and the page had to say in prose which
+ * question it was asking ("pick the ones worth starting"); a reader who took the shape at
+ * its word would pick once and expect the next click to replace it.
+ *
+ * The shape and not a word, because an offer says nothing (the rule below) — and not the
+ * ✓ either, which stays the same glyph in both: the corner answers how many, the tick
+ * answers whether this one, and a state that changed both would be one guarantee written
+ * twice. Paint inside the mark's own box, so neither arity is a pixel wider than the
+ * other and nothing that was reserved has to be re-measured.
+ *
+ * Each group states its own options' marks, down a child combinator, and neither rule is
+ * the other's reset — the two are disjoint, so the base rule above states no corner and
+ * every mark takes one of these. Written as a value inherited from the group instead, it
+ * would have had to be defended: an option's content model is prose, so a question nests
+ * inside another question's option, and the inner group's marks would have taken the
+ * outer group's arity for want of a default. Reach only as far as the options the group
+ * owns and the case cannot arise. */
+cq-options:not([multiple]) > cq-option > .cq-pick::before { border-radius: 50%; }
+cq-options[multiple] > cq-option > .cq-pick::before { border-radius: 3px; }
 cq-option .cq-pick[role="button"] { cursor: pointer; }
 /* An offer says nothing, so it is not written — in either form. A picked mark's word is
  * the page's only statement of where the pick sits, which paper keeps and a user can
@@ -495,9 +518,9 @@ cq-option .cq-pick[role="button"] { cursor: pointer; }
  * The room the word will need is held either way (each form's own rules below), so the
  * mark grows into space already reserved and a pick moves nothing. */
 cq-option .cq-pick:not([data-cq-said]) { font-size: 0; gap: 0; }
-/* Warming the ring under the pointer, wherever the ring is drawn — a row, and a card in a
- * settled group. A live card group draws none, so this reaches nothing there and the cell's
- * own hover is the answer instead. */
+/* Warming the ring under the pointer, wherever the ring is drawn — a row, a card under
+ * `multiple`, and a card in a settled group. A live single-pick card group draws none, so
+ * this reaches nothing there and the cell's own hover is the answer instead. */
 cq-options[choose] > cq-option:not([chosen]):hover .cq-pick::before { border-color: var(--muted); }
 cq-option[chosen] .cq-pick { color: var(--ok-ink); }
 cq-option[chosen] .cq-pick::before { content: "✓"; border-color: var(--ok);
@@ -601,20 +624,27 @@ cq-options[answered] > .cq-done { color: var(--ok-ink); border-color: var(--ok);
      * for a reader whom none of the cells above fits. */
     & > .cq-say { margin-top: 0; padding: 10px 12px; background: var(--field);
                      box-shadow: 0 0 0 1px var(--rule); }
-    /* On a card the mark keeps its box and stops drawing. The room stays reserved, so a
-     * pick still moves nothing; the ring is the weaker of two ways to say the same thing
-     * now that the group's shape says it, and one mechanism per guarantee means the weaker
-     * one goes.
+    /* On a single-pick card the mark keeps its box and stops drawing. The room stays
+     * reserved, so a pick still moves nothing; the ring is the weaker of two ways to say
+     * the same thing now that the group's shape says it, and one mechanism per guarantee
+     * means the weaker one goes.
      *
      * A card can give it up because the state has the whole cell to live in — the fill and
      * the rail are the card. A row's cell is one line, and its mark is a column at the
      * line's end that the form reserves room for by name (the list rules below): stop
      * drawing there and the reservation is a hole rather than padding, with every row
-     * ending in a wide blank where the ticks were. So the ring stays in the list, which is
-     * also the form where it answers a second question a card's never has to — a `multiple`
-     * group is a set of independent slots, and an empty one is a fact about that row rather
-     * than a repetition of the group's offer. */
-    & > cq-option:has(> strong) .cq-pick:not([data-cq-said])::before { visibility: hidden; }
+     * ending in a wide blank where the ticks were. So the ring stays in the list.
+     *
+     * And it stays under `multiple`, in either form, because there the empty box is not
+     * the offer repeated — it is the slot's own state, and the group's shape cannot stand
+     * in for it. One cell filled says "this one" whichever question was asked; three
+     * unticked boxes beside it are what say the other two are still yours to take, and how
+     * many you may. This rule read the ring's second job as the list form's, which was the
+     * list form having got there first: `multiple` is orthogonal to which form a group
+     * takes, so a card group that asked "which of these" drew no box anywhere and offered
+     * the reader nothing to count. */
+    &:not([multiple]) > cq-option:has(> strong) .cq-pick:not([data-cq-said])::before {
+                     visibility: hidden; }
     & > cq-option:has(> .cq-pick:focus-visible) { outline: 2px solid var(--accent);
                      outline-offset: -2px; }
     & > cq-option > .cq-pick:focus-visible { outline: none; }
