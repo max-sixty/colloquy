@@ -1,0 +1,8 @@
+# `wt merge` straight to main is how the repo lands, so this is the last check anything
+# gets. pre-merge rather than pre-commit, because it runs after the rebase: the tree it
+# checks is the one that becomes main.
+#
+# A hook that rewrites (prettier, ruff-format) fails the merge and leaves the rewrite
+# uncommitted in the worktree. Read it, then `wt merge` again — the squash sweeps it in.
+[pre-merge]
+checks = "pre-commit run -a"

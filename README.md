@@ -122,7 +122,8 @@ uv run pytest tests
 ```
 
 Ruff and prettier run from `.pre-commit-config.yaml`, which says what each covers
-and why:
+and why. `wt merge` runs the whole set as a pre-merge hook (`.config/wt.toml`) and
+refuses a tree that doesn't pass. Before then:
 
 ```
 pre-commit run --all-files
