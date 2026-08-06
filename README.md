@@ -127,8 +127,8 @@ Playwright outside the script's lock (`bin/colloquy` says why) and would otherwi
 revalidate it against the index.
 
 Ruff and prettier run from `.pre-commit-config.yaml`, which says what each covers
-and why. `wt merge` runs the whole set as a pre-merge hook (`.config/wt.toml`) and
-refuses a tree that doesn't pass. Before then:
+and why. `wt merge` runs that set and then the suite as pre-merge hooks
+(`.config/wt.toml`), and refuses a tree that doesn't pass. Before then:
 
 ```
 pre-commit run --all-files

@@ -4,5 +4,11 @@
 #
 # A hook that rewrites (prettier, ruff-format) fails the merge and leaves the rewrite
 # uncommitted in the worktree. Read it, then `wt merge` again — the squash sweeps it in.
-[pre-merge]
+#
+# Two blocks rather than one table, because a table runs its commands together and the
+# lint rewrites the tree the suite reads.
+[[pre-merge]]
 checks = "pre-commit run -a"
+
+[[pre-merge]]
+tests = "uv run pytest tests"
