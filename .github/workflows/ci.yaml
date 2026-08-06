@@ -21,19 +21,16 @@ jobs:
 
       # The suite runs uv offline (`tests/conftest.py` says why), so everything it
       # drives has to come from the cache, and `uv sync` fills it from `uv.lock`
-      # alone. Two things live outside that lock: the Playwright `bin/colloquy`
-      # hands `version export` on top of its script header (it says why), and the
-      # demo recorder, which has a lock of its own. So the first has no resolution
-      # to read and the second no wheels, and `--help` is each of them doing
-      # nothing but fetch what it's short of.
+      # alone. One thing lives outside that lock: the Playwright `bin/colloquy`
+      # hands `version export` on top of its script header (it says why), which a
+      # fresh cache has no resolution for. `--help` is that path doing nothing but
+      # fetch one.
       #
-      # Pinning the first would not do instead. `uv sync` fetches wheels from the
-      # URLs in `uv.lock` and never asks the index, so what a cold cache lacks for
-      # a `--with` is the resolution, and it lacks that at any version.
+      # Pinning it would not do instead. `uv sync` fetches wheels from the URLs in
+      # `uv.lock` and never asks the index, so what a cold cache lacks for a
+      # `--with` is the resolution, and it lacks that at any version.
       - name: 🌐 Fetch what uv.lock doesn't cache
-        run: |
-          plugins/colloquy/bin/colloquy version export --help
-          scripts/record-demo.sh --help
+        run: plugins/colloquy/bin/colloquy version export --help
 
       # Playwright then attaches to the runner's own Chrome (`channel="chrome"`),
       # the same one `publish-site` draws the examples with, so there is no

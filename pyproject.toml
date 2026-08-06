@@ -5,7 +5,10 @@
 # no build step and no venv, and this file does not change it. What is here is
 # what the *suite* needs: that same set, because the tests load `interact.py` by
 # path and so import its dependencies into their own process, plus the browser
-# driver and pytest.
+# driver, pytest, and what `scripts/` imports. The scripts are stdlib-only bar
+# the demo recorder, and that one runs here rather than carrying a header and a
+# lock of its own: it is a developer's tool like the suite, not payload like
+# `interact.py`, so one environment covers both and there is one place to bump.
 #
 # The overlap is a mirror, not a second source of truth. A dependency
 # `interact.py` gains and this file doesn't fails the suite on the next run with
@@ -27,6 +30,8 @@ dev = [
   "pytest-xdist>=3",
   "playwright>=1.49",
   "axe-playwright-python>=0.1.4",
+  # scripts/record-demo.py, which draws its frames.
+  "pillow>=11",
   # Mirrors interact.py's PEP 723 header, per the note above.
   "click>=8",
   "jsonschema>=4",

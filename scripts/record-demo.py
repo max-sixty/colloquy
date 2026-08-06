@@ -1,8 +1,4 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["pillow>=11", "playwright>=1.52"]
-# ///
+#!/usr/bin/env python3
 """Record docs/demo.gif, and the landing page's two session stills, by driving the
 shipped runtime through one round.
 
