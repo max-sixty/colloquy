@@ -124,9 +124,8 @@ uv run pytest tests
 Two minutes rather than eleven, because `pyproject.toml` shards it across eight workers,
 and no network at all, because `conftest.py` runs uv offline — `version export` supplies
 Playwright outside the script's lock (`bin/colloquy` says why) and would otherwise
-revalidate it against the index. Neither it nor the demo recorder's own header is in
-`uv.lock`, so a cache that has never resolved them has nothing to read offline. A fresh
-checkout asks for them once:
+revalidate it against the index. It and the demo recorder both live outside `uv.lock`,
+which is the only thing filling that cache, so a fresh checkout asks for them once:
 
 ```
 plugins/colloquy/bin/colloquy version export --help
