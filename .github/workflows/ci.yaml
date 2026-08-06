@@ -1,0 +1,46 @@
+name: ci
+
+# The two gates `wt merge` already runs locally (`.config/wt.toml`), run again
+# where that hook never reaches: a pull request, and any push that didn't come
+# through `wt merge`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: 📂 Checkout code
+        uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+
+      # The suite runs uv offline (`tests/conftest.py` says why), so everything it
+      # drives has to come from the cache. Two things resolve outside `uv.lock`:
+      # the Playwright that `bin/colloquy` hands `version export` on top of its
+      # script header (it says why), and the demo recorder's own header. A fresh
+      # runner's cache holds neither. `--help` is each doing nothing but resolve.
+      - name: 🌐 Resolve what the lockfile doesn't pin
+        run: |
+          plugins/colloquy/bin/colloquy version export --help
+          scripts/record-demo.sh --help
+
+      # Playwright then attaches to the runner's own Chrome (`channel="chrome"`),
+      # the same one `publish-site` draws the examples with, so there is no
+      # browser to install either.
+      - name: 🧪 Test suite
+        run: uv run pytest tests
+
+  lint:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: 📂 Checkout code
+        uses: actions/checkout@v6
+
+      - name: 🔍 Pre-commit hooks
+        uses: pre-commit/action@v3.0.1

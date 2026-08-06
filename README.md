@@ -124,11 +124,19 @@ uv run pytest tests
 Two minutes rather than eleven, because `pyproject.toml` shards it across eight workers,
 and no network at all, because `conftest.py` runs uv offline — `version export` supplies
 Playwright outside the script's lock (`bin/colloquy` says why) and would otherwise
-revalidate it against the index.
+revalidate it against the index. Neither it nor the demo recorder's own header is in
+`uv.lock`, so a cache that has never resolved them has nothing to read offline. A fresh
+checkout asks for them once:
+
+```
+plugins/colloquy/bin/colloquy version export --help
+scripts/record-demo.sh --help
+```
 
 Ruff and prettier run from `.pre-commit-config.yaml`, which says what each covers
 and why. `wt merge` runs that set and then the suite as pre-merge hooks
-(`.config/wt.toml`), and refuses a tree that doesn't pass. Before then:
+(`.config/wt.toml`), and refuses a tree that doesn't pass; `.github/workflows/ci.yaml`
+runs both again on main and on every pull request. Before then:
 
 ```
 pre-commit run --all-files
