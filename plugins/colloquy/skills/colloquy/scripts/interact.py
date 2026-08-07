@@ -41,6 +41,9 @@ A page directory holds:
                          optimisation over inlining; inlining was never available
     comments.jsonl       append-only event log; an event's seq is its line number (1-based)
     status.json          the agent's declared state: {"state": working|waiting|idle, "detail", "ts"};
+                         detail is the finer grain the banner reads out after the
+                         state — what the agent is doing while working, what it
+                         needs from the reader while waiting;
                          when `colloquy wait` prints for a non-working page, it
                          writes working with "handoff": true until the agent's
                          own `colloquy status` lands
@@ -6180,7 +6183,13 @@ def stop(dir: str) -> None:
 @click.argument("state", type=click.Choice(["working", "waiting", "idle"]))
 @click.argument("detail", required=False, default="")
 def status(dir: str, state: str, detail: str) -> None:
-    """Set the agent's banner state."""
+    """Set the agent's banner state.
+
+    DETAIL is what the banner says after the state: what you are doing while
+    `working`, and what you want back from the reader while `waiting` ("pick a
+    storage engine"). A waiting page that declares none falls back to the
+    standing "select text to comment".
+    """
     page_dir = resolve_dir(dir)
     # Idling over unacknowledged events ends the colloquy on a user still owed an
     # answer — or on a worker's report left standing as provisional state forever.

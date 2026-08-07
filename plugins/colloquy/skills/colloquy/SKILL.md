@@ -14,12 +14,13 @@ allowed-tools:
 Present a concept, decision, findings, or work in progress as an HTML page the user opens
 in a browser and works in place — a colloquy: they select text and comment, decide and
 edit through what the page offers, you reply in-thread and ship revised versions, and a
-banner shows whether you're working or listening. Reach for it instead of a wall-of-text plan or a
-`.md` report handed over by path, when a complex change needs shared understanding or a
-decision before code, when a diagnosis or review is itself the deliverable, or when a
-run of work has items the user will want to watch go by. With nothing named below, the
-subject is whatever the session is about — the plan you were about to give, the design
-under discussion, the findings you just gathered, or the work you are about to start.
+banner shows whether you're working or waiting on them. Reach for it instead of a
+wall-of-text plan or a `.md` report handed over by path, when a complex change needs
+shared understanding or a decision before code, when a diagnosis or review is itself the
+deliverable, or when a run of work has items the user will want to watch go by. With
+nothing named below, the subject is whatever the session is about — the plan you were
+about to give, the design under discussion, the findings you just gathered, or the work
+you are about to start.
 
 $ARGUMENTS
 
@@ -88,7 +89,7 @@ colloquy version check <page> --render       # browser gate, once per page
 colloquy version publish <page> --version 1 --text "<changelog>"
 colloquy version export <page> -o <file>     # standalone HTML copy
 colloquy server run <page> [--host NAME]     # long-running; prints the URL
-colloquy status <page> working "<detail>"    # or: waiting, idle
+colloquy status <page> working "<detail>"    # or: waiting "<what you want back>", idle
 colloquy report <page> <widget> <verb> name=value…  # a worker's state change, e.g.
                                              #   report <page> t-parser status status=review
 colloquy wait <page>                         # prints unacknowledged user events and reports
@@ -300,7 +301,8 @@ thread closes.
 ## The loop
 
 Whenever you hand over the URL or finish a round of work, run
-`colloquy status <page> waiting`, then enter the loop for the current host:
+`colloquy status <page> waiting "<what you want back>"`, then enter the loop for the
+current host:
 
 Every handover message carries the page's URL again, so the user can open the page
 from the turn in front of them.
@@ -317,10 +319,17 @@ from the turn in front of them.
   end the turn expecting its completion to start another one: Codex has no unprompted
   completion delivery. Start a fresh wait session after each batch and retain its new id.
 
-While `colloquy wait` runs, the banner names the current agent as listening. It can stay
-open as long as the user takes, and exits when they comment, reply, resolve,
-approve the page or end the colloquy, or edit an interactive widget (a drag on a
-`cq-board` arrives as an `action` event) — or when a worker session posts a
+While `colloquy wait` runs, the banner reads "<agent> awaits" and puts the `waiting`
+detail after it — the page's own line about what it needs from the reader. Write the
+thing you want back, in one short clause ("pick a storage engine", "check the two
+failure modes against what you saw"), rather than restating that you are waiting; the
+line shares a row with the page's controls and ellipsizes when they need the room. A
+page that asks nothing declares no detail, and the banner offers "select text to
+comment" instead.
+
+The wait can stay open as long as the user takes, and exits when they comment, reply,
+resolve, approve the page or end the colloquy, or edit an interactive widget (a drag on
+a `cq-board` arrives as an `action` event) — or when a worker session posts a
 `colloquy report`, which joins the same batch — printing the unacknowledged events
 as JSON lines. Printing is deliberately not receipt: a
 detached process can finish without its output ever entering model context. As soon as
@@ -411,8 +420,9 @@ For each acknowledged batch:
    version automatically.
 4. Re-enter the host's loop above: start a new background wait in Claude Code, or a new
    unified-exec wait in Codex and retain its exact session. Use `colloquy status <page>
-   waiting` and long-poll where the next move is the user's. Where it is yours, use
-   `working`, keep doing the work, and poll the running waiter between milestones.
+   waiting "<what you want back>"` and long-poll where the next move is the user's.
+   Where it is yours, use `working`, keep doing the work, and poll the running waiter
+   between milestones.
 
 A `done` event is sign-off — it arrives only from a page declaring it (see the
 conventions). It approves the work rather than ending the page: carry the approval back

@@ -1358,7 +1358,7 @@ function rowPresence(entry) {
     kind === "working"
       ? "Working" + (entry.status.detail ? " — " + entry.status.detail : "")
       : kind === "listening"
-        ? "Listening"
+        ? "Awaits"
         : kind === "away"
           ? quiet
             ? `Quiet (${ago(entry.status.ts)})`
@@ -4713,12 +4713,22 @@ function presented(state) {
             : "away";
   return { kind, quiet };
 }
+// One writer for the dot and the line, offline included: null is the poll saying it
+// couldn't reach the server, not a second function's own rendering. The line is one of
+// the two things on the row that give up width when it runs out (see the theme), so what
+// a narrow window clips is a hover away, the way the version chooser's label is — worth
+// more now that the line carries the ask and not only the state. Written every time
+// rather than only when the box clips, because whether it does is a fact about the
+// rendering and nothing here reads that back.
+const showStatus = (tone, ...parts) => {
+  dot.className = "cq-dot" + (tone ? " " + tone : "");
+  statusText.textContent = "";
+  statusText.append(...parts);
+  statusText.title = statusText.textContent;
+};
 function renderStatus(state) {
-  // One writer for the dot and the text, offline included: null is the poll
-  // saying it couldn't reach the server, not a second function's own rendering.
   if (state === null) {
-    dot.className = "cq-dot offline";
-    statusText.textContent = "Server offline — comments won't send";
+    showStatus("offline", "Server offline — comments won't send");
     return;
   }
   const { status, pending } = state;
@@ -4738,9 +4748,23 @@ function renderStatus(state) {
   else if (kind === "working") {
     showAge = Boolean(status.ts);
     text = `${agentName()} is working${status.detail ? " — " + status.detail : ""}`;
-  } else if (kind === "listening")
-    text = `${agentName()} is listening — select text to comment`;
-  else {
+  } else if (kind === "listening") {
+    // Attendance is half the news; the other half is what the page wants back. The
+    // Asks count beside it says how many things are unanswered and nothing about what
+    // any of them is, so a `waiting` claim's detail says that here in the agent's own
+    // words, the way a `working` claim's says what it is doing. Only that state's — a
+    // `working` claim gone quiet under a live wait is judged `listening` too, and its
+    // detail names the wrong half of the loop. With nothing declared it is the standing
+    // instruction, which is what a page asking nothing wanted anyway.
+    //
+    // "awaits" while the judged kind stays `listening`: they name different things.
+    // The kind and the server field behind it are the evidence — a watcher live on the
+    // other end — and the words are the stance it supports, which is the registry's
+    // own word for a standing request to the reader (x-awaits). Wording is the seat's,
+    // per `presented`, so the row in the colloquys panel says its own shorter version.
+    const wanted = status.state === "waiting" ? status.detail : "";
+    text = `${agentName()} awaits — ${wanted || "select text to comment"}`;
+  } else {
     // Somebody is behind the page and isn't attending: say which and what to do. A
     // long silence means Claude lost the thread; a recent check-in means it is
     // mid-turn and the next one collects.
@@ -4752,14 +4776,13 @@ function renderStatus(state) {
       : [`${agentName()} isn't watching right now.`, "It picks them up next turn."];
     text = `${why} ${saved} ${how}`;
   }
-  dot.className = "cq-dot" + (TONE[kind] ? " " + TONE[kind] : "");
-  statusText.textContent = "";
-  statusText.append(document.createTextNode(text));
+  const line = [text];
   if (showAge)
-    statusText.append(
+    line.push(
       " ",
       Object.assign(el("span", "cq-age"), { textContent: `(${ago(status.ts)})` }),
     );
+  showStatus(TONE[kind], ...line);
 }
 
 // Navigate to a version with the pin semantics every chooser shares: an older

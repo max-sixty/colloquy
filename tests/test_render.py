@@ -1668,7 +1668,18 @@ def test_a_panel_row_follows_its_pages_status_live(
     )
     told(page)
     expect(row.locator(".cq-others-line")).to_have_text("Working — recording the demo")
-    # The claim still says working; its claimant is gone. The row reports what the
+    # A neighbour waiting on its own reader says so in this seat's shorter words, and
+    # in the same term its banner uses: one word per state across the product, or a
+    # user reading both surfaces has to work out whether they mean the same thing.
+    # Its own watcher has to be live for that, which is what the neighbour's heartbeat
+    # is — judged from the same evidence its banner judges itself on.
+    interact.write_json(
+        other_dir / "status.json",
+        {"state": "waiting", "detail": "", "ts": interact.now_iso()},
+    )
+    with live_watcher(other_dir, page):
+        expect(row.locator(".cq-others-line")).to_have_text("Awaits")
+    # The claim still says waiting; its claimant is gone. The row reports what the
     # directory can prove, exactly as the neighbour's own banner would.
     interact.write_json(
         other_dir / "session.json",
@@ -10219,10 +10230,24 @@ def test_banner_reports_whether_anyone_is_attending(browser, serve, tmp_path, de
 
     declare("waiting")
     with live_watcher(d, page):
-        expect(text).to_have_text("Claude is listening — select text to comment")
+        expect(text).to_have_text("Claude awaits — select text to comment")
         expect(dot).to_have_class(re.compile(r"\blistening\b"))
 
+        # A working claim gone quiet under a live watcher lands in this same branch,
+        # and its detail says what the agent was doing — the wrong half of the loop to
+        # read out after "awaits", so only a waiting claim's detail speaks here.
+        declare("working", "revising the plan", quiet_for=20 * 60)
+        expect(text).to_have_text("Claude awaits — select text to comment")
+
+        # What the page wants back, in the agent's words, where the reader arrives.
+        # The whole line is the tooltip too: it is the first thing on the row to be
+        # clipped, and a narrow window must not be why the ask goes unread.
+        declare("waiting", "pick a storage engine")
+        expect(text).to_have_text("Claude awaits — pick a storage engine")
+        expect(text).to_have_attribute("title", "Claude awaits — pick a storage engine")
+
     # No watcher, but Claude checked in moments ago, so it is between turns.
+    declare("waiting")
     expect(text).to_have_text(
         "Claude isn't watching right now. 1 update waiting. It picks them up next turn."
     )

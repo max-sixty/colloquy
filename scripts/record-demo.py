@@ -16,6 +16,7 @@ import argparse
 import http.cookiejar
 import io
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -273,7 +274,7 @@ def record(
 
     page.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
     page.wait_for_function(
-        "() => document.querySelector('.cq-status-text').textContent.includes('is listening')"
+        "() => document.querySelector('.cq-status-text').textContent.includes('awaits')"
     )
     shot(1600)
 
@@ -386,7 +387,7 @@ def shoot_stills(
     not something to toggle on a live page: the vendored diagram palette is read once
     at load, so a flipped page would carry the other scheme's diagrams.
 
-    Getting the banner to say "Claude is listening" takes stating both halves of it.
+    Getting the banner to say "Claude awaits" takes stating both halves of it.
     `record` has received and acknowledged the board action through the waiter it
     started, so no user event remains to make this fresh waiter return immediately.
     State the scene, then start that waiter: its heartbeat is the proof the browser
@@ -416,7 +417,7 @@ def shoot_stills(
         )
         page.wait_for_function(
             "() => document.querySelector('.cq-status-text')"
-            ".textContent.includes('is listening')"
+            ".textContent.includes('awaits')"
         )
         page.locator(".cq-banner .cq-comments").click()
         page.wait_for_selector(".cq-thread .cq-msg.claude")
@@ -490,6 +491,19 @@ def main() -> None:
     # Makes the output directory too, so `--output` into somewhere new works and
     # `write_gif` has a directory to write into.
     page_dir.mkdir(parents=True)
+    # The recording gets a state home of its own, staged beside the page for the same
+    # reason the page is. The banner's `Other colloquys` control lists the live pages
+    # the state home knows about, so recording on a machine with pages open puts a
+    # control in the picture that the staged scene never had — and one that takes its
+    # width out of everything left of it, so the whole row lands somewhere else than
+    # the alt text describes. Whose machine recorded it is not a fact about the
+    # product. Set before the first colloquy command, so every one of them and the
+    # server they start inherit it.
+    state_dir = page_dir.parent / f"{page_dir.name}-state"
+    if state_dir.exists():
+        shutil.rmtree(state_dir)
+    state_dir.mkdir()
+    os.environ["XDG_STATE_HOME"] = str(state_dir)
 
     # Two scopes because there are two things to give back and they start at
     # different moments: the staging directory exists from here on, the processes
@@ -550,6 +564,7 @@ def main() -> None:
                 server.wait(timeout=5)
     finally:
         shutil.rmtree(page_dir)
+        shutil.rmtree(state_dir)
     try:
         shown = output.relative_to(ROOT)
     except ValueError:
