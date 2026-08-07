@@ -102,7 +102,11 @@ claims the page, and that claim is what two reapers act on: a watcher thread
 stops the process when the claimant pid goes, and SessionEnd idles the page and
 stops the server. `server run` from a bare shell — a terminal, a launchd job —
 claims nothing, and that is the standing serve: a page kept up across sessions,
-for a command hub or a dashboard someone leaves open for weeks. No daemon is
+for a command hub or a dashboard someone leaves open for weeks.
+`server run --standing` makes the same statement from inside a host: the launch
+declines the claim, for a page meant to outlive the session that starts it —
+under a harness that restarts mid-session the claimant pid churns, and a claimed
+server reads the old pid's death as the session ending. No daemon is
 involved and nothing revives it; `colloquy server stop` is its one reaper, which
 is the whole of what "standing" means. A session that picks the page up later
 owes it a watcher while it lives, exactly as it would any page, and takes
@@ -2061,8 +2065,10 @@ class DualStackHTTPServer(ThreadingHTTPServer):
         super().server_bind()
 
 
-def cmd_serve(page_dir: Path, host: str | None = None) -> None:
-    claimed = claim_page(page_dir)
+def cmd_serve(page_dir: Path, host: str | None = None, standing: bool = False) -> None:
+    # `--standing` declines the claim rather than adding a second lifetime
+    # mechanism: everything downstream still reads "session iff claimed".
+    claimed = False if standing else claim_page(page_dir)
     existing = running_server(page_dir)
     if existing:
         # A stated host silently ignored would print a URL that contradicts the
@@ -2071,6 +2077,13 @@ def cmd_serve(page_dir: Path, host: str | None = None) -> None:
             sys.exit(
                 f"already serving at {existing['url']}; `colloquy server stop` "
                 "first, then re-run with --host"
+            )
+        # A stated lifetime silently ignored would print a note that contradicts
+        # the flag, exactly as a stated host would — same refusal, same way out.
+        if standing and existing["lifetime"] != "standing":
+            sys.exit(
+                f"already serving as a session server at {existing['url']}; "
+                "`colloquy server stop` first, then re-run with --standing"
             )
         print(existing["url"], flush=True)
         # The running server's lifetime, not this invocation's: claiming the page
@@ -6308,13 +6321,19 @@ def server() -> None:
     help="bind every interface and put NAME in the URL, for a user the "
     "derived address can't reach; recorded in access.json",
 )
-def run(dir: str, host: str | None) -> None:
+@click.option(
+    "--standing",
+    is_flag=True,
+    help="decline the session claim, so the server outlives this session and "
+    "only `colloquy server stop` ends it — for a page kept up across sessions",
+)
+def run(dir: str, host: str | None, standing: bool) -> None:
     """Serve a page and print its URL.
 
     Runs until stopped. If the page already has a live server, prints its URL
     and exits.
     """
-    cmd_serve(resolve_dir(dir), host)
+    cmd_serve(resolve_dir(dir), host, standing)
 
 
 @server.command(short_help="Stop a page's server.")

@@ -582,17 +582,20 @@ one page's URL hands out every page on this machine.
 ## A page that outlives the session
 
 `server run` from your session claims the page, and the server goes down when the
-session ends. Run from a shell of the user's own instead — a terminal, a login item — it
-claims nothing and stays up: that is a **standing page**, the arrangement for a command
-hub or a dashboard they keep open for weeks. `server run` says which of the two it
-started on the line after the URL. Nothing revives a standing server and no session's
-end reaches it; `colloquy server stop <page>` is the only thing that ends one.
+session ends. Two launches decline that claim and stay up instead:
+`server run --standing`, and a run from a shell of the user's own — a terminal, a login
+item. Either is a **standing page**, the arrangement for a command hub or a dashboard
+they keep open for weeks. `server run` says which lifetime it started on the line after
+the URL. Nothing revives a standing server and no session's end reaches it;
+`colloquy server stop <page>` is the only thing that ends one. Start one with
+`--standing` when the page is meant to outlive your session — and say so when you do,
+since the user inherits a process only that command stops.
 
 A lifetime belongs to the process, so a crash ends it along with the server. The one
 restart in colloquy is `colloquy wait`'s, and it starts a server of the session running
 the wait — so a standing server that died and came back that way now goes down with that
-session. Say so when it happens: the user re-establishes a standing page from their own
-shell, and only they can.
+session. Say so when it happens, and re-establish it with `server run --standing` (a
+`server stop` first, if the wait's revival is still up).
 
 Working on a standing page changes nothing you do. Pick it up with `colloquy wait` as
 usual, publish versions as usual, and expect the same loop while your session lasts — a

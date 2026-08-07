@@ -5003,6 +5003,58 @@ def test_a_sessionless_server_ignores_a_stale_claim_and_requires_explicit_stop(
             server.wait(timeout=5)
 
 
+def test_server_run_standing_declines_the_claim_a_host_session_offers(page_dir):
+    """`--standing` from inside a host is the bare-shell statement made
+    explicit: the launch declines the claim it could have made, so the server
+    records the standing lifetime and the page stays nobody's — no watcher
+    thread to stop it when the host pid goes, no SessionEnd reaper."""
+    env = os.environ.copy()
+    env["CLAUDE_CODE_SESSION_ID"] = "host-session"
+    env["CLAUDE_PID"] = str(os.getpid())
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(interact.__file__),
+            "server",
+            "run",
+            "--standing",
+            str(page_dir),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    try:
+        assert process.stdout.readline().startswith("http://127.0.0.1:")
+        assert "standing server" in process.stderr.readline()
+        assert interact.read_json(page_dir / "server.json")["lifetime"] == "standing"
+        assert not (page_dir / "session.json").exists()
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=5)
+
+
+def test_server_run_standing_refuses_to_adopt_a_session_server(page_dir):
+    """A stated lifetime contradicted by the running server is refused with the
+    way out named, exactly as a stated `--host` is — not silently ignored."""
+    interact.write_json(
+        page_dir / "server.json",
+        {
+            "port": 1,
+            "pid": os.getpid(),
+            "url": "http://127.0.0.1:1/?t=x",
+            "lifetime": "session",
+        },
+    )
+    result = CliRunner().invoke(
+        interact.cli, ["server", "run", "--standing", str(page_dir)]
+    )
+    assert result.exit_code != 0
+    assert "server stop" in result.output
+
+
 def test_a_standing_server_outlives_a_session_that_picks_the_page_up(
     page_dir, monkeypatch, capsys
 ):
