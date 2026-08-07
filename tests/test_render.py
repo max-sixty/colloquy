@@ -1687,6 +1687,23 @@ def test_a_panel_row_follows_its_pages_status_live(
     )
     with live_watcher(other_dir, page):
         expect(row.locator(".cq-others-line")).to_have_text("Awaits")
+        # And what it is waiting for, because the panel is where a reader picks which
+        # page to go to: the row that says a page needs them carries the ask, the way
+        # the working row above carries what its agent is doing. Its own tooltip too —
+        # the line ellipsizes at the panel's width and the row's tooltip holds the page
+        # title, so without one the ask is what a narrow hover cannot recover.
+        interact.write_json(
+            other_dir / "status.json",
+            {
+                "state": "waiting",
+                "detail": "pick a storage engine",
+                "ts": interact.now_iso(),
+            },
+        )
+        told(page)
+        line = row.locator(".cq-others-line")
+        expect(line).to_have_text("Awaits — pick a storage engine")
+        expect(line).to_have_attribute("title", "Awaits — pick a storage engine")
     # The claim still says waiting; its claimant is gone. The row reports what the
     # directory can prove, exactly as the neighbour's own banner would.
     interact.write_json(

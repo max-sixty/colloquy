@@ -194,10 +194,9 @@ and the comment layer left behind.
   card's column or an option's pick has no form yet.
 - The runtime injects the status banner, comment sidebar, version picker, keyboard
   shortcuts (`?` in the browser shows the reference), and a left panel listing the
-  machine's live colloquys with what each is doing; don't build page UI for any of
-  those. It also
-  collects what the page is still waiting on the reader for — an
-  undecided suggestion, a `choose` group with no pick, a task at `review` or `blocked`
+  machine's live colloquys with what each is doing or waiting for; don't build page UI
+  for any of those. It also collects what the page is still waiting on the reader for —
+  an undecided suggestion, a `choose` group with no pick, a task at `review` or `blocked`
   — into a banner count they can step through with `a`, from the vocabulary's own
   declarations (`x-awaits`). So write the asks as widgets and let the count find them;
   a hand-written "still open" list beside them is a second copy that goes stale the
@@ -325,7 +324,10 @@ thing you want back, in one short clause ("pick a storage engine", "check the tw
 failure modes against what you saw"), rather than restating that you are waiting; the
 line shares a row with the page's controls and ellipsizes when they need the room. A
 page that asks nothing declares no detail, and the banner offers "select text to
-comment" instead.
+comment" instead. The same clause is what a reader sees against this page's name in
+every other colloquy's panel, which is where they pick which of several pages to
+come to — so name the ask, not the page's subject, which the title beside it already
+gives them.
 
 The wait can stay open as long as the user takes, and exits when they comment, reply,
 resolve, approve the page or end the colloquy, or edit an interactive widget (a drag on

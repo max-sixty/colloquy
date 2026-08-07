@@ -1449,12 +1449,18 @@ const TONE = {
   closed: "",
 };
 function rowPresence(entry) {
-  const { kind, quiet } = presented(entry);
+  const { kind, quiet, detail } = presented(entry);
+  // The same join for both kinds that have words of their own. The reader opens this
+  // panel to find which page needs them, so a bare `Awaits` beside a neighbour's
+  // `Working — recording the demo` said least about the one row they are here to act
+  // on: three pages waiting rendered as three identical rows, and which to go to
+  // first is the whole question the panel was opened to answer.
+  const stated = (word) => word + (detail ? " — " + detail : "");
   const line =
     kind === "working"
-      ? "Working" + (entry.status.detail ? " — " + entry.status.detail : "")
+      ? stated("Working")
       : kind === "listening"
-        ? "Awaits"
+        ? stated("Awaits")
         : kind === "away"
           ? quiet
             ? `Quiet (${ago(entry.status.ts)})`
@@ -1503,7 +1509,16 @@ function renderOthers(state) {
     if (rowDot.className !== dotCls) rowDot.className = dotCls;
     if (rowTitle.textContent !== title) rowTitle.textContent = title;
     if (row.title !== title) row.title = title; // the row ellipsizes; the tooltip holds it whole
-    if (rowLine.textContent !== line) rowLine.textContent = line;
+    if (rowLine.textContent !== line) {
+      // The line holds its own tooltip, now that it carries an ask and not one word:
+      // it ellipsizes at the panel's fixed width, and the row's tooltip is the page
+      // title, so the ask would be the one thing on the row a hover cannot recover.
+      // The innermost title wins where two overlap, which puts this one under the
+      // pointer here while the title still answers everywhere else on the row. One
+      // comparison answers for both, being the same words written twice.
+      rowLine.textContent = line;
+      rowLine.title = line;
+    }
     const place = anchor ? anchor.nextElementSibling : othersPanel.firstElementChild;
     if (place !== row) othersPanel.insertBefore(row, place);
     anchor = row;
@@ -4893,11 +4908,21 @@ diffBtn.onclick = async () => {
 // that it picks up again when a session does.
 const HANDOFF_GRACE_MS = 2 * 60 * 1000;
 const WORKING_GRACE_MS = 15 * 60 * 1000;
+// Which claim each kind reads out, and so whose detail it may speak. A `working`
+// claim gone quiet under a live watcher is judged `listening` too, and that detail
+// names what the agent was doing rather than what it wants back — the wrong half of
+// the loop to read out after "awaits". The question sits here rather than at each
+// seat, for the reason `kind` does: two seats answering it separately is two answers
+// to what the page may say it is waiting for. A kind absent here is a judgment
+// against the claim — nobody is behind the page, or the page is closed — and the
+// claim's words about the work are not the news there.
+const DETAIL_FROM = { working: "working", listening: "waiting" };
 // The claim-against-proof judgment, one function for every surface that shows a
 // status: the banner's sentence about this page and a panel row about a neighbour
 // read the same fields the server gathers in one place (`presence`), so the two can
-// never disagree about what "working" means. `kind` is the judged state; the caller
-// words it for its seat.
+// never disagree about what "working" means. `kind` is the judged state and `detail`
+// the claim's own words where that state licenses them; the caller words it for its
+// seat.
 function presented(state) {
   const { status, listening, session_alive } = state;
   // How long the claim has gone unrefreshed. The rope is short for the status
@@ -4925,7 +4950,11 @@ function presented(state) {
           : listening
             ? "listening"
             : "away";
-  return { kind, quiet };
+  return {
+    kind,
+    quiet,
+    detail: status.state === DETAIL_FROM[kind] ? status.detail : "",
+  };
 }
 // One writer for the dot and the line, offline included: null is the poll saying it
 // couldn't reach the server, not a second function's own rendering. The line is one of
@@ -4946,7 +4975,7 @@ function renderStatus(state) {
     return;
   }
   const { status, pending } = state;
-  const { kind, quiet } = presented(state);
+  const { kind, quiet, detail } = presented(state);
   // What the user's words do meanwhile. The log takes them with nobody on the other
   // end; the only thing attendance changes is when they are read.
   const saved = pending
@@ -4961,23 +4990,21 @@ function renderStatus(state) {
     text = `No session holds this page. ${saved} It picks up again when a session does.`;
   else if (kind === "working") {
     showAge = Boolean(status.ts);
-    text = `${agentName()} is working${status.detail ? " — " + status.detail : ""}`;
+    text = `${agentName()} is working${detail ? " — " + detail : ""}`;
   } else if (kind === "listening") {
     // Attendance is half the news; the other half is what the page wants back. The
     // Asks count beside it says how many things are unanswered and nothing about what
-    // any of them is, so a `waiting` claim's detail says that here in the agent's own
-    // words, the way a `working` claim's says what it is doing. Only that state's — a
-    // `working` claim gone quiet under a live wait is judged `listening` too, and its
-    // detail names the wrong half of the loop. With nothing declared it is the standing
-    // instruction, which is what a page asking nothing wanted anyway.
+    // any of them is, so the claim's detail says that here in the agent's own words,
+    // the way a `working` claim's says what it is doing. With nothing declared it is
+    // the standing instruction, which is what a page asking nothing wanted anyway.
     //
     // "awaits" while the judged kind stays `listening`: they name different things.
     // The kind and the server field behind it are the evidence — a watcher live on the
     // other end — and the words are the stance it supports, which is the registry's
     // own word for a standing request to the reader (x-awaits). Wording is the seat's,
-    // per `presented`, so the row in the colloquys panel says its own shorter version.
-    const wanted = status.state === "waiting" ? status.detail : "";
-    text = `${agentName()} awaits — ${wanted || "select text to comment"}`;
+    // per `presented`, so a row in the colloquys panel leads with the bare word and
+    // carries the same ask behind it.
+    text = `${agentName()} awaits — ${detail || "select text to comment"}`;
   } else {
     // Somebody is behind the page and isn't attending: say which and what to do. A
     // long silence means Claude lost the thread; a recent check-in means it is
