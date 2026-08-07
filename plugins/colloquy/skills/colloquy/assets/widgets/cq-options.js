@@ -11,8 +11,9 @@
  * holds every word the page shows.
  *
  * `choose` takes the reader's pick. Every option carries one injected mark that is both
- * the keyboard path and the state — a toggle reading "choose", which becomes "your pick"
- * once this reader picks it, or "chosen" where the document already carries it. One
+ * the keyboard path and the state — a toggle reading "choose one" or "choose any" as the
+ * group takes one option or several, which becomes "your pick" once this reader picks it,
+ * or "chosen" where the document already carries it. One
  * element for both, so nothing hides, nothing moves, and a keyboard pick leaves focus
  * where it was. Which word a mark wears is asked of the option rather than of the call
  * that changed it: picked and authored-chosen reads "chosen", picked otherwise reads
@@ -92,7 +93,15 @@ import {
 // to an option with neither is to say "Settled" rather than name an id nobody wrote.
 const label = (option) => wrote(option.querySelector(":scope > strong") ?? option);
 
-const OPEN = "choose"; // the option is pickable
+// The offer, and how many of the group it takes. The mark is the whole of what says that,
+// a group's prose being deliberately silent — captioning a control the reader can already
+// read is exactly what the corner shape is for — and the corner is paint, which reaches
+// nobody listening. So the mark states the arity twice, once in each register one control
+// has: the shape for the eye, and this word, which goes into the aria-label below and is
+// drawn at font-size 0 (theme.css) so the offer stays silent on screen. A reader who hears
+// "choose any" knows the next press adds where "choose one" would have replaced, and
+// knows it while the question is still open rather than after answering it.
+const OPEN = { one: "choose one", any: "choose any" };
 const PICKED = "your pick"; // this reader picked it, this session
 const AUTHORED = "chosen"; // the document arrived carrying the pick
 
@@ -338,19 +347,24 @@ customElements.define(
     }
 
     // Which kind of word the label is travels with it, on both shapes of mark and on
-    // every write: "choose" is a thing to do, so it leaves the printed page and no comment
+    // every write: the offer is a thing to do, so it leaves the printed page and no comment
     // lands on it, while a picked option's mark is the only place the page says where the
     // pick sits — paper keeps that one and a user can point at it. Asked of the label
     // rather than of the element, because one mark is both over its life and neither shape
     // is a <button> to tell them apart by.
     //
-    // Then what only a control needs: an accessible name saying which option it picks,
-    // containing the visible word, and the pressed state.
+    // Then what only a control needs: an accessible name saying which option it picks and
+    // how many of the group are on offer, containing the visible word, and the pressed
+    // state.
     #label(option) {
       const mark = option.querySelector(":scope > .cq-pick");
       if (!mark) return;
       const chosen = option.hasAttribute("chosen");
-      const word = !chosen ? OPEN : this.#authored.has(option.id) ? AUTHORED : PICKED;
+      const word = !chosen
+        ? OPEN[this.hasAttribute("multiple") ? "any" : "one"]
+        : this.#authored.has(option.id)
+          ? AUTHORED
+          : PICKED;
       relabel(mark, word, { says: chosen });
       if (!mark.matches('[role="button"]')) return;
       mark.setAttribute("aria-label", `${word}: ${label(option) || option.id}`);

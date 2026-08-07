@@ -2208,6 +2208,68 @@ def test_the_gate_passes_a_page_whose_collapsed_cards_lie_on_each_other(browser,
     assert interact.render_version(browser, url) == []
 
 
+# Chips whose words are a price and nothing else, which is two or three characters and
+# about 30px. Nothing else on the page is unusual, so the chips are the only thing on it
+# that a floor written for widgets laying out a region could catch.
+SHORT_CHIP_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>chips</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="t">Feeder extras</h1>
+<p id="p">The bracket order goes in on Friday and there is room in it.</p>
+<cq-options id="extras" choose multiple>
+<cq-option id="x-tray"><cq-chip>£9</cq-chip>
+<strong>Seed tray</strong> Catches the spill under the south pair.
+</cq-option>
+<cq-option id="x-dome"><cq-chip tone="ok">£15</cq-chip>
+<strong>Weather dome</strong> Keeps the seed dry through a wet week.
+</cq-option>
+</cq-options>
+</main>
+</body>
+</html>
+"""
+
+
+def test_the_gate_measures_an_inline_widget_by_its_words(browser, serve):
+    """A chip is set among the words around it, so its box is the words in it and there is
+    no width it was ever going to reach. Held to the floor written for a widget that lays
+    out a region, a chip saying `£9` reads as a collapse, and the gate refuses a page with
+    nothing wrong with it — for a price, which is the shortest thing an author is likely to
+    put in one.
+
+    The floor a chip does keep is the height, since a line of words is a line tall under
+    any layout. Both halves are asserted, because a floor deleted outright passes the
+    first on its own."""
+    url = serve(SHORT_CHIP_PAGE)
+    page, errors = open_page(browser, url)
+    widths = page.locator("cq-chip").evaluate_all(
+        "els => els.map(el => Math.round(el.getBoundingClientRect().width))"
+    )
+    assert errors == []
+    assert widths and max(widths) < 40, (
+        f"these chips are {widths}px, so they clear the floor and prove nothing"
+    )
+
+    # Flattened, the same chips are a collapse and the gate says so — the reading the
+    # declaration narrows rather than switches off.
+    page.add_style_tag(
+        content="cq-chip { display: block; height: 2px; overflow: hidden; }"
+    )
+    flattened = page.evaluate(interact.TINY_BOXES)
+    page.close()
+    assert [box for box in flattened if box["tag"] == "cq-chip"], (
+        "a chip with no height left reports nothing, so the floor is gone rather than declared"
+    )
+    assert interact.render_version(browser, url) == []
+
+
 def test_check_render_refuses_what_only_a_browser_can_see(serve):
     """`version check --render` end to end, as the agent runs it: the static lint
     passes both versions, and only the one that renders clean may reach a user.
@@ -3878,12 +3940,14 @@ def test_a_group_says_how_many_of_it_the_reader_may_take(browser, serve):
     who took the marks at their word would pick once and expect the next click to replace
     it.
 
-    So the mark's corner is the arity: round for one, square for any. Read as a fraction
-    of the mark's own box, because the two are computed in different units (a circle is
-    stated as a percentage of a box whose size is stated in px) and the question is the
-    shape rather than either number. What is pinned is that they differ and that the
-    single-pick one is a full round — a threshold between them would be this design's
-    3px corner written down a second time, free to disagree with it.
+    So the mark carries the arity, in both of the registers one control has: its corner
+    is round for one and square for any, and its word is "choose one" or "choose any" for
+    a reader who gets no corner. The corner is read as a fraction of the mark's own box,
+    because the two are computed in different units (a circle is stated as a percentage of
+    a box whose size is stated in px) and the question is the shape rather than either
+    number. What is pinned is that they differ and that the single-pick one is a full
+    round — a threshold between them would be this design's 3px corner written down a
+    second time, free to disagree with it.
 
     Arity is not the form, which is why the contrast is card against card. Both of the
     rules here were the list form's once, on the reading that a `multiple` group is a
@@ -3927,6 +3991,16 @@ def test_a_group_says_how_many_of_it_the_reader_may_take(browser, serve):
     assert page.locator("#tl-clamp .cq-pick").evaluate(box) == page.locator(
         "#br-steel .cq-pick"
     ).evaluate(box), "the shape that says arity took room from the option beside it"
+
+    # The same statement for a reader who gets no shape. A corner is paint, so all a
+    # screen reader has of a mark is its word, and while that word was "choose" in both
+    # arities the pixels above were the page's only account of how many it takes — which
+    # is to say, no account at all for anyone listening. Read off the offer rather than
+    # the pick: the offer is the state the reader is in while the question is still open,
+    # which is when knowing costs them a wasted press.
+    named = "el => el.getAttribute('aria-label')"
+    assert page.locator("#br-steel .cq-pick").evaluate(named) == "choose one: Steel"
+    assert page.locator("#tl-clamp .cq-pick").evaluate(named) == "choose any: Bar clamp"
     assert errors == []
     page.close()
 

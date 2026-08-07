@@ -142,6 +142,14 @@ vocabulary for rides in the custom keywords below:
                 element can belong to two holders: a chip is written in a
                 cq-option and in a cq-variant, which are the same shape either
                 side of the decision.
+    x-inline    true when the element is set among the words around it rather
+                than laid out as a region of its own. The render gate floors a
+                widget's box to catch one that upgraded into nothing, and an
+                inline element's box is the words in it: so it keeps the height
+                floor and takes no width floor at all, a chip reading `£9` being
+                31px wide and correct. Declared rather than read off the
+                rendered display, which answers "inline" for a widget whose
+                theme rule went missing too.
     x-says      attributes whose values are words the reader sees, mapped to the
                 edge they render at ("before" = first child, "after" = last).
                 The runtime renders them as real text there, because a user
@@ -483,6 +491,7 @@ EXTENSION_SCHEMA = {
         "x-content": {"enum": ["prose", "items", "data", "none"]},
         "x-example": {"type": "string"},
         "x-exhibit": {"type": "boolean"},
+        "x-inline": {"type": "boolean"},
         "x-language": {"type": "string", "pattern": f"^{HTML_NAME}$"},
         "x-parent": {
             "type": "array",
@@ -5384,6 +5393,41 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
 RENDER_VIEWPORT = {"width": 1200, "height": 900}
 
 
+# A widget that upgraded into no room to be read in. The floor is two numbers, and
+# which of them a widget is held to is the widget's to declare (x-inline), because
+# the two kinds are laid out by different rules: one reserves a region and the other
+# is set among the words around it, where the box is the words and there is no width
+# it was supposed to reach. Held to the region's floor, an inline widget fails for
+# being short — a chip reading a price is 31px wide and correct, and the gate reported
+# the author's own words as a collapse. The height floor is both kinds': a line of
+# words is a line tall wherever it is laid out, which leaves a flattened chip caught.
+#
+# Declared, not read off the computed display, because a custom element with no rule
+# left standing computes as inline: a theme that lost the chip block would silence the
+# check that exists to catch it.
+#
+# [hidden] needs its own exclusion: hidden="until-found" (what a closed tab wears)
+# resolves to content-visibility, which checkVisibility reports as visible while the
+# box measures zero. That collapse is the point of a closed tab; the collapse being
+# hunted here is the one nothing asked for.
+TINY_BOXES = """() => fetch('/registry.json')
+    .then(r => r.json())
+    .then(registry => {
+        const inline = new Set(Object.entries(registry)
+            .filter(([tag, entry]) => tag.startsWith('cq-') && entry['x-inline'])
+            .map(([tag]) => tag));
+        return [...document.querySelectorAll('*')]
+            .filter(el => el.tagName.toLowerCase().startsWith('cq-')
+                       && el.textContent.trim()
+                       && el.checkVisibility()
+                       && !el.closest('[hidden]'))
+            .map(el => ({ tag: el.tagName.toLowerCase(), id: el.id,
+                          w: Math.round(el.getBoundingClientRect().width),
+                          h: Math.round(el.getBoundingClientRect().height) }))
+            .filter(box => box.h < 10 || (!inline.has(box.tag) && box.w < 40));
+    })"""
+
+
 # Words the page shows that no user can select, and so no comment can be
 # anchored on. A widget has two ways to leave them there, neither of which a
 # static lint can see, and a page-local widget is where both keep happening.
@@ -5803,20 +5847,7 @@ def render_version(browser, url: str) -> list:
                 .filter(([tag, entry]) => tag.startsWith('cq-')
                     && entry['x-upgrade'] && !customElements.get(tag))
                 .map(([tag]) => tag))""")
-        # [hidden] needs its own exclusion: hidden="until-found" (what a closed
-        # tab wears) resolves to content-visibility, which checkVisibility
-        # reports as visible while the box measures zero. That collapse is the
-        # point of a closed tab; the collapse being hunted here is the one
-        # nothing asked for.
-        tiny = page.evaluate("""() => [...document.querySelectorAll('*')]
-            .filter(el => el.tagName.toLowerCase().startsWith('cq-')
-                       && el.textContent.trim()
-                       && el.checkVisibility()
-                       && !el.closest('[hidden]'))
-            .map(el => ({ tag: el.tagName.toLowerCase(), id: el.id,
-                          w: Math.round(el.getBoundingClientRect().width),
-                          h: Math.round(el.getBoundingClientRect().height) }))
-            .filter(box => box.w < 40 || box.h < 10)""")
+        tiny = page.evaluate(TINY_BOXES)
         overflow = page.evaluate(
             "document.body.scrollWidth - document.body.clientWidth"
         )

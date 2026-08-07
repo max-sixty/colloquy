@@ -503,9 +503,11 @@ cq-option .cq-pick::before { content: ""; width: 11px; height: 11px; flex: none;
                      display: grid; place-items: center; box-sizing: border-box;
                      font-size: 8px; line-height: 1; color: var(--card); }
 /* The mark's corner is how many the group takes: a circle is one of these, a rounded
- * square any of these. It is the only difference a reader gets, and it is the one they
+ * square any of these. It is the difference a reader gets by eye, and it is the one they
  * already have — every platform's radio and checkbox are this pair, and nothing else the
- * group can do says arity. A `multiple` group was drawing the same circles a single-pick
+ * group can do says arity. Paint reaches no screen reader, so the mark's own word carries
+ * the same distinction for a reader listening, and the module holds the pair together.
+ * A `multiple` group was drawing the same circles a single-pick
  * one draws, so the two were identical on screen and the page had to say in prose which
  * question it was asking ("pick the ones worth starting"); a reader who took the shape at
  * its word would pick once and expect the next click to replace it.
@@ -526,12 +528,14 @@ cq-option .cq-pick::before { content: ""; width: 11px; height: 11px; flex: none;
 cq-options:not([multiple]) > cq-option > .cq-pick::before { border-radius: 50%; }
 cq-options[multiple] > cq-option > .cq-pick::before { border-radius: 3px; }
 cq-option .cq-pick[role="button"] { cursor: pointer; }
-/* An offer says nothing, so it is not written — in either form. A picked mark's word is
- * the page's only statement of where the pick sits, which paper keeps and a user can
- * quote; "choose" states nothing a reader could disagree with, and a card carrying it on
- * every member says the same nothing two to five times. The card form used to argue it
- * needed the word precisely because it had no column of dots to say it, and a choose group
- * has one — a weak one, spread down a tall card. Strengthen the column; don't caption it.
+/* An offer says nothing on screen, so it is not drawn — in either form. A picked mark's
+ * word is the page's only statement of where the pick sits, which paper keeps and a user
+ * can quote; "choose one" states nothing a reader could disagree with, and a card carrying
+ * it on every member says the same nothing two to five times. The card form used to argue
+ * it needed the word precisely because it had no column of dots to say it, and a choose
+ * group has one — a weak one, spread down a tall card. Strengthen the column; don't
+ * caption it. The silence is the screen's alone: the mark announces that word either way
+ * (cq-options.js), because the corner saying arity is paint and reaches no screen reader.
  * The room the word will need is held either way (each form's own rules below), so the
  * mark grows into space already reserved and a pick moves nothing. */
 cq-option .cq-pick:not([data-cq-said]) { font-size: 0; gap: 0; }
