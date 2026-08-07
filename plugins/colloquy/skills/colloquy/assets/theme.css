@@ -67,8 +67,16 @@
   /* Syntax roles. Six, because a page is read for its argument and code on it is
      evidence — enough color to find the string and the comment, not a paint box.
      Every scope the tokenizer knows collapses into these in colloquy.js, and what
-     it doesn't map keeps --ink, so an unmapped scope reads plain, never wrong. */
-  --syn-comment: #8b8577; --syn-keyword: #a3372c; --syn-string: #1d4f6b;
+     it doesn't map keeps --ink, so an unmapped scope reads plain, never wrong.
+     A role may be quiet and may not be illegible, and the comment was both: #8b8577
+     is 3.3:1 on --pre-bg and less on every tint a line can wear, so a block that is
+     mostly comment — a shell transcript, a log, an annotated config — came out beige
+     on beige, and what the reader reports is that the highlighting is gone. Each of
+     these clears 4.5:1 on all four surfaces code is set on (--pre-bg, and the
+     add, del and hi tints), which the render gate reads off the drawn page
+     (UNREAD_SYNTAX) rather than off this block — so a project's own overlay is held
+     to it too. */
+  --syn-comment: #696458; --syn-keyword: #a3372c; --syn-string: #1d4f6b;
   --syn-number: #2f5480;  --syn-name: #6b4a9e;    --syn-type: #8a5a12;
 }
 
@@ -90,7 +98,7 @@
     --warn-tint: #322715;   --warn-ink: #e2bb75;
     --danger-tint: #35211b; --danger-ink: #e0a091;
     --add-tint: #1b2a1c; --del-tint: #33201b; --hi-tint: #342d14;
-    --syn-comment: #948c7d; --syn-keyword: #e59a8c; --syn-string: #9dc4dd;
+    --syn-comment: #a29a8b; --syn-keyword: #e59a8c; --syn-string: #9dc4dd;
     --syn-number: #a8c4e2;  --syn-name: #c3a8de;    --syn-type: #dcb27e;
   }
 }

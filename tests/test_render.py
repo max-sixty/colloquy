@@ -796,6 +796,157 @@ def test_the_render_gate_reports_content_set_past_the_column(browser, serve):
     )
 
 
+# Enough code for the roles to differ from each other and from the block: a comment, a
+# keyword, a string, a name, a number.
+COLORED_CODE_PAGE = LONG_PAGE.replace(
+    "</main>",
+    """<pre id="snippet"><code class="language-python"># the ceiling doubles per approval
+def ceiling(limit, approvals):
+    return "over" if approvals > 12 else limit
+</code></pre>
+</main>""",
+)
+
+# Both bugs go back as CSS, which is the shape the regression takes for real: the
+# attribute lands either way, and it is the stylesheet answering it that stops working.
+# A rule at document level with the theme's own specificity, so the later one wins.
+UNANSWERED_CODE_PAGE = COLORED_CODE_PAGE.replace(
+    "</head>", "<style>[data-cq-syn] { color: inherit; }</style>\n</head>"
+)
+# What --syn-comment carried until this gate was written: 3.3:1 on --pre-bg, and the
+# reading a user reported as the highlighting being gone.
+FAINT_CODE_PAGE = COLORED_CODE_PAGE.replace(
+    "</head>", '<style>[data-cq-syn="cm"] { color: #8b8577; }</style>\n</head>'
+)
+
+# A role that reads on the block and not on the tint one of its lines wears. The clean
+# line comes first on purpose: a gate that stopped at a role's first span would take the
+# 7.9:1 reading and never reach the 1.6:1 one two lines down, and a walkthrough's hi band
+# is the surface where a code line is most often set on something other than --pre-bg.
+TINTED_LINE_PAGE = LONG_PAGE.replace(
+    "</head>", "<style>:root { --hi-tint: #6f6a60; }</style>\n</head>"
+).replace(
+    "</main>",
+    """<cq-code id="tinted" language="python" hi="2"><pre>
+first = "on the block's own colour"
+second = "on the band"
+</pre></cq-code>
+</main>""",
+)
+
+# The same reading, in a shadow tree. cq-diff renders the page's words into one, so its
+# spans are in no document.querySelectorAll — and the page carries no other code, so a
+# probe that stopped at the boundary would sweep this and find nothing to say. The token
+# is what goes back rather than a rule: a custom property inherits through the boundary
+# where a selector does not, which is both why this reaches the spans and why a project's
+# own palette reaches them too, gate or no gate.
+SHADOWED_DIFF = """<cq-diff id="shadowed"><pre>
+diff --git a/gateway/limits.py b/gateway/limits.py
+--- a/gateway/limits.py
++++ b/gateway/limits.py
+@@ -1,3 +1,4 @@
+ def ceiling(limit, approvals):
+-    return limit
++    # the ceiling doubles per approval
++    return "over" if approvals > 12 else limit
+</pre></cq-diff>
+</main>"""
+SHADOW_CODE_PAGE = LONG_PAGE.replace(
+    "</head>", "<style>:root { --syn-comment: #8b8577; }</style>\n</head>"
+).replace("</main>", SHADOWED_DIFF)
+
+# The other half of the boundary: what is painted behind a shadowed span is on the
+# elements above the host, and a span at the top of a root has no parentElement to climb
+# to. Today's theme hides that — the box a diff renders into carries an opaque --card, so
+# a composite that stopped at the boundary would land on the same colour — which is a
+# coincidence of the palette and not a reason to read the light tree. Flattening that one
+# surface is all it takes to part them: the paper under it is what the reader has behind
+# the comment, and against the white a stalled climb falls back to, a dark page's ink
+# reads as either a pass or a failure that isn't on the screen.
+FLAT_SHADOW_PAGE = LONG_PAGE.replace(
+    "</head>", "<style>:root { --card: transparent; }</style>\n</head>"
+).replace("</main>", SHADOWED_DIFF)
+
+
+def test_the_render_gate_reports_code_the_reader_cannot_tell_from_its_block(
+    browser, serve
+):
+    """Colouring code takes the runtime writing a role and the theme answering it, and
+    the two meet only in the browser — so a stylesheet that stops answering, or answers
+    too faintly, is a page of flat code and no error anywhere. Both failures are one
+    question asked of the drawn page: can the reader tell this run of characters from
+    the code around it.
+
+    Each goes back as CSS and the gate is watched to fail, the third of them for the
+    reading the other two can't distinguish: a role is fine on the block and unreadable
+    on the tint one line wears, which a gate taking one colour per role never reaches,
+    because the clean line comes first.
+
+    The clean page is asserted to carry the roles first, because a block the tokenizer
+    found nothing in passes this gate while proving nothing about it — which is the
+    vacuous half of every reading here."""
+    page, errors = open_page(browser, serve(COLORED_CODE_PAGE))
+    roles = page.evaluate(
+        "() => [...new Set([...document.querySelectorAll('[data-cq-syn]')]"
+        ".map(s => s.dataset.cqSyn))].sort()"
+    )
+    page.close()
+    assert errors == []
+    assert "cm" in roles and len(roles) > 1, (
+        f"this block came out {roles}, so it says nothing about a role going unread"
+    )
+    assert interact.render_version(browser, serve(COLORED_CODE_PAGE)) == []
+
+    unanswered = interact.render_version(browser, serve(UNANSWERED_CODE_PAGE))
+    assert [
+        f
+        for f in unanswered
+        if f.startswith("[light] code marked cm is the ink of the code around it")
+    ], unanswered
+
+    faint = interact.render_version(browser, serve(FAINT_CODE_PAGE))
+    assert [
+        f for f in faint if f.startswith("[light] code marked cm reads at 3.3:1")
+    ], faint
+    assert not [f for f in faint if "code marked st" in f], (
+        "only the role the style touched is unread, so the rest name the reading "
+        "rather than the rule"
+    )
+
+    tinted = interact.render_version(browser, serve(TINTED_LINE_PAGE))
+    assert [
+        f for f in tinted if f.startswith("[light] code marked st reads at 1.6:1")
+    ], (
+        "the reading is of the surface each span is actually set on, not of one "
+        f"block colour taken once per role — {tinted}"
+    )
+
+    page, errors = open_page(browser, serve(SHADOW_CODE_PAGE))
+    where = page.evaluate(
+        "() => ({ doc: document.querySelectorAll('[data-cq-syn]').length,"
+        " shadow: [...document.querySelectorAll('*')].filter(e => e.shadowRoot)"
+        ".flatMap(e => [...e.shadowRoot.querySelectorAll('[data-cq-syn=cm]')]).length })"
+    )
+    page.close()
+    assert errors == []
+    assert where == {"doc": 0, "shadow": 1}, (
+        "this page has to put its only comment inside a shadow root, or the gate "
+        f"passing it says nothing about the boundary — {where}"
+    )
+    shadowed = interact.render_version(browser, serve(SHADOW_CODE_PAGE))
+    assert [
+        f for f in shadowed if f.startswith("[light] code marked cm reads at 3.1:1")
+    ], (
+        "a widget that renders the page's words into a shadow root renders code the "
+        f"reader still has to read — {shadowed}"
+    )
+    assert interact.render_version(browser, serve(FLAT_SHADOW_PAGE)) == [], (
+        "with the box's own surface flattened, what is behind the comment is the "
+        "page's paper — which is above the host, and reached by climbing out of the "
+        "root rather than stopping where parentElement runs out"
+    )
+
+
 # Two sets, because pointing at a control and pressing it are different questions.
 #
 # What must hold still is everything a user aims at, however the widget that built

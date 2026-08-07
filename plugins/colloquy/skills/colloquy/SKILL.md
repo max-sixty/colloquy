@@ -623,7 +623,8 @@ It loads the version in the machine's installed Chrome (a couple of seconds, and
 before the version is published) and fails, in both color schemes, on what a static lint
 cannot see: a console error, a widget upgraded into a box of no size, a page that
 scrolls sideways, a `cq-diagram` whose mermaid source doesn't parse, words on screen
-that no selection can reach, words the screen shows and a printout drops, a version
+that no selection can reach, code set in an ink the reader can't tell from the block it
+is on, words the screen shows and a printout drops, a version
 that authors widget state the log replays over
 (a different option `chosen`, a card in a column the user dragged it out of — the
 decision stands, so carry it in the markup or rewrite the passage and declare

@@ -263,7 +263,8 @@ handed over: the version loads in the machine's installed Chrome (Playwright
 `channel="chrome"` — the caller supplies playwright, which `bin/colloquy` does
 on seeing `--render`) and the render invariants the static lint cannot reach run
 against it — no console or page errors, no fail-soft error box, every visible
-widget occupies real space, no sideways scroll, in both color schemes.
+widget occupies real space, code that reads against the block it is set on, no
+sideways scroll, in both color schemes.
 The invariants live in render_version, which tests/test_render.py drives over
 the shipped examples, so the gate and the suite cannot drift apart.
 
@@ -5371,6 +5372,15 @@ def cmd_check(page_dir: Path, version, render: bool = False) -> int:
 
 # ---------- check --render: the browser half of the gate ----------
 
+# A probe here sweeps the document, and an x-shadow widget's words are not in it:
+# querySelectorAll stops at the root boundary, and a climb by parentElement ends at the
+# top of one. A reading written that way goes on working perfectly for every other widget
+# and says nothing about that one, reporting nothing — so a probe whose subject can be in
+# there follows the boundary both ways, as UNREAD_SYNTAX does for the diff's coloured
+# code: 24 of the 41 coloured spans on pr-walkthrough. The rest sweep the document because
+# the one root on the page holds none of what they ask about — no .cq-ui, no declared
+# label, nothing past the column — which is a fact about today's widget, not about them.
+
 RENDER_VIEWPORT = {"width": 1200, "height": 900}
 
 
@@ -5643,13 +5653,98 @@ COVERED_WORDS = """() => {
 }"""
 
 
+# Code that came out the colour of the code around it. Colouring takes two halves that
+# meet nowhere a static lint can reach: the runtime writes data-cq-syn in the browser,
+# and the theme answers it with a var() the browser resolves. Either half can stop
+# working with nothing said — the tokenizer failing throws, and the console error is
+# already a finding here, but a stylesheet that no longer answers a role, or answers it
+# with an ink too near the paper, is silent. What reaches the user is a page of code in
+# one flat colour, which is what they report as the highlighting being gone; it was
+# reported that way, on a comment that was 3.3:1 against the block it sat on.
+#
+# So both halves are asked of the drawn result rather than of the declarations behind it.
+# A palette can be read out of the stylesheet; what a role came out as cannot, because a
+# project overlays its own theme over this one and the browser is the only thing that
+# knows which declaration won.
+#
+# Once per role and surface rather than once per span: the fault belongs to the role, not
+# to the hundredth span wearing it, and a role reads differently on a diff's del tint than
+# on the plain block, so the pair is what a reading answers for. A page of code costs a
+# couple of dozen of them rather than one per token — measured at under 10ms across the
+# examples. The line is per role, since the palette is where the fix goes and a role
+# failing on two tints is one thing to change.
+#
+# What a colour is comes back from the browser painting it, not from a parse of how it
+# wrote it down — getComputedStyle serializes a hex as rgb() in 0–255 and a color-mix as
+# color(srgb …) in 0–1, and a probe reading one as the other reports a ratio against a
+# colour nothing on the page is. Painting the backgrounds in order composites the
+# translucent ones the way the page does, over the white the browser paints under
+# everything, so a tint over a tint is the colour the reader actually has behind the
+# glyphs. A marked passage is not among them: the highlight registry styles glyphs and
+# not boxes, so a mark is no element's background, and it is the user's own paint over a
+# page that had to be legible before they put it there.
+#
+# 4.5:1 is WCAG AA for body text, and body text is the threshold that applies — code is
+# 13px. Axe runs over this corpus too and passes it, which is not the same guarantee:
+# asked for colour-contrast alone on the example carrying the beige comment, it returned
+# 44 passing elements, no violation, and not one of the spans among them.
+#
+# Which shadow roots it crosses into (the section note above says why it crosses at all)
+# are read off the drawn page rather than off the registry's x-shadow list, which is the
+# choice everything else here makes — colour is asked of what the browser painted, so
+# where it painted is too, and a root a widget attached without declaring one still holds
+# code the reader has to read.
+UNREAD_SYNTAX = """() => {
+    const cx = document.createElement('canvas').getContext('2d');
+    const paint = (...layers) => {
+        cx.clearRect(0, 0, 1, 1);
+        for (const c of ['white', ...layers]) { cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); }
+        return [...cx.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+    };
+    const chan = (v) => (v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    const lum = ([r, g, b]) => 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b);
+    const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((p, q) => q - p);
+                              return (hi + 0.05) / (lo + 0.05); };
+    const up = (el) => el.parentElement ?? el.getRootNode().host ?? null;
+    const under = (el) => { const layers = [];
+                            for (let a = el; a; a = up(a))
+                                layers.unshift(getComputedStyle(a).backgroundColor);
+                            return layers; };
+    const roots = (root) => [root, ...[...root.querySelectorAll('*')]
+        .filter(el => el.shadowRoot).flatMap(el => roots(el.shadowRoot))];
+    const seen = new Set(), found = new Map();
+    for (const span of roots(document)
+                       .flatMap(r => [...r.querySelectorAll('[data-cq-syn]')])) {
+        const role = span.dataset.cqSyn;
+        if (found.has(role) || !span.textContent.trim()) continue;
+        if (!span.checkVisibility({ visibilityProperty: true, opacityProperty: true }))
+            continue;
+        const layers = under(span);
+        const on = paint(...layers);
+        if (seen.has(`${role} on ${on}`)) continue;
+        seen.add(`${role} on ${on}`);
+        const ink = paint(...layers, getComputedStyle(span).color);
+        const plain = paint(...layers, getComputedStyle(up(span)).color);
+        const read = ratio(ink, on);
+        if (String(ink) === String(plain))
+            found.set(role, `code marked ${role} is the ink of the code around it — `
+                          + `nothing answered [data-cq-syn="${role}"]`);
+        else if (read < 4.5)
+            found.set(role, `code marked ${role} reads at ${read.toFixed(1)}:1 `
+                          + `against the block it is set on`);
+    }
+    return [...found.values()];
+}"""
+
+
 def render_version(browser, url: str) -> list:
     """Everything wrong with a served version that only a browser can see: a
     console or page error, a request that 404s, a fail-soft error box, an upgrade
     module that never defines its declared element, a widget upgraded into a box
     of no usable size, the page scrolling sideways, content set past the column
     and out into the margin, words the user can read and can't
-    select, words drawn on top of other words — each
+    select, words drawn on top of other words, code coloured in an ink the reader
+    cannot tell from the code around it — each
     in both color schemes, because the dark theme is real CSS nobody otherwise
     renders — plus, in one scheme, a version that authors widget state the log
     replays over (replay isn't CSS) and, on paper, words the page drops that it
@@ -5728,6 +5823,7 @@ def render_version(browser, url: str) -> list:
         spills = page.evaluate(PAST_THE_COLUMN)
         unreachable = page.evaluate(UNREACHABLE_WORDS)
         covered = page.evaluate(COVERED_WORDS)
+        unread = page.evaluate(UNREAD_SYNTAX)
         # Replay is scheme-blind, so one scheme's reading covers both. The wait
         # is for the runtime's own caught-up stamp: reading the replay's record
         # mid-replay would miss whatever hadn't landed yet.
@@ -5787,6 +5883,7 @@ def render_version(browser, url: str) -> list:
         found += [f"[{scheme}] {s}" for s in spills]
         found += [f"[{scheme}] {w}" for w in unreachable]
         found += [f"[{scheme}] {c}" for c in covered]
+        found += [f"[{scheme}] {u}" for u in unread]
         found += [f"[{scheme}] {c}" for c in conflicts]
         found += on_paper
         return found
@@ -5860,8 +5957,8 @@ def render_check(page_dir: Path, version: int) -> int:
         return 1
     print(
         f"✓ {name}: renders clean in Chrome, light and dark — no console errors, "
-        "every widget takes space, no words on top of other words, nothing past "
-        "the column, no sideways scroll"
+        "every widget takes space, no words on top of other words, code that reads "
+        "against the block it is on, nothing past the column, no sideways scroll"
     )
     return 0
 
