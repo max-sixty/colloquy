@@ -65,3 +65,23 @@
   unclaimed `/cq` at three keystrokes — at the price of Codex's `$colloquy`, if that
   host reads the same field, which is unchecked. `colloquy.dev` and `colloquy.page`
   are both free either way.
+
+- (2026-08-07) A changed line in `cq-diff` says only that the line changed. jsdiff's
+  `diffWordsWithSpace` narrows it to the words that moved, and bundles to 6 KB on its
+  own, vendored beside the tokenizer the way `highlight.esm.js` already is. Pairing is
+  what has to be settled first: a word-level mark compares one deletion against one
+  addition, and a hunk offers a block of each, so something has to say which line
+  answers which. Pierre walks the change block and pairs a deletion row with the
+  addition row opposite it. The spans can be built in the pass that already colours
+  each side, and they nest inside the token spans the way `synNodes` nests now, so no
+  text moves and neither reading changes.
+
+  This came out of measuring `@pierre/diffs` rather than adopting it. Pierre divides at
+  Shiki. Its diff model — parsing, hunks, patches, accept/reject, conflict detection —
+  is 34 KB and never touches a highlighter, but it does what `parseDiff` already does
+  here. The renderer is what carries split view, and it reaches its highlighter through
+  a module-level singleton with no injection point on the component, so taking it means
+  Shiki's engine and a TextMate grammar per language: about 1.25 MB in every page
+  directory, against the 75 KB `highlight.esm.js` spends on the same fifteen. Split
+  view is the only feature on the far side of that, and it would pull `cq-code` and the
+  plain `<pre><code>` path onto Shiki with it.
