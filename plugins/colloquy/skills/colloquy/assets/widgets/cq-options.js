@@ -41,9 +41,10 @@
  *
  * The keyboard path: every mark is a press, so Tab reaches it and ⏎ toggles. From a
  * mark, ↑/↓ walk the options (a clamp at the ends, not a wrap) and 1–9 pick outright —
- * each option wears its digit as a corner chip, painted only while a mark holds
+ * each option wears its digit in a column of its own, painted only while a mark holds
  * keyboard focus, so nothing appears on a page nobody is answering, and an armed g
- * leader keeps its own digits (leaderArmed). The rows are declared per mark through
+ * leader keeps its own digits (leaderArmed). The column is held whether or not a digit
+ * is in it, which is the theme's half of this. The rows are declared per mark through
  * keyHint, so the key line and the ? overlay promise what a press does.
  *
  * `settled` retires the decision once it has been made and acted on: the group collapses
@@ -222,9 +223,9 @@ customElements.define(
     // lands on this group's own mark, so a digit typed in the box for words stays
     // text and a nested group's marks stay its own — and an armed g leader keeps
     // its digits: the chord's promise holds wherever focus sits, and this handler
-    // runs ahead of the dispatcher that owns the window. Each option wears its
-    // digit as a corner chip only while a mark holds keyboard focus (the theme's
-    // :focus-visible rule), so the address appears exactly when a key could use it.
+    // runs ahead of the dispatcher that owns the window. Each option shows its
+    // digit only while a mark holds keyboard focus (the theme's :focus-visible
+    // rule), so the address appears exactly when a key could use it.
     #keys() {
       const marks = this.#marks();
       for (const [i, mark] of marks.entries()) {
@@ -233,10 +234,12 @@ customElements.define(
           // page says, so the gate, the anchor pass, and paper all read it as the
           // control apparatus it is. The key line speaks the keys; this is the
           // eye's copy, hence aria-hidden.
-          // Prepended, so the mark stays the row's last child: the digit is a
-          // corner badge wherever it sits in the DOM, and the apparatus keeps
-          // ending at the mark.
-          const num = offer("span", "cq-pick-num", String(i + 1));
+          // Into the column the option reserves for it, which is what lets a digit
+          // arrive without moving anything and land on nobody's words (theme).
+          // Prepended, so the mark stays the row's last child: the digit is a corner
+          // badge wherever it sits in the DOM, and the apparatus keeps ending at the
+          // mark.
+          const num = offer("span", "cq-address", String(i + 1));
           num.setAttribute("aria-hidden", "true");
           mark.parentElement.prepend(num);
         }

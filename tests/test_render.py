@@ -2603,7 +2603,9 @@ def test_resolving_an_early_thread_renumbers_the_rest_in_place(browser, serve):
     c1, c2, c3 = [
         e["id"] for e in interact.read_events(serve.page_dir) if e["kind"] == "comment"
     ]
-    expect(page.locator(f'.cq-thread[data-id="{c2}"] .cq-thread-num')).to_have_text("2")
+    expect(
+        page.locator(f'.cq-thread[data-id="{c2}"] .cq-compose > .cq-address')
+    ).to_have_text("2")
     page.evaluate(
         """(id) => { window.__second = document.querySelector(`.cq-thread[data-id="${id}"]`); }""",
         c2,
@@ -2620,7 +2622,9 @@ def test_resolving_an_early_thread_renumbers_the_rest_in_place(browser, serve):
     expect(page.locator(".cq-comments")).to_have_text("Comments (2)")
     # The survivors renumber without being remade: same node, new address, and the
     # address its placeholder speaks moved with the badge.
-    expect(page.locator(f'.cq-thread[data-id="{c2}"] .cq-thread-num')).to_have_text("1")
+    expect(
+        page.locator(f'.cq-thread[data-id="{c2}"] .cq-compose > .cq-address')
+    ).to_have_text("1")
     expect(page.locator(f'.cq-thread[data-id="{c2}"] textarea')).to_have_attribute(
         "placeholder", "Reply · g 1"
     )
@@ -2683,7 +2687,11 @@ def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
             else if (r.cssRules) collect(r.cssRules, into); } };
         collect(sheet.cssRules, global_);
         const probe = document.createElement("div"), plain = document.createElement("div");
-        probe.className = [...scoped].join(" ");
+        // Minus the shared vocabulary: a word document level dresses on purpose
+        // (cq-address, worn on a reply box and on an option's corner alike) is named
+        // by the scoped rule that says when to paint it, and it would answer this
+        // question with the reach it was given rather than with a leak.
+        probe.className = [...scoped].filter(c => !global_.has(c)).join(" ");
         probe.textContent = plain.textContent = "probe";
         document.getElementById("s").append(plain, probe);
         const cs = el => { const c = getComputedStyle(el), out = {};
@@ -2704,6 +2712,7 @@ def test_a_coined_class_cannot_reach_the_chromes_rules(browser, serve):
         "cq-ui",
         "cq-btn",
         "cq-pill",
+        "cq-address",
         "cq-over-mark",
         "cq-mark-el",
         "cq-pending",
@@ -3770,6 +3779,69 @@ def test_a_chip_an_option_says_stands_with_the_rest_of_its_words(browser, serve)
     assert chip.bounding_box()["x"] < ref["x"], (
         "the chip stands before the row's apparatus"
     )
+    assert errors == []
+    page.close()
+
+
+CHIP_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>chips</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Short facts</h1>
+<p id="intro">The store is <span class="tag">experimental</span> for now.</p>
+<cq-options id="picks" choose>
+  <cq-option id="p-keep"><cq-chip>reversible</cq-chip><strong>Keep the store</strong></cq-option>
+</cq-options>
+<cq-tasks id="plan">
+  <cq-task id="t-camera" status="active" owner="finch"><strong>Mount the camera</strong></cq-task>
+</cq-tasks>
+</main>
+</body>
+</html>
+"""
+
+
+def test_one_pill_holds_every_short_fact(browser, serve):
+    """The three writers of a chip, on one page: an author's inline label, a facet of a
+    decision, and the row a task builds from its own attributes.
+
+    They stated the pill three times and agreed on every number but one, which is the
+    kind of agreement nobody is keeping: the inline label alone padded itself top and
+    bottom, so it stood four pixels taller than the chips in a band while matching them
+    everywhere else. One rule states the pill now and each wearer adds only where it
+    sits, which is why this reads the rendered box rather than the declarations — a
+    wearer is free to restate, and the box is what a reader compares."""
+    page, errors = open_page(browser, serve(CHIP_PAGE))
+    face = """el => { const s = getComputedStyle(el);
+        return Object.fromEntries(["font-family", "font-size", "line-height",
+            "padding", "border-radius", "background-color", "color"]
+            .map(p => [p, s.getPropertyValue(p)])); }"""
+    worn = {
+        where: (page.locator(sel).evaluate(face), page.locator(sel).bounding_box())
+        for where, sel in [
+            ("in prose", "#intro > .tag"),
+            ("on a decision", "#p-keep > cq-chip"),
+            ("in a task's row", "#t-camera .cq-chips > span"),
+        ]
+    }
+    ((first, (look, box)), *rest) = worn.items()
+    for where, (other, other_box) in rest:
+        assert other == look, (
+            f"the chip {where} is drawn unlike the one {first}:\n  "
+            + "\n  ".join(
+                f"{k}: {other[k]!r} vs {look[k]!r}" for k in look if other[k] != look[k]
+            )
+        )
+        assert other_box["height"] == box["height"], (
+            f"the chip {where} stands {other_box['height']}px against "
+            f"{box['height']}px {first}"
+        )
     assert errors == []
     page.close()
 
@@ -5810,7 +5882,7 @@ def test_keys_answer_a_question_from_its_marks(browser, serve):
     digit picks outright, and each option wears its digit only while a mark holds
     keyboard focus, so nothing appears on a page nobody is answering."""
     page, errors = open_page(browser, serve(ASKS_PAGE))
-    nums = page.locator("#live-question .cq-pick-num")
+    nums = page.locator("#live-question .cq-address")
     expect(nums.first).to_be_hidden()
 
     page.keyboard.press("a")
@@ -5830,6 +5902,122 @@ def test_keys_answer_a_question_from_its_marks(browser, serve):
     acts = [e for e in interact.read_events(serve.page_dir) if e["kind"] == "action"]
     assert acts[-1]["widget"] == "live-question"
     assert acts[-1]["detail"] == {"options": ["lq-keep"]}
+    assert errors == []
+    page.close()
+
+
+ADDRESS_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>addresses</title>
+<link rel="stylesheet" href="/theme.css">
+<script type="module" src="/colloquy.js"></script>
+</head>
+<body>
+<main>
+<h1 id="h">Two questions, two forms</h1>
+<cq-options id="cards" choose>
+  <cq-option id="c-heater"><strong>Immersion heater</strong> Drops into the basin.</cq-option>
+  <cq-option id="c-cable"><strong>Heated cable</strong> A cord across the base.</cq-option>
+  <cq-option id="c-hand"><strong>Break the ice</strong> Someone goes out each morning.</cq-option>
+</cq-options>
+<p id="plan">The camera mount is the part nobody has costed.</p>
+<cq-options id="rows" choose>
+  <cq-option id="r-now" for="plan">Cost it now</cq-option>
+  <cq-option id="r-later" for="plan">Leave it for the spring</cq-option>
+</cq-options>
+</main>
+</body>
+</html>
+"""
+
+# The first ancestor that cuts this element, and by how much. `overflow` and `clip-path`
+# cut at the padding box, so the border comes off the ancestor's own box before the
+# comparison; half a pixel of tolerance for subpixel layout.
+CLIPPED_BY = """el => {
+    const r = el.getBoundingClientRect();
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const s = getComputedStyle(p);
+      if (s.overflow === "visible" && s.clipPath === "none") continue;
+      const b = p.getBoundingClientRect();
+      const box = {left: b.left + parseFloat(s.borderLeftWidth),
+                   right: b.right - parseFloat(s.borderRightWidth),
+                   top: b.top + parseFloat(s.borderTopWidth),
+                   bottom: b.bottom - parseFloat(s.borderBottomWidth)};
+      const cut = {left: box.left - r.left, right: r.right - box.right,
+                   top: box.top - r.top, bottom: r.bottom - box.bottom};
+      const worst = Math.max(...Object.values(cut));
+      if (worst > 0.5)
+        return {by: p.tagName.toLowerCase() + (p.id ? "#" + p.id : ""),
+                overflow: s.overflow, px: +worst.toFixed(1)};
+    }
+    return null;
+}"""
+
+
+# Any of the group's own words this element is drawn over, taken a rendered line at a
+# time (a wrapped run's box spans the whole column and would answer for a line the chip
+# is nowhere near). The runtime's own chrome is not the page's words, so it is skipped.
+OVER_WORDS = """(el, id) => {
+    const group = document.getElementById(id).closest("cq-options");
+    const r = el.getBoundingClientRect();
+    const walk = document.createTreeWalker(group, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!n.textContent.trim() || n.parentElement.closest(".cq-ui")) continue;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      for (const b of range.getClientRects())
+        if (r.right > b.left && r.left < b.right && r.bottom > b.top && r.top < b.bottom)
+          return n.textContent.trim().slice(0, 24);
+    }
+    return null;
+}"""
+
+
+def test_a_questions_digits_are_drawn_whole(browser, serve):
+    """An address arrives into room its option is already holding, and lands on nothing.
+
+    Every earlier placement borrowed that room instead, and each borrow showed. On the
+    cell's outer corner the chip was half outside a group that clips itself, so no
+    address the product drew had ever been whole — seven of its seventeen pixels gone,
+    and in a bare-label group, where a row is 34px tall, the first digit was a sliver.
+    Out in the page margin beside the group it was whole and it was in the neighbouring
+    card's prose, because a middle column's margin is another cell. Neither showed up
+    as a failure: a clipped element still reports its whole box and still answers
+    `to_be_visible`, and a chip drawn over words breaks no rule anybody had written.
+
+    So the cell holds a column for it, and this asks the two questions that column
+    answers — does any ancestor cut it, is it on anybody's words — in both forms,
+    stepped through with the key that reaches them, since the room inside a cell is
+    exactly what differed: cards padded clear of their corners, rows with none to
+    spare."""
+    page, errors = open_page(browser, serve(ADDRESS_PAGE))
+    for options in [["c-heater", "c-cable", "c-hand"], ["r-now", "r-later"]]:
+        page.keyboard.press("a")
+        for id_ in options:
+            chip = page.locator(f"#{id_} > .cq-address")
+            expect(chip).to_be_visible()
+            cut = chip.evaluate(CLIPPED_BY)
+            assert cut is None, f"{id_}'s digit is cut: {cut}"
+            # Inside its own option, a chip's half-height down: level with a row's
+            # words and with a card's first line, never on the hairline the corner
+            # would have shared with the cells around it.
+            box, opt = chip.bounding_box(), page.locator(f"#{id_}").bounding_box()
+            assert (round(box["x"] - opt["x"]), round(box["y"] - opt["y"])) == (
+                6,
+                8,
+            ), (
+                f"{id_}'s digit sits {box['x'] - opt['x']}, {box['y'] - opt['y']} "
+                "from its option's corner"
+            )
+            assert box["y"] + box["height"] <= opt["y"] + opt["height"], (
+                f"{id_}'s digit hangs past its own option and onto the next"
+            )
+            # Asked of the words rather than of the numbers, because the numbers are
+            # only right for as long as the column the theme reserves is.
+            on = chip.evaluate(OVER_WORDS, id_)
+            assert on is None, f"{id_}'s digit is drawn over the words “{on}”"
     assert errors == []
     page.close()
 
@@ -6210,7 +6398,9 @@ def test_the_leader_key_addresses_reply_boxes(browser, serve):
     expect(ta2).to_have_attribute("placeholder", re.compile(r"Reply · (⌘⏎|Ctrl\+⏎)$"))
     ta1 = page.locator(f'.cq-thread[data-id="{c1}"] textarea')
     expect(ta1).to_have_attribute("placeholder", "Reply · g 1")
-    expect(page.locator(f'.cq-thread[data-id="{c1}"] .cq-thread-num')).to_have_text("1")
+    expect(
+        page.locator(f'.cq-thread[data-id="{c1}"] .cq-compose > .cq-address')
+    ).to_have_text("1")
 
     # A digit with no leader is nothing: Esc backs out to the thread, and 3 stays put.
     page.keyboard.press("Escape")
@@ -6221,7 +6411,7 @@ def test_the_leader_key_addresses_reply_boxes(browser, serve):
     # The chip is the armed window's paint, worn on the box the digit lands in:
     # hidden at rest (the placeholder speaks the standing address), visible while
     # armed, gone when Esc takes the window down.
-    chip1 = page.locator(f'.cq-thread[data-id="{c1}"] .cq-thread-num')
+    chip1 = page.locator(f'.cq-thread[data-id="{c1}"] .cq-compose > .cq-address')
     expect(chip1).to_be_hidden()
     page.keyboard.press("g")
     expect(chip1).to_be_visible()
@@ -7285,6 +7475,53 @@ def test_the_margin_offers_one_kind_of_press(browser, serve):
         page.locator(".cq-fab").evaluate("el => getComputedStyle(el).boxShadow")
         != "none"
     ), "the one press that floats over the page says nothing about it"
+    assert errors == []
+    page.close()
+
+
+def test_one_chip_says_every_keyboard_address(browser, serve):
+    """A digit that reaches something is drawn one way, on both sides of the scope line.
+
+    The panel's reply box wears the address the g leader answers and an option wears the
+    one a pick answers, and this page shows them at once — a question asked inside a
+    thread, so the two chips stand a couple of centimetres apart in the same panel. They
+    were two hand-matched copies of a dozen declarations, one in the chrome's stylesheet
+    and one in the theme, with nothing to say if either moved; the look is .cq-address in
+    the runtime's document-level vocabulary now, and each wearer states only where its
+    chip sits and when it shows.
+
+    Which is why the look is what this compares and placement is not: the reply box's
+    chip hangs off its own corner, and an option's is anchored from outside the group
+    that would otherwise clip it (see test_a_questions_digits_are_drawn_whole). Same
+    chip, two boxes to hang it from."""
+    url = serve(REPLY_HOST_PAGE)
+    for event in THREAD_ASKS:
+        interact.append_event(serve.page_dir, event)
+    page, errors = open_page(browser, url)
+
+    # `a` opens the panel on the first ask and lands on its mark, which is what paints
+    # that group's digits; g then arms the leader, which paints the reply boxes'.
+    page.keyboard.press("a")
+    picked = page.locator("#tq-one .cq-address").first
+    expect(picked).to_be_visible()
+    page.keyboard.press("g")
+    addressed = page.locator(".cq-thread .cq-compose > .cq-address").first
+    expect(addressed).to_be_visible()
+
+    face = """el => { const s = getComputedStyle(el);
+        return Object.fromEntries(["width", "height", "border-top-width",
+            "border-top-style", "border-top-color", "border-radius", "background-color",
+            "color", "font-size", "line-height", "text-align", "z-index"]
+            .map(p => [p, s.getPropertyValue(p)])); }"""
+    on_page, in_panel = picked.evaluate(face), addressed.evaluate(face)
+    assert on_page == in_panel, (
+        "the two keyboard addresses are drawn differently:\n  "
+        + "\n  ".join(
+            f"{k}: {on_page[k]!r} vs {in_panel[k]!r}"
+            for k in on_page
+            if on_page[k] != in_panel[k]
+        )
+    )
     assert errors == []
     page.close()
 

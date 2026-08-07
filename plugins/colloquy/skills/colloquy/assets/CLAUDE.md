@@ -568,10 +568,28 @@ the stylesheet's shape. The runtime's private rules sit in one `@scope` block ro
 at its own container, where no class a widget or a page coins can match them —
 `cq-tabs` once marked itself `cq-live`, the chrome's name for its visually-hidden
 live region, and every tabbed page clipped to a pixel. What is styled at document
-level is the shared vocabulary, and only that: `cq-ui`, `cq-btn` and `cq-pill`, which
-a widget's controls wear on purpose, and the marks the runtime paints onto the page's
-own elements. A global rule is a widening of that vocabulary; the render suite pins
-the list so widening is a decision rather than a leak.
+level is the shared vocabulary, and only that: `cq-ui`, `cq-btn`, `cq-pill` and
+`cq-address`, which a widget's controls wear on purpose, and the marks the runtime
+paints onto the page's own elements. A global rule is a widening of that vocabulary;
+the render suite pins the list so widening is a decision rather than a leak.
+
+A word joins it when one look is worn on both sides of the scope line, which is a
+reason the container can't answer: the margin's press is the runtime's 💬 and a
+suggestion's ✓ Accept sharing a line, and the keyboard address is a thread's reply
+box and an option's corner saying the same digit. Stated twice, each pair was a dozen
+declarations kept level by hand — so the shared half moves here and each wearer keeps
+only what is its own.
+
+What a wearer keeps is where the thing sits and when it shows, and the split earns its
+keep the moment those differ. A reply box has padding to hang a chip over and an option
+had none: its group is a control whose box is spent on its cells, and it clips itself so
+their hairlines stop at its edge, so a chip on a cell's corner came out cut in half
+everywhere it ever appeared. Every fix that borrowed room from somewhere else showed —
+the page margin beside the group is the next cell's words as soon as the group has two
+columns — so the option reserves a column for its digit and holds it whether or not one
+is showing, which is the same answer the pick mark's room already is. A shared rule that
+had placed as well as dressed would have had to grow a case for that; dressing only, it
+didn't notice.
 
 The container answers in script too, and the class had been answering for it. Whether
 a widget's state has a version to contradict, and which block the reader's eye rests

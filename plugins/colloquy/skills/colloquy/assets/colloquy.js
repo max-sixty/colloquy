@@ -913,6 +913,16 @@ style.textContent = `
      these; its rules carry the attribute the decision wrote, so they outrank this. */
   .cq-pill { font-size: var(--t-6); line-height: 1.7; padding: 0 8px; border: 1px solid var(--border-2); border-radius: 999px; background: var(--card); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
   .cq-pill:hover { background: var(--chip); }
+  /* The keyboard address: the digit that reaches this thing right now, worn as a chip
+     off its holder's corner so an address arriving moves nothing. The panel's reply box
+     wears the one the g leader answers and an option wears the one a pick answers, which
+     is the same promise made on the two sides of the chrome's scope line — so it is
+     stated here, at the level both can reach, rather than as the twelve declarations
+     each once carried. They had not drifted; nothing was going to say so if they did.
+     What a wearer keeps is where its chip sits and when it shows — a reply box's hangs
+     off the box's own corner while the leader is armed, an option's stands in a column
+     that option holds for it. This rule dresses; theirs place and paint. */
+  .cq-address { display: none; width: 17px; height: 17px; border: 1px solid var(--accent); border-radius: 50%; background: var(--card); color: var(--accent); font-size: 11px; line-height: 15px; text-align: center; z-index: 1; }
   /* The colloquy text box, in one rule. field-sizing does the growing, so no script
      measures a textarea: the JS that did had to reset height to auto to re-measure,
      which made the box briefly too small for its own text on every keystroke — and a
@@ -1122,18 +1132,17 @@ style.textContent = `
        jump: nothing above it moves, and the newcomer settles rather than appears. */
     .cq-thread.grow, .cq-msg.grow { animation: cq-runtime-4f3c2a8d-grow .32s cubic-bezier(.2,.7,.3,1); }
     .cq-thread:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    /* The g leader's address chip, worn on the reply box it addresses — where the
-       digit lands, not the thread's corner — and painted only while the window is
-       armed: the placeholder speaks the address at all times, so the chip is the
-       armed moment's paint rather than a standing second copy of the fact. Empty is
-       unaddressed (a thread past the ninth); renderThreads writes the number, it
-       doesn't add or drop the element. Top-anchored: field-sizing grows the box
-       downward, and the chip must not ride the growth. */
+    /* The g leader's address chip (.cq-address, dressed at document level), worn on the
+       reply box it addresses — where the digit lands, not the thread's corner — and
+       painted only while the window is armed: the placeholder speaks the address at all
+       times, so the chip is the armed moment's paint rather than a standing second copy
+       of the fact. Empty is unaddressed (a thread past the ninth); renderThreads writes
+       the number, it doesn't add or drop the element. Top-anchored: field-sizing grows
+       the box downward, and the chip must not ride the growth. Named through the box it
+       sits on, because a thread can hold a widget wearing an address of its own. */
     .cq-compose { position: relative; }
-    .cq-thread-num { display: none; position: absolute; top: -8px; left: -8px; width: 17px;
-      height: 17px; border: 1px solid var(--accent); border-radius: 50%; background: var(--card);
-      color: var(--accent); font-size: 11px; line-height: 15px; text-align: center; z-index: 1; }
-    .cq-leader-armed .cq-thread-num:not(:empty) { display: block; }
+    .cq-compose > .cq-address { position: absolute; top: -8px; left: -8px; }
+    .cq-leader-armed .cq-compose > .cq-address:not(:empty) { display: block; }
     .cq-quote { margin: 0 0 8px; padding: 2px 8px; border-left: 3px solid var(--quote-bar); color: var(--muted); font-style: italic; cursor: pointer; overflow-wrap: anywhere; }
     .cq-quote:hover { color: var(--ink-2); }
     .cq-quote.detached { border-left-style: dashed; border-left-color: var(--border-2); color: var(--muted-2); cursor: default; }
@@ -2042,7 +2051,7 @@ function threadNode(t, grow) {
     // the chip is the armed moment's copy for the eye, so it stays out of the tree.
     // Written by renderThreads, because the number is positional: it changes
     // without this node changing.
-    const badge = el("span", "cq-thread-num");
+    const badge = el("span", "cq-address");
     badge.setAttribute("aria-hidden", "true");
     row.append(badge);
     const input = document.createElement("textarea");
@@ -2153,7 +2162,7 @@ function renderThreads() {
   for (const div of threadsBox.querySelectorAll(":scope > .cq-thread")) {
     const num = threadAddress.get(div.dataset.id);
     const worn = num ? String(num) : "";
-    const badge = div.querySelector(".cq-compose > .cq-thread-num");
+    const badge = div.querySelector(".cq-compose > .cq-address");
     if (badge.textContent !== worn) badge.textContent = worn;
     div.cqSync();
   }
