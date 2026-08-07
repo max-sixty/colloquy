@@ -676,6 +676,77 @@ const tagsDeclaring = (holds) =>
     .filter(([tag, entry]) => tag.startsWith("cq-") && holds(entry))
     .map(([tag]) => tag);
 
+// The open shadow roots on the page that hold the page's own words, from what the
+// registry declares rather than from a sweep of every element: an x-shadow widget is
+// making a promise about whose words those are, and a root some other library happened
+// to attach is not covered by it. `getComposedRanges` is told exactly these, so what the
+// capture can see and what the reading walks are one list.
+const pageShadowRoots = () =>
+  tagsDeclaring((entry) => entry["x-shadow"])
+    .flatMap((tag) => [...document.querySelectorAll(tag)])
+    .map((host) => host.shadowRoot)
+    .filter(Boolean);
+
+// The theme's rules for shadow trees, sliced out once at load (see the markers in
+// theme.css). Read from the theme rather than written here so a project that overrides
+// the theme overrides these with it — and fetched during the upgrade, before any module
+// renders, so the stage below can stay synchronous for its callers.
+let shadowRules = "";
+const SHADOW_CSS = /\/\* cq-shadow:start \*\/([\s\S]*?)\/\* cq-shadow:end \*\//;
+async function loadShadowRules() {
+  const response = await fetch("/theme.css");
+  if (!response.ok)
+    throw new Error(`colloquy: theme failed to load (${response.status})`);
+  // Refused rather than defaulted to nothing. A project theme that drops the markers
+  // still styles the document, so the page looks right everywhere except inside the
+  // widgets this slice feeds — which would arrive unstyled with no error anywhere, the
+  // failure that reads as a widget nobody finished rather than as a theme missing a
+  // block. Whichever theme is vendored, either it carries these or the page says so.
+  const found = SHADOW_CSS.exec(await response.text());
+  if (!found)
+    throw new Error(
+      "colloquy: the theme carries no /* cq-shadow:start */…/* cq-shadow:end */ block, " +
+        "which is where the rules an x-shadow widget renders under are read from",
+    );
+  shadowRules = found[1];
+}
+
+// The stage an x-shadow widget renders into. A module never calls attachShadow itself,
+// because the marks the runtime paints come from a registry that is the document's while
+// the ::highlight() rules styling them are not — they reach no shadow tree. A root
+// attached anywhere else would show words the reader can select and no mark could ever
+// paint, which is the one failure this whole capability exists to avoid.
+//
+// The two sheets arrive differently on purpose. The theme's rules go in as a <style>
+// element, because that is markup and a copy keeps it; the marks are adopted, because
+// they are the live comment layer, which a copy drops with the rest of the chrome — an
+// adopted sheet is in no element's markup and would not survive the export either way.
+//
+// It takes the nodes rather than handing back a root to fill, so the style cannot be
+// left out: a module that wrote its own children would replace the one thing holding its
+// look, and it would look right in exactly the session where someone remembered. Same
+// reasoning as renderSaid — a rule each widget has to remember is a rule that gets
+// forgotten, and the forgetting is invisible until a page ships without it.
+let markSheet;
+export function shadowStage(host, nodes) {
+  if (!markSheet) {
+    markSheet = new CSSStyleSheet();
+    markSheet.replaceSync(MARK_RULES);
+  }
+  // serializable, because a copy is rendered DOM with the scripts dropped and a shadow
+  // root is in no element's outerHTML: exported without this, a diff leaves an empty
+  // element where its lines were, which is the one medium that cannot be re-rendered
+  // later. With it, `version export` writes a declarative <template shadowrootmode>
+  // the browser rebuilds on open, with nothing running.
+  const root =
+    host.shadowRoot ?? host.attachShadow({ mode: "open", serializable: true });
+  root.adoptedStyleSheets = [markSheet];
+  const style = document.createElement("style");
+  style.textContent = shadowRules;
+  root.replaceChildren(style, ...nodes);
+  return root;
+}
+
 function rememberPassageParts() {
   for (const tag of tagsDeclaring(
     (entry) => entry["x-upgrade"] && !entry["x-verbatim"],
@@ -699,6 +770,9 @@ async function upgradeWidgets() {
   )
     throw new Error("colloquy: registry lacks $events, $languages or $tones");
   rememberPassageParts();
+  // Before the modules import, because a widget's first render asks for these rules and
+  // an async stage would put every x-shadow widget's look a fetch behind its own nodes.
+  if (tagsDeclaring((entry) => entry["x-shadow"]).length) await loadShadowRules();
   await Promise.all(
     Object.entries(registry)
       .filter(([tag, entry]) => tag.startsWith("cq-") && entry["x-upgrade"])
@@ -823,6 +897,23 @@ const POLL_MS = 2000;
 const PANEL_W = 420;
 
 // ---------- styles ----------
+/* A marked passage is painted, not wrapped (see paintAnchors), so its rules reach it
+   through the highlight registry — which styles glyphs, so the underline stands in for
+   a border and the pointer's cursor comes from a class the hit-test puts on body. A
+   posted thread's mark wears the marker amber; the open composer's draft wears the
+   accent, and outranks it where they overlap. Not dashed — dashed means detached.
+
+   Stated once and installed twice, because the registry is the document's and the
+   ::highlight() rule is not: a rule in the document styles no glyph inside a shadow
+   tree, so a widget that renders the page's words into one (x-shadow) adopts this same
+   text (`markSheet`). Two copies of these declarations would be two chances for a mark
+   to mean one thing in the document and another inside a diff. */
+const MARK_RULES = `
+  ::highlight(cq-mark) { background-color: var(--mark);
+    text-decoration: underline 2px solid var(--quote-bar); text-underline-offset: 3px; }
+  ::highlight(cq-mark-hover) { background-color: var(--mark-strong); }
+  ::highlight(cq-pending) { background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+    text-decoration: underline 2px solid var(--accent); text-underline-offset: 3px; }`;
 const style = document.createElement("style");
 style.textContent = `
   /* The document and the panel are two scroll regions side by side. If the document
@@ -933,16 +1024,7 @@ style.textContent = `
      class itself. */
   .cq-ui textarea, textarea.cq-ui { padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--card); color: inherit; resize: none; field-sizing: content; max-height: 50vh; overflow-y: auto; }
   .cq-ui textarea:focus, textarea.cq-ui:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 45%, var(--card)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
-  /* A marked passage is painted, not wrapped (see paintAnchors), so its rules reach it
-     through the highlight registry — which styles glyphs, so the underline stands in for
-     a border and the pointer's cursor comes from a class the hit-test puts on body. A
-     posted thread's mark wears the marker amber; the open composer's draft wears the
-     accent, and outranks it where they overlap. Not dashed — dashed means detached. */
-  ::highlight(cq-mark) { background-color: var(--mark);
-    text-decoration: underline 2px solid var(--quote-bar); text-underline-offset: 3px; }
-  ::highlight(cq-mark-hover) { background-color: var(--mark-strong); }
-  ::highlight(cq-pending) { background-color: color-mix(in srgb, var(--accent) 20%, transparent);
-    text-decoration: underline 2px solid var(--accent); text-underline-offset: 3px; }
+${MARK_RULES}
   body.cq-over-mark { cursor: pointer; }
   /* Holding ⌥ changes what a click means, and nothing on the page said so — the chord's
      whole cost is that it is invisible. Two things say it, and the division matters:
@@ -2312,16 +2394,117 @@ const quotable = () => {
   return (n) => !inUi(n) && !n.parentElement?.closest(gone);
 };
 const authored = () => (n) => !n.parentElement?.closest(GENERATED);
-// ownerDocument, not document: the diff walks a base version parsed into its own document.
+// The composed tree, not the light one: a widget that renders the page's words into an
+// open shadow root (x-shadow) shows the reader what its shadow tree holds, and a host's
+// own children stop rendering the moment it has one. A TreeWalker sees none of that — it
+// stops dead at the boundary — so the walk is written out, and it is the same walk in
+// both directions: a host's shadow root stands in for its children, a <slot> stands for
+// what was assigned to it, and everything else is the light DOM it always was. Nothing
+// here asks which widget it is looking at; a document with no shadow roots in it walks
+// exactly as it did before.
+//
+// The order is what earns the recursion. `pageText` builds one string in reading order
+// and indexes every position into it, so shadow text has to arrive at the host's own
+// place in that string — not appended from a second walk, which would put a diff's lines
+// after the page's last paragraph and every neighbour of theirs a lie.
 function textNodesUnder(rootEl, accepts = quotable()) {
-  const walker = rootEl.ownerDocument.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) =>
-      accepts(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
-  });
   const segments = [];
-  for (let n = walker.nextNode(); n; n = walker.nextNode())
-    segments.push({ node: n, start: 0, end: n.data.length });
+  const visit = (node) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        if (accepts(child))
+          segments.push({ node: child, start: 0, end: child.data.length });
+        continue;
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+      if (child.localName === "slot")
+        for (const assigned of child.assignedNodes({ flatten: true }))
+          assigned.nodeType === Node.TEXT_NODE
+            ? accepts(assigned) &&
+              segments.push({
+                node: assigned,
+                start: 0,
+                end: assigned.data.length,
+              })
+            : visit(assigned);
+      else visit(child.shadowRoot ?? child);
+    }
+  };
+  visit(rootEl);
   return segments;
+}
+
+// One step towards the document from any node, shadow boundary included: the ordinary
+// parent within a tree, and the host where a tree runs out. Every question the runtime
+// asks about where a node sits — which section, which block, which passage cell, whether
+// it is chrome — is asked of the page, and a climb that stops at a shadow root answers
+// about the widget's own markup instead.
+const upFrom = (node) => node.parentElement ?? node.getRootNode()?.host ?? null;
+
+// contains() stops at a boundary the same way, and this is the one that decides whether a
+// quote is found at all: a section holding an x-shadow widget does not contain the words
+// that widget renders, so narrowing a search to that section threw away every candidate
+// inside it and the passage resolved to nothing — the anchor captured, the mark never
+// painted. Asked of each tree on the way out, so the section contains what it renders.
+const containsAcross = (ancestor, node) => {
+  for (let n = node; n; n = n.getRootNode()?.host ?? null)
+    if (ancestor.contains(n)) return true;
+  return false;
+};
+
+// closest() stops at a shadow boundary, so a node inside a widget's shadow tree can't
+// reach the section that holds it or the chrome marker above it — both out in the
+// document. Same climb as upFrom, asked with a selector at each tree it passes through.
+function closestAcross(node, selector) {
+  let el = node?.nodeType === Node.ELEMENT_NODE ? node : upFrom(node);
+  while (el) {
+    const hit = el.closest(selector);
+    if (hit) return hit;
+    el = el.getRootNode()?.host ?? null;
+  }
+  return null;
+}
+
+// The range the reader actually drew. Chrome keeps the legacy Range in the light DOM: a
+// drag wholly inside a widget's shadow tree comes back with `commonAncestorContainer` at
+// BODY and its ends clamped to the host, so `sel.toString()` says the right words while
+// every node the capture would index says the wrong place. That is the one failure mode
+// worth naming twice — not a refusal, which the fence rule turns into a message to the
+// author, but a quote anchored somewhere the reader never pointed.
+//
+// `getComposedRanges` is the only thing that answers truthfully, and it answers only for
+// the roots it is handed, which is why the declaration (x-shadow) and not a sweep decides
+// what is passed. A selection that starts in one tree and ends in another is left to the
+// light-DOM range on purpose: a Range cannot hold ends in two roots, and a quote running
+// from the page's prose into a widget's shadow is exactly what the fences already refuse.
+function pageRange(sel) {
+  const plain = sel.getRangeAt(0);
+  if (typeof sel.getComposedRanges !== "function") return plain;
+  const shadowRoots = pageShadowRoots();
+  if (!shadowRoots.length) return plain;
+  const [composed] = sel.getComposedRanges({ shadowRoots });
+  if (!composed) return plain;
+  const { startContainer, startOffset, endContainer, endOffset } = composed;
+  if (startContainer.getRootNode() !== endContainer.getRootNode()) return plain;
+  const range = document.createRange();
+  range.setStart(startContainer, startOffset);
+  range.setEnd(endContainer, endOffset);
+  return range;
+}
+
+// Whether a range covers a node, asked so a shadow tree answers the same as the light
+// DOM it renders in place of. `intersectsNode` compares within one tree, so every node
+// inside an x-shadow widget says no to a range drawn out in the document — and a drag
+// from the paragraph above a diff to the one below it would come back holding the two
+// paragraphs joined, with the lines the reader dragged straight over missing from the
+// quote and still sitting between them in the reading, so the search could never find
+// it. The tree renders where its host stands, so the host is what the question is really
+// about: climb to whichever ancestor shares the range's root, and ask there.
+function coveredBy(range, node) {
+  const root = range.commonAncestorContainer.getRootNode();
+  let n = node;
+  while (n && n.getRootNode() !== root) n = n.getRootNode().host;
+  return Boolean(n) && range.intersectsNode(n);
 }
 
 // The segments a selection covers, clipped to where it starts and ends.
@@ -2332,7 +2515,7 @@ function segmentsIn(range) {
   );
   const segments = [];
   for (const { node, end: length } of whole) {
-    if (!range.intersectsNode(node)) continue;
+    if (!coveredBy(range, node)) continue;
     const start = node === range.startContainer ? range.startOffset : 0;
     const end = node === range.endContainer ? range.endOffset : length;
     if (end > start) segments.push({ node, start, end });
@@ -2349,8 +2532,8 @@ function segmentsIn(range) {
 // whitespace is elastic to findQuote, so nothing downstream depends on this.
 // The block a node reads as part of, and null where it belongs to no block of its own —
 // which is a different answer from "its parent", and the two callers want different ones.
-const blockAt = (node) => node.parentElement.closest(TEXT_BLOCK);
-const blockOf = (node) => blockAt(node) ?? node.parentElement;
+const blockAt = (node) => closestAcross(node, TEXT_BLOCK);
+const blockOf = (node) => blockAt(node) ?? upFrom(node);
 function quoteFrom(segments) {
   let text = "";
   segments.forEach((seg, i) => {
@@ -2607,8 +2790,14 @@ function pageText() {
     const declared = attr && hostEntry?.["x-says"]?.[attr];
     if (!declared) dynamicWords.add(generated);
   }
+  // Climbing crosses the shadow boundary (upFrom), and that is what keeps an x-shadow
+  // widget fenced. The parts were remembered off the light DOM before any module ran,
+  // so nothing inside a shadow tree is in either set; a climb that stopped at the root
+  // would put a diff's lines in no cell at all, which reads as ordinary page prose and
+  // lets a quote run from the paragraph above straight into the first changed line. One
+  // move further up finds the host, which is the opaque root it always was.
   const cellOf = (node) => {
-    for (let el = node.parentElement; el; el = el.parentElement) {
+    for (let el = upFrom(node); el; el = upFrom(el)) {
       if (dynamicWords.has(el)) return el;
       if (opaquePassageParts.has(el) || opaquePassageRoots.has(el)) return el;
     }
@@ -2659,7 +2848,8 @@ function findQuote(text, quote, anchor, within) {
     if (
       within &&
       !(
-        within.contains(origin[at.index].node) && within.contains(origin[stop - 1].node)
+        containsAcross(within, origin[at.index].node) &&
+        containsAcross(within, origin[stop - 1].node)
       )
     )
       continue;
@@ -3313,10 +3503,10 @@ const LANDMARK_CAP = 160;
 // this; the search asks for whatever a given anchor happens to hold.
 const CONTEXT = 24;
 function selectionAnchor(sel) {
-  const range = sel.getRangeAt(0);
+  const range = pageRange(sel);
   const node = range.commonAncestorContainer;
   const holder = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
-  const section = holder.closest("[id]:not(.cq-ui)")?.id || null;
+  const section = closestAcross(holder, "[id]:not(.cq-ui)")?.id || null;
   // The neighbours come from the same indexed reading the search uses and stop at
   // the same opaque-widget fences as the file-side capture. The browser knows words
   // a module generated and may quote them; it does not pretend the file can confirm
@@ -3483,7 +3673,7 @@ function snapSelection() {
   if (!anchoringReady) return;
   const sel = pageSelection();
   if (!sel) return;
-  const range = sel.getRangeAt(0);
+  const range = pageRange(sel);
   const segments = segmentsIn(range);
   if (!segments.length) return;
   const reading = pageText();
@@ -3505,9 +3695,19 @@ function snapSelection() {
   // Backward means the anchor sits past the range's start — asked of boundary points,
   // because node order misreads containment: a focus on the element holding the anchor's
   // text node both precedes and contains it.
+  //
+  // Both points have to be in one tree to be compared at all. Inside an x-shadow widget
+  // they are not: the selection's own anchorNode is the light-DOM one Chrome clamped to
+  // the host, while the range is the composed one this snapped from, and comparing them
+  // throws rather than answering. A selection that never left the widget has no direction
+  // worth recovering — there is one text node under the pointer either way — so it snaps
+  // forward, which is what a drag inside one block does regardless.
   const probe = document.createRange();
   probe.setStart(sel.anchorNode, sel.anchorOffset);
-  const backward = probe.compareBoundaryPoints(Range.START_TO_START, range) > 0;
+  const comparable =
+    sel.anchorNode.getRootNode() === range.commonAncestorContainer.getRootNode();
+  const backward =
+    comparable && probe.compareBoundaryPoints(Range.START_TO_START, range) > 0;
   if (backward) sel.setBaseAndExtent(...tail, ...head);
   else sel.setBaseAndExtent(...head, ...tail);
 }
@@ -3525,7 +3725,7 @@ function updateFab(visual) {
   const sel = pageSelection();
   const anchor = sel ? selectionAnchor(sel) : null;
   if (anchor?.quote.length >= MIN_QUOTE)
-    showFab(anchor, ...beside(sel.getRangeAt(0).getBoundingClientRect()));
+    showFab(anchor, ...beside(pageRange(sel).getBoundingClientRect()));
   else if (visual) showFab({ section: visual.id }, visual.x + 6, visual.y - 40);
   else if (fabAnchor?.quote) showFab(null);
   return true;

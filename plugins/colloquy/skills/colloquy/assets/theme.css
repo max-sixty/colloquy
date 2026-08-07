@@ -1222,22 +1222,48 @@ cq-diagram svg { display: block; margin: 0 auto; max-width: none; }
   cq-diagram svg { max-width: 100%; }
 }
 
-/* cq-diff rendered form: one details per file, lines colored by kind. */
-cq-diff.cq-rendered details { margin: 8px 0; padding: 0; overflow: hidden;
-                              background: var(--card); }
-cq-diff.cq-rendered summary { padding: 6px 12px; font-size: 13px; }
-cq-diff .cq-diff-stat { color: var(--muted); font-weight: 400; margin-left: 8px;
-                        font-size: var(--t-6); }
-cq-diff.cq-rendered pre { margin: 0; border: none; border-top: 1px solid var(--rule);
-                          border-radius: 0; padding: 6px 0; }
+/* The rules a shadow-rendering widget (x-shadow) carries into its own tree. A selector
+   written out here reaches the document and stops dead at a shadow boundary, so these
+   are sliced out at load and put back as a <style> the shadow root owns — which is also
+   what makes them survive `version export`, since an adopted stylesheet is in no
+   element's markup and a copy runs no script to adopt one. They stay in this file
+   because the theme owns the look: a project overriding the theme overrides these with
+   it, and a second copy in a widget module would be a second answer to what a diff
+   looks like. Everything inside the markers is written for the shadow tree — :host is
+   the widget element itself — so nothing in here matches anything at document level. */
+/* cq-shadow:start */
+:host(.cq-rendered) details { margin: 8px 0; padding: 0; overflow: hidden;
+                              background: var(--card); border: 1px solid var(--border-2);
+                              border-radius: var(--r); }
+:host(.cq-rendered) summary { padding: 6px 12px; font-size: 13px; font-family: var(--sans); }
+.cq-diff-stat { color: var(--muted); font-weight: 400; margin-left: 8px;
+                font-size: var(--t-6); }
+:host(.cq-rendered) pre { margin: 0; border: none; border-top: 1px solid var(--rule);
+                          border-radius: 0; padding: 6px 0; overflow-x: auto;
+                          font-family: var(--mono); font-size: var(--t-6);
+                          line-height: 1.55; color: var(--ink); }
 /* A child selector, because a line's own span is not the only one in here any more:
    syntax colour puts one around each token, and as a descendant rule this laid every
    token out on a line of its own. */
-cq-diff pre > span { display: block; padding: 0 12px; }
-cq-diff pre .add  { background: var(--add-tint); }
-cq-diff pre .del  { background: var(--del-tint); }
-cq-diff pre .hunk { color: var(--accent); background: var(--pre-bg); }
-cq-diff pre .note { color: var(--muted); } /* git's remark on the line above, not a line */
+pre > span { display: block; padding: 0 12px; }
+pre .add  { background: var(--add-tint); }
+pre .del  { background: var(--del-tint); }
+pre .hunk { color: var(--accent); background: var(--pre-bg); }
+pre .note { color: var(--muted); } /* git's remark on the line above, not a line */
+/* Syntax colour is the same statement the document makes, and the tokens are in here
+   rather than out there, so the rules come too. The custom properties they read inherit
+   through the boundary, which is why only the selectors need repeating. */
+[data-cq-syn="cm"] { color: var(--syn-comment); font-style: italic; }
+[data-cq-syn="kw"] { color: var(--syn-keyword); }
+[data-cq-syn="st"] { color: var(--syn-string); }
+[data-cq-syn="nu"] { color: var(--syn-number); }
+[data-cq-syn="fn"] { color: var(--syn-name); }
+[data-cq-syn="ty"] { color: var(--syn-type); }
+/* cq-shadow:end */
+
+/* The unupgraded fallback stays at document level: before the module runs, and on any
+   page carrying no script at all, the authored <pre> is what shows. */
+cq-diff:not(.cq-rendered) .cq-diff-stat { color: var(--muted); }
 
 /* cq-tree rendered form: nested lists with hairline guides and change badges. */
 cq-tree.cq-rendered { font-family: var(--mono); font-size: 13px; }

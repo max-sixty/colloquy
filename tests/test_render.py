@@ -7037,9 +7037,21 @@ def test_every_passage_in_a_real_page_can_be_quoted(browser, serve, example):
                     missed.push(quoted.slice(0, 70));
                 // Inside what was selected, not merely somewhere: a matcher that finds
                 // the right words in the wrong place paints, and paints a lie.
-                else if ([...painted].some(p =>
-                        p.compareBoundaryPoints(Range.START_TO_START, range) < 0 ||
-                        p.compareBoundaryPoints(Range.END_TO_END, range) > 0))
+                //
+                // A mark can now land inside a widget's shadow tree (x-shadow), and two
+                // ranges in different trees cannot be compared at all — comparing them
+                // throws rather than answering. So the question crosses the way the
+                // runtime's own does: the tree renders where its host stands, so a mark
+                // inside one is inside the selection exactly when the host is.
+                else if ([...painted].some(p => {
+                        const root = range.commonAncestorContainer.getRootNode();
+                        if (p.startContainer.getRootNode() === root)
+                            return p.compareBoundaryPoints(Range.START_TO_START, range) < 0
+                                || p.compareBoundaryPoints(Range.END_TO_END, range) > 0;
+                        let n = p.startContainer;
+                        while (n && n.getRootNode() !== root) n = n.getRootNode().host;
+                        return !n || !range.intersectsNode(n);
+                    }))
                     astray.push(quoted.slice(0, 70));
                 composer.style.display = 'none';
                 sel.removeAllRanges();
@@ -8140,7 +8152,12 @@ def test_a_diff_is_colored_by_each_files_own_path(browser, serve):
         "() => document.querySelector('cq-diff.cq-rendered') !== null"
     )
 
-    files = page.evaluate("""() => [...document.querySelectorAll('#patch details')].map(d => ({
+    # Through the shadow root, because that is where cq-diff renders (x-shadow): its
+    # lines are in the composed tree the reader sees and in no querySelectorAll over the
+    # document. Reaching for them by hand here is the test paying the same crossing the
+    # runtime pays in textNodesUnder.
+    files = page.evaluate("""() => [...document.querySelector('#patch').shadowRoot
+      .querySelectorAll('details')].map(d => ({
       path: d.querySelector('summary code').textContent,
       lines: [...d.querySelectorAll('pre > span')].map(l => ({
         kind: l.className,
@@ -8815,7 +8832,9 @@ def test_a_diff_anchors_to_the_side_it_was_read_on(browser, serve):
     )
     landed = page.evaluate("""async () => {
         const skip = '.cq-ui, script, style';
-        const w = document.createTreeWalker(document.getElementById('patch'),
+        // Rooted at the shadow root: cq-diff renders in one (x-shadow), so the lines
+        // this drags across are in the composed tree and not under the host element.
+        const w = document.createTreeWalker(document.getElementById('patch').shadowRoot,
             NodeFilter.SHOW_TEXT,
             {acceptNode: n => n.parentElement?.closest(skip)
                 ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});

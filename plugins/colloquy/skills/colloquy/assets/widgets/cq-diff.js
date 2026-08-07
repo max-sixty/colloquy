@@ -18,6 +18,7 @@ import {
   langForPath,
   once,
   settle,
+  shadowStage,
   synNodes,
   syntax,
   tokenLines,
@@ -209,7 +210,14 @@ customElements.define(
           const lang = langForPath(file.path);
           nodes.push(fileNode(file, lang ? await colorHunks(file, lang) : new Map()));
         }
-        this.replaceChildren(...nodes);
+        // Into a shadow root (x-shadow). The runtime's reading follows the composed
+        // tree, which is why the lines in here stay as quotable as any paragraph — see
+        // textNodesUnder. The authored <pre> goes, exactly as it did when this rendered
+        // in place: a host's light children stop rendering the moment it has a shadow
+        // root, and markup that is in the file but on nobody's screen is what a copy
+        // reports as content it can't show.
+        this.replaceChildren();
+        shadowStage(this, nodes);
         this.classList.add("cq-rendered");
       } catch (err) {
         failSoft(this, err, source);

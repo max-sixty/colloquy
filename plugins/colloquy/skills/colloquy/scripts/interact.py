@@ -499,6 +499,7 @@ EXTENSION_SCHEMA = {
             "propertyNames": {"pattern": f"^{HTML_NAME}$"},
             "additionalProperties": {"enum": ["before", "after"]},
         },
+        "x-shadow": {"type": "boolean"},
         "x-state": STATE_SCHEMA,
         "x-tone": {"type": "string", "pattern": f"^{HTML_NAME}$"},
         "x-upgrade": {"type": "boolean"},
@@ -4147,7 +4148,7 @@ def validate_registry(registry: dict, source) -> dict:
             )
         needs_upgrade = [
             key
-            for key in ("x-state", "x-report", "x-language", "x-verbatim")
+            for key in ("x-state", "x-report", "x-language", "x-verbatim", "x-shadow")
             if entry.get(key) and not entry["x-upgrade"]
         ]
         if needs_upgrade:
@@ -5892,7 +5893,24 @@ BAKE = """() => {
     // with, which is the layout the theme's live-page guard was withholding anyway.
     document.querySelectorAll('[hidden="until-found"]')
         .forEach(el => el.removeAttribute('hidden'));
-    return document.documentElement.outerHTML;
+    // getHTML and not outerHTML: a widget that renders the page's words into a shadow
+    // root (x-shadow) has them in no element's outerHTML, so a copy taken that way
+    // arrives with an empty element where a diff's lines were — silently, since the
+    // element and its ids are all still there. Asking for serializable roots writes each
+    // one as a declarative <template shadowrootmode>, which the browser rebuilds on open
+    // with no script, the same bargain every other widget's chrome makes here.
+    //
+    // It is innerHTML's counterpart, though, so the root's own tag is not in what it
+    // returns and has to be written back: <html> carries the lang the document is read
+    // in and the cq-copy class the theme reads its medium from, and a copy missing them
+    // opens as a live page whose affordances press nothing. Rebuilt from the attributes
+    // rather than sliced off outerHTML's opening tag, because an attribute value may
+    // hold the very > that slicing would stop at.
+    const root = document.documentElement;
+    const attrs = [...root.attributes]
+        .map(a => ` ${a.name}="${a.value.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"`)
+        .join('');
+    return `<html${attrs}>${root.getHTML({serializableShadowRoots: true})}</html>`;
 }"""
 
 
