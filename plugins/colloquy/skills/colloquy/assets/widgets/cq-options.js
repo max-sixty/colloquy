@@ -77,6 +77,7 @@ import {
   once,
   quoted,
   relabel,
+  reserve,
   sayBox,
   sendAction,
   toast,
@@ -125,6 +126,7 @@ customElements.define(
       // document's state, as a span.
       for (const option of this.#options())
         if (choosable || this.#authored.has(option.id)) this.#mark(option, choosable);
+      this.#holdWordRoom();
       if (choosable) {
         this.#say = sayBox(this, "Say something");
         if (this.#say) this.append(this.#say);
@@ -291,6 +293,30 @@ customElements.define(
       }
       option.append(mark);
       this.#label(option);
+    }
+
+    // The room the marks' word will need, held before the press that writes one: a mark
+    // is the one thing on the row a press may not move, and the word it gains is exactly
+    // what would move it. That room is a measurement rather than a constant — 68px
+    // covered "your pick" in the face macOS sets the chrome in and came 2px short of the
+    // one Linux does — so it is taken from the words themselves in a mark's own live
+    // face, and taken in the said state, because an unsaid mark renders at font-size 0
+    // (theme.css) and measured there it reserves nothing at all.
+    //
+    // Stated, not applied: which marks hold this room is a fact about the group's form,
+    // which is CSS's to decide and never this module's (see the header). So the number
+    // lands on the group, every mark inherits it, and the row form is what spends it.
+    // Measured off the first mark, since they all say the same words in the same face.
+    #holdWordRoom() {
+      const mark = this.querySelector(":scope > cq-option > .cq-pick");
+      if (!mark) return;
+      relabel(mark, PICKED, { says: true });
+      reserve(mark, [PICKED, AUTHORED]);
+      // `reserve` floors the control it measured; the room is the form's rather than
+      // that one mark's, so it moves off. Then the mark says what it actually says.
+      this.style.setProperty("--cq-word-room", mark.style.minWidth);
+      mark.style.minWidth = "";
+      this.#label(mark.parentElement);
     }
 
     // An absolute placement: `picked` is the whole answer, so every option is stated,

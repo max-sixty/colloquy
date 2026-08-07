@@ -140,6 +140,17 @@ runs both again on main and on every pull request. Before then:
 pre-commit run --all-files
 ```
 
+CI is also the only place either gate meets a platform that isn't macOS, and what the two
+disagree about is what a browser test measures: how wide a system font sets a word,
+whether a scrollbar takes a gutter out of the window. `scripts/linux-suite.sh` runs the
+suite where CI runs it, in a container carrying the runner's Chrome and its fonts, so a
+failure reported there is one to reproduce rather than one to guess at. It takes pytest's
+arguments, and needs a Docker daemon that can run linux/amd64:
+
+```
+scripts/linux-suite.sh
+```
+
 ## Rebuilding the syntax bundle
 
 Code blocks are colored in the browser from

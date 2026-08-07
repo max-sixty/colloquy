@@ -494,11 +494,16 @@ export function relabel(node, label, { says } = {}) {
 // Measured in place: text-only controls, swapped and restored synchronously, so no
 // frame paints mid-swap. Stood out of flow for the moment — absolute, hidden — so a
 // control whose news hasn't arrived yet (display: none) measures all the same and
-// its neighbours don't feel the fitting.
+// its neighbours don't feel the fitting. Sized by its words alone while it stands
+// there, its own width cleared along with its place: a stated width can mean "and grow
+// past this" in flow — a table cell laid out at `width: 0` takes what its content
+// needs — where out of flow it is simply obeyed, and the widest word then measures as
+// whatever padding the control has.
 export function reserve(control, labels) {
   const stood = { text: control.textContent, css: control.style.cssText };
   Object.assign(control.style, {
     minWidth: "0",
+    width: "auto",
     display: "inline-block",
     position: "absolute",
     visibility: "hidden",

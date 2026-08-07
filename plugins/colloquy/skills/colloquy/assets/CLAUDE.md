@@ -140,12 +140,13 @@ widest, measured in the control's own box and live face at load — so the reser
 re-measures itself when the type moves, instead of standing as a number somebody once
 read out of a browser. Three numbers stood in the banner that way and all three quietly
 stopped covering the day `--t-5` grew half a pixel. A number is stated only where there
-is no widest word to measure — the version chooser's cap against unbounded notes, the
-pick column's dot room — and each of those is a fact about one font, free to stop
-covering silently. The two sweeps are what check both kinds, and between them they work
-every one: a press, and the poll, which is the half no gesture can reach. For the
-measured kind they check the words listed are the words the writers write; for the
-stated kind they are the only thing standing between the number and its going stale.
+is no widest word to measure: the version chooser's cap against unbounded notes, which
+is a fact about one font and free to stop covering silently, and the pick column's dot
+room, which is a fact about a shape and stays true when the type moves. The two sweeps
+are what check both kinds, and between them they work every one: a press, and the poll,
+which is the half no gesture can reach. For the measured kind they check the words listed
+are the words the writers write; for the stated kind they are the only thing standing
+between the number and its going stale.
 
 A stylesheet lint was the first attempt at that check, and the shape is wrong. It reads
 the selector, and the state a control shows is not reliably in one: a class the module
@@ -378,8 +379,9 @@ theme and wins that, and the chrome's container still states the face once for a
 inside it that misses the class. A mark whose shapes straddle the line — `cq-option`'s
 is a press wearing `.cq-ui` where the group takes picks and a bare span where it
 doesn't — keeps its face in the one rule both shapes share, since only one of them has
-the class to read from. Then re-measure: "your pick" is 3px wider in the sans, and the
-row form reserves that column by a number.
+the class to read from. The room the mark's word needs moves with that face — "your pick"
+is 3px wider in the sans than in the serif — and the group takes it off its own mark at
+load rather than holding a number, so the face and the reservation cannot come apart.
 
 The serif is stacked, not shipped, and the reason is the copy. `theme.css` is inlined
 whole into every `version export` and parsed by `version check` on every version, so a
@@ -391,8 +393,12 @@ x-height, which is what matters at 17px.
 Changing any of this moves every reserved width. The ones taken from the words
 (`reserve`) re-measure themselves on the next load; the ones stated as numbers are what
 the press sweep above answers for — it named the sign-off button the day `--t-5` went
-from 13.5px to 14px and 110px stopped covering "✓ Looks good". For those, re-measure and
-restate the number; don't derive it.
+from 13.5px to 14px and 110px stopped covering "✓ Looks good", and the row form's pick
+column the day the suite first ran on Linux, where DejaVu sets "your pick" 2px wider than
+the face the 68px had been read in. A stated number is caught a release late and a
+platform late, and the second one is only caught at all where there is a second platform
+to run on. So where there are words to measure, measure them — the pick column takes its
+own room now. Where there are none, re-measure and restate the number; don't derive it.
 
 ## The page may break a word, so anything that must not come apart says so
 

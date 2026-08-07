@@ -945,9 +945,12 @@ def test_a_press_leaves_its_neighbours_where_they_were(browser, serve, example):
     them shows in a screenshot of either state, because every strip and every row lays
     out perfectly well on its own; it is the two states together that say anything.
 
-    Two of the three are fixed by a reserved width measured in a browser rather than
-    derived, which is a number free to stop covering — when the words change, or on a
-    platform whose system font sets them wider. This is what says so when it does.
+    Two of the three are fixed by holding the widest word's room from the start. That
+    room is measured at load rather than stated, because a number read once out of a
+    browser covers the face it was read in and no other: the pick column's stood at 68px
+    and went 2px short the first time this ran on Linux, whose system sans sets "your
+    pick" wider than macOS's. This is what said so, and it says how late a stated number
+    is caught — a platform late, and only where there is a second platform to run on.
 
     Driven over the corpus rather than per widget: a control this sweep has never heard
     of joins it by being pressable, which is the only property it reads.
@@ -5575,8 +5578,12 @@ def test_a_message_reference_travels_or_says_it_cant(browser, serve):
     # The other half of a link: opened in its own tab it is an arrival, which the
     # browser answers before any widget has upgraded — so the runtime is what aims it
     # (landArrival). Nothing of this tab travels with it; the new one starts empty.
+    # Which chord opens that tab is the platform's answer rather than one this suite
+    # holds — ⌘ where it was written, ⌃ where CI runs it — so the press names the
+    # gesture and lets Playwright spell it. Named outright, the Linux press opened
+    # nothing at all and the wait for the tab ran its full 30s before saying so.
     with page.context.expect_page() as opened:
-        live.click(modifiers=["Meta"])
+        live.click(modifiers=["ControlOrMeta"])
     tab = opened.value
     tab.wait_for_function("() => document.body.dataset.cqUpgraded === '1'")
     tab.wait_for_function(
@@ -6617,9 +6624,17 @@ def test_the_composer_stands_in_the_margin_beside_the_passage(browser, serve):
     """Where the column leaves room, the box goes into the margin rather than onto the
     page: a 320px card over a 720px column stands on somebody's words wherever it
     lands, and the margin holds none by construction. The passage and its neighbours
-    stay fully readable while the user writes about them."""
+    stay fully readable while the user writes about them.
+
+    The window is wide enough for that room to be there wherever this runs. What the
+    placement asks is whether the box and its two 8px gaps fit beside the column in
+    body's client box, and that box is the window less whatever the platform spends on
+    a scrollbar — nothing under macOS's overlay ones, 15px of gutter on the Linux
+    runner. 1440 made the question exact rather than true: the margin fitted the box
+    with nothing at all to spare where this was written, and fell 15px short where it
+    ran, so a placement doing precisely what it should read as a bug."""
     page, errors = open_page(browser, serve(LONG_PAGE))
-    resized(page, 1440, 900)
+    resized(page, 1600, 900)
     page.locator("#p30").scroll_into_view_if_needed()
     page.locator("#p30").click(click_count=3)
     page.wait_for_selector(".cq-fab", state="visible")
@@ -6657,7 +6672,9 @@ def test_a_float_the_panel_displaces_hands_the_page_no_sideways_scroll(browser, 
     so the invariant is read with an auto-retrying wait rather than a one-shot read
     racing the transitionend handler."""
     page, errors = open_page(browser, serve(LONG_PAGE))
-    resized(page, 1440, 900)
+    # The margin placement below is this test's precondition, so the window is the one
+    # its own test states the width for.
+    resized(page, 1600, 900)
     page.locator("#p30").scroll_into_view_if_needed()
     page.locator("#p30").click(click_count=3)
     page.wait_for_selector(".cq-fab", state="visible")

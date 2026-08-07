@@ -702,13 +702,21 @@ cq-options:not(:has(> cq-option > strong)) > cq-option > :is(.cq-ref, .cq-pick) 
  * it (its own 11px and the 6px between it and the word), and the word grows leftward into
  * room already held. Out of flow rather than last in it, because the word is what decides
  * a line box's height and an open mark hasn't got one: centred on the row, the dot stands
- * where it stood whether or not the word is there to say so. Both widths are measured
- * ("your pick" at --t-6 in the chrome's sans, 67px including the padding) rather than
- * derived, and the press test is what says so the day they stop covering — as it would
- * have the day the mark stopped reading in the document's serif, which is 3px narrower
- * and had 66px covering it. */
+ * where it stood whether or not the word is there to say so.
+ *
+ * The dot's room is a fact about a shape, so it is stated here. The word's is a fact about
+ * a font, and no number written here stays true to one: 68px covered "your pick" in the
+ * face macOS sets the chrome in and came 2px short of the DejaVu the CI runner has, so
+ * every row on Linux dragged its § reference two pixels left mid-press. The press test
+ * said so the moment there was a second platform to say it on, which is as early as a
+ * stated number can be caught and later than one needs to be. So the word's room is
+ * measured from the words in a mark's own live face and stated by the group
+ * (cq-options.js), and this form is the one that spends it: a card's mark is out of flow
+ * and moves nothing, so spending it there would buy only a focus ring drawn round room
+ * the card never needed. */
 cq-options:not(:has(> cq-option > strong)) > cq-option > .cq-pick {
-                     position: relative; box-sizing: border-box; min-width: 68px;
+                     position: relative; box-sizing: border-box;
+                     min-width: var(--cq-word-room);
                      padding-right: 17px; text-align: right; }
 cq-options:not(:has(> cq-option > strong)) > cq-option > .cq-pick::before {
                      position: absolute; right: 0; top: 0; bottom: 0; margin: auto 0; }
