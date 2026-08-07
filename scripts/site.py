@@ -137,6 +137,7 @@ def export_examples(out: Path, env: dict) -> None:
             (page / "versions" / "v1.html").write_text(
                 source.read_text(encoding="utf-8"), encoding="utf-8"
             )
+            shutil.copytree(EXAMPLES / "media", page / "media", dirs_exist_ok=True)
             colloquy(
                 env,
                 "version",

@@ -13,7 +13,7 @@
       <p class="eyebrow">release 3.2</p>
       <h1>Release notes, drafted</h1>
       <p class="lede" id="rn-lede">
-        Three notes cover everything user-visible in 3.2. Each is a draft you own:
+        Four notes cover everything user-visible in 3.2. Each is a draft you own:
         double-click one (or its ✎) and rewrite it until it reads right — the exact
         wording reaches me, and the next version of this page carries it. The framing
         lines are mine, and one of them is a rewrite I'm proposing: accept or reject it
@@ -41,6 +41,25 @@ existing scripts keep working.
           <pre>
 Deprecates the v1 auth header. It keeps working until the next major, and the
 server now sets a Sunset header on every v1 response.
+</pre>
+        </cq-draft>
+      </section>
+
+      <section id="rn-console-section">
+        <h2>Console</h2>
+        <p id="rn-console-why">
+          The run list grew a status column, so a failure now reads off the list instead
+          of costing a click each. It is the release's only visual change.
+        </p>
+        <cq-shot
+          id="rn-console-shot"
+          alt="the run list, before and after the status column"
+          before="/media/051bee487bfb5d13.png"
+          after="/media/a99a1b63048502d0.png"
+        ></cq-shot>
+        <cq-draft id="rn-console">
+          <pre>
+Run status now shows on the run list itself. Filtering by it lands in 3.3.
 </pre>
         </cq-draft>
       </section>

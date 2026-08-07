@@ -83,6 +83,7 @@ opening that code is how you meet them:
 - the server, the log, and the lint: `interact.py`, in its
   module docstring and beside the code each one binds
 - the tests: `tests/CLAUDE.md`
+- the examples, and what the corpus owes the vocabulary: `examples/CLAUDE.md`
 
 Four bind both runtimes at once, and no one directory owns them.
 

@@ -5218,8 +5218,33 @@ def test_examples_pass_check(tmp_path, monkeypatch):
         d = tmp_path / example.stem
         CliRunner().invoke(interact.cli, ["page", "init", str(d)])
         (d / "versions" / "v1.html").write_text(example.read_text())
+        shutil.copytree(ROOT / "examples" / "media", d / "media", dirs_exist_ok=True)
         result = check(d)
         assert result.exit_code == 0, f"{example.name}: {result.output}"
+
+
+def test_every_widget_in_the_vocabulary_stands_in_an_example():
+    """Eight sweeps in test_render.py read a widget inside a whole page, and their
+    corpus is examples/, so a widget no example holds is one none of the eight has ever
+    seen — a gap that reads as coverage, since the widget's own tests are green.
+    cq-shot and cq-specimen were outside them from the day each was written.
+    examples/CLAUDE.md carries the rest, including the shapes this floor doesn't
+    reach."""
+    registry = json.loads(
+        (PLUGIN_ROOT / "skills" / "colloquy" / "assets" / "registry.json").read_text()
+    )
+    # The gallery is generated from the others, so it can only repeat their coverage.
+    authored = " ".join(
+        p.read_text()
+        for p in (ROOT / "examples").glob("*.html")
+        if p.name != "gallery.html"
+    )
+    tags = [tag for tag in registry if not tag.startswith("$")]
+    assert tags, "no widgets read — an empty vocabulary demonstrates itself"
+    undemonstrated = [tag for tag in tags if not re.search(rf"<{tag}[\s>]", authored)]
+    assert not undemonstrated, (
+        f"no example holds {', '.join(undemonstrated)} — see examples/CLAUDE.md"
+    )
 
 
 def test_gallery_is_generated_from_the_examples():

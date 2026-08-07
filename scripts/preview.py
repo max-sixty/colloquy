@@ -54,6 +54,7 @@ def main() -> None:
     (PAGE / "versions" / "v1.html").write_text(
         source.read_text(encoding="utf-8"), encoding="utf-8"
     )
+    shutil.copytree(ROOT / "examples" / "media", PAGE / "media", dirs_exist_ok=True)
     colloquy(
         "version",
         "publish",

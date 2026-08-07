@@ -54,6 +54,10 @@ from playwright.sync_api import expect
 
 EXAMPLES = sorted((Path(__file__).parent.parent / "examples").glob("*.html"))
 assert EXAMPLES, "no examples found — parametrizing over an empty list tests nothing"
+# The bytes an example names but cannot hold: a cq-shot's pair, content-addressed
+# exactly as `colloquy page media` names it in a real page directory. examples/CLAUDE.md
+# lists every publisher that has to lay this beside the markup, this one among them.
+EXAMPLE_MEDIA = Path(__file__).parent.parent / "examples" / "media"
 
 # A long page, so the document scrolls, and nothing else — the panel is the subject.
 LONG_PAGE = """<!doctype html>
@@ -374,6 +378,7 @@ def serve(tmp_path, monkeypatch):
         d = tmp_path / "page"
         assert CliRunner().invoke(interact.cli, ["page", "init", str(d)]).exit_code == 0
         (d / "versions" / "v1.html").write_text(html)
+        shutil.copytree(EXAMPLE_MEDIA, d / "media", dirs_exist_ok=True)
         interact.append_event(
             d, {"kind": "note", "author": "claude", "version": 1, "text": "t"}
         )
@@ -1954,6 +1959,7 @@ def test_an_installed_payload_passes_its_real_browser_gate(tmp_path):
     (page_dir / "versions" / "v1.html").write_text(
         (root / "examples" / "release-notes.html").read_text()
     )
+    shutil.copytree(EXAMPLE_MEDIA, page_dir / "media", dirs_exist_ok=True)
     publish = subprocess.run(
         [
             launcher,
@@ -3895,11 +3901,10 @@ def test_the_box_is_offered_only_where_something_can_answer_it(browser, serve):
 def test_the_specimen_gutter_is_painted_in_both_schemes(browser, serve):
     """The gutter is the whole marking, and it is the one part of a specimen with
     a color of its own: a token the dark block forgot would leave the bar
-    transparent and the quoting silently gone. Nothing else catches that. No
-    shipped example carries a specimen, so the sweep that drives the examples
-    through render_version in both palettes never reaches one — and render_version
-    would not object anyway, since a transparent border is not an error, resizes
-    no box, and leaves every word selectable."""
+    transparent and the quoting silently gone. Nothing else catches that — not even
+    the sweep that now drives a specimen through render_version in both palettes,
+    since a transparent border is not an error, resizes no box, and leaves every
+    word selectable."""
     url = serve(SPECIMEN_PAGE)
     for scheme in ("light", "dark"):
         page = browser.new_page(color_scheme=scheme)
@@ -9172,6 +9177,11 @@ def test_unsent_draft_recovery_belongs_to_its_tab(browser, serve):
         second_draft.locator("textarea").fill("")
 
         first_draft.get_by_role("button", name="Save").click()
+        # The history summary arrives with the poll that answers the save, not with the
+        # save, so asserting straight after the click spends expect's own budget on the
+        # trip — which is a pass on a fast machine and a red on a loaded one, saying
+        # nothing either way about the page.
+        first.wait_for_function(ROUND_TRIP)
         expect(first_draft.locator(".cq-draft-history > summary")).to_have_text(
             "Changes · 1 edit"
         )

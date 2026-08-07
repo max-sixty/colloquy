@@ -63,6 +63,30 @@
         </cq-options>
       </section>
 
+      <section id="precedent">
+        <h2>How payments were asked</h2>
+        <p id="precedent-intro">
+          Payments settled the same question in March. Their page put it in two cards
+          with the operating cost on the front of each, which is a framing worth
+          copying. Their answer travels less well, since they had a tenth of our write
+          volume and nothing that had to survive the store going down.
+        </p>
+        <cq-specimen id="payments-ask" label="payments, March">
+          <cq-options id="pay-store" choose>
+            <cq-option id="pay-redis"
+              ><cq-chip tone="ok">already on call for it</cq-chip>
+              <strong>Redis</strong> Revocation is a delete, and the idempotency keys
+              live there already.
+            </cq-option>
+            <cq-option id="pay-db"
+              ><cq-chip tone="warn">ledger primary</cq-chip>
+              <strong>Postgres table</strong> One table, but every request writes to the
+              instance the ledger is on.
+            </cq-option>
+          </cq-options>
+        </cq-specimen>
+      </section>
+
       <section id="options">
         <h2>Options</h2>
         <cq-options id="session-options" choose>

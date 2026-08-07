@@ -73,6 +73,30 @@ any text to comment on the example it belongs to.</p>
         </cq-options>
       </section>
 
+      <section id="precedent">
+        <h2>How payments were asked</h2>
+        <p id="precedent-intro">
+          Payments settled the same question in March. Their page put it in two cards
+          with the operating cost on the front of each, which is a framing worth
+          copying. Their answer travels less well, since they had a tenth of our write
+          volume and nothing that had to survive the store going down.
+        </p>
+        <cq-specimen id="payments-ask" label="payments, March">
+          <cq-options id="pay-store" choose>
+            <cq-option id="pay-redis"
+              ><cq-chip tone="ok">already on call for it</cq-chip>
+              <strong>Redis</strong> Revocation is a delete, and the idempotency keys
+              live there already.
+            </cq-option>
+            <cq-option id="pay-db"
+              ><cq-chip tone="warn">ledger primary</cq-chip>
+              <strong>Postgres table</strong> One table, but every request writes to the
+              instance the ledger is on.
+            </cq-option>
+          </cq-options>
+        </cq-specimen>
+      </section>
+
       <section id="options">
         <h2>Options</h2>
         <cq-options id="session-options" choose>
@@ -831,7 +855,7 @@ pytest tests/ -m ratelimit --maxfail=1</code></pre>
 <cq-tab id="gal-release-notes" label="Release notes">
 <h1>Release notes, drafted</h1>
       <p class="lede" id="rn-lede">
-        Three notes cover everything user-visible in 3.2. Each is a draft you own:
+        Four notes cover everything user-visible in 3.2. Each is a draft you own:
         double-click one (or its ✎) and rewrite it until it reads right — the exact
         wording reaches me, and the next version of this page carries it. The framing
         lines are mine, and one of them is a rewrite I'm proposing: accept or reject it
@@ -859,6 +883,25 @@ existing scripts keep working.
           <pre>
 Deprecates the v1 auth header. It keeps working until the next major, and the
 server now sets a Sunset header on every v1 response.
+</pre>
+        </cq-draft>
+      </section>
+
+      <section id="rn-console-section">
+        <h2>Console</h2>
+        <p id="rn-console-why">
+          The run list grew a status column, so a failure now reads off the list instead
+          of costing a click each. It is the release's only visual change.
+        </p>
+        <cq-shot
+          id="rn-console-shot"
+          alt="the run list, before and after the status column"
+          before="/media/051bee487bfb5d13.png"
+          after="/media/a99a1b63048502d0.png"
+        ></cq-shot>
+        <cq-draft id="rn-console">
+          <pre>
+Run status now shows on the run list itself. Filtering by it lands in 3.3.
 </pre>
         </cq-draft>
       </section>
@@ -939,6 +982,28 @@ minute on a million rows.
               <cq-card id="card-mounts"><strong>South mounts</strong></cq-card>
             </cq-column>
           </cq-board>
+          <p id="feeder-order">
+            The bracket order goes in on Friday and there is room in it. These are the
+            extras the south pair turned out to want.
+          </p>
+          <cq-options id="feeder-extras" choose multiple>
+            <cq-option id="fx-tray"
+              ><cq-chip>£9 the pair</cq-chip
+              ><cq-chip tone="warn">more cleaning</cq-chip>
+              <strong>Seed tray</strong> Catches the spill under the south pair, where
+              the grass has thinned to bare earth.
+            </cq-option>
+            <cq-option id="fx-dome"
+              ><cq-chip>£15 each</cq-chip><cq-chip tone="ok">fits both pairs</cq-chip>
+              <strong>Weather dome</strong> Keeps the seed dry; the south feeders
+              clogged twice in the wet week.
+            </cq-option>
+            <cq-option id="fx-mount"
+              ><cq-chip>£24 fitted</cq-chip><cq-chip>uses the spare camera</cq-chip>
+              <strong>Second camera mount</strong> Puts the spare on the north post once
+              the feeders are up.
+            </cq-option>
+          </cq-options>
         </cq-tab>
 
         <cq-tab id="tab-bath" label="Bird bath">
