@@ -88,7 +88,8 @@
  * can't drift from behavior); it skips typing contexts (editable target, ⌘/Ctrl/Alt,
  * IME) and anything a focused control already consumed (defaultPrevented), which is
  * how a widget's own keys shadow the table. Focus-scoped keys belong to the focused
- * control itself — panel threads here, grips and pick buttons in widget modules —
+ * control itself — panel threads and the colloquys board here, grips and pick
+ * buttons in widget modules —
  * with no registration: the keyboard exports widgets need are announce() (the live
  * region), keyHelp() (reference rows for the overlay), and keyHint() (what keys mean
  * on a control right now). One sequence exists: g arms a short leader window in
@@ -1438,6 +1439,30 @@ try {
     othersBtn.setAttribute("aria-expanded", "true");
   }
 } catch {}
+// The board's own keys, declared once and read twice — the key line while focus is
+// inside it (scene) and the "?" overlay (keyHelp, from the render, where the board
+// first has a neighbour to walk) — so neither can drift from the listener below.
+// Enter is the browser's, a row being a link; the walk between them is the board's,
+// bound to the panel rather than to the dispatcher because ArrowUp and ArrowDown
+// anywhere else are the page's own scroll and stay so.
+const OTHERS_KEYS = [
+  ["↑ / ↓", "walk the colloquys"],
+  ["Enter", "open it in a tab"],
+];
+const othersLinks = () => [...othersPanel.querySelectorAll("a.cq-others-row")];
+othersPanel.addEventListener("keydown", (ev) => {
+  const dir = ev.key === "ArrowDown" ? 1 : ev.key === "ArrowUp" ? -1 : 0;
+  if (!dir) return;
+  const rows = othersLinks();
+  // Clamped at the ends, the way j/k walks threads: ↓ on the last row lands where it
+  // already stands rather than wrapping to the top, and the press stays the board's,
+  // so the panel doesn't scroll out from under a walk that reached its end.
+  const at = rows.indexOf(document.activeElement);
+  const next = rows[Math.max(0, Math.min(rows.length - 1, at + dir))];
+  if (!next) return;
+  ev.preventDefault();
+  next.focus();
+});
 // A row's whole account of a page: the dot's tone and one line of words, from the
 // same judgment the banner's sentences come from — the judgment is shared, the
 // wording is the seat's.
@@ -1472,10 +1497,22 @@ function rowPresence(entry) {
 }
 const othersRows = new Map(); // keyed by URL; the self row under its own key
 function renderOthers(state) {
-  others = state.others ?? []; // an older server ships no list, which is an empty one
+  // An older server ships no list, which is an empty one. A closed colloquy is not
+  // one of the machine's live pages and drops out of the board on the poll that says
+  // so: its server stays up so the page stays readable — a standing one for good —
+  // so nothing else would ever take the row off, and a count the reader glances at
+  // to find who needs them would silently become a tally of everything that has run
+  // here. Judged by the same `presented` the rows read, never by a second reading of
+  // the status the server ships. This page's own row is not in the list and so is
+  // never dropped: a reader looking at a closed page is still looking at it.
+  others = (state.others ?? []).filter((entry) => presented(entry).kind !== "closed");
   othersBtn.textContent = `Other colloquys (${others.length})`;
   // While the panel stands its button stands too, whatever the count just did.
   showNews(othersBtn, others.length > 0 || othersOpen);
+  // Registered from here rather than at load, because the section promises a board
+  // to walk and only a machine with a neighbour on it has one — the liveness a
+  // widget's section gets for free by loading only when its widget is on the page.
+  if (others.length) keyHelp("In the colloquys panel", OTHERS_KEYS);
   const wanted = [
     { key: "self", title: document.title, entry: state },
     ...others.map((entry) => ({ key: entry.url, title: entry.title, entry })),
@@ -1767,6 +1804,19 @@ function syncLayout() {
   keylineEl.style.bottom = (panelCovers ? generalRow.offsetHeight + 14 : 14) + "px";
   document.body.style.paddingBottom =
     basePaddingBottom + keylineEl.offsetHeight + 20 + "px";
+  // The board is the page's other scroll region, in the corner the line is written
+  // into, so it reserves the same room the document does — and states it twice,
+  // because its list reaches the bottom two ways that take their room from different
+  // places. A wheel to the end reads the padding. A walk's own scroll reads none of
+  // it: scroll-padding is what a scroll-into-view stops short of, and without it the
+  // last row's clearance is however far Chrome happens to overshoot, which is a fact
+  // about row height and not about the line standing there. Stepping the line clear
+  // instead was the other answer, and it takes the board's width off the line's: a
+  // busy scope already fills a laptop's, so the room it gives up is chips clipped
+  // off the right-hand end.
+  const clear = keylineEl.offsetHeight + 20 + "px";
+  othersPanel.style.paddingBottom = clear;
+  othersPanel.style.scrollPaddingBottom = clear;
   syncFloats();
 }
 // The floats live in the document, and syncLayout is where its box changes shape — the
@@ -4203,10 +4253,20 @@ const KEYS = [
     key: "o",
     label: "o",
     does: "Show or hide the machine's other colloquys",
+    line: "colloquys",
     // Live with neighbours to show, and while the panel stands whatever the
     // count did — the key that opened it must still close it.
     when: () => others.length > 0 || othersOpen,
-    run: () => showOthers(!othersOpen),
+    run: () => {
+      showOthers(!othersOpen);
+      // Opening lands on the first neighbour, so the board's own keys are the next
+      // press rather than a Tab-hunt across the banner — the move c makes into the
+      // comment panel's box, and the reason those keys can be promised at all, since
+      // the line names them only while focus is inside the board. Closing hands
+      // focus back, which showOthers owns. The key is dead with nothing to show, so
+      // an open always has a row to land on.
+      if (othersOpen) othersLinks()[0].focus();
+    },
   },
   {
     key: "v",
@@ -4226,7 +4286,7 @@ const KEYS = [
   { key: "?", label: "?", does: "This key reference", line: "keys", run: toggleHelp },
   {
     label: "Esc",
-    does: "Back out one layer: an armed g, help, the colloquys menu, composer, a box you are typing in, panel",
+    does: "Back out one layer: an armed g, help, the colloquys board, composer, a box you are typing in, panel",
   },
   { label: SEND_KEYS, does: "Send, in the focused composer" },
 ];
@@ -4402,8 +4462,12 @@ function scene() {
   // With both panels standing, Esc takes the colloquys board first: it was opened
   // for a glance, where the comment panel is the work itself — and a reader whose
   // focus is in a thread is past this return, so their Esc stays the panel's.
+  // Focus inside the board is a scope of its own, the way a focused thread is: what
+  // the next press does there is the board's business and not the page's.
   return {
-    rows: KEYS.filter((b) => b.line && live(b)).map((b) => [keyLabel(b), b.line]),
+    rows: othersPanel.contains(active)
+      ? OTHERS_KEYS
+      : KEYS.filter((b) => b.line && live(b)).map((b) => [keyLabel(b), b.line]),
     esc: othersOpen
       ? { says: "close colloquys", out: () => showOthers(false) }
       : panelOpen

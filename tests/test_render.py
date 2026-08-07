@@ -1564,39 +1564,56 @@ def test_the_poll_leaves_the_banner_where_it_was(browser, serve):
 
 
 @pytest.fixture
-def other_colloquy(tmp_path, monkeypatch):
-    """A second live colloquy for the banner's panel to find: published, served by a
-    real handler, and written down under the state home the way `server run` writes
-    it — which is the whole of how one page learns another exists. It claims to be
-    working, freshly, so its row has a judged state to show."""
+def live_colloquy(tmp_path, monkeypatch):
+    """Stands up a live colloquy for the banner's panel to find: published, served by
+    a real handler, and written down under the state home the way `server run` writes
+    it — which is the whole of how one page learns another exists. Each claims to be
+    working, freshly, so its row has a judged state to show. A factory rather than one
+    fixture, because a board is a list and a walk down it needs somewhere to walk to."""
     monkeypatch.chdir(tmp_path)  # keep the project layer out of the overlay
-    d = interact.state_home() / "pages" / "other"
-    result = CliRunner().invoke(interact.cli, ["page", "init", str(d)])
-    assert result.exit_code == 0, result.output
-    (d / "versions" / "v1.html").write_text(
-        LONG_PAGE.replace("<title>long</title>", "<title>The other colloquy</title>")
-    )
-    interact.append_event(
-        d, {"kind": "note", "author": "claude", "version": 1, "text": "t"}
-    )
-    interact.write_json(
-        d / "status.json",
-        {"state": "working", "detail": "running the suite", "ts": interact.now_iso()},
-    )
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(d, TOKEN))
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    port = httpd.server_address[1]
-    interact.write_json(
-        d / "server.json",
-        {
-            "port": port,
-            "pid": os.getpid(),
-            "url": f"http://127.0.0.1:{port}/?t={TOKEN}",
-            "lifetime": "standing",
-        },
-    )
-    yield f"http://127.0.0.1:{port}", d
-    httpd.shutdown()
+    servers = []
+
+    def go(name, title):
+        d = interact.state_home() / "pages" / name
+        result = CliRunner().invoke(interact.cli, ["page", "init", str(d)])
+        assert result.exit_code == 0, result.output
+        (d / "versions" / "v1.html").write_text(
+            LONG_PAGE.replace("<title>long</title>", f"<title>{title}</title>")
+        )
+        interact.append_event(
+            d, {"kind": "note", "author": "claude", "version": 1, "text": "t"}
+        )
+        interact.write_json(
+            d / "status.json",
+            {
+                "state": "working",
+                "detail": "running the suite",
+                "ts": interact.now_iso(),
+            },
+        )
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), interact.handler_for(d, TOKEN))
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        servers.append(httpd)
+        port = httpd.server_address[1]
+        interact.write_json(
+            d / "server.json",
+            {
+                "port": port,
+                "pid": os.getpid(),
+                "url": f"http://127.0.0.1:{port}/?t={TOKEN}",
+                "lifetime": "standing",
+            },
+        )
+        return f"http://127.0.0.1:{port}", d
+
+    yield go
+    for httpd in servers:
+        httpd.shutdown()
+
+
+@pytest.fixture
+def other_colloquy(live_colloquy):
+    return live_colloquy("other", "The other colloquy")
 
 
 def test_the_banner_opens_a_panel_of_the_machines_colloquys(
@@ -1713,6 +1730,130 @@ def test_a_panel_row_follows_its_pages_status_live(
     told(page)
     expect(row.locator(".cq-others-line")).to_have_text("Unheld")
     expect(row.locator(".cq-dot")).not_to_have_class(re.compile(r"\bworking\b"))
+    assert errors == []
+    page.close()
+
+
+def test_a_closed_colloquy_clears_itself_off_the_board(browser, serve, other_colloquy):
+    """A closed colloquy leaves the board on the poll that says so. Its server stays
+    up — a standing one for good — so the row would otherwise stand forever and the
+    count a reader glances at to find who needs them would become a tally of
+    everything that has ever run here. This page's own row is not one of the
+    neighbours the count is over, so a board with nothing live left on it still says
+    where the reader is."""
+    _, other_dir = other_colloquy
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    btn = page.locator(".cq-others")
+    expect(btn).to_have_text("Other colloquys (1)")
+    page.keyboard.press("o")
+    rows = page.locator("a.cq-others-row")
+    expect(rows).to_have_count(1)
+    interact.write_json(
+        other_dir / "status.json",
+        {"state": "idle", "detail": "", "ts": interact.now_iso()},
+    )
+    told(page)
+    expect(rows).to_have_count(0)
+    expect(btn).to_have_text("Other colloquys (0)")
+    expect(page.locator(".cq-others-self .cq-others-title")).to_have_text("long")
+    # Nothing live left to open: the button stands while the panel does and stands
+    # down with it, which is the count's other half.
+    page.keyboard.press("Escape")
+    told(page)
+    expect(btn).not_to_be_visible()
+    assert errors == []
+    page.close()
+
+
+def test_the_colloquys_board_takes_the_keyboard(browser, serve, live_colloquy):
+    """The board is a list, and a reader walks it without reaching for the mouse: o
+    opens it and lands on the first neighbour, up and down step between them and clamp
+    at the ends, Enter opens the focused one in its own tab, and Esc hands focus back
+    to the button that opened it. The key line names o before it is pressed and the
+    board's own keys while focus is inside it — the promise and the press being one
+    scene — and the "?" reference carries the same rows."""
+    live_colloquy("second", "A second colloquy")
+    other_url, _ = live_colloquy("other", "The other colloquy")
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    btn = page.locator(".cq-others")
+    expect(btn).to_have_text("Other colloquys (2)")
+    keyline = page.locator(".cq-keyline")
+    # A shortcut no surface names is a shortcut nobody finds: the line carries o for
+    # exactly as long as there is a board to open.
+    expect(keyline).to_contain_text("colloquys")
+    page.keyboard.press("o")
+    rows = page.locator("a.cq-others-row")
+    # Titles order the board, so the walk has a stated first row to start from.
+    expect(rows.first.locator(".cq-others-title")).to_have_text("A second colloquy")
+    expect(rows.first).to_be_focused()
+    expect(keyline).to_contain_text("walk the colloquys")
+    expect(keyline).to_contain_text("open it in a tab")
+    page.keyboard.press("ArrowDown")
+    expect(rows.nth(1)).to_be_focused()
+    page.keyboard.press("ArrowDown")  # clamped at the end, never wrapped to the top
+    expect(rows.nth(1)).to_be_focused()
+    page.keyboard.press("ArrowUp")
+    expect(rows.first).to_be_focused()
+    # Enter is the browser's own on a link, which is why the row is one.
+    page.keyboard.press("ArrowDown")
+    with page.context.expect_page() as opened:
+        page.keyboard.press("Enter")
+    expect(opened.value).to_have_url(f"{other_url}/versions/v1.html")
+    page.keyboard.press("Escape")
+    expect(page.locator(".cq-others-panel")).not_to_be_visible()
+    # Closing while focus is inside would drop the reader on the body; it lands on
+    # the one control that reopens what just closed.
+    expect(btn).to_be_focused()
+    page.keyboard.press("?")
+    help_el = page.locator(".cq-help")
+    expect(help_el).to_contain_text("In the colloquys panel")
+    expect(help_el).to_contain_text("walk the colloquys")
+    assert errors == []
+    page.close()
+
+
+def test_a_walk_down_the_board_stops_clear_of_the_key_line(
+    browser, serve, live_colloquy
+):
+    """The board is the page's other scroll region and the key line stands over its
+    bottom-left corner, so the board reserves the line's room — for the walk, which
+    scrolls no further than it must, and for the wheel, which runs to the end. Both
+    are asserted because they take their room from different places, and the walk's
+    clearance without one is only however far the browser happens to overshoot: a
+    fact about row height rather than about the line standing there."""
+    names = [f"Colloquy {i}" for i in range(6)]
+    for i, title in enumerate(names):
+        live_colloquy(f"n{i}", title)
+    page, errors = open_page(browser, serve(LONG_PAGE))
+    expect(page.locator(".cq-others")).to_have_text(f"Other colloquys ({len(names)})")
+    # Short enough that the rows overflow the board, which is the only shape in which
+    # the reservation is the difference between a clear last row and a covered one.
+    resized(page, 900, 320)
+    page.keyboard.press("o")
+    rows = page.locator("a.cq-others-row")
+    for _ in names:
+        page.keyboard.press("ArrowDown")
+    expect(rows.last).to_be_focused()
+    board = page.locator(".cq-others-panel")
+    assert page.evaluate(
+        "() => { const b = document.querySelector('.cq-others-panel');"
+        "        return b.scrollHeight > b.clientHeight; }"
+    ), (
+        "the board never overflowed, so the walk had nothing to scroll and proves nothing"
+    )
+    last = rows.last.bounding_box()
+    line = page.locator(".cq-keyline").bounding_box()
+    assert last["y"] + last["height"] <= line["y"], (
+        f"the walk parked the last row at {last} under the key line at {line}"
+    )
+    # And a reader who scrolls the board to its end by hand lands in the same place:
+    # scroll-padding answers the walk, the padding under it answers the wheel.
+    board.evaluate("(b) => b.scrollTo({top: b.scrollHeight})")
+    last = rows.last.bounding_box()
+    assert last["y"] + last["height"] <= line["y"], (
+        f"scrolled to its end the board put its last row at {last}, under the key "
+        f"line at {line}"
+    )
     assert errors == []
     page.close()
 
